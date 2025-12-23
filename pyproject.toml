@@ -1,11 +1,12 @@
 [project]
 name = "il-revisore"
-version = "0.1.0"
-description = "Code repository analyzer powered by Gemini AI agents"
+version = "0.2.0"
+description = "Code repository analyzer powered by Gemini Flash and Claude Opus"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "google-genai>=1.0.0",
+    "anthropic>=0.40.0",
 ]
 
 [project.scripts]
