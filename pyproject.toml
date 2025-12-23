@@ -1,0 +1,12 @@
+[project]
+name = "il-revisore"
+version = "0.1.0"
+description = "Code repository analyzer powered by Gemini AI agents"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=1.0.0",
+]
+
+[project.scripts]
+revisore = "revisore:main"
