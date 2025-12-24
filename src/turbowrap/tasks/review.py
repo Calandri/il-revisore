@@ -1,0 +1,356 @@
+"""Review task implementation using the new orchestrator with challenger loop."""
+
+import asyncio
+import time
+from datetime import datetime
+from pathlib import Path
+
+from ..db.models import Task
+from ..review.orchestrator import Orchestrator
+from ..review.models.review import (
+    ReviewRequest,
+    ReviewRequestSource,
+    ReviewOptions,
+)
+from ..review.models.report import FinalReport
+from ..review.report_generator import ReportGenerator
+from .base import BaseTask, TaskContext, TaskResult, ReviewTaskConfig
+
+
+class ReviewTask(BaseTask):
+    """Code review task using 5 specialized reviewers with challenger loop.
+
+    Reviewers:
+    - reviewer_be_architecture: Backend architecture (SOLID, layers, coupling)
+    - reviewer_be_quality: Backend quality (linting, security, performance)
+    - reviewer_fe_architecture: Frontend architecture (React patterns, state)
+    - reviewer_fe_quality: Frontend quality (type safety, performance)
+    - analyst_func: Functional analysis (business logic, requirements)
+    """
+
+    @property
+    def name(self) -> str:
+        return "review"
+
+    @property
+    def description(self) -> str:
+        return "Deep code review with 5 specialized AI reviewers and challenger loop"
+
+    @property
+    def config_class(self) -> type[ReviewTaskConfig]:
+        return ReviewTaskConfig
+
+    def execute(self, context: TaskContext) -> TaskResult:
+        """Execute review task.
+
+        Args:
+            context: Task context with db session and repo path.
+
+        Returns:
+            TaskResult with review results.
+        """
+        started_at = datetime.utcnow()
+        start_time = time.time()
+
+        try:
+            # Get or create task record
+            task = self._get_or_create_task(context)
+
+            # Update task status
+            task.status = "running"
+            task.started_at = started_at
+            context.db.commit()
+
+            # Build review request
+            request = self._build_request(context)
+
+            # Run orchestrator (async)
+            orchestrator = Orchestrator()
+            report = asyncio.run(orchestrator.review(request))
+
+            # Update task with results
+            completed_at = datetime.utcnow()
+            duration = time.time() - start_time
+
+            task.status = "completed"
+            task.completed_at = completed_at
+            task.result = self._report_to_dict(report)
+
+            context.db.commit()
+
+            return TaskResult(
+                status="completed",
+                data=task.result,
+                duration_seconds=duration,
+                started_at=started_at,
+                completed_at=completed_at,
+            )
+
+        except Exception as e:
+            duration = time.time() - start_time
+            completed_at = datetime.utcnow()
+
+            # Update task if exists
+            if "task" in locals():
+                task.status = "failed"
+                task.error = str(e)
+                task.completed_at = completed_at
+                context.db.commit()
+
+            return TaskResult(
+                status="failed",
+                error=str(e),
+                duration_seconds=duration,
+                started_at=started_at,
+                completed_at=completed_at,
+            )
+
+    def _build_request(self, context: TaskContext) -> ReviewRequest:
+        """Build ReviewRequest from TaskContext."""
+        config = context.config
+
+        # Determine review type
+        pr_url = config.get("pr_url")
+        commit_sha = config.get("commit_sha")
+        files = config.get("files", [])
+
+        if pr_url:
+            review_type = "pr"
+            source = ReviewRequestSource(pr_url=pr_url)
+        elif commit_sha:
+            review_type = "commit"
+            source = ReviewRequestSource(
+                commit_sha=commit_sha,
+                directory=str(context.repo_path),
+            )
+        elif files:
+            review_type = "files"
+            source = ReviewRequestSource(
+                files=files,
+                directory=str(context.repo_path),
+            )
+        else:
+            review_type = "directory"
+            source = ReviewRequestSource(directory=str(context.repo_path))
+
+        # Build options
+        options = ReviewOptions(
+            include_functional=config.get("include_functional", True),
+            challenger_enabled=config.get("challenger_enabled", True),
+            satisfaction_threshold=config.get("satisfaction_threshold", 99),
+            output_format=config.get("output_format", "both"),
+        )
+
+        return ReviewRequest(
+            type=review_type,
+            source=source,
+            options=options,
+        )
+
+    def _report_to_dict(self, report: FinalReport) -> dict:
+        """Convert FinalReport to dictionary for storage."""
+        return {
+            "id": report.id,
+            "recommendation": report.summary.recommendation.value,
+            "score": report.summary.score,
+            "total_issues": report.summary.severity.total,
+            "critical_issues": report.summary.severity.critical,
+            "high_issues": report.summary.severity.high,
+            "medium_issues": report.summary.severity.medium,
+            "low_issues": report.summary.severity.low,
+            "reviewers": [
+                {
+                    "name": r.name,
+                    "status": r.status,
+                    "issues_found": r.issues_found,
+                    "iterations": r.iterations,
+                    "satisfaction_score": r.satisfaction_score,
+                }
+                for r in report.reviewers
+            ],
+            "challenger": {
+                "enabled": report.challenger.enabled,
+                "total_iterations": report.challenger.total_iterations,
+                "average_satisfaction": report.challenger.average_satisfaction,
+                "convergence_status": report.challenger.convergence_status.value
+                if report.challenger.convergence_status
+                else None,
+            },
+            "issues": [
+                {
+                    "id": i.id,
+                    "severity": i.severity.value,
+                    "category": i.category.value,
+                    "file": i.file,
+                    "line": i.line,
+                    "title": i.title,
+                    "description": i.description,
+                    "suggested_fix": i.suggested_fix,
+                    "flagged_by": i.flagged_by,
+                }
+                for i in report.issues
+            ],
+            "next_steps": [
+                {"priority": ns.priority, "action": ns.action}
+                for ns in report.next_steps
+            ],
+            "timestamp": report.timestamp.isoformat() if hasattr(report, "timestamp") else None,
+        }
+
+    def _get_or_create_task(self, context: TaskContext) -> Task:
+        """Get existing task or create new one."""
+        task_id = context.config.get("task_id")
+
+        if task_id:
+            task = context.db.query(Task).filter(Task.id == task_id).first()
+            if task:
+                return task
+
+        # Create new task
+        task = Task(
+            repository_id=context.config.get("repository_id"),
+            type=self.name,
+            status="pending",
+            config=context.config,
+        )
+        context.db.add(task)
+        context.db.commit()
+        context.db.refresh(task)
+
+        return task
+
+    def generate_report(self, result: TaskResult, output_dir: Path) -> Path:
+        """Generate markdown report from results.
+
+        Args:
+            result: Task result.
+            output_dir: Directory for output files.
+
+        Returns:
+            Path to generated report.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        data = result.data
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Generate rich report
+        lines = [
+            "# Code Review Report",
+            "",
+            f"*Generated by TurboWrap: {timestamp}*",
+            "",
+            "---",
+            "",
+            "## Executive Summary",
+            "",
+            f"**Recommendation:** {data.get('recommendation', 'N/A')}",
+            f"**Score:** {data.get('score', 'N/A')}/10",
+            "",
+            "### Issue Summary",
+            "",
+            f"| Severity | Count |",
+            f"|----------|-------|",
+            f"| Critical | {data.get('critical_issues', 0)} |",
+            f"| High | {data.get('high_issues', 0)} |",
+            f"| Medium | {data.get('medium_issues', 0)} |",
+            f"| Low | {data.get('low_issues', 0)} |",
+            f"| **Total** | **{data.get('total_issues', 0)}** |",
+            "",
+            "---",
+            "",
+        ]
+
+        # Reviewers section
+        if data.get("reviewers"):
+            lines.extend([
+                "## Reviewers",
+                "",
+            ])
+            for reviewer in data["reviewers"]:
+                lines.extend([
+                    f"### {reviewer['name']}",
+                    f"- Status: {reviewer['status']}",
+                    f"- Issues found: {reviewer['issues_found']}",
+                    f"- Iterations: {reviewer.get('iterations', 1)}",
+                    f"- Satisfaction: {reviewer.get('satisfaction_score', 'N/A')}%",
+                    "",
+                ])
+
+        # Challenger section
+        challenger = data.get("challenger", {})
+        if challenger.get("enabled"):
+            lines.extend([
+                "## Challenger Loop",
+                "",
+                f"- **Total iterations:** {challenger.get('total_iterations', 0)}",
+                f"- **Average satisfaction:** {challenger.get('average_satisfaction', 0):.1f}%",
+                f"- **Convergence:** {challenger.get('convergence_status', 'N/A')}",
+                "",
+                "---",
+                "",
+            ])
+
+        # Issues section
+        issues = data.get("issues", [])
+        if issues:
+            lines.extend([
+                "## Issues",
+                "",
+            ])
+
+            # Group by severity
+            for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+                severity_issues = [i for i in issues if i["severity"] == severity]
+                if severity_issues:
+                    lines.extend([
+                        f"### {severity} ({len(severity_issues)})",
+                        "",
+                    ])
+                    for issue in severity_issues:
+                        lines.extend([
+                            f"#### [{issue['id']}] {issue['title']}",
+                            f"**File:** `{issue['file']}`" + (f" (line {issue['line']})" if issue.get('line') else ""),
+                            f"**Category:** {issue['category']}",
+                            "",
+                            issue['description'],
+                            "",
+                        ])
+                        if issue.get('suggested_fix'):
+                            lines.extend([
+                                "**Suggested fix:**",
+                                "```",
+                                issue['suggested_fix'],
+                                "```",
+                                "",
+                            ])
+                        if issue.get('flagged_by'):
+                            lines.append(f"*Flagged by: {', '.join(issue['flagged_by'])}*")
+                            lines.append("")
+
+        # Next steps section
+        next_steps = data.get("next_steps", [])
+        if next_steps:
+            lines.extend([
+                "---",
+                "",
+                "## Next Steps",
+                "",
+            ])
+            for step in next_steps:
+                lines.append(f"{step['priority']}. {step['action']}")
+            lines.append("")
+
+        # Footer
+        lines.extend([
+            "---",
+            "",
+            f"*Review completed in {result.duration_seconds:.2f} seconds*",
+            "",
+            "*Generated with TurboWrap - 5 Specialized Reviewers + Challenger Loop*",
+        ])
+
+        output_file = output_dir / "REVIEW_REPORT.md"
+        output_file.write_text("\n".join(lines), encoding="utf-8")
+
+        return output_file

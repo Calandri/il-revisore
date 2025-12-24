@@ -1,13 +1,170 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "il-revisore"
-version = "0.2.0"
-description = "Code repository analyzer powered by Gemini Flash and Claude Opus"
+name = "turbowrap"
+version = "0.4.0"
+description = "AI-Powered Repository Orchestrator for Code Review and Development"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { name = "3Bee", email = "dev@3bee.com" },
+]
+keywords = [
+    "code-review",
+    "ai",
+    "claude",
+    "gemini",
+    "repository-orchestrator",
+    "code-quality",
+    "development",
+    "automation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+
 dependencies = [
-    "google-genai>=1.0.0",
+    # Core
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "pyyaml>=6.0",
+    # Token counting (real BPE tokenization)
+    "tiktoken>=0.7.0",
+    # AI Clients
     "anthropic>=0.40.0",
+    "google-genai>=1.0.0",
+    "google-generativeai>=0.4.0",
+    # CLI
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    # API
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    # Web Frontend
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
+    "sse-starlette>=1.6.0",
+    # Database
+    "sqlalchemy>=2.0.0",
+    # Git
+    "gitpython>=3.1.0",
+    # Async
+    "aiohttp>=3.9.0",
+    "aiofiles>=23.0.0",
+    # GitHub integration
+    "PyGithub>=2.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.0.0",
+]
+
+postgres = [
+    "psycopg2-binary>=2.9.0",
+]
+
+linear = [
+    "httpx>=0.25.0",
+]
+
+all = [
+    "turbowrap[postgres,linear]",
 ]
 
 [project.scripts]
-revisore = "revisore:main"
+turbowrap = "turbowrap.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/3bee/turbowrap"
+Documentation = "https://github.com/3bee/turbowrap#readme"
+Repository = "https://github.com/3bee/turbowrap.git"
+Issues = "https://github.com/3bee/turbowrap/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/turbowrap"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/agents",
+    "/config",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+    "RET",    # flake8-return
+    "S",      # flake8-bandit (security)
+]
+ignore = [
+    "E501",   # line too long (handled by black)
+    "S101",   # use of assert
+    "S603",   # subprocess call
+    "S607",   # start process with partial path
+]
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --cov=turbowrap --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src/turbowrap"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

@@ -1,0 +1,171 @@
+name: TurboWrap - Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: 'Challenger satisfaction threshold (0-100)'
+        required: false
+        default: '99'
+      max_iterations:
+        description: 'Maximum challenger iterations'
+        required: false
+        default: '5'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper diff
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install TurboWrap
+        run: |
+          pip install -e .
+
+      - name: Run Code Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Set threshold from input or default
+          THRESHOLD="${{ github.event.inputs.threshold || '99' }}"
+          MAX_ITER="${{ github.event.inputs.max_iterations || '5' }}"
+
+          # Run review
+          turbowrap review \
+            --pr "${{ github.event.pull_request.html_url }}" \
+            --threshold "$THRESHOLD" \
+            --max-iterations "$MAX_ITER" \
+            --format both \
+            --output ./review-output
+
+          # Set outputs
+          echo "report_path=./review-output" >> $GITHUB_OUTPUT
+
+      - name: Upload Review Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-report
+          path: ./review-output/
+          retention-days: 30
+
+      - name: Post Review Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Find the markdown report
+            const reportDir = './review-output';
+            const files = fs.readdirSync(reportDir);
+            const mdFile = files.find(f => f.endsWith('.md'));
+
+            if (!mdFile) {
+              console.log('No markdown report found');
+              return;
+            }
+
+            const report = fs.readFileSync(path.join(reportDir, mdFile), 'utf8');
+
+            // Truncate if too long for GitHub comment
+            const maxLength = 65000;
+            let comment = report;
+            if (comment.length > maxLength) {
+              comment = comment.substring(0, maxLength) + '\n\n... (truncated)';
+            }
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('TurboWrap - Code Review Report')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment,
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment,
+              });
+            }
+
+      - name: Set Review Status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Find and parse the JSON report
+            const reportDir = './review-output';
+            const files = fs.readdirSync(reportDir);
+            const jsonFile = files.find(f => f.endsWith('.json'));
+
+            if (!jsonFile) {
+              console.log('No JSON report found');
+              return;
+            }
+
+            const report = JSON.parse(
+              fs.readFileSync(path.join(reportDir, jsonFile), 'utf8')
+            );
+
+            // Determine status based on recommendation
+            const recommendation = report.summary.recommendation;
+            let state = 'success';
+            let description = 'Review passed';
+
+            if (recommendation === 'REQUEST_CHANGES') {
+              state = 'failure';
+              description = `${report.summary.by_severity.critical} critical, ${report.summary.by_severity.high} high issues`;
+            } else if (recommendation === 'APPROVE_WITH_CHANGES') {
+              state = 'success';
+              description = `${report.summary.total_issues} issues to address`;
+            }
+
+            // Create commit status
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'TurboWrap / AI Code Review',
+            });

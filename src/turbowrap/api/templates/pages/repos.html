@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Repository - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="{ showAddModal: false }">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold">Repository</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Gestisci le tue repository</p>
+        </div>
+        <button @click="showAddModal = true"
+                class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Aggiungi Repository
+        </button>
+    </div>
+
+    <!-- Repository list -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div id="repo-list"
+             hx-get="/htmx/repos"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <div class="p-8 text-center text-gray-500">
+                <div class="animate-spin inline-block w-6 h-6 border-2 border-primary border-t-transparent rounded-full"></div>
+                <p class="mt-2">Caricamento...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add repository modal -->
+    <div x-show="showAddModal"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="showAddModal = false">
+
+        <div x-show="showAddModal"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+
+            <div class="p-6 border-b dark:border-gray-700">
+                <h3 class="text-xl font-bold">Aggiungi Repository</h3>
+            </div>
+
+            <form hx-post="/htmx/repos"
+                  hx-target="#repo-list"
+                  hx-swap="innerHTML"
+                  @htmx:after-request="showAddModal = false"
+                  class="p-6 space-y-4">
+
+                <div>
+                    <label class="block text-sm font-medium mb-2">URL GitHub</label>
+                    <input type="url" name="url" required
+                           placeholder="https://github.com/owner/repo"
+                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
+                                  bg-white dark:bg-gray-700
+                                  focus:ring-2 focus:ring-primary focus:border-transparent
+                                  placeholder-gray-400">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-2">Branch</label>
+                    <input type="text" name="branch" value="main"
+                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
+                                  bg-white dark:bg-gray-700
+                                  focus:ring-2 focus:ring-primary focus:border-transparent">
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button"
+                            @click="showAddModal = false"
+                            class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        Annulla
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                        Aggiungi
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

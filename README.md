@@ -1,4 +1,4 @@
-# 🔍 Il Revisore
+# TurboWrap
 
 Code repository analyzer powered by AI agents.
 
@@ -6,8 +6,9 @@ Code repository analyzer powered by AI agents.
 
 | Agent | Model | Purpose |
 |-------|-------|---------|
-| 🔍 Flash Analyzer | Gemini Flash | Fast repository structure analysis |
-| 🧠 Code Reviewer | Claude Opus | Deep code review (1 agent per 3 files) |
+| Flash Analyzer | Gemini Flash | Fast repository structure analysis |
+| Code Reviewer | Claude Opus | Deep code review (1 agent per 3 files) |
+| Tree Generator | Gemini Flash | Documentation tree (STRUCTURE.md) |
 
 ## Installation
 
@@ -20,7 +21,7 @@ pip install google-genai anthropic
 Set your API keys:
 
 ```bash
-# For Gemini Flash (repo analysis)
+# For Gemini Flash (repo analysis + tree)
 export GOOGLE_API_KEY="your-gemini-key"
 
 # For Claude Opus (code review)
@@ -35,19 +36,25 @@ Get your API keys:
 
 ```bash
 # Analyze a repository
-python revisore.py /path/to/repo
+python turbowrap.py /path/to/repo
 
 # Custom output directory
-python revisore.py /path/to/repo --output ./my-reviews
+python turbowrap.py /path/to/repo --output ./my-reviews
 
 # More parallel workers (for faster review)
-python revisore.py /path/to/repo --max-workers 5
+python turbowrap.py /path/to/repo --max-workers 5
 
 # Skip repo analysis (only code review with Claude)
-python revisore.py /path/to/repo --skip-flash
+python turbowrap.py /path/to/repo --skip-flash
 
 # Skip code review (only analyze structure with Gemini)
-python revisore.py /path/to/repo --skip-review
+python turbowrap.py /path/to/repo --skip-review
+
+# Generate documentation tree (STRUCTURE.md in each folder)
+python turbowrap.py /path/to/repo --tree
+
+# Tree with custom depth (default: 3 levels)
+python turbowrap.py /path/to/repo --tree --tree-depth 2
 ```
 
 ## Output
@@ -58,6 +65,21 @@ Results are saved to `<repo>/.reviews/`:
 |------|--------------|---------|
 | `REPO_DESCRIPTION.md` | Gemini Flash | Repository overview and structure |
 | `REVIEW_TODO.md` | Claude Opus | Issues and action items checklist |
+
+With `--tree` flag, `STRUCTURE.md` files are generated in each folder (up to 3 levels):
+
+```
+src/
+  STRUCTURE.md  → links to subdirectories
+  components/
+    STRUCTURE.md  → lists Components, Hooks, Utils
+    charts/
+      STRUCTURE.md  → detailed file contents
+```
+
+Each `STRUCTURE.md` contains:
+- **Files**: List of files with extracted elements (Components, Hooks, Functions, Classes)
+- **Subdirectories**: Links to nested STRUCTURE.md files
 
 ## Agent Instructions
 
@@ -71,7 +93,7 @@ Customize agent behavior by editing the markdown files in `agents/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Il Revisore                            │
+│                        TurboWrap                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌─────────────────┐     ┌─────────────────────────────┐   │
@@ -86,14 +108,15 @@ Customize agent behavior by editing the markdown files in `agents/`:
 │  │ - Tech Stack    │     │  │ BE  │ │ BE  │ │ FE  │    │   │
 │  │ - Structure     │     │  │Agent│ │Agent│ │Agent│    │   │
 │  └─────────────────┘     │  └──┬──┘ └──┬──┘ └──┬──┘    │   │
-│                          │     │       │       │        │   │
-│                          │     ▼       ▼       ▼        │   │
-│                          │  ┌─────────────────────┐     │   │
-│                          │  │   REVIEW_TODO.md    │     │   │
-│                          │  │   - Issues          │     │   │
-│                          │  │   - Action Items    │     │   │
-│                          │  └─────────────────────┘     │   │
-│                          └─────────────────────────────┘   │
+│           │              │     │       │       │        │   │
+│           ▼              │     ▼       ▼       ▼        │   │
+│  ┌─────────────────┐     │  ┌─────────────────────┐     │   │
+│  │ STRUCTURE.md    │     │  │   REVIEW_TODO.md    │     │   │
+│  │ (--tree flag)   │     │  │   - Issues          │     │   │
+│  │ - Components    │     │  │   - Action Items    │     │   │
+│  │ - Functions     │     │  └─────────────────────┘     │   │
+│  │ - Hooks         │     └─────────────────────────────┘   │
+│  └─────────────────┘                                       │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```

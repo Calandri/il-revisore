@@ -1,0 +1,71 @@
+# TurboWrap - Default Configuration
+# Override these settings in environment-specific files or via environment variables
+
+orchestrator:
+  # Timeouts
+  timeouts:
+    reviewer_timeout_seconds: 120
+    challenger_timeout_seconds: 60
+    total_timeout_seconds: 600
+
+  # Output settings
+  output:
+    format: "both"  # markdown, json, both
+    include_code_snippets: true
+    max_snippet_lines: 10
+    output_dir: "./reviews"
+
+  # Severity thresholds
+  thresholds:
+    severity_threshold: "LOW"  # Minimum severity to report
+    critical_threshold: 1      # Critical issues to trigger REQUEST_CHANGES
+    high_threshold: 3          # High issues to trigger REQUEST_CHANGES
+    score_precision: 1         # Decimal places for scores
+
+  # Repository detection
+  detection:
+    auto_detect_repo_type: true
+    fallback_repo_type: "BACKEND"
+    backend_indicators:
+      - "*.py"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - "serverless.yml"
+      - "setup.py"
+    frontend_indicators:
+      - "*.tsx"
+      - "*.ts"
+      - "*.jsx"
+      - "package.json"
+      - "next.config.js"
+      - "next.config.mjs"
+
+  # Reviewers configuration
+  reviewers:
+    max_parallel_reviewers: 3
+    backend_reviewer: "reviewer_be"
+    frontend_reviewer: "reviewer_fe"
+    functional_analyst: "analyst_func"
+    agents_dir: "./agents"
+
+  # Challenger Pattern (Dual-Reviewer System)
+  challenger:
+    enabled: true
+    reviewer_model: "claude-opus-4-5-20251101"
+    challenger_model: "gemini-3-cli"
+    satisfaction_threshold: 99  # Percentage (0-100)
+    max_iterations: 5
+    min_improvement_threshold: 2.0  # Minimum % improvement per iteration
+    stagnation_window: 2
+    forced_acceptance_threshold: 90  # Accept if above this after max iterations
+
+# API Configuration (use environment variables for secrets)
+api:
+  # Set via ANTHROPIC_API_KEY environment variable
+  anthropic_api_key: null
+  # Set via GOOGLE_API_KEY environment variable
+  google_api_key: null
+  # Set via GITHUB_TOKEN environment variable
+  github_token: null
+  # Set via LINEAR_API_KEY environment variable
+  linear_api_key: null

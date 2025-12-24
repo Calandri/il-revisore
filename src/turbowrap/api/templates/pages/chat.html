@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Chat AI - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="h-[calc(100vh-3rem)] flex flex-col" x-data="chatApp('{{ session.id if session else '' }}')">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-4">
+        <div>
+            <h1 class="text-2xl font-bold">Chat con AI</h1>
+            <p class="text-gray-500 dark:text-gray-400 text-sm" x-text="sessionId ? 'Sessione: ' + sessionId.slice(0, 8) + '...' : 'Nuova conversazione'"></p>
+        </div>
+        <button @click="newSession()"
+                class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Nuova Chat
+        </button>
+    </div>
+
+    <!-- Chat container -->
+    <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col">
+
+        <!-- Messages area -->
+        <div id="messages"
+             class="flex-1 overflow-y-auto p-4 space-y-4"
+             x-ref="messagesContainer">
+
+            {% if messages %}
+                {% for msg in messages %}
+                    {% include "components/chat_message.html" %}
+                {% endfor %}
+            {% else %}
+                <div x-show="messages.length === 0 && !isStreaming" class="text-center text-gray-500 py-12">
+                    <svg class="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                    </svg>
+                    <p class="text-lg mb-2">Inizia una conversazione</p>
+                    <p class="text-sm">Scrivi un messaggio per parlare con l'AI</p>
+                </div>
+            {% endif %}
+
+            <!-- Dynamic messages from Alpine -->
+            <template x-for="msg in messages" :key="msg.id">
+                <div class="flex gap-3 message-enter" :class="msg.role === 'user' ? 'flex-row-reverse' : ''">
+                    <!-- Avatar -->
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm shrink-0"
+                         :class="msg.role === 'user' ? 'bg-blue-500' : 'bg-purple-500'">
+                        <span x-text="msg.role === 'user' ? 'U' : 'AI'"></span>
+                    </div>
+                    <!-- Message bubble -->
+                    <div class="max-w-[80%] rounded-2xl px-4 py-3"
+                         :class="msg.role === 'user' ? 'bg-primary text-white rounded-tr-sm' : 'bg-gray-100 dark:bg-gray-700 rounded-tl-sm'">
+                        <div class="prose dark:prose-invert prose-sm max-w-none whitespace-pre-wrap" x-text="msg.content"></div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Streaming message placeholder -->
+            <div x-show="isStreaming" class="flex gap-3 message-enter">
+                <div class="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm shrink-0">
+                    AI
+                </div>
+                <div class="max-w-[80%] bg-gray-100 dark:bg-gray-700 rounded-2xl rounded-tl-sm px-4 py-3">
+                    <div class="prose dark:prose-invert prose-sm max-w-none whitespace-pre-wrap" x-text="streamingContent"></div>
+                    <span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="border-t dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800/50">
+            <form @submit.prevent="sendMessage()" class="flex gap-3">
+                <input type="text"
+                       x-model="userInput"
+                       :disabled="isStreaming"
+                       placeholder="Scrivi un messaggio..."
+                       class="flex-1 px-4 py-3 border dark:border-gray-600 rounded-xl
+                              bg-white dark:bg-gray-700
+                              focus:ring-2 focus:ring-primary focus:border-transparent
+                              disabled:opacity-50 disabled:cursor-not-allowed
+                              placeholder-gray-400">
+                <button type="submit"
+                        :disabled="isStreaming || !userInput.trim()"
+                        class="bg-primary text-white px-6 py-3 rounded-xl hover:bg-primary/90
+                               disabled:opacity-50 disabled:cursor-not-allowed transition-all
+                               flex items-center gap-2">
+                    <span x-show="!isStreaming">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        </svg>
+                    </span>
+                    <span x-show="isStreaming" class="flex items-center gap-2">
+                        <svg class="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </span>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function chatApp(initialSessionId) {
+    return {
+        sessionId: initialSessionId || null,
+        userInput: '',
+        isStreaming: false,
+        streamingContent: '',
+        messages: [],
+
+        async init() {
+            if (!this.sessionId) {
+                // Don't auto-create session, wait for first message
+            }
+        },
+
+        async newSession() {
+            try {
+                const response = await fetch('/chat/sessions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: 'New Chat' })
+                });
+                const session = await response.json();
+                this.sessionId = session.id;
+                this.messages = [];
+                history.pushState({}, '', `/chat/${session.id}`);
+            } catch (error) {
+                console.error('Error creating session:', error);
+            }
+        },
+
+        async sendMessage() {
+            if (!this.userInput.trim() || this.isStreaming) return;
+
+            const content = this.userInput;
+            this.userInput = '';
+
+            // Create session if needed
+            if (!this.sessionId) {
+                await this.newSession();
+            }
+
+            // Add user message to UI
+            this.messages.push({
+                id: Date.now(),
+                role: 'user',
+                content: content
+            });
+            this.scrollToBottom();
+
+            // Start streaming
+            this.isStreaming = true;
+            this.streamingContent = '';
+
+            try {
+                const response = await fetch(`/chat/sessions/${this.sessionId}/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: content })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.content) {
+                                    this.streamingContent += data.content;
+                                    this.scrollToBottom();
+                                }
+                            } catch (e) {}
+                        }
+                        if (line.startsWith('event: done')) {
+                            // Finalize message
+                            this.messages.push({
+                                id: Date.now(),
+                                role: 'assistant',
+                                content: this.streamingContent
+                            });
+                            this.streamingContent = '';
+                            this.isStreaming = false;
+                        }
+                        if (line.startsWith('event: error')) {
+                            console.error('Stream error');
+                            this.isStreaming = false;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                this.isStreaming = false;
+            }
+        },
+
+        scrollToBottom() {
+            this.$nextTick(() => {
+                const container = this.$refs.messagesContainer;
+                if (container) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            });
+        }
+    }
+}
+</script>
+{% endblock %}
