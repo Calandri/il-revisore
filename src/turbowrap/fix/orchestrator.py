@@ -6,6 +6,7 @@ Both CLIs have full access to the system - they do ALL the work.
 """
 
 import asyncio
+import codecs
 import json
 import logging
 import os
@@ -554,20 +555,29 @@ The reviewer found issues with the previous fix. Address this feedback:
             await process.stdin.drain()
             process.stdin.close()
 
-            # Read stdout in streaming mode
+            # Read stdout in streaming mode with incremental UTF-8 decoder
+            # This handles multi-byte UTF-8 characters split across chunk boundaries
             output_chunks: list[str] = []
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             try:
                 async with asyncio.timeout(timeout):
                     while True:
                         chunk = await process.stdout.read(1024)
                         if not chunk:
+                            # Flush remaining bytes
+                            decoded = decoder.decode(b"", final=True)
+                            if decoded:
+                                output_chunks.append(decoded)
+                                if on_chunk:
+                                    await on_chunk(decoded)
                             break
-                        decoded = chunk.decode()
-                        output_chunks.append(decoded)
-
-                        # Emit chunk for streaming
-                        if on_chunk:
-                            await on_chunk(decoded)
+                        # Incremental decode - handles partial multi-byte chars
+                        decoded = decoder.decode(chunk)
+                        if decoded:
+                            output_chunks.append(decoded)
+                            # Emit chunk for streaming
+                            if on_chunk:
+                                await on_chunk(decoded)
 
             except asyncio.TimeoutError:
                 logger.error(f"Claude CLI timed out after {timeout}s")
@@ -648,20 +658,29 @@ The reviewer found issues with the previous fix. Address this feedback:
             await process.stdin.drain()
             process.stdin.close()
 
-            # Read stdout in streaming mode
+            # Read stdout in streaming mode with incremental UTF-8 decoder
+            # This handles multi-byte UTF-8 characters split across chunk boundaries
             output_chunks: list[str] = []
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             try:
                 async with asyncio.timeout(timeout):
                     while True:
                         chunk = await process.stdout.read(1024)
                         if not chunk:
+                            # Flush remaining bytes
+                            decoded = decoder.decode(b"", final=True)
+                            if decoded:
+                                output_chunks.append(decoded)
+                                if on_chunk:
+                                    await on_chunk(decoded)
                             break
-                        decoded = chunk.decode()
-                        output_chunks.append(decoded)
-
-                        # Emit chunk for streaming
-                        if on_chunk:
-                            await on_chunk(decoded)
+                        # Incremental decode - handles partial multi-byte chars
+                        decoded = decoder.decode(chunk)
+                        if decoded:
+                            output_chunks.append(decoded)
+                            # Emit chunk for streaming
+                            if on_chunk:
+                                await on_chunk(decoded)
 
             except asyncio.TimeoutError:
                 logger.error(f"Gemini CLI timed out after {timeout}s")

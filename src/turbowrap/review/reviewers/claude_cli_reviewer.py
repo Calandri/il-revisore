@@ -6,6 +6,7 @@ explore the codebase via its own file reading capabilities.
 """
 
 import asyncio
+import codecs
 import json
 import logging
 import os
@@ -329,22 +330,30 @@ Output the complete refined review as JSON (same schema as before).
             await process.stdin.drain()
             process.stdin.close()
 
-            # Read stdout in streaming mode
+            # Read stdout in streaming mode with incremental UTF-8 decoder
+            # This handles multi-byte UTF-8 characters split across chunk boundaries
             output_chunks = []
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             try:
                 async with asyncio.timeout(self.timeout):
                     while True:
                         chunk = await process.stdout.read(1024)
                         if not chunk:
+                            # Flush remaining bytes
+                            decoded = decoder.decode(b"", final=True)
+                            if decoded:
+                                output_chunks.append(decoded)
+                                if on_chunk:
+                                    await on_chunk(decoded)
                             break
-                        decoded = chunk.decode()
-                        output_chunks.append(decoded)
-
-                        # Emit chunk for streaming
-                        if on_chunk:
-                            await on_chunk(decoded)
-
-                        logger.debug(f"Claude CLI chunk: {len(decoded)} chars")
+                        # Incremental decode - handles partial multi-byte chars
+                        decoded = decoder.decode(chunk)
+                        if decoded:
+                            output_chunks.append(decoded)
+                            # Emit chunk for streaming
+                            if on_chunk:
+                                await on_chunk(decoded)
+                            logger.debug(f"Claude CLI chunk: {len(decoded)} chars")
             except asyncio.TimeoutError:
                 logger.error(f"Claude CLI timed out after {self.timeout}s")
                 process.kill()
