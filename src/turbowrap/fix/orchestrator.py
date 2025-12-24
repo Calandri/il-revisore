@@ -2,6 +2,7 @@
 Fix Orchestrator for TurboWrap.
 
 Coordinates the fixing of issues found during code review.
+Uses Claude with Extended Thinking for higher quality fixes.
 """
 
 import asyncio
@@ -13,6 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable, Optional
 
+import anthropic
+import boto3
+from botocore.exceptions import ClientError
+
+from turbowrap.config import get_settings
 from turbowrap.db.models import Issue, IssueStatus
 from turbowrap.fix.git_utils import (
     GitError,
@@ -32,9 +38,12 @@ from turbowrap.fix.models import (
     IssueFixResult,
 )
 from turbowrap.fix.validator import validate_issue_for_fix
-from turbowrap.llm import ClaudeClient, GeminiClient, load_prompt
+from turbowrap.llm import GeminiClient, load_prompt
 
 logger = logging.getLogger(__name__)
+
+# Extended thinking budget for fix generation (20k tokens)
+FIX_THINKING_BUDGET = 20000
 
 # Type for progress callback
 ProgressCallback = Callable[[FixProgressEvent], Awaitable[None]]
@@ -53,7 +62,6 @@ class FixOrchestrator:
     def __init__(
         self,
         repo_path: Path,
-        claude_client: Optional[ClaudeClient] = None,
         gemini_client: Optional[GeminiClient] = None,
     ):
         """
@@ -61,16 +69,37 @@ class FixOrchestrator:
 
         Args:
             repo_path: Path to the repository
-            claude_client: Claude client for generating fixes
             gemini_client: Gemini client for analysis
         """
         self.repo_path = repo_path
-        self.claude = claude_client or ClaudeClient(max_tokens=8192)
+        self.settings = get_settings()
         self.gemini = gemini_client or GeminiClient()
         self.git = GitUtils(repo_path)
 
+        # Initialize Anthropic client for extended thinking
+        api_key = self.settings.agents.anthropic_api_key
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY required for fix generation")
+        self.claude_client = anthropic.Anthropic(api_key=api_key)
+        self.claude_model = self.settings.agents.claude_model
+
+        # Thinking settings
+        self.thinking_enabled = self.settings.thinking.enabled
+        self.s3_bucket = self.settings.thinking.s3_bucket
+        self.s3_region = self.settings.thinking.s3_region
+
+        # Lazy S3 client
+        self._s3_client = None
+
         # Load agent prompts
         self._load_prompts()
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
 
     def _load_prompts(self) -> None:
         """Load all required agent prompts."""
@@ -540,6 +569,103 @@ Respond ONLY with valid JSON.
             logger.warning(f"Clarification analysis failed: {e}, proceeding without")
             return None
 
+    async def _save_thinking_to_s3(
+        self,
+        thinking_content: str,
+        issue_id: str,
+        context: FixContext,
+    ) -> Optional[str]:
+        """
+        Save thinking content to S3.
+
+        Args:
+            thinking_content: The thinking text to save
+            issue_id: Issue identifier
+            context: Fix context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not thinking_content:
+            return None
+
+        try:
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"thinking/{timestamp}/fix_{issue_id}.md"
+
+            content = f"""# Extended Thinking - Fix Generation
+
+**Issue ID**: {issue_id}
+**Issue Code**: {context.issue_code}
+**File**: {context.file_path}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: {self.claude_model}
+
+---
+
+## Thinking Process
+
+{thinking_content}
+"""
+
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"Saved fix thinking to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save thinking to S3: {e}")
+            return None
+
+    def _stream_with_thinking_sync(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> tuple[str, str]:
+        """
+        Synchronous streaming with extended thinking.
+        Runs in thread pool to not block event loop.
+
+        Returns:
+            Tuple of (thinking_content, response_text)
+        """
+        thinking_content = ""
+        response_text = ""
+
+        params = {
+            "model": self.claude_model,
+            "max_tokens": 16000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        }
+
+        # Add extended thinking with 20k budget
+        if self.thinking_enabled:
+            params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": FIX_THINKING_BUDGET,
+            }
+
+        with self.claude_client.messages.stream(**params) as stream:
+            for event in stream:
+                if hasattr(event, "type"):
+                    if event.type == "content_block_delta":
+                        if hasattr(event, "delta"):
+                            if hasattr(event.delta, "type"):
+                                if event.delta.type == "thinking_delta":
+                                    thinking_content += event.delta.thinking
+                                elif event.delta.type == "text_delta":
+                                    response_text += event.delta.text
+
+        return thinking_content, response_text
+
     async def _generate_fix(
         self,
         context: FixContext,
@@ -547,7 +673,7 @@ Respond ONLY with valid JSON.
         common_fields: dict,
     ) -> tuple[Optional[str], Optional[str]]:
         """
-        Generate the fix using Claude with streaming.
+        Generate the fix using Claude with Extended Thinking (20k tokens).
 
         Returns:
             Tuple of (fixed_content, changes_summary) or (None, None) on failure
@@ -600,29 +726,45 @@ Format your response as:
 """
 
         try:
-            full_response = ""
-
             # Build system prompt based on file type
             system_prompt = self._get_system_prompt_for_file(context.file_path)
 
-            # Stream the response
-            async for chunk in self.claude.astream(prompt, system_prompt):
-                full_response += chunk
-                await emit(FixProgressEvent(
-                    type=FixEventType.FIX_ISSUE_STREAMING,
-                    content=chunk,
-                    **common_fields,
-                ))
+            # Emit that we're using extended thinking
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_ISSUE_STREAMING,
+                content="[Extended Thinking: analyzing issue with 20k token budget...]\n\n",
+                **common_fields,
+            ))
+
+            # Stream with extended thinking (runs in thread pool)
+            thinking_content, response_text = await asyncio.to_thread(
+                self._stream_with_thinking_sync,
+                system_prompt,
+                prompt,
+            )
+
+            # Save thinking to S3 in background
+            if thinking_content:
+                asyncio.create_task(
+                    self._save_thinking_to_s3(thinking_content, context.issue_id, context)
+                )
+
+            # Stream the response content to UI
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_ISSUE_STREAMING,
+                content=response_text,
+                **common_fields,
+            ))
 
             # Parse response
             file_match = re.search(
                 r"<file_content>\s*(.*?)\s*</file_content>",
-                full_response,
+                response_text,
                 re.DOTALL,
             )
             summary_match = re.search(
                 r"<changes_summary>\s*(.*?)\s*</changes_summary>",
-                full_response,
+                response_text,
                 re.DOTALL,
             )
 
@@ -632,7 +774,7 @@ Format your response as:
                 return fixed_content, changes_summary
 
             # Fallback: try to extract code block
-            code_match = re.search(r"```(?:\w+)?\s*(.*?)```", full_response, re.DOTALL)
+            code_match = re.search(r"```(?:\w+)?\s*(.*?)```", response_text, re.DOTALL)
             if code_match:
                 return code_match.group(1).strip(), "Fix applied"
 
@@ -640,5 +782,5 @@ Format your response as:
             return None, None
 
         except Exception as e:
-            logger.exception("Error generating fix")
+            logger.exception("Error generating fix with extended thinking")
             return None, None

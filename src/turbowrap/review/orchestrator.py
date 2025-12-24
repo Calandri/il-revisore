@@ -400,12 +400,13 @@ class Orchestrator:
 
         for path in directory.rglob("*"):
             if path.is_file():
-                # Check if any parent is in exclude list
-                if any(part in exclude_dirs for part in path.parts):
+                rel_path = path.relative_to(directory)
+                # Check if any parent is in exclude list (use relative path, not absolute)
+                if any(part in exclude_dirs for part in rel_path.parts):
                     continue
 
                 if FileUtils.is_text_file(path):
-                    files.append(str(path.relative_to(directory)))
+                    files.append(str(rel_path))
 
         return files[:100]  # Limit to 100 files
 
@@ -434,12 +435,13 @@ class Orchestrator:
         }
 
         for structure_file in structure_files:
-            # Skip if in excluded directory
-            if any(part in exclude_dirs for part in structure_file.parts):
+            rel_path = structure_file.relative_to(context.repo_path)
+            # Skip if in excluded directory (use relative path, not absolute)
+            if any(part in exclude_dirs for part in rel_path.parts):
                 continue
 
             try:
-                relative_path = str(structure_file.relative_to(context.repo_path))
+                relative_path = str(rel_path)
                 content = structure_file.read_text(encoding="utf-8")
                 context.structure_docs[relative_path] = content
                 logger.info(f"  Loaded: {relative_path}")
@@ -910,10 +912,11 @@ class Orchestrator:
 
         # Find all STRUCTURE.md files
         for structure_file in context.repo_path.rglob("STRUCTURE.md"):
-            # Skip ignored directories
+            rel_path = structure_file.relative_to(context.repo_path)
+            # Skip ignored directories (use relative path, not absolute)
             if any(part.startswith(".") or part in {
                 "node_modules", "__pycache__", ".venv", "venv", "dist", "build"
-            } for part in structure_file.parts):
+            } for part in rel_path.parts):
                 continue
 
             try:
