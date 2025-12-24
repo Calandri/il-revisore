@@ -370,6 +370,11 @@ Output the complete refined review as JSON (same schema as before).
             model_usage_list: list[ModelUsageInfo] = []
             output = ""
 
+            # Log raw output for debugging
+            logger.info(f"Claude CLI raw output length: {len(raw_output)}")
+            if len(raw_output) < 2000:
+                logger.debug(f"Claude CLI raw output: {raw_output}")
+
             # Parse stream-json output (NDJSON - one JSON per line)
             # Look for the "result" type line which contains final output and costs
             for line in raw_output.strip().split("\n"):
@@ -378,6 +383,7 @@ Output the complete refined review as JSON (same schema as before).
                 try:
                     event = json.loads(line)
                     event_type = event.get("type")
+                    logger.debug(f"Stream event type: {event_type}")
 
                     if event_type == "result":
                         # Final result with content and model usage
@@ -414,9 +420,11 @@ Output the complete refined review as JSON (same schema as before).
             # Fallback if no result found
             if not output:
                 logger.warning("No result found in stream-json output, using raw")
+                logger.warning(f"Raw output first 500 chars: {raw_output[:500]}")
                 output = raw_output
 
             logger.info(f"Claude CLI completed, output length: {len(output)}")
+            logger.info(f"Output first 200 chars: {output[:200] if output else 'EMPTY'}")
             return output, model_usage_list
 
         except FileNotFoundError:
