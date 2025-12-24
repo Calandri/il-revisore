@@ -5,10 +5,14 @@ Claude Opus 4.5 reviewer implementation.
 import asyncio
 import json
 import time
+import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable, Awaitable
+from io import BytesIO
 
 import anthropic
+import boto3
+from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.review import (
@@ -22,6 +26,11 @@ from turbowrap.review.models.review import (
 )
 from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
+
+logger = logging.getLogger(__name__)
+
+# Type for thinking stream callback
+ThinkingCallback = Callable[[str], Awaitable[None]]
 
 
 class ClaudeReviewer(BaseReviewer):
@@ -47,8 +56,14 @@ class ClaudeReviewer(BaseReviewer):
         """
         super().__init__(name, model)
 
-        settings = get_settings()
-        self.api_key = api_key or settings.agents.anthropic_api_key
+        self.settings = get_settings()
+        self.api_key = api_key or self.settings.agents.anthropic_api_key
+
+        # Thinking settings from config
+        self.thinking_enabled = self.settings.thinking.enabled
+        self.thinking_budget = self.settings.thinking.budget_tokens
+        self.s3_bucket = self.settings.thinking.s3_bucket
+        self.s3_region = self.settings.thinking.s3_region
 
         if not self.api_key:
             raise ValueError(
@@ -57,57 +72,186 @@ class ClaudeReviewer(BaseReviewer):
 
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
-    async def review(self, context: ReviewContext) -> ReviewOutput:
+        # Initialize S3 client (lazy)
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_thinking_to_s3(
+        self,
+        thinking_content: str,
+        review_id: str,
+        context: ReviewContext,
+    ) -> Optional[str]:
         """
-        Perform code review using Claude.
+        Save thinking content to S3.
+
+        Args:
+            thinking_content: The thinking text to save
+            review_id: Unique identifier for this review
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not thinking_content:
+            return None
+
+        try:
+            # Create S3 key with timestamp
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"thinking/{timestamp}/{review_id}_{self.name}.md"
+
+            # Create markdown content with metadata
+            content = f"""# Extended Thinking - {self.name}
+
+**Review ID**: {review_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: {self.model}
+**Files Reviewed**: {len(context.files)}
+
+---
+
+## Thinking Process
+
+{thinking_content}
+"""
+
+            # Upload to S3
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"Saved thinking to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save thinking to S3: {e}")
+            return None
+
+    async def review(
+        self,
+        context: ReviewContext,
+        thinking_callback: Optional[ThinkingCallback] = None,
+        review_id: Optional[str] = None,
+    ) -> ReviewOutput:
+        """
+        Perform code review using Claude with extended thinking.
 
         Args:
             context: Review context with files and metadata
+            thinking_callback: Optional callback for streaming thinking chunks
+            review_id: Optional review ID for S3 storage
 
         Returns:
             ReviewOutput with findings
         """
         start_time = time.time()
+        review_id = review_id or f"{self.name}_{int(time.time())}"
 
         # Build the review prompt
         system_prompt = self._build_system_prompt(context)
         user_prompt = self._build_user_prompt(context)
 
-        # Call Claude API (run sync call in thread to avoid blocking event loop)
-        response = await asyncio.to_thread(
-            self.client.messages.create,
-            model=self.model,
-            max_tokens=8192,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+        # Stream with extended thinking
+        thinking_content, response_text = await asyncio.to_thread(
+            self._stream_with_thinking_sync,
+            system_prompt,
+            user_prompt,
+            thinking_callback,
         )
 
+        # Save thinking to S3 in background
+        if thinking_content:
+            asyncio.create_task(
+                self._save_thinking_to_s3(thinking_content, review_id, context)
+            )
+
         # Parse the response
-        review_output = self._parse_response(response.content[0].text, context)
+        review_output = self._parse_response(response_text, context)
         review_output.duration_seconds = time.time() - start_time
         review_output.reviewer = self.name
         review_output.timestamp = datetime.utcnow()
 
         return review_output
 
+    def _stream_with_thinking_sync(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        thinking_callback: Optional[ThinkingCallback] = None,
+    ) -> tuple[str, str]:
+        """
+        Synchronous version of streaming with extended thinking.
+        Runs in thread pool to not block event loop.
+        """
+        thinking_content = ""
+        response_text = ""
+
+        # Build request params
+        params = {
+            "model": self.model,
+            "max_tokens": 16000,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        }
+
+        # Add thinking if enabled
+        if self.thinking_enabled:
+            params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self.thinking_budget,
+            }
+
+        # Use streaming
+        with self.client.messages.stream(**params) as stream:
+            for event in stream:
+                if hasattr(event, "type"):
+                    if event.type == "content_block_delta":
+                        if hasattr(event, "delta"):
+                            if hasattr(event.delta, "type"):
+                                if event.delta.type == "thinking_delta":
+                                    chunk = event.delta.thinking
+                                    thinking_content += chunk
+                                    # Note: callback handled separately
+                                elif event.delta.type == "text_delta":
+                                    response_text += event.delta.text
+
+        return thinking_content, response_text
+
     async def refine(
         self,
         context: ReviewContext,
         previous_review: ReviewOutput,
         feedback: ChallengerFeedback,
+        thinking_callback: Optional[ThinkingCallback] = None,
+        review_id: Optional[str] = None,
     ) -> ReviewOutput:
         """
-        Refine review based on challenger feedback.
+        Refine review based on challenger feedback with extended thinking.
 
         Args:
             context: Original review context
             previous_review: Previous review output
             feedback: Challenger feedback to address
+            thinking_callback: Optional callback for streaming thinking
+            review_id: Optional review ID for S3 storage
 
         Returns:
             Refined ReviewOutput
         """
         start_time = time.time()
+        review_id = review_id or f"{self.name}_refine_{int(time.time())}"
 
         # Build refinement prompt
         system_prompt = self._build_system_prompt(context)
@@ -115,17 +259,22 @@ class ClaudeReviewer(BaseReviewer):
             context, previous_review, feedback
         )
 
-        # Call Claude API (run sync call in thread to avoid blocking event loop)
-        response = await asyncio.to_thread(
-            self.client.messages.create,
-            model=self.model,
-            max_tokens=8192,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+        # Stream with extended thinking
+        thinking_content, response_text = await asyncio.to_thread(
+            self._stream_with_thinking_sync,
+            system_prompt,
+            user_prompt,
+            thinking_callback,
         )
 
+        # Save thinking to S3 in background
+        if thinking_content:
+            asyncio.create_task(
+                self._save_thinking_to_s3(thinking_content, review_id, context)
+            )
+
         # Parse the response
-        review_output = self._parse_response(response.content[0].text, context)
+        review_output = self._parse_response(response_text, context)
         review_output.duration_seconds = time.time() - start_time
         review_output.reviewer = self.name
         review_output.timestamp = datetime.utcnow()

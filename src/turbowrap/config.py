@@ -153,6 +153,30 @@ class ChallengerSettings(BaseSettings):
     )
 
 
+class ThinkingSettings(BaseSettings):
+    """Extended thinking configuration for Claude Opus."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_THINKING_")
+
+    enabled: bool = Field(default=True, description="Enable extended thinking")
+    budget_tokens: int = Field(
+        default=10000, ge=1000, le=50000,
+        description="Token budget for thinking (1k-50k)"
+    )
+    s3_bucket: str = Field(
+        default="turbowrap-thinking",
+        description="S3 bucket for storing thinking logs"
+    )
+    s3_region: str = Field(
+        default="eu-west-3",
+        description="AWS region for S3 bucket"
+    )
+    stream_to_websocket: bool = Field(
+        default=True,
+        description="Stream thinking to WebSocket clients"
+    )
+
+
 class Settings(BaseSettings):
     """Main TurboWrap settings."""
 
@@ -169,6 +193,7 @@ class Settings(BaseSettings):
     server: ServerSettings = Field(default_factory=ServerSettings)
     challenger: ChallengerSettings = Field(default_factory=ChallengerSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    thinking: ThinkingSettings = Field(default_factory=ThinkingSettings)
 
     # Paths
     repos_dir: Path = Field(
