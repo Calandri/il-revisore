@@ -322,6 +322,18 @@ function reviewApp() {
                     this.statusMessage = 'Review avviata - agenti in preparazione...';
                     break;
 
+                case 'structure_generation_started':
+                    this.statusMessage = '📝 Generazione STRUCTURE.md in corso con Gemini Flash...';
+                    break;
+
+                case 'structure_generation_progress':
+                    this.statusMessage = data.message || 'Analisi repository con Gemini Flash...';
+                    break;
+
+                case 'structure_generation_completed':
+                    this.statusMessage = '✅ STRUCTURE.md generato - avvio review...';
+                    break;
+
                 case 'reviewer_started':
                     this.agents[data.reviewer_name] = {
                         displayName: data.reviewer_display_name || data.reviewer_name,

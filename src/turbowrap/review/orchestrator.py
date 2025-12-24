@@ -38,6 +38,7 @@ from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResul
 from turbowrap.review.utils.repo_detector import RepoDetector, detect_repo_type
 from turbowrap.review.utils.git_utils import GitUtils
 from turbowrap.review.utils.file_utils import FileUtils
+from turbowrap.tools.structure_generator import StructureGenerator
 
 
 logger = logging.getLogger(__name__)
@@ -97,8 +98,8 @@ class Orchestrator:
             message="Starting code review...",
         ))
 
-        # Step 1: Prepare context
-        context = await self._prepare_context(request)
+        # Step 1: Prepare context (may auto-generate STRUCTURE.md)
+        context = await self._prepare_context(request, emit)
 
         # Step 2: Detect repository type
         repo_type = self._detect_repo_type(context.files, context.structure_docs)
@@ -278,8 +279,20 @@ class Orchestrator:
 
         return report
 
-    async def _prepare_context(self, request: ReviewRequest) -> ReviewContext:
-        """Prepare the review context from the request."""
+    async def _prepare_context(
+        self,
+        request: ReviewRequest,
+        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+    ) -> ReviewContext:
+        """Prepare the review context from the request.
+
+        Args:
+            request: Review request
+            emit: Optional callback for progress events
+
+        Returns:
+            ReviewContext with loaded files/structure docs
+        """
         context = ReviewContext(request=request)
         source = request.source
         mode = request.options.mode
@@ -298,8 +311,17 @@ class Orchestrator:
         # INITIAL mode: Only use STRUCTURE.md, no code files
         if mode == ReviewMode.INITIAL:
             logger.info("INITIAL mode: Reviewing architecture via STRUCTURE.md files only")
+
+            # AUTO-GENERATE STRUCTURE.md if missing
             if not context.structure_docs:
-                logger.warning("No STRUCTURE.md files found! Initial review may be limited.")
+                logger.info("No STRUCTURE.md files found - auto-generating with Gemini Flash...")
+                await self._auto_generate_structure(context, emit)
+                # Reload after generation
+                self._load_structure_docs(context)
+
+                if not context.structure_docs:
+                    logger.warning("Structure generation completed but no files found!")
+
             # No file contents loaded - reviewers use only structure docs
 
         # DIFF mode: Load only changed/specified files
@@ -420,6 +442,67 @@ class Orchestrator:
             logger.info(f"Found {len(context.structure_docs)} STRUCTURE.md file(s)")
         else:
             logger.info("No STRUCTURE.md files found")
+
+    async def _auto_generate_structure(
+        self,
+        context: ReviewContext,
+        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+    ) -> None:
+        """
+        Auto-generate STRUCTURE.md files using Gemini Flash.
+
+        Called when INITIAL mode review is requested but no STRUCTURE.md exists.
+
+        Args:
+            context: Review context with repo_path set
+            emit: Optional callback for progress events
+        """
+        if not context.repo_path:
+            logger.error("Cannot generate STRUCTURE.md: no repo_path set")
+            return
+
+        # Emit start event
+        if emit:
+            await emit(ProgressEvent(
+                type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
+                message=f"Generating STRUCTURE.md for {context.repo_path.name}...",
+            ))
+
+        try:
+            # Create generator
+            generator = StructureGenerator(str(context.repo_path))
+
+            # Emit progress update
+            if emit:
+                await emit(ProgressEvent(
+                    type=ProgressEventType.STRUCTURE_GENERATION_PROGRESS,
+                    message="Analyzing repository structure with Gemini Flash...",
+                ))
+
+            # Run generation (sync method, run in executor)
+            loop = asyncio.get_event_loop()
+            generated_files = await loop.run_in_executor(
+                None,
+                lambda: generator.generate(verbose=True)
+            )
+
+            # Emit completion
+            if emit:
+                await emit(ProgressEvent(
+                    type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
+                    message=f"Generated {len(generated_files)} STRUCTURE.md file(s)",
+                ))
+
+            logger.info(f"Auto-generated {len(generated_files)} STRUCTURE.md files")
+
+        except Exception as e:
+            logger.error(f"Failed to auto-generate STRUCTURE.md: {e}")
+            if emit:
+                await emit(ProgressEvent(
+                    type=ProgressEventType.REVIEW_ERROR,
+                    error=f"Structure generation failed: {str(e)}",
+                    message="Failed to generate STRUCTURE.md - proceeding without it",
+                ))
 
     async def _load_file_contents(self, context: ReviewContext) -> None:
         """Load content of files in context."""

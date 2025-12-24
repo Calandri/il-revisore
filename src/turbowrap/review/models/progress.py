@@ -15,6 +15,11 @@ class ProgressEventType(str, Enum):
     REVIEW_COMPLETED = "review_completed"
     REVIEW_ERROR = "review_error"
 
+    # Structure generation (auto-generate STRUCTURE.md)
+    STRUCTURE_GENERATION_STARTED = "structure_generation_started"
+    STRUCTURE_GENERATION_PROGRESS = "structure_generation_progress"
+    STRUCTURE_GENERATION_COMPLETED = "structure_generation_completed"
+
     # Reviewer events
     REVIEWER_STARTED = "reviewer_started"
     REVIEWER_ITERATION = "reviewer_iteration"
