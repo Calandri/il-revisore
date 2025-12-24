@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: eu-west-3
   ECR_REPOSITORY: turbowrap
-  EC2_INSTANCE_ID: i-07a061cb0920a7ff3
+  EC2_INSTANCE_ID: i-02cac4811086c1f92
 
 jobs:
   deploy:
