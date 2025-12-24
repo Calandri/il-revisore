@@ -2,6 +2,7 @@
 Claude Opus 4.5 reviewer implementation.
 """
 
+import asyncio
 import json
 import time
 from datetime import datetime
@@ -72,8 +73,9 @@ class ClaudeReviewer(BaseReviewer):
         system_prompt = self._build_system_prompt(context)
         user_prompt = self._build_user_prompt(context)
 
-        # Call Claude API
-        response = self.client.messages.create(
+        # Call Claude API (run sync call in thread to avoid blocking event loop)
+        response = await asyncio.to_thread(
+            self.client.messages.create,
             model=self.model,
             max_tokens=8192,
             system=system_prompt,
@@ -113,8 +115,9 @@ class ClaudeReviewer(BaseReviewer):
             context, previous_review, feedback
         )
 
-        # Call Claude API
-        response = self.client.messages.create(
+        # Call Claude API (run sync call in thread to avoid blocking event loop)
+        response = await asyncio.to_thread(
+            self.client.messages.create,
             model=self.model,
             max_tokens=8192,
             system=system_prompt,

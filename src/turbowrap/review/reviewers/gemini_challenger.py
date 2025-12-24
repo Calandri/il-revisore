@@ -2,6 +2,7 @@
 Gemini 3 CLI challenger implementation.
 """
 
+import asyncio
 import json
 import subprocess
 import tempfile
@@ -258,7 +259,10 @@ Output ONLY the JSON, no markdown or explanations.
             from google import genai
 
             client = genai.Client(api_key=self.api_key)
-            response = client.models.generate_content(
+
+            # Run sync call in thread to avoid blocking event loop
+            response = await asyncio.to_thread(
+                client.models.generate_content,
                 model="gemini-3-flash-preview",
                 contents=prompt,
             )
