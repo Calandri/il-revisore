@@ -2,7 +2,7 @@
 name: flash_analyzer
 version: "2025-12-24"
 description: Comprehensive repository analyzer for understanding codebase structure, architecture, and tech stack.
-model: gemini-2.0-flash
+model: gemini-3-flash-preview
 color: yellow
 ---
 

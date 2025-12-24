@@ -125,7 +125,7 @@ function chatApp(initialSessionId) {
 
         async newSession() {
             try {
-                const response = await fetch('/chat/sessions', {
+                const response = await fetch('/api/chat/sessions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ title: 'New Chat' })
@@ -163,7 +163,7 @@ function chatApp(initialSessionId) {
             this.streamingContent = '';
 
             try {
-                const response = await fetch(`/chat/sessions/${this.sessionId}/stream`, {
+                const response = await fetch(`/api/chat/sessions/${this.sessionId}/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content: content })

@@ -33,7 +33,7 @@ class GeminiChallenger(BaseReviewer):
     def __init__(
         self,
         name: str = "challenger",
-        model: str = "gemini-3-cli",
+        model: str = "gemini-3-flash-preview",
         api_key: Optional[str] = None,
         cli_path: str = "gemini",
     ):
@@ -270,15 +270,17 @@ Output ONLY the JSON, no markdown blocks or explanations.
     async def _call_gemini_api_fallback(self, prompt: str) -> str:
         """
         Fallback to direct Gemini API call if CLI fails.
+
+        Uses the new google-genai SDK (not deprecated google.generativeai).
         """
         try:
-            import google.generativeai as genai
+            from google import genai
 
-            if self.api_key:
-                genai.configure(api_key=self.api_key)
-
-            model = genai.GenerativeModel("gemini-3-flash-preview")
-            response = model.generate_content(prompt)
+            client = genai.Client(api_key=self.api_key)
+            response = client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt,
+            )
 
             return response.text
 

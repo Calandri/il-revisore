@@ -58,6 +58,11 @@ class AgentSettings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    github_token: str | None = Field(
+        default=None,
+        alias="GITHUB_TOKEN",
+        description="GitHub token for private repositories"
+    )
 
     @property
     def effective_google_key(self) -> str | None:

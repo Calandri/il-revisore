@@ -271,7 +271,7 @@ function reviewApp() {
 
             try {
                 // Connect to SSE endpoint with configuration
-                const response = await fetch(`/tasks/${this.selectedRepo}/review/stream`, {
+                const response = await fetch(`/api/tasks/${this.selectedRepo}/review/stream`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

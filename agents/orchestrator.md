@@ -254,7 +254,7 @@ orchestrator:
   challenger:
     enabled: true
     reviewer_model: "claude-opus-4-5-20251101"
-    challenger_model: "gemini-3-cli"
+    challenger_model: "gemini-3-flash-preview"
     satisfaction_threshold: 99
     max_iterations: 5
 ```

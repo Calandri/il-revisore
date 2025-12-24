@@ -108,12 +108,32 @@ def get_local_path(url: str) -> Path:
     return settings.repos_dir / f"{repo_info.name}-{repo_hash}"
 
 
-def clone_repo(url: str, branch: str = "main") -> Path:
+def _get_auth_url(url: str, token: str | None = None) -> str:
+    """Build authenticated URL if token provided.
+
+    Args:
+        url: GitHub repository URL.
+        token: Optional GitHub token.
+
+    Returns:
+        URL with embedded token or original URL.
+    """
+    if not token:
+        return url
+
+    # Convert https://github.com/owner/repo.git to https://token@github.com/owner/repo.git
+    if url.startswith("https://github.com/"):
+        return url.replace("https://github.com/", f"https://{token}@github.com/")
+    return url
+
+
+def clone_repo(url: str, branch: str = "main", token: str | None = None) -> Path:
     """Clone a GitHub repository.
 
     Args:
         url: GitHub repository URL.
         branch: Branch to clone.
+        token: Optional GitHub token for private repos.
 
     Returns:
         Path to cloned repository.
@@ -125,27 +145,33 @@ def clone_repo(url: str, branch: str = "main") -> Path:
 
     if local_path.exists():
         # Already cloned, just pull
-        return pull_repo(local_path)
+        return pull_repo(local_path, token)
 
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Use authenticated URL if token provided
+    clone_url = _get_auth_url(url, token)
+
     try:
         subprocess.run(
-            ["git", "clone", "--branch", branch, "--single-branch", url, str(local_path)],
+            ["git", "clone", "--branch", branch, "--single-branch", clone_url, str(local_path)],
             check=True,
             capture_output=True,
             text=True,
         )
         return local_path
     except subprocess.CalledProcessError as e:
-        raise CloneError(f"Failed to clone {url}: {e.stderr}") from e
+        # Mask token in error message
+        error_msg = e.stderr.replace(token, "***") if token else e.stderr
+        raise CloneError(f"Failed to clone {url}: {error_msg}") from e
 
 
-def pull_repo(repo_path: Path) -> Path:
+def pull_repo(repo_path: Path, token: str | None = None) -> Path:
     """Pull latest changes for a repository.
 
     Args:
         repo_path: Path to local repository.
+        token: Optional GitHub token for private repos.
 
     Returns:
         Repository path.
@@ -157,16 +183,49 @@ def pull_repo(repo_path: Path) -> Path:
         raise SyncError(f"Repository not found: {repo_path}")
 
     try:
-        subprocess.run(
-            ["git", "pull", "--ff-only"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        # If token provided, temporarily update remote URL
+        if token:
+            # Get current remote URL
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            original_url = result.stdout.strip()
+            auth_url = _get_auth_url(original_url, token)
+
+            # Temporarily set authenticated URL
+            subprocess.run(
+                ["git", "remote", "set-url", "origin", auth_url],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+
+        try:
+            subprocess.run(
+                ["git", "pull", "--ff-only"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            # Restore original URL (without token) for security
+            if token:
+                subprocess.run(
+                    ["git", "remote", "set-url", "origin", original_url],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+
         return repo_path
     except subprocess.CalledProcessError as e:
-        raise SyncError(f"Failed to pull: {e.stderr}") from e
+        error_msg = e.stderr.replace(token, "***") if token else e.stderr
+        raise SyncError(f"Failed to pull: {error_msg}") from e
 
 
 def push_repo(repo_path: Path, message: str = "Update") -> None:

@@ -22,6 +22,11 @@ class RepoCreate(BaseModel):
         max_length=100,
         description="Branch to clone",
     )
+    token: str | None = Field(
+        default=None,
+        min_length=1,
+        description="GitHub token for private repositories (overrides env GITHUB_TOKEN)",
+    )
 
     @field_validator("url")
     @classmethod

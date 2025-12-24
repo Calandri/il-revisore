@@ -27,10 +27,15 @@ def clone_repo(
     data: RepoCreate,
     db: Session = Depends(get_db),
 ):
-    """Clone a new repository."""
+    """Clone a new repository.
+
+    For private repos, provide a GitHub token via:
+    - `token` field in request body, OR
+    - `GITHUB_TOKEN` environment variable
+    """
     manager = RepoManager(db)
     try:
-        repo = manager.clone(data.url, data.branch)
+        repo = manager.clone(data.url, data.branch, data.token)
         return repo
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))

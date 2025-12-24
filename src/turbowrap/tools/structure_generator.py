@@ -929,3 +929,151 @@ Be concise. Only list the most important elements (max 10).
             print(f"   Total: {self.total_lines:,} lines, {self.total_tokens:,} tokens")
 
         return generated_files
+
+    def check_stale_structures(self) -> list[Path]:
+        """
+        Find STRUCTURE.md files that are stale (directory has newer files).
+
+        Returns:
+            List of directories whose STRUCTURE.md needs regeneration
+        """
+        stale_dirs: list[Path] = []
+
+        # Find all STRUCTURE.md files
+        for structure_file in self.repo_path.rglob(STRUCTURE_FILENAME):
+            if should_ignore(structure_file.parent):
+                continue
+
+            structure_mtime = structure_file.stat().st_mtime
+
+            # Check if any code file in the directory is newer
+            parent_dir = structure_file.parent
+            is_stale = False
+
+            for code_file in parent_dir.iterdir():
+                if not code_file.is_file():
+                    continue
+
+                suffix = code_file.suffix.lower()
+                if suffix not in BE_EXTENSIONS and suffix not in FE_EXTENSIONS:
+                    continue
+
+                if code_file.stat().st_mtime > structure_mtime:
+                    is_stale = True
+                    break
+
+            if is_stale:
+                try:
+                    rel_path = parent_dir.relative_to(self.repo_path)
+                    stale_dirs.append(rel_path if str(rel_path) != "." else Path("."))
+                except ValueError:
+                    stale_dirs.append(Path("."))
+
+        return stale_dirs
+
+    def regenerate_stale(self, verbose: bool = True) -> list[Path]:
+        """
+        Check and regenerate only stale STRUCTURE.md files.
+
+        Args:
+            verbose: Print progress messages
+
+        Returns:
+            List of regenerated STRUCTURE.md file paths
+        """
+        if verbose:
+            print("\n[StructureGenerator] Checking for stale STRUCTURE.md files...")
+
+        stale_dirs = self.check_stale_structures()
+
+        if not stale_dirs:
+            if verbose:
+                print("   All STRUCTURE.md files are up to date.")
+            return []
+
+        if verbose:
+            print(f"   Found {len(stale_dirs)} stale directories:")
+            for d in stale_dirs:
+                print(f"      - {d}/")
+
+        # Detect repo type for metadata
+        repo_type = self.detect_repo_type()
+
+        regenerated: list[Path] = []
+
+        for stale_dir in stale_dirs:
+            if verbose:
+                print(f"\n   Regenerating {stale_dir}/STRUCTURE.md...")
+
+            # Build DirectoryStructure for this directory
+            full_path = self.repo_path / stale_dir if str(stale_dir) != "." else self.repo_path
+
+            dir_struct = DirectoryStructure(
+                path=stale_dir,
+                depth=len(stale_dir.parts) + 1 if str(stale_dir) != "." else 1
+            )
+
+            # Find files in directory
+            try:
+                for item in full_path.iterdir():
+                    if item.is_file() and not should_ignore(item):
+                        suffix = item.suffix.lower()
+                        rel_file = item.relative_to(self.repo_path)
+                        if suffix in BE_EXTENSIONS:
+                            dir_struct.files.append(
+                                FileStructure(path=rel_file, file_type="be")
+                            )
+                        elif suffix in FE_EXTENSIONS:
+                            dir_struct.files.append(
+                                FileStructure(path=rel_file, file_type="fe")
+                            )
+            except PermissionError:
+                continue
+
+            # Find subdirectories
+            try:
+                for item in sorted(full_path.iterdir()):
+                    if item.is_dir() and not should_ignore(item):
+                        sub_rel = item.relative_to(self.repo_path)
+                        sub_struct = DirectoryStructure(
+                            path=sub_rel,
+                            depth=dir_struct.depth + 1
+                        )
+                        # Just count files for link description
+                        for sub_item in item.iterdir():
+                            if sub_item.is_file() and not should_ignore(sub_item):
+                                suffix = sub_item.suffix.lower()
+                                if suffix in BE_EXTENSIONS or suffix in FE_EXTENSIONS:
+                                    sub_struct.files.append(
+                                        FileStructure(
+                                            path=sub_item.relative_to(self.repo_path),
+                                            file_type="be" if suffix in BE_EXTENSIONS else "fe"
+                                        )
+                                    )
+                        if sub_struct.files:
+                            dir_struct.subdirectories.append(sub_struct)
+            except PermissionError:
+                pass
+
+            # Extract file elements
+            for file_struct in dir_struct.files:
+                self._extract_file_elements(file_struct)
+
+            # Generate STRUCTURE.md
+            is_root = str(stale_dir) == "."
+            if is_root:
+                self.extract_metadata()
+
+            try:
+                output_path = self._generate_structure_md(dir_struct, repo_type, is_root=is_root)
+                regenerated.append(output_path)
+                if verbose:
+                    print(f"      ✓ {output_path.relative_to(self.repo_path)}")
+            except Exception as e:
+                if verbose:
+                    print(f"      ✗ Error: {e}")
+
+        if verbose:
+            print(f"\n   Regenerated {len(regenerated)} STRUCTURE.md files")
+
+        return regenerated

@@ -256,7 +256,7 @@ function statusApp() {
             this.loading = true;
             try {
                 // Fetch full status
-                const fullRes = await fetch('/status/full');
+                const fullRes = await fetch('/api/status/full');
                 const full = await fullRes.json();
 
                 this.serverStatus = full.server?.status || 'error';
@@ -271,7 +271,7 @@ function statusApp() {
                 }
 
                 // Fetch config
-                const configRes = await fetch('/status/config');
+                const configRes = await fetch('/api/status/config');
                 this.config = await configRes.json();
 
                 this.lastUpdate = new Date().toLocaleTimeString('it-IT');
@@ -285,7 +285,7 @@ function statusApp() {
         async pingClaude() {
             this.pingLoading.claude = true;
             try {
-                const res = await fetch('/status/ping/claude');
+                const res = await fetch('/api/status/ping/claude');
                 this.claude = await res.json();
             } catch (e) {
                 this.claude = { status: 'error', message: 'Network error' };
@@ -296,7 +296,7 @@ function statusApp() {
         async pingGemini() {
             this.pingLoading.gemini = true;
             try {
-                const res = await fetch('/status/ping/gemini');
+                const res = await fetch('/api/status/ping/gemini');
                 this.gemini = await res.json();
             } catch (e) {
                 this.gemini = { status: 'error', message: 'Network error' };

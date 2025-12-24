@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block title %}Impostazioni - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="settingsApp()">
+    <!-- Header -->
+    <div>
+        <h1 class="text-3xl font-bold">Impostazioni</h1>
+        <p class="text-gray-500 dark:text-gray-400 mt-1">Configura TurboWrap</p>
+    </div>
+
+    <!-- GitHub Token Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-6 border-b dark:border-gray-700">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gray-900 dark:bg-white rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white dark:text-gray-900" fill="currentColor" viewBox="0 0 24 24">
+                        <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-semibold">GitHub Token</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Per clonare repository private</p>
+                </div>
+                <div class="ml-auto">
+                    <span x-show="tokenSet" class="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium">
+                        Configurato
+                    </span>
+                    <span x-show="!tokenSet" class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-sm font-medium">
+                        Non configurato
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6">
+            <!-- Info box -->
+            <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div class="flex gap-3">
+                    <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-sm text-blue-700 dark:text-blue-300">
+                        <p class="font-medium mb-1">Come ottenere un token GitHub:</p>
+                        <ol class="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400">
+                            <li>Vai su GitHub Settings > Developer settings > Personal access tokens</li>
+                            <li>Genera un nuovo token (classic) con permesso <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">repo</code></li>
+                            <li>Copia e incolla il token qui sotto</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Token form -->
+            <form @submit.prevent="saveToken()" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Personal Access Token</label>
+                    <div class="relative">
+                        <input :type="showToken ? 'text' : 'password'"
+                               x-model="token"
+                               placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                               class="w-full px-4 py-3 pr-12 border dark:border-gray-600 rounded-lg
+                                      bg-white dark:bg-gray-700
+                                      focus:ring-2 focus:ring-primary focus:border-transparent
+                                      placeholder-gray-400 font-mono">
+                        <button type="button"
+                                @click="showToken = !showToken"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <svg x-show="!showToken" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <svg x-show="showToken" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button type="submit"
+                            :disabled="saving || !token"
+                            class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                        <svg x-show="saving" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span x-text="saving ? 'Salvataggio...' : 'Salva Token'"></span>
+                    </button>
+
+                    <button type="button"
+                            x-show="tokenSet"
+                            @click="deleteToken()"
+                            :disabled="deleting"
+                            class="px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50">
+                        <span x-text="deleting ? 'Eliminazione...' : 'Elimina Token'"></span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Success message -->
+            <div x-show="message"
+                 x-transition
+                 class="mt-4 p-3 rounded-lg"
+                 :class="messageType === 'success' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'">
+                <span x-text="message"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Models Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-6 border-b dark:border-gray-700">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-semibold">Modelli AI</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Configura i modelli utilizzati per review e analisi</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <!-- Claude Model -->
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                        <span class="text-orange-600 dark:text-orange-400 font-bold text-sm">C</span>
+                    </div>
+                    <div>
+                        <p class="font-medium">Claude (Anthropic)</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Code review approfondita</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text"
+                           x-model="claudeModel"
+                           @change="saveModel('claude', claudeModel)"
+                           class="px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-mono w-64">
+                    <span x-show="modelSaving.claude" class="text-green-500">
+                        <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Gemini Flash Model -->
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                        <span class="text-blue-600 dark:text-blue-400 font-bold text-sm">G</span>
+                    </div>
+                    <div>
+                        <p class="font-medium">Gemini Flash (Google)</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Analisi veloce, generazione STRUCTURE.md</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text"
+                           x-model="geminiModel"
+                           @change="saveModel('gemini', geminiModel)"
+                           class="px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-mono w-64">
+                    <span x-show="modelSaving.gemini" class="text-green-500">
+                        <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Gemini Pro Model -->
+            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                        <span class="text-green-600 dark:text-green-400 font-bold text-sm">GP</span>
+                    </div>
+                    <div>
+                        <p class="font-medium">Gemini Pro (Google)</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Challenger loop, ragionamento complesso</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text"
+                           x-model="geminiProModel"
+                           @change="saveModel('gemini-pro', geminiProModel)"
+                           class="px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-mono w-64">
+                    <span x-show="modelSaving.geminiPro" class="text-green-500">
+                        <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Model saved message -->
+            <div x-show="modelMessage"
+                 x-transition
+                 class="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm">
+                <span x-text="modelMessage"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Environment Variables Info -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-6 border-b dark:border-gray-700">
+            <h2 class="text-xl font-semibold">Variabili d'Ambiente</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Configurazione alternativa via environment</p>
+        </div>
+
+        <div class="p-6">
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 font-mono text-sm overflow-x-auto">
+                <div class="text-gray-500 dark:text-gray-400"># API Keys</div>
+                <div><span class="text-purple-600 dark:text-purple-400">ANTHROPIC_API_KEY</span>=<span class="text-gray-400">sk-ant-...</span></div>
+                <div><span class="text-purple-600 dark:text-purple-400">GOOGLE_API_KEY</span>=<span class="text-gray-400">AIza...</span></div>
+                <div><span class="text-purple-600 dark:text-purple-400">GITHUB_TOKEN</span>=<span class="text-gray-400">ghp_...</span></div>
+                <div class="mt-2 text-gray-500 dark:text-gray-400"># Database (opzionale)</div>
+                <div><span class="text-purple-600 dark:text-purple-400">TURBOWRAP_DB_URL</span>=<span class="text-gray-400">postgresql://...</span></div>
+            </div>
+            <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                Le impostazioni salvate nel database hanno priorita sulle variabili d'ambiente.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function settingsApp() {
+    return {
+        // GitHub Token
+        token: '',
+        tokenSet: {{ 'true' if github_token_set else 'false' }},
+        showToken: false,
+        saving: false,
+        deleting: false,
+        message: '',
+        messageType: 'success',
+
+        // AI Models
+        claudeModel: '{{ claude_model or "" }}',
+        geminiModel: '{{ gemini_model or "" }}',
+        geminiProModel: '{{ gemini_pro_model or "" }}',
+        modelSaving: { claude: false, gemini: false, geminiPro: false },
+        modelMessage: '',
+
+        async saveModel(type, value) {
+            const savingKey = type === 'gemini-pro' ? 'geminiPro' : type;
+            this.modelSaving[savingKey] = true;
+            this.modelMessage = '';
+
+            try {
+                const response = await fetch(`/api/settings/models/${type}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: value })
+                });
+
+                if (response.ok) {
+                    this.modelMessage = `Modello ${type} aggiornato!`;
+                } else {
+                    const data = await response.json();
+                    this.modelMessage = data.detail || 'Errore nel salvataggio';
+                }
+            } catch (error) {
+                this.modelMessage = 'Errore di connessione';
+            } finally {
+                this.modelSaving[savingKey] = false;
+                setTimeout(() => this.modelMessage = '', 3000);
+            }
+        },
+
+        async saveToken() {
+            if (!this.token) return;
+
+            this.saving = true;
+            this.message = '';
+
+            try {
+                const response = await fetch('/api/settings/github-token', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: this.token })
+                });
+
+                if (response.ok) {
+                    this.tokenSet = true;
+                    this.token = '';
+                    this.message = 'Token GitHub salvato con successo!';
+                    this.messageType = 'success';
+                } else {
+                    const data = await response.json();
+                    this.message = data.detail || 'Errore nel salvataggio';
+                    this.messageType = 'error';
+                }
+            } catch (error) {
+                this.message = 'Errore di connessione';
+                this.messageType = 'error';
+            } finally {
+                this.saving = false;
+                setTimeout(() => this.message = '', 5000);
+            }
+        },
+
+        async deleteToken() {
+            if (!confirm('Sei sicuro di voler eliminare il token GitHub?')) return;
+
+            this.deleting = true;
+            this.message = '';
+
+            try {
+                const response = await fetch('/api/settings/github-token', {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    this.tokenSet = false;
+                    this.message = 'Token GitHub eliminato';
+                    this.messageType = 'success';
+                } else {
+                    this.message = 'Errore nell\'eliminazione';
+                    this.messageType = 'error';
+                }
+            } catch (error) {
+                this.message = 'Errore di connessione';
+                this.messageType = 'error';
+            } finally {
+                this.deleting = false;
+                setTimeout(() => this.message = '', 5000);
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

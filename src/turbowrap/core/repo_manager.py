@@ -5,7 +5,8 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from ..db.models import Repository
+from ..config import get_settings
+from ..db.models import Repository, Setting
 from ..utils.git_utils import (
     clone_repo,
     pull_repo,
@@ -56,13 +57,38 @@ class RepoManager:
     def __init__(self, db: Session):
         """Initialize with database session."""
         self.db = db
+        self._settings = get_settings()
 
-    def clone(self, url: str, branch: str = "main") -> Repository:
+    def _get_token(self, request_token: str | None = None) -> str | None:
+        """Get GitHub token from request, database, or config.
+
+        Priority: request > database > environment.
+
+        Args:
+            request_token: Token passed in request (takes priority).
+
+        Returns:
+            Token or None.
+        """
+        # 1. Request token has highest priority
+        if request_token:
+            return request_token
+
+        # 2. Check database
+        db_setting = self.db.query(Setting).filter(Setting.key == "github_token").first()
+        if db_setting and db_setting.value:
+            return db_setting.value
+
+        # 3. Fall back to environment variable
+        return self._settings.agents.github_token
+
+    def clone(self, url: str, branch: str = "main", token: str | None = None) -> Repository:
         """Clone a new repository.
 
         Args:
             url: GitHub repository URL.
             branch: Branch to clone.
+            token: Optional GitHub token for private repos.
 
         Returns:
             Created Repository record.
@@ -76,10 +102,13 @@ class RepoManager:
         ).first()
 
         if existing:
-            return self.sync(existing.id)
+            return self.sync(existing.id, token)
+
+        # Get effective token
+        effective_token = self._get_token(token)
 
         # Clone to local
-        local_path = clone_repo(repo_info.url, branch)
+        local_path = clone_repo(repo_info.url, branch, effective_token)
 
         # Detect repo type and calculate tokens
         be_files, fe_files = discover_files(local_path)
@@ -112,11 +141,12 @@ class RepoManager:
 
         return repo
 
-    def sync(self, repo_id: str) -> Repository:
+    def sync(self, repo_id: str, token: str | None = None) -> Repository:
         """Sync (pull) an existing repository.
 
         Args:
             repo_id: Repository ID.
+            token: Optional GitHub token for private repos.
 
         Returns:
             Updated Repository record.
@@ -131,7 +161,8 @@ class RepoManager:
 
         try:
             local_path = Path(repo.local_path)
-            pull_repo(local_path)
+            effective_token = self._get_token(token)
+            pull_repo(local_path, effective_token)
 
             # Re-detect files and recalculate tokens
             be_files, fe_files = discover_files(local_path)
