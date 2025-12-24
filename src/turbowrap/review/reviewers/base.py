@@ -43,6 +43,9 @@ class ReviewContext:
     previous_review: Optional[ReviewOutput] = None
     challenger_feedback: Optional[ChallengerFeedback] = None
 
+    # Metadata (e.g., review_id for S3 logging)
+    metadata: dict = field(default_factory=dict)
+
     def get_files_summary(self) -> str:
         """Get a summary of files being reviewed."""
         if not self.files:

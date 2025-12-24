@@ -141,50 +141,66 @@ class ClaudeCLIReviewer(BaseReviewer):
             logger.warning(f"Failed to save thinking to S3: {e}")
             return None
 
-    async def _save_raw_output_to_s3(
+    async def _run_cli_and_read_output(
         self,
-        raw_output: str,
-        review_id: str,
+        prompt: str,
         context: ReviewContext,
-    ) -> Optional[str]:
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> tuple[str | None, list[ModelUsageInfo], str | None]:
         """
-        Save raw NDJSON output from Claude CLI to S3 for debugging.
+        Run Claude CLI and read output from file.
 
-        This captures the complete stream-json output before parsing,
-        essential for debugging truncation or parsing issues.
+        Claude CLI writes JSON to a file instead of stdout to avoid truncation.
 
         Args:
-            raw_output: The raw NDJSON output from Claude CLI
-            review_id: Unique identifier for this review
-            context: Review context for metadata
+            prompt: The prompt to send to Claude CLI
+            context: Review context with repo path and metadata
+            on_chunk: Optional callback for streaming output chunks
 
         Returns:
-            S3 URL if successful, None otherwise
+            Tuple of (output content or None, model usage list, error message or None)
         """
-        if not raw_output or not self.s3_bucket:
-            return None
+        # Output file path (Claude will write here)
+        output_file = context.repo_path / f".turbowrap_review_{self.name}.json" if context.repo_path else Path(f".turbowrap_review_{self.name}.json")
+
+        # Delete old output file if exists
+        if output_file.exists():
+            output_file.unlink()
+            logger.info(f"Deleted old output file: {output_file}")
+
+        # Run Claude CLI with streaming
+        cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+
+        # Check if CLI failed
+        if cli_result is None:
+            return None, model_usage, "Claude CLI failed to execute"
+
+        # Get review_id for S3 logging
+        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+
+        # Save thinking to S3 if available
+        if thinking_content:
+            await self._save_thinking_to_s3(thinking_content, review_id, context)
+
+        # Read output from file (Claude saved it there)
+        if not output_file.exists():
+            logger.error(f"Output file not found: {output_file}")
+            return None, model_usage, f"Claude CLI did not create output file: {output_file}"
 
         try:
-            # Create S3 key with timestamp
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"raw-output/{timestamp}/{review_id}_{self.name}.ndjson"
-
-            # Upload raw output as-is
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=raw_output.encode("utf-8"),
-                ContentType="application/x-ndjson",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"Saved raw NDJSON output to {s3_url} ({len(raw_output)} chars)")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save raw output to S3: {e}")
-            return None
+            output = output_file.read_text(encoding="utf-8")
+            logger.info(f"Read review from file: {output_file} ({len(output)} chars)")
+            return output, model_usage, None
+        except Exception as e:
+            logger.error(f"Failed to read output file: {e}")
+            return None, model_usage, f"Failed to read output file: {e}"
+        finally:
+            # Clean up output file
+            try:
+                output_file.unlink()
+                logger.info(f"Cleaned up output file: {output_file}")
+            except Exception:
+                pass
 
     async def review(
         self,
@@ -211,22 +227,11 @@ class ClaudeCLIReviewer(BaseReviewer):
         # Build the review prompt
         prompt = self._build_review_prompt(context, files_to_review)
 
-        # Run Claude CLI with streaming
-        output, model_usage, thinking_content, raw_output = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        # Run CLI and read output from file
+        output, model_usage, error = await self._run_cli_and_read_output(prompt, context, on_chunk)
 
-        # Get review_id for S3 logging
-        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
-
-        # Always save raw NDJSON output to S3 for debugging
-        if raw_output:
-            await self._save_raw_output_to_s3(raw_output, review_id, context)
-
-        if output is None:
-            return self._create_error_output("Claude CLI failed to execute")
-
-        # Save thinking to S3 if available
-        if thinking_content:
-            await self._save_thinking_to_s3(thinking_content, review_id, context)
+        if error:
+            return self._create_error_output(error)
 
         # Parse the response
         review_output = self._parse_response(output, files_to_review)
@@ -265,23 +270,11 @@ class ClaudeCLIReviewer(BaseReviewer):
         # Build refinement prompt
         prompt = self._build_refinement_prompt(context, previous_review, feedback, files_to_review)
 
-        # Run Claude CLI with streaming
-        output, model_usage, thinking_content, raw_output = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        # Run CLI and read output from file
+        output, model_usage, error = await self._run_cli_and_read_output(prompt, context, on_chunk)
 
-        # Get review_id for S3 logging
-        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
-
-        # Always save raw NDJSON output to S3 for debugging (with iteration suffix)
-        if raw_output:
-            iteration_review_id = f"{review_id}_iter{previous_review.iteration + 1}"
-            await self._save_raw_output_to_s3(raw_output, iteration_review_id, context)
-
-        if output is None:
-            return self._create_error_output("Claude CLI refinement failed")
-
-        # Save thinking to S3 if available
-        if thinking_content:
-            await self._save_thinking_to_s3(thinking_content, review_id, context)
+        if error:
+            return self._create_error_output(error)
 
         # Parse the response
         review_output = self._parse_response(output, files_to_review)
@@ -319,7 +312,10 @@ class ClaudeCLIReviewer(BaseReviewer):
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        sections.append("""
+        # Output file name unique per reviewer
+        output_file = f".turbowrap_review_{self.name}.json"
+
+        sections.append(f"""
 ## Important Instructions
 
 1. **Read the files** listed above using your file reading capabilities
@@ -328,42 +324,44 @@ class ClaudeCLIReviewer(BaseReviewer):
 
 ## Output Schema
 
-{
-  "summary": {
+{{
+  "summary": {{
     "files_reviewed": <int>,
     "critical_issues": <int>,
     "high_issues": <int>,
     "medium_issues": <int>,
     "low_issues": <int>,
     "score": <float 0-10>
-  },
+  }},
   "issues": [
-    {
+    {{
       "id": "<REVIEWER-SEVERITY-NNN>",
       "severity": "CRITICAL|HIGH|MEDIUM|LOW",
       "category": "security|performance|architecture|style|logic|ux|testing|documentation",
       "file": "<file path>",
       "line": <line number or null>,
       "title": "<brief title>",
-      "description": "<max 150 chars>",
-      "suggested_fix": "<max 100 chars>"
-    }
+      "description": "<detailed description>",
+      "suggested_fix": "<suggested fix>"
+    }}
   ],
-  "checklists": {
-    "security": { "passed": <int>, "failed": <int>, "skipped": <int> },
-    "performance": { "passed": <int>, "failed": <int>, "skipped": <int> },
-    "architecture": { "passed": <int>, "failed": <int>, "skipped": <int> }
-  }
-}
+  "checklists": {{
+    "security": {{ "passed": <int>, "failed": <int>, "skipped": <int> }},
+    "performance": {{ "passed": <int>, "failed": <int>, "skipped": <int> }},
+    "architecture": {{ "passed": <int>, "failed": <int>, "skipped": <int> }}
+  }}
+}}
 
-## CRITICAL OUTPUT REQUIREMENTS
-- Your ENTIRE response must be ONLY the JSON object above
-- Start with `{` - NO text before it (no "Here is...", no "Let me...")
-- End with `}` - NO text after it
-- NO markdown code blocks (no ```)
-- Keep descriptions SHORT (max 150 chars) to prevent truncation
-- Limit to TOP 10 most important issues only
-- VERIFY your JSON is complete before outputting
+## CRITICAL: SAVE OUTPUT TO FILE
+
+**DO NOT print the JSON to stdout.**
+
+Instead, **WRITE the JSON to this file**: `{output_file}`
+
+Use your file writing capability to save the complete JSON to that file.
+After writing, just say "Review saved to {output_file}"
+
+This avoids output truncation issues.
 """)
 
         return "".join(sections)
@@ -395,7 +393,10 @@ class ClaudeCLIReviewer(BaseReviewer):
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        sections.append("""
+        # Output file name unique per reviewer
+        output_file = f".turbowrap_review_{self.name}.json"
+
+        sections.append(f"""
 ## Refinement Instructions
 
 1. **Read the files** again to verify the feedback
@@ -404,7 +405,14 @@ class ClaudeCLIReviewer(BaseReviewer):
 4. Incorporate suggested improvements
 5. Maintain valid issues from the previous review
 
-Output the complete refined review as JSON (same schema as before).
+## CRITICAL: SAVE OUTPUT TO FILE
+
+**DO NOT print the JSON to stdout.**
+
+Instead, **WRITE the refined JSON to this file**: `{output_file}`
+
+Use your file writing capability to save the complete JSON to that file.
+After writing, just say "Review saved to {output_file}"
 """)
 
         return "".join(sections)

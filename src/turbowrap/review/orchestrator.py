@@ -101,7 +101,7 @@ class Orchestrator:
         ))
 
         # Step 1: Prepare context (may auto-generate STRUCTURE.md)
-        context = await self._prepare_context(request, emit)
+        context = await self._prepare_context(request, emit, report_id)
 
         # Step 2: Detect repository type
         repo_type = self._detect_repo_type(context.files, context.structure_docs)
@@ -290,17 +290,21 @@ class Orchestrator:
         self,
         request: ReviewRequest,
         emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+        report_id: Optional[str] = None,
     ) -> ReviewContext:
         """Prepare the review context from the request.
 
         Args:
             request: Review request
             emit: Optional callback for progress events
+            report_id: Review ID for logging
 
         Returns:
             ReviewContext with loaded files/structure docs
         """
         context = ReviewContext(request=request)
+        if report_id:
+            context.metadata["review_id"] = report_id
         source = request.source
         mode = request.options.mode
 
