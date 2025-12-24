@@ -326,6 +326,23 @@
                 </div>
             </div>
 
+            <!-- Merge Result Notification -->
+            <div x-show="mergeResult"
+                 x-transition
+                 class="px-6 py-3"
+                 :class="mergeResult?.success ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm font-medium"
+                       :class="mergeResult?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'"
+                       x-text="mergeResult?.message"></p>
+                    <button @click="mergeResult = null" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
             <!-- Issues List -->
             <div class="divide-y dark:divide-gray-700">
                 <template x-for="issue in issues" :key="issue.id">
@@ -373,13 +390,27 @@
                             <!-- Actions -->
                             <div class="flex items-center gap-2 shrink-0">
                                 <!-- Toggle fix details (only for resolved) -->
-                                <button x-show="issue.status === 'resolved' && issue.fix_explanation"
+                                <button x-show="issue.status === 'resolved' && (issue.fix_explanation || issue.fix_code || issue.fix_commit_sha)"
                                         @click="issue.showFixDetails = !issue.showFixDetails"
                                         class="px-3 py-1.5 text-green-600 hover:text-green-700 dark:text-green-400 text-sm flex items-center gap-1">
                                     <svg class="w-4 h-4 transition-transform" :class="{'rotate-180': issue.showFixDetails}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                                     </svg>
                                     Dettagli
+                                </button>
+                                <!-- Merge to Main button (visible directly for resolved issues) -->
+                                <button x-show="issue.status === 'resolved' && issue.fix_commit_sha"
+                                        @click="mergeAndPush(issue)"
+                                        :disabled="isMerging"
+                                        class="px-3 py-1.5 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                    <svg x-show="!isMerging" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                    </svg>
+                                    <svg x-show="isMerging" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                    <span x-text="isMerging ? 'Merging...' : 'Merge'"></span>
                                 </button>
                                 <button @click="fixSingle(issue)"
                                         :disabled="issue.status === 'resolved' || isFixing"
@@ -434,22 +465,6 @@
                                 </ul>
                             </div>
 
-                            <!-- Merge to Main & Push button -->
-                            <div x-show="issue.fix_commit_sha" class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
-                                <button @click="mergeAndPush(issue)"
-                                        :disabled="isMerging"
-                                        class="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                                    <svg x-show="!isMerging" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                                    </svg>
-                                    <svg x-show="isMerging" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                    </svg>
-                                    <span x-text="isMerging ? 'Merging...' : 'Merge to Main & Push'"></span>
-                                </button>
-                                <p x-show="mergeResult" class="mt-2 text-sm" :class="mergeResult?.success ? 'text-green-600' : 'text-red-600'" x-text="mergeResult?.message"></p>
-                            </div>
                         </div>
                     </div>
                 </template>
@@ -1027,9 +1042,15 @@ function reviewApp() {
         async loadIssues() {
             if (!this.selectedRepo) return;
             try {
-                const response = await fetch(`/api/fix/issues/${this.selectedRepo}?status=open`);
+                // Load all issues (open and resolved) to show fix details
+                const response = await fetch(`/api/fix/issues/${this.selectedRepo}`);
                 if (response.ok) {
-                    this.issues = await response.json();
+                    const issues = await response.json();
+                    // Initialize showFixDetails for each issue
+                    this.issues = issues.map(issue => ({
+                        ...issue,
+                        showFixDetails: false,
+                    }));
                 }
             } catch (e) {
                 console.error('Failed to load issues:', e);
@@ -1243,6 +1264,7 @@ function reviewApp() {
                     body: JSON.stringify({
                         repository_id: this.selectedRepo,
                         branch_name: branchName,
+                        task_id: this.taskId,
                     }),
                 });
 

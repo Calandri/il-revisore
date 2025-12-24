@@ -32,6 +32,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fix", tags=["fix"])
 
+# Agent file path
+AGENTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "agents"
+GIT_MERGER_AGENT = AGENTS_DIR / "git_merger.md"
+
+
+def _load_agent(agent_path: Path) -> str:
+    """Load agent prompt from MD file, stripping frontmatter."""
+    if not agent_path.exists():
+        logger.warning(f"Agent file not found: {agent_path}")
+        return ""
+
+    content = agent_path.read_text(encoding="utf-8")
+
+    # Strip YAML frontmatter (--- ... ---)
+    if content.startswith("---"):
+        import re
+        end_match = re.search(r"\n---\n", content[3:])
+        if end_match:
+            content = content[3 + end_match.end():]
+
+    return content.strip()
+
 # Store for pending clarifications (session_id -> Question)
 _pending_clarifications: dict[str, ClarificationQuestion] = {}
 _clarification_answers: dict[str, asyncio.Future] = {}
@@ -534,6 +556,7 @@ class MergeRequest(BaseModel):
 
     repository_id: str = Field(..., description="Repository ID")
     branch_name: str = Field(..., description="Branch name to merge (e.g., fix/<task_id>)")
+    task_id: Optional[str] = Field(default=None, description="Task ID to update issues to merged")
 
 
 @router.post("/merge")
@@ -559,17 +582,9 @@ async def merge_and_push(
     if not repo_path.exists():
         raise HTTPException(status_code=400, detail="Repository path not found")
 
-    # Build prompt for Claude CLI
-    merge_prompt = f"""
-Execute the following git commands in order:
-
-1. git checkout main
-2. git pull origin main
-3. git merge {request.branch_name} --no-edit
-4. git push origin main
-
-If any step fails, report the error. After pushing, report the latest commit SHA on main.
-"""
+    # Build prompt from agent file
+    merge_prompt = _load_agent(GIT_MERGER_AGENT)
+    merge_prompt = merge_prompt.replace("{branch_name}", request.branch_name)
 
     try:
         # Build environment with API key
@@ -622,11 +637,30 @@ If any step fails, report the error. After pushing, report the latest commit SHA
 
         logger.info(f"Merged {request.branch_name} to main: {merge_commit}")
 
+        # Update all RESOLVED issues for this task to MERGED
+        merged_count = 0
+        if request.task_id:
+            issues_to_merge = (
+                db.query(Issue)
+                .filter(
+                    Issue.task_id == request.task_id,
+                    Issue.status == IssueStatus.RESOLVED.value,
+                )
+                .all()
+            )
+            for issue in issues_to_merge:
+                issue.status = IssueStatus.MERGED.value
+                merged_count += 1
+            db.commit()
+            logger.info(f"Updated {merged_count} issues to MERGED status")
+
         return {
+            "success": True,
             "status": "merged",
             "branch_name": request.branch_name,
             "merge_commit": merge_commit,
-            "message": output[:500],
+            "merged_issues_count": merged_count,
+            "message": f"Branch {request.branch_name} merged to main successfully!",
         }
 
     except asyncio.TimeoutError:

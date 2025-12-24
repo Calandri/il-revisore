@@ -343,6 +343,42 @@
                             <p class="text-gray-600 dark:text-gray-300" x-text="selectedIssue.resolution_note"></p>
                         </div>
 
+                        <!-- Fix Details (for resolved issues) -->
+                        <div x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_explanation" class="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <h4 class="font-medium mb-2 text-green-700 dark:text-green-400">Spiegazione Fix</h4>
+                            <div class="text-sm text-gray-600 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
+                                 x-html="selectedIssue.fix_explanation?.replace(/\n/g, '<br>')"></div>
+                        </div>
+
+                        <div x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_code" class="mt-4">
+                            <h4 class="font-medium mb-2">Codice Modificato</h4>
+                            <pre class="bg-gray-900 text-green-400 p-3 rounded-lg text-xs overflow-x-auto max-h-48"><code x-text="selectedIssue.fix_code"></code></pre>
+                        </div>
+
+                        <div x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_commit_sha" class="mt-4 flex items-center gap-4">
+                            <div>
+                                <span class="text-xs text-gray-500">Commit: </span>
+                                <code class="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="selectedIssue.fix_commit_sha?.substring(0, 10)"></code>
+                            </div>
+                            <div x-show="selectedIssue.fix_branch">
+                                <span class="text-xs text-gray-500">Branch: </span>
+                                <code class="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="selectedIssue.fix_branch"></code>
+                            </div>
+                        </div>
+
+                        <!-- Merge Result Notification -->
+                        <div x-show="mergeResult" class="mt-4 p-3 rounded-lg" :class="mergeResult?.success ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'">
+                            <div class="flex items-center gap-2">
+                                <svg x-show="mergeResult?.success" class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                <svg x-show="!mergeResult?.success" class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                <span :class="mergeResult?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'" x-text="mergeResult?.message"></span>
+                            </div>
+                        </div>
+
                         <!-- Actions -->
                         <div class="flex gap-2 pt-4 border-t dark:border-gray-700">
                             <button x-show="selectedIssue.status === 'open'"
@@ -360,6 +396,19 @@
                                     @click="reopenIssue(selectedIssue.id); selectedIssue = null"
                                     class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors">
                                 Riapri
+                            </button>
+                            <button x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_commit_sha && selectedIssue.fix_branch"
+                                    @click="mergeAndPush(selectedIssue)"
+                                    :disabled="isMerging"
+                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                                <svg x-show="!isMerging" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                </svg>
+                                <svg x-show="isMerging" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <span x-text="isMerging ? 'Merging...' : 'Merge to Main'"></span>
                             </button>
                         </div>
                     </div>
@@ -476,6 +525,8 @@ function issuesApp() {
         selectedIssue: null,
         selectedIssues: [],
         isFixing: false,
+        isMerging: false,
+        mergeResult: null,
         showFixModal: false,
         fixProgress: {
             current: 0,
@@ -701,6 +752,45 @@ function issuesApp() {
             if (!this.isFixing) {
                 this.showFixModal = false;
             }
+        },
+
+        async mergeAndPush(issue) {
+            if (!issue.fix_branch || this.isMerging) return;
+
+            this.isMerging = true;
+            this.mergeResult = null;
+
+            try {
+                const response = await fetch('/api/fix/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: issue.repository_id,
+                        branch_name: issue.fix_branch,
+                        task_id: issue.task_id
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    this.mergeResult = { success: true, message: result.message || 'Merge completato!' };
+                    // Aggiorna l'issue nella lista
+                    await this.refresh();
+                    // Chiudi il modal dopo successo
+                    setTimeout(() => {
+                        this.selectedIssue = null;
+                        this.mergeResult = null;
+                    }, 2000);
+                } else {
+                    this.mergeResult = { success: false, message: result.error || 'Errore durante il merge' };
+                }
+            } catch (error) {
+                console.error('Merge error:', error);
+                this.mergeResult = { success: false, message: error.message };
+            }
+
+            this.isMerging = false;
         }
     }
 }

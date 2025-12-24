@@ -43,6 +43,8 @@ FIX_CHALLENGER_AGENT = AGENTS_DIR / "fix_challenger.md"
 DEV_BE_AGENT = AGENTS_DIR / "dev_be.md"
 DEV_FE_AGENT = AGENTS_DIR / "dev_fe.md"
 ENGINEERING_PRINCIPLES = AGENTS_DIR / "engineering_principles.md"
+GIT_BRANCH_CREATOR_AGENT = AGENTS_DIR / "git_branch_creator.md"
+GIT_COMMITTER_AGENT = AGENTS_DIR / "git_committer.md"
 
 # File extensions for frontend vs backend
 FRONTEND_EXTENSIONS = {".tsx", ".ts", ".jsx", ".js", ".css", ".scss", ".html", ".vue", ".svelte"}
@@ -215,11 +217,10 @@ class FixOrchestrator:
                 )
             )
 
-            # Create branch
-            await self._run_claude_cli(
-                f"Create and checkout a new git branch called '{branch_name}' if it doesn't exist. If it exists, just checkout to it.",
-                timeout=30,
-            )
+            # Create branch from main (using agent)
+            branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
+            branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
+            await self._run_claude_cli(branch_creator_prompt, timeout=60)
 
             feedback_be = ""
             feedback_fe = ""
@@ -368,12 +369,11 @@ class FixOrchestrator:
             if len(issues) > 3:
                 issue_codes += f" (+{len(issues) - 3} more)"
 
-            commit_prompt = f"""
-Commit all changes with this message:
-[FIX] {issue_codes}
-
-Use: git add -A && git commit -m "[FIX] {issue_codes}"
-"""
+            # Commit using agent
+            commit_message = f"[FIX] {issue_codes}"
+            commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
+            commit_prompt = commit_prompt.replace("{commit_message}", commit_message)
+            commit_prompt = commit_prompt.replace("{issue_codes}", issue_codes)
             await self._run_claude_cli(commit_prompt, timeout=30)
 
             # Step 4: Collect git info and build results
@@ -436,20 +436,35 @@ Use: git add -A && git commit -m "[FIX] {issue_codes}"
             return result
 
     def _build_review_prompt_batch(self, issues: list[Issue]) -> str:
-        """Build review prompt for all issues."""
+        """Build review prompt for all issues with full context."""
         agent_prompt = self._get_challenger_prompt()
 
-        issue_list = "\n".join(f"- {i.issue_code}: {i.title} ({i.file})" for i in issues)
+        # Build detailed issue context
+        issue_details = []
+        for issue in issues:
+            detail = f"""### {issue.issue_code}: {issue.title}
+- **File**: {issue.file}
+- **Severity**: {issue.severity}
+- **Category**: {issue.category}
+- **Description**: {issue.description}"""
+            if issue.suggested_fix:
+                detail += f"\n- **Suggested Fix**: {issue.suggested_fix}"
+            if issue.current_code:
+                detail += f"\n- **Problematic Code**:\n```\n{issue.current_code}\n```"
+            issue_details.append(detail)
+
+        issues_section = "\n\n".join(issue_details)
 
         task = f"""
 # Task: Review ALL Fixes
 
-## Issues Fixed
-{issue_list}
+## Issues That Were Fixed
+
+{issues_section}
 
 ## Instructions
-1. Run `git diff` to see ALL changes
-2. Evaluate if each fix correctly addresses its issue
+1. Run `git diff` to see ALL changes made
+2. For each issue, verify the fix correctly addresses the problem
 3. Check for bugs, security issues, or breaking changes
 4. Score from 0-100 for the OVERALL fix quality
 
@@ -457,7 +472,7 @@ Use: git add -A && git commit -m "[FIX] {issue_codes}"
 Start your response with the score on its own line:
 SCORE: <number>
 
-Then provide detailed feedback for any issues found.
+Then provide brief feedback.
 """
 
         return f"{agent_prompt}\n\n---\n\n{task}"

@@ -80,6 +80,7 @@ class IssueStatus(str, Enum):
     OPEN = "open"  # Newly found, needs attention
     IN_PROGRESS = "in_progress"  # Being worked on
     RESOLVED = "resolved"  # Fixed
+    MERGED = "merged"  # PR merged, issue closed
     IGNORED = "ignored"  # Marked as false positive or won't fix
     DUPLICATE = "duplicate"  # Duplicate of another issue
 

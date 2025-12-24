@@ -1,6 +1,6 @@
 """Web routes for HTML pages."""
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -234,6 +234,31 @@ async def users_page(request: Request):
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
     """HTMX partial: repository list."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "components/repo_list.html",
+        {"request": request, "repos": repos}
+    )
+
+
+@router.post("/htmx/repos", response_class=HTMLResponse)
+async def htmx_add_repo(
+    request: Request,
+    url: str = Form(...),
+    branch: str = Form("main"),
+    db: Session = Depends(get_db),
+):
+    """HTMX: add a new repository and return updated list."""
+    from ...core.repo_manager import RepoManager
+
+    manager = RepoManager(db)
+    try:
+        manager.clone(url, branch)
+    except Exception as e:
+        print(f"Clone error: {e}")
+
+    # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
     return templates.TemplateResponse(

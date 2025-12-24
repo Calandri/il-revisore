@@ -38,6 +38,15 @@ class IssueResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Fix result fields (populated when resolved by fixer)
+    fix_code: Optional[str] = None
+    fix_explanation: Optional[str] = None
+    fix_files_modified: Optional[list[str]] = None
+    fix_commit_sha: Optional[str] = None
+    fix_branch: Optional[str] = None
+    fixed_at: Optional[datetime] = None
+    fixed_by: Optional[str] = None
+
     class Config:
         from_attributes = True
 
