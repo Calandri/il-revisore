@@ -5,29 +5,6 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# Configure logging for all turbowrap modules
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stderr)],
-)
-
-# Set turbowrap loggers to INFO (not DEBUG to avoid excessive output)
-logging.getLogger("turbowrap").setLevel(logging.INFO)
-logging.getLogger("turbowrap.review").setLevel(logging.INFO)
-logging.getLogger("turbowrap.fix").setLevel(logging.INFO)
-
-# SECURITY: Silence AWS/boto loggers - they log secrets in DEBUG mode!
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("boto3").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("s3transfer").setLevel(logging.WARNING)
-
-# Silence other noisy libraries
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("sse_starlette").setLevel(logging.WARNING)
-
 from fastapi import FastAPI, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -46,6 +23,41 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+def configure_logging() -> None:
+    """Configure logging for the application.
+
+    Called inside create_app() so it works with uvicorn --reload.
+    """
+    # Reset root logger handlers to allow reconfiguration
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+
+    # Configure base logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
+        force=True,  # Force reconfiguration even if already configured
+    )
+
+    # Set turbowrap loggers to INFO
+    logging.getLogger("turbowrap").setLevel(logging.INFO)
+    logging.getLogger("turbowrap.review").setLevel(logging.INFO)
+    logging.getLogger("turbowrap.fix").setLevel(logging.INFO)
+
+    # SECURITY: Silence AWS/boto loggers - they log secrets in DEBUG mode!
+    logging.getLogger("botocore").setLevel(logging.WARNING)
+    logging.getLogger("boto3").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("s3transfer").setLevel(logging.WARNING)
+
+    # Silence other noisy libraries
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("sse_starlette").setLevel(logging.WARNING)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
@@ -58,6 +70,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create FastAPI application."""
+    # Configure logging on every app creation (works with --reload)
+    configure_logging()
+
     settings = get_settings()
 
     app = FastAPI(
