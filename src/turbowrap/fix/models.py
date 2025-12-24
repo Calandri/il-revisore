@@ -225,6 +225,11 @@ class IssueFixResult(BaseModel):
     changes_made: str | None = Field(default=None, description="Description of changes")
     error: str | None = Field(default=None, description="Error message if failed")
 
+    # Fix result fields (for DB storage)
+    fix_code: str | None = Field(default=None, description="Snippet of fixed code (max 500 chars for display)")
+    fix_explanation: str | None = Field(default=None, description="PR-style explanation of the fix")
+    fix_files_modified: list[str] = Field(default_factory=list, description="List of modified files")
+
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
 

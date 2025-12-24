@@ -7,13 +7,26 @@ from pathlib import Path
 
 # Configure logging for all turbowrap modules
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler(sys.stderr)],
 )
-# Set specific loggers
-logging.getLogger("turbowrap").setLevel(logging.DEBUG)
-logging.getLogger("turbowrap.review").setLevel(logging.DEBUG)
+
+# Set turbowrap loggers to INFO (not DEBUG to avoid excessive output)
+logging.getLogger("turbowrap").setLevel(logging.INFO)
+logging.getLogger("turbowrap.review").setLevel(logging.INFO)
+logging.getLogger("turbowrap.fix").setLevel(logging.INFO)
+
+# SECURITY: Silence AWS/boto loggers - they log secrets in DEBUG mode!
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("s3transfer").setLevel(logging.WARNING)
+
+# Silence other noisy libraries
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("sse_starlette").setLevel(logging.WARNING)
 
 from fastapi import FastAPI, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware

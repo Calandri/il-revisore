@@ -319,6 +319,14 @@ class Issue(Base, SoftDeleteMixin):
     resolution_note = Column(Text, nullable=True)  # Why it was resolved/ignored
     resolved_at = Column(DateTime, nullable=True)
 
+    # Fix result fields (populated when issue is fixed)
+    fix_code = Column(Text, nullable=True)  # Snippet del codice fixato (display: max 500 chars)
+    fix_explanation = Column(Text, nullable=True)  # Spiegazione PR-style del fix
+    fix_files_modified = Column(JSON, nullable=True)  # Lista file modificati: ["file1.ts", "file2.ts"]
+    fix_commit_sha = Column(String(40), nullable=True)  # SHA del commit
+    fixed_at = Column(DateTime, nullable=True)  # Quando è stato fixato
+    fixed_by = Column(String(50), nullable=True)  # Agent che ha fixato (e.g., "fixer_claude")
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

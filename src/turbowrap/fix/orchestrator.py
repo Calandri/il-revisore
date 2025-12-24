@@ -16,6 +16,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
+import boto3
+from botocore.exceptions import ClientError
+
 from turbowrap.config import get_settings
 from turbowrap.db.models import Issue
 from turbowrap.fix.models import (
@@ -24,8 +27,12 @@ from turbowrap.fix.models import (
     FixRequest,
     FixSessionResult,
     FixStatus,
+    IssueFixResult,
 )
 from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_google_api_key
+
+# S3 bucket for fix logs (same as thinking logs)
+S3_BUCKET = "turbowrap-thinking"
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +79,10 @@ class FixOrchestrator:
 
         # Load agent prompts
         self._agent_cache: dict[str, str] = {}
+
+        # S3 client for logging
+        self.s3_client = boto3.client("s3")
+        self.s3_bucket = S3_BUCKET
 
     def _load_agent(self, agent_path: Path) -> str:
         """Load agent prompt from MD file, stripping frontmatter."""
@@ -212,6 +223,7 @@ class FixOrchestrator:
 
             feedback_be = ""
             feedback_fe = ""
+            last_gemini_output: str | None = None  # Store for fix explanation
 
             for iteration in range(1, self.max_iterations + 1):
                 # Step 1: Launch Claude CLI(s) in parallel
@@ -306,6 +318,7 @@ class FixOrchestrator:
 
                 review_prompt = self._build_review_prompt_batch(issues)
                 gemini_output = await self._run_gemini_cli(review_prompt, on_chunk=on_chunk_gemini)
+                last_gemini_output = gemini_output  # Store for fix explanation
 
                 if gemini_output is None:
                     logger.warning("Gemini CLI failed, accepting fixes without review")
@@ -363,6 +376,30 @@ Use: git add -A && git commit -m "[FIX] {issue_codes}"
 """
             await self._run_claude_cli(commit_prompt, timeout=30)
 
+            # Step 4: Collect git info and build results
+            commit_sha, modified_files, _ = await self._get_git_info()
+            fix_explanation = self._build_fix_explanation(issues, last_gemini_output)
+
+            # Create IssueFixResult for each issue
+            for issue in issues:
+                # Get code snippet for this issue's file
+                fix_code = await self._get_diff_for_file(str(issue.file))
+
+                issue_result = IssueFixResult(
+                    issue_id=issue.id,
+                    issue_code=str(issue.issue_code),
+                    status=FixStatus.COMPLETED,
+                    commit_sha=commit_sha,
+                    commit_message=f"[FIX] {issue_codes}",
+                    changes_made=f"Fixed {issue.title}",
+                    fix_code=fix_code,
+                    fix_explanation=fix_explanation,
+                    fix_files_modified=modified_files,
+                    started_at=result.started_at,
+                    completed_at=datetime.utcnow(),
+                )
+                result.results.append(issue_result)
+
             result.status = FixStatus.COMPLETED
             result.issues_fixed = len(issues)
             result.completed_at = datetime.utcnow()
@@ -376,6 +413,9 @@ Use: git add -A && git commit -m "[FIX] {issue_codes}"
                     message=f"Fixed {len(issues)} issues",
                 )
             )
+
+            # Save fix log to S3 for debugging (10 day retention)
+            await self._save_fix_log_to_s3(session_id, result, issues, last_gemini_output)
 
             return result
 
@@ -701,4 +741,187 @@ The reviewer found issues with the previous fix. Address this feedback:
             return None
         except Exception:
             logger.exception("Gemini CLI error")
+            return None
+
+    async def _get_git_info(self) -> tuple[str | None, list[str], str | None]:
+        """Get git info after commit.
+
+        Returns:
+            Tuple of (commit_sha, modified_files, diff_content)
+        """
+        commit_sha = None
+        modified_files: list[str] = []
+        diff_content = None
+
+        try:
+            # Get commit SHA
+            proc = await asyncio.create_subprocess_exec(
+                "git", "rev-parse", "HEAD",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                commit_sha = stdout.decode().strip()[:40]
+
+            # Get modified files from last commit
+            proc = await asyncio.create_subprocess_exec(
+                "git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                modified_files = [f.strip() for f in stdout.decode().strip().split("\n") if f.strip()]
+
+            # Get diff of last commit (limited to 2000 chars)
+            proc = await asyncio.create_subprocess_exec(
+                "git", "show", "--stat", "--format=", "HEAD",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                diff_content = stdout.decode()[:2000]
+
+        except Exception as e:
+            logger.warning(f"Failed to get git info: {e}")
+
+        return commit_sha, modified_files, diff_content
+
+    async def _get_diff_for_file(self, file_path: str) -> str | None:
+        """Get diff for a specific file from last commit.
+
+        Returns:
+            Diff content (max 500 chars for display)
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "show", "--format=", f"HEAD", "--", file_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                diff = stdout.decode()
+                # Extract just the added lines (+ prefix)
+                added_lines = [
+                    line[1:] for line in diff.split("\n")
+                    if line.startswith("+") and not line.startswith("+++")
+                ]
+                # Return first 500 chars of added code
+                return "\n".join(added_lines)[:500]
+        except Exception as e:
+            logger.warning(f"Failed to get diff for {file_path}: {e}")
+        return None
+
+    def _build_fix_explanation(
+        self,
+        issues: list[Issue],
+        gemini_output: str | None,
+    ) -> str:
+        """Build fix explanation from issues and Gemini review.
+
+        Returns:
+            PR-style explanation of the fix
+        """
+        parts = []
+
+        # List what was fixed
+        parts.append("## Changes Made\n")
+        for issue in issues:
+            parts.append(f"- **{issue.issue_code}**: {issue.title}\n")
+
+        # Add Gemini's review summary if available
+        if gemini_output:
+            # Extract key points from Gemini output
+            parts.append("\n## Review Summary\n")
+            # Take first 500 chars of Gemini output
+            summary = gemini_output[:500]
+            if len(gemini_output) > 500:
+                summary += "..."
+            parts.append(summary)
+
+        return "".join(parts)
+
+    async def _save_fix_log_to_s3(
+        self,
+        session_id: str,
+        result: FixSessionResult,
+        issues: list[Issue],
+        gemini_output: str | None,
+    ) -> str | None:
+        """
+        Save fix session log to S3 for debugging.
+
+        Path: s3://turbowrap-thinking/fix-logs/{date}/{session_id}.json
+        Retention: 10 days (configured via S3 lifecycle)
+
+        Returns:
+            S3 URL if saved, None if failed
+        """
+        try:
+            date_str = datetime.utcnow().strftime("%Y-%m-%d")
+            s3_key = f"fix-logs/{date_str}/{session_id}.json"
+
+            # Build log content
+            log_data = {
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": result.status.value,
+                "branch_name": result.branch_name,
+                "issues_requested": result.issues_requested,
+                "issues_fixed": result.issues_fixed,
+                "repo_path": str(self.repo_path),
+                "max_iterations": self.max_iterations,
+                "satisfaction_threshold": self.satisfaction_threshold,
+                "issues": [
+                    {
+                        "id": issue.id,
+                        "code": issue.issue_code,
+                        "title": issue.title,
+                        "file": issue.file,
+                        "severity": issue.severity,
+                    }
+                    for issue in issues
+                ],
+                "results": [
+                    {
+                        "issue_id": r.issue_id,
+                        "status": r.status.value,
+                        "commit_sha": r.commit_sha,
+                        "fix_code": r.fix_code,
+                        "fix_explanation": r.fix_explanation,
+                        "fix_files_modified": r.fix_files_modified,
+                        "error": r.error,
+                    }
+                    for r in result.results
+                ],
+                "gemini_review": gemini_output[:2000] if gemini_output else None,
+            }
+
+            # Upload to S3
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=json.dumps(log_data, indent=2, default=str).encode("utf-8"),
+                    ContentType="application/json",
+                ),
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"Fix log saved to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save fix log to S3: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to save fix log to S3: {e}")
             return None

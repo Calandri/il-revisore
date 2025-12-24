@@ -224,19 +224,11 @@
                                 <button @click="fixSingle(issue)"
                                         :disabled="isFixing"
                                         class="px-3 py-1.5 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                        title="Sistema automaticamente">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                    </svg>
-                                    Sistema
-                                </button>
-                                <button @click="resolveIssue(issue.id)"
-                                        class="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                                        title="Segna come risolto">
+                                        title="Risolvi con AI">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                     </svg>
+                                    Risolvi
                                 </button>
                                 <button @click="ignoreIssue(issue.id)"
                                         class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -354,8 +346,9 @@
                         <!-- Actions -->
                         <div class="flex gap-2 pt-4 border-t dark:border-gray-700">
                             <button x-show="selectedIssue.status === 'open'"
-                                    @click="resolveIssue(selectedIssue.id); selectedIssue = null"
-                                    class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                                    @click="fixSingle(selectedIssue); selectedIssue = null"
+                                    :disabled="isFixing"
+                                    class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50">
                                 Risolvi
                             </button>
                             <button x-show="selectedIssue.status === 'open'"
@@ -571,11 +564,30 @@ function issuesApp() {
         },
 
         async fixSelected() {
-            if (this.selectedIssues.length === 0 || this.isFixing) return;
+            if (this.selectedIssues.length === 0 || this.isFixing) {
+                console.warn('[FIX] No issues selected or already fixing');
+                return;
+            }
 
             // Get repository_id from first selected issue
             const firstIssue = this.issues.find(i => i.id === this.selectedIssues[0]);
-            if (!firstIssue) return;
+            if (!firstIssue) {
+                console.error('[FIX] Issue not found in list:', this.selectedIssues[0]);
+                alert('Errore: Issue non trovata nella lista');
+                return;
+            }
+
+            if (!firstIssue.repository_id || !firstIssue.task_id) {
+                console.error('[FIX] Missing repository_id or task_id:', firstIssue);
+                alert('Errore: Dati issue incompleti (repository_id o task_id mancante)');
+                return;
+            }
+
+            console.log('[FIX] Starting fix for:', {
+                issue_id: firstIssue.id,
+                repository_id: firstIssue.repository_id,
+                task_id: firstIssue.task_id
+            });
 
             this.isFixing = true;
             this.showFixModal = true;
@@ -597,6 +609,12 @@ function issuesApp() {
                         issue_ids: this.selectedIssues,
                     }),
                 });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    console.error('[FIX] API error:', response.status, error);
+                    throw new Error(`API error: ${response.status} - ${error}`);
+                }
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
