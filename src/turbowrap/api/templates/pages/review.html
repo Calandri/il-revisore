@@ -155,6 +155,16 @@
                                   'bg-red-500': agent.status === 'error'
                               }"></span>
                         <h3 class="font-semibold" x-text="agent.displayName"></h3>
+
+                        <!-- Thinking button (only for Claude reviewers) -->
+                        <button x-show="isClaudeReviewer(name) && agent.status === 'completed'"
+                                @click.stop="openThinkingModal(name)"
+                                class="p-1.5 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg transition-colors group"
+                                title="Visualizza Extended Thinking">
+                            <svg class="w-4 h-4 text-purple-500 group-hover:text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                        </button>
                     </div>
 
                     <!-- Iteration badge -->
@@ -424,6 +434,69 @@
         </div>
     </div>
 
+    <!-- Thinking Modal -->
+    <div x-show="showThinkingModal"
+         x-transition
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="closeThinkingModal()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden m-4">
+            <!-- Thinking Modal Header -->
+            <div class="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-purple-500/10 to-indigo-500/10">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                        <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold">Extended Thinking</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400" x-text="thinkingAgent?.displayName || ''"></p>
+                    </div>
+                </div>
+                <button @click="closeThinkingModal()"
+                        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Thinking Content -->
+            <div class="p-6 overflow-y-auto max-h-[65vh]">
+                <!-- Loading state -->
+                <div x-show="thinkingLoading" class="flex flex-col items-center justify-center py-12">
+                    <svg class="animate-spin w-8 h-8 text-purple-500 mb-3" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <p class="text-gray-500 dark:text-gray-400">Caricamento processo di pensiero...</p>
+                </div>
+
+                <!-- Error state -->
+                <div x-show="thinkingError && !thinkingLoading" class="text-center py-12">
+                    <div class="p-3 bg-red-100 dark:bg-red-900/30 rounded-full inline-block mb-3">
+                        <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <p class="text-gray-700 dark:text-gray-300 font-medium" x-text="thinkingError"></p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Il thinking potrebbe non essere ancora disponibile o non essere stato salvato per questa review.</p>
+                </div>
+
+                <!-- Thinking content -->
+                <div x-show="thinkingContent && !thinkingLoading" class="prose dark:prose-invert max-w-none">
+                    <div class="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/10 dark:to-indigo-900/10 rounded-lg p-4 mb-4 border border-purple-100 dark:border-purple-800/30">
+                        <p class="text-sm text-purple-700 dark:text-purple-300">
+                            Questo e il processo di ragionamento esteso di Claude Opus 4.5 durante l'analisi del codice.
+                            Il thinking mostra come l'AI ha ragionato per arrivare alle conclusioni della review.
+                        </p>
+                    </div>
+                    <div x-html="renderMarkdown(thinkingContent)"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -446,6 +519,13 @@ function reviewApp() {
         eventSource: null,
         abortController: null,
 
+        // Thinking modal
+        showThinkingModal: false,
+        thinkingAgent: null,
+        thinkingContent: '',
+        thinkingLoading: false,
+        thinkingError: '',
+
         // Issues & Fix
         issues: [],
         selectedIssues: [],
@@ -467,6 +547,47 @@ function reviewApp() {
 
         init() {
             // Initialize empty agent states
+        },
+
+        isClaudeReviewer(name) {
+            // Claude reviewers are: reviewer_be, reviewer_fe, analyst_func
+            return ['reviewer_be', 'reviewer_fe', 'analyst_func'].includes(name);
+        },
+
+        async openThinkingModal(agentName) {
+            if (!this.taskId) return;
+
+            this.showThinkingModal = true;
+            this.thinkingAgent = this.agents[agentName];
+            this.thinkingContent = '';
+            this.thinkingError = '';
+            this.thinkingLoading = true;
+
+            try {
+                // Build review_id from taskId and agent iteration
+                // The reviewer uses format: {name}_{timestamp} or similar
+                const response = await fetch(`/api/thinking/${this.taskId}/${agentName}`);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.thinkingContent = data.content;
+                } else {
+                    const error = await response.json();
+                    this.thinkingError = error.detail || 'Thinking non disponibile';
+                }
+            } catch (e) {
+                console.error('Failed to load thinking:', e);
+                this.thinkingError = 'Errore nel caricamento del thinking';
+            } finally {
+                this.thinkingLoading = false;
+            }
+        },
+
+        closeThinkingModal() {
+            this.showThinkingModal = false;
+            this.thinkingAgent = null;
+            this.thinkingContent = '';
+            this.thinkingError = '';
         },
 
         async startReview() {

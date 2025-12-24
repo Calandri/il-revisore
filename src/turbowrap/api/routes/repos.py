@@ -320,11 +320,12 @@ def get_file_tree(
         if not ext.startswith('.'):
             ext = '.' + ext
         for item in repo_path.rglob(f'*{ext}'):
-            # Skip hidden and .git
-            if any(part.startswith('.') for part in item.parts):
+            rel_path = item.relative_to(repo_path)
+            # Skip hidden and .git directories (check relative path, not absolute)
+            if any(part.startswith('.') for part in rel_path.parts):
                 continue
 
-            rel_path = str(item.relative_to(repo_path))
+            rel_path = str(rel_path)
             files.append(FileInfo(
                 name=item.name,
                 path=rel_path,
@@ -355,11 +356,12 @@ def get_structure_files(
 
     structure_files = []
     for item in repo_path.rglob('STRUCTURE.md'):
-        # Skip hidden directories
-        if any(part.startswith('.') for part in item.parts):
+        rel_path = item.relative_to(repo_path)
+        # Skip hidden directories (check relative path, not absolute)
+        if any(part.startswith('.') for part in rel_path.parts):
             continue
 
-        rel_path = str(item.relative_to(repo_path))
+        rel_path = str(rel_path)
         try:
             content = item.read_text(encoding='utf-8')
             structure_files.append({

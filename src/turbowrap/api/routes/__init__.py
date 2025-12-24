@@ -10,6 +10,7 @@ from .issues import router as issues_router
 from .fix import router as fix_router
 from .auth import router as auth_router
 from .users import router as users_router
+from .thinking import router as thinking_router
 
 __all__ = [
     "repos_router",
@@ -22,4 +23,5 @@ __all__ = [
     "fix_router",
     "auth_router",
     "users_router",
+    "thinking_router",
 ]
