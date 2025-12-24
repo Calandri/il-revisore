@@ -40,6 +40,7 @@ from turbowrap.review.utils.repo_detector import RepoDetector, detect_repo_type
 from turbowrap.review.utils.git_utils import GitUtils
 from turbowrap.review.utils.file_utils import FileUtils
 from turbowrap.tools.structure_generator import StructureGenerator
+from turbowrap.llm import GeminiClient
 
 
 logger = logging.getLogger(__name__)
@@ -473,8 +474,11 @@ class Orchestrator:
             ))
 
         try:
-            # Create generator
-            generator = StructureGenerator(str(context.repo_path))
+            # Create generator with GeminiClient for semantic analysis
+            generator = StructureGenerator(
+                str(context.repo_path),
+                gemini_client=GeminiClient(),
+            )
 
             # Emit progress update
             if emit:
@@ -842,7 +846,7 @@ class Orchestrator:
             enabled=True,
             total_iterations=total_iterations,
             final_satisfaction_score=avg_satisfaction,
-            threshold=99.0,
+            threshold=50.0,
             convergence=convergence,
             iteration_history=all_history,
             insights=all_insights,

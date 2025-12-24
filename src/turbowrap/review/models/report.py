@@ -102,7 +102,7 @@ class ChallengerMetadata(BaseModel):
     enabled: bool = True
     total_iterations: int = 1
     final_satisfaction_score: float = 100.0
-    threshold: float = 99.0
+    threshold: float = 50.0
     convergence: ConvergenceStatus = ConvergenceStatus.THRESHOLD_MET
     iteration_history: list[IterationHistory] = Field(default_factory=list)
     insights: list[ChallengerInsight] = Field(default_factory=list)

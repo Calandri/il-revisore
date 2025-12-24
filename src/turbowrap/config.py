@@ -122,7 +122,7 @@ class ChallengerSettings(BaseSettings):
         description="Required satisfaction score (0-100)"
     )
     max_iterations: int = Field(
-        default=5, ge=1, le=10,
+        default=3, ge=1, le=10,
         description="Maximum challenger iterations"
     )
     min_improvement_threshold: float = Field(

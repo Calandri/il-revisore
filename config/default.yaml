@@ -54,7 +54,7 @@ orchestrator:
     reviewer_model: "claude-opus-4-5-20251101"
     challenger_model: "gemini-3-flash-preview"
     satisfaction_threshold: 50  # Percentage (0-100)
-    max_iterations: 5
+    max_iterations: 3
     min_improvement_threshold: 2.0  # Minimum % improvement per iteration
     stagnation_window: 2
     forced_acceptance_threshold: 90  # Accept if above this after max iterations

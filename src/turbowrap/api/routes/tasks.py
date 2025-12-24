@@ -278,7 +278,7 @@ async def stream_review(
     async def generate() -> AsyncIterator[dict]:
         """Generate SSE events from review progress."""
         from ...review.orchestrator import Orchestrator
-        from ...review.models.review import ReviewRequest, ReviewSource, ReviewOptions, ReviewMode
+        from ...review.models.review import ReviewRequest, ReviewRequestSource, ReviewOptions, ReviewMode
 
         # Queue for progress events
         event_queue: asyncio.Queue[ProgressEvent] = asyncio.Queue()
@@ -293,7 +293,7 @@ async def stream_review(
                 orchestrator = Orchestrator()
 
                 request = ReviewRequest(
-                    source=ReviewSource(directory=repo.local_path),
+                    source=ReviewRequestSource(directory=repo.local_path),
                     options=ReviewOptions(
                         mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
                         challenger_enabled=challenger_enabled,
