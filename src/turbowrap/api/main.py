@@ -10,7 +10,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .deps import get_db
-from .routes import repos_router, tasks_router, chat_router, status_router, web_router, settings_router, issues_router, fix_router
+from .routes import repos_router, tasks_router, chat_router, status_router, web_router, settings_router, issues_router, fix_router, auth_router
+from .middleware import AuthMiddleware
 from .websocket import ChatWebSocketHandler
 from ..config import get_settings
 from ..db.session import init_db
@@ -50,6 +51,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Authentication middleware
+    app.add_middleware(AuthMiddleware)
+
     # Templates and static files
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     app.state.templates = templates
@@ -66,6 +70,9 @@ def create_app() -> FastAPI:
 
     # Web routes (no prefix - these are the HTML pages)
     app.include_router(web_router)
+
+    # Auth routes (login, logout, etc.)
+    app.include_router(auth_router)
 
     # WebSocket endpoint
     @app.websocket("/chat/sessions/{session_id}/ws")

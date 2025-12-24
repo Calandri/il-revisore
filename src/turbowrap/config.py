@@ -103,6 +103,19 @@ class ServerSettings(BaseSettings):
     workers: int = Field(default=1, ge=1, le=16, description="Number of workers")
 
 
+class AuthSettings(BaseSettings):
+    """Authentication configuration for AWS Cognito."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_AUTH_")
+
+    enabled: bool = Field(default=True, description="Enable authentication")
+    cognito_region: str = Field(default="eu-west-1", description="AWS Cognito region")
+    cognito_user_pool_id: str = Field(default="", description="Cognito User Pool ID")
+    cognito_app_client_id: str = Field(default="", description="Cognito App Client ID")
+    session_cookie_name: str = Field(default="turbowrap_session", description="Session cookie name")
+    session_max_age: int = Field(default=86400 * 7, description="Session max age in seconds (7 days)")
+
+
 class ChallengerSettings(BaseSettings):
     """Challenger loop configuration."""
 
@@ -154,6 +167,7 @@ class Settings(BaseSettings):
     tasks: TaskSettings = Field(default_factory=TaskSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     challenger: ChallengerSettings = Field(default_factory=ChallengerSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
 
     # Paths
     repos_dir: Path = Field(

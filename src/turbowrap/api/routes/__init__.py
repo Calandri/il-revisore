@@ -8,6 +8,7 @@ from .web import router as web_router
 from .settings import router as settings_router
 from .issues import router as issues_router
 from .fix import router as fix_router
+from .auth import router as auth_router
 
 __all__ = [
     "repos_router",
@@ -18,4 +19,5 @@ __all__ = [
     "settings_router",
     "issues_router",
     "fix_router",
+    "auth_router",
 ]
