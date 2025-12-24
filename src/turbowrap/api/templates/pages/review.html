@@ -234,6 +234,174 @@
         <p class="text-sm">Seleziona una repository e avvia la review</p>
     </div>
 
+    <!-- Issues Section (after review completes) -->
+    <div x-show="reviewStatus === 'completed' && issues.length > 0" class="mt-8">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <!-- Issues Header -->
+            <div class="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold">Issues Trovate</h2>
+                    <span class="px-2.5 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full text-sm font-medium"
+                          x-text="issues.length"></span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button @click="selectAllCritical()"
+                            class="text-sm text-gray-600 dark:text-gray-400 hover:text-primary">
+                        Seleziona Critical/High
+                    </button>
+                    <button @click="fixSelected()"
+                            :disabled="selectedIssues.length === 0 || isFixing"
+                            class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Sistema Selezionate (<span x-text="selectedIssues.length"></span>)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Issues List -->
+            <div class="divide-y dark:divide-gray-700">
+                <template x-for="issue in issues" :key="issue.id">
+                    <div class="px-6 py-4 flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                         :class="{'bg-green-50 dark:bg-green-900/10': issue.status === 'resolved'}">
+                        <!-- Checkbox -->
+                        <input type="checkbox"
+                               :value="issue.id"
+                               x-model="selectedIssues"
+                               :disabled="issue.status === 'resolved'"
+                               class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-50">
+
+                        <!-- Severity badge -->
+                        <span class="px-2 py-1 rounded text-xs font-bold uppercase shrink-0"
+                              :class="{
+                                  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': issue.severity === 'CRITICAL',
+                                  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': issue.severity === 'HIGH',
+                                  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.severity === 'MEDIUM',
+                                  'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400': issue.severity === 'LOW'
+                              }"
+                              x-text="issue.severity"></span>
+
+                        <!-- Issue info -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-xs text-gray-500" x-text="issue.issue_code"></span>
+                                <span x-show="issue.status === 'resolved'"
+                                      class="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs">
+                                    Risolto
+                                </span>
+                            </div>
+                            <p class="font-medium truncate" x-text="issue.title"></p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                <span x-text="issue.file"></span>
+                                <span x-show="issue.line">:<span x-text="issue.line"></span></span>
+                            </p>
+                        </div>
+
+                        <!-- Category -->
+                        <span class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded text-xs"
+                              x-text="issue.category"></span>
+
+                        <!-- Actions -->
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button @click="fixSingle(issue)"
+                                    :disabled="issue.status === 'resolved' || isFixing"
+                                    class="px-3 py-1.5 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                                Sistema
+                            </button>
+                            <button @click="ignoreIssue(issue)"
+                                    :disabled="issue.status === 'resolved'"
+                                    class="px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm">
+                                Ignora
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fix Modal -->
+    <div x-show="showFixModal"
+         x-transition
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="closeFixModal()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden m-4">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold">Fix in Corso</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400" x-text="fixProgress.branchName"></p>
+                </div>
+                <button @click="closeFixModal()"
+                        :disabled="isFixing"
+                        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Progress -->
+            <div class="px-6 py-4 border-b dark:border-gray-700">
+                <div class="flex items-center gap-4">
+                    <div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div class="bg-green-500 h-2 rounded-full transition-all"
+                             :style="`width: ${(fixProgress.current / fixProgress.total * 100) || 0}%`"></div>
+                    </div>
+                    <span class="text-sm text-gray-500">
+                        <span x-text="fixProgress.current"></span>/<span x-text="fixProgress.total"></span>
+                    </span>
+                </div>
+                <p class="text-sm mt-2" x-text="fixProgress.message"></p>
+            </div>
+
+            <!-- Streaming Content -->
+            <div class="p-6 max-h-80 overflow-y-auto">
+                <!-- Clarification Input -->
+                <div x-show="fixProgress.needsClarification" class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                    <p class="font-medium text-yellow-700 dark:text-yellow-400 mb-2" x-text="fixProgress.clarificationQuestion"></p>
+                    <div class="flex gap-2">
+                        <input type="text"
+                               x-model="clarificationAnswer"
+                               @keydown.enter="submitClarification()"
+                               class="flex-1 px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                               placeholder="La tua risposta...">
+                        <button @click="submitClarification()"
+                                class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">
+                            Invia
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Fix Output -->
+                <div class="font-mono text-xs bg-gray-50 dark:bg-gray-900 rounded-lg p-4 whitespace-pre-wrap"
+                     x-html="fixProgress.content"></div>
+            </div>
+
+            <!-- Results -->
+            <div x-show="!isFixing && fixProgress.results.length > 0"
+                 class="px-6 py-4 border-t dark:border-gray-700">
+                <h4 class="font-medium mb-2">Risultati</h4>
+                <div class="space-y-2">
+                    <template x-for="result in fixProgress.results" :key="result.issue_id">
+                        <div class="flex items-center gap-2 text-sm">
+                            <span x-show="result.status === 'completed'" class="text-green-500">✓</span>
+                            <span x-show="result.status === 'failed'" class="text-red-500">✗</span>
+                            <span x-show="result.status === 'skipped'" class="text-gray-400">⊘</span>
+                            <span x-text="result.issue_code"></span>
+                            <span x-show="result.commit_sha" class="text-gray-500 font-mono" x-text="result.commit_sha?.slice(0,7)"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Expanded Modal -->
     <div x-show="expandedAgent"
          x-transition
@@ -277,6 +445,25 @@ function reviewApp() {
         expandedAgent: null,
         eventSource: null,
         abortController: null,
+
+        // Issues & Fix
+        issues: [],
+        selectedIssues: [],
+        isFixing: false,
+        showFixModal: false,
+        clarificationAnswer: '',
+        fixSessionId: null,
+        fixProgress: {
+            branchName: '',
+            current: 0,
+            total: 0,
+            message: '',
+            content: '',
+            needsClarification: false,
+            clarificationQuestion: '',
+            clarificationQuestionId: null,
+            results: [],
+        },
 
         init() {
             // Initialize empty agent states
@@ -408,12 +595,217 @@ function reviewApp() {
                 case 'review_completed':
                     this.reviewStatus = 'completed';
                     this.statusMessage = data.message || `Review completata con ${data.issues_found || 0} issues trovate`;
+                    // Load issues from API
+                    this.loadIssues();
                     break;
 
                 case 'review_error':
                     this.reviewStatus = 'error';
                     this.statusMessage = data.message || 'Review fallita';
                     break;
+            }
+        },
+
+        async loadIssues() {
+            if (!this.selectedRepo) return;
+            try {
+                const response = await fetch(`/api/fix/issues/${this.selectedRepo}?status=open`);
+                if (response.ok) {
+                    this.issues = await response.json();
+                }
+            } catch (e) {
+                console.error('Failed to load issues:', e);
+            }
+        },
+
+        selectAllCritical() {
+            this.selectedIssues = this.issues
+                .filter(i => (i.severity === 'CRITICAL' || i.severity === 'HIGH') && i.status !== 'resolved')
+                .map(i => i.id);
+        },
+
+        async fixSingle(issue) {
+            this.selectedIssues = [issue.id];
+            await this.fixSelected();
+        },
+
+        async fixSelected() {
+            if (this.selectedIssues.length === 0 || this.isFixing) return;
+
+            this.isFixing = true;
+            this.showFixModal = true;
+            this.fixProgress = {
+                branchName: '',
+                current: 0,
+                total: this.selectedIssues.length,
+                message: 'Avvio fix...',
+                content: '',
+                needsClarification: false,
+                clarificationQuestion: '',
+                clarificationQuestionId: null,
+                results: [],
+            };
+
+            try {
+                const response = await fetch('/api/fix/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: this.selectedRepo,
+                        task_id: this.taskId,
+                        issue_ids: this.selectedIssues,
+                    }),
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            this.currentFixEvent = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            try {
+                                const data = JSON.parse(line.slice(5));
+                                this.handleFixEvent(this.currentFixEvent, data);
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Fix error:', error);
+                this.fixProgress.message = `Errore: ${error.message}`;
+            } finally {
+                this.isFixing = false;
+                // Reload issues to update statuses
+                await this.loadIssues();
+                this.selectedIssues = [];
+            }
+        },
+
+        handleFixEvent(eventType, data) {
+            switch (eventType) {
+                case 'fix_session_started':
+                    this.fixSessionId = data.session_id;
+                    this.fixProgress.branchName = data.branch_name;
+                    this.fixProgress.total = data.total_issues;
+                    this.fixProgress.message = `Branch: ${data.branch_name}`;
+                    break;
+
+                case 'fix_issue_started':
+                    this.fixProgress.current = data.issue_index;
+                    this.fixProgress.message = data.message;
+                    this.fixProgress.content = '';
+                    break;
+
+                case 'fix_issue_validating':
+                case 'fix_issue_analyzing':
+                case 'fix_issue_generating':
+                case 'fix_issue_applying':
+                case 'fix_issue_committing':
+                    this.fixProgress.message = data.message;
+                    break;
+
+                case 'fix_issue_streaming':
+                    this.fixProgress.content += data.content || '';
+                    break;
+
+                case 'fix_clarification_needed':
+                    this.fixProgress.needsClarification = true;
+                    this.fixProgress.clarificationQuestion = data.clarification?.question || data.message;
+                    this.fixProgress.clarificationQuestionId = data.clarification?.id;
+                    break;
+
+                case 'fix_clarification_received':
+                    this.fixProgress.needsClarification = false;
+                    this.fixProgress.message = data.message;
+                    break;
+
+                case 'fix_issue_committed':
+                    this.fixProgress.message = `Committed: ${data.commit_sha?.slice(0,7)}`;
+                    break;
+
+                case 'fix_issue_completed':
+                    this.fixProgress.results.push({
+                        issue_id: data.issue_id,
+                        issue_code: data.issue_code,
+                        status: 'completed',
+                        commit_sha: data.commit_sha,
+                    });
+                    break;
+
+                case 'fix_issue_error':
+                    this.fixProgress.results.push({
+                        issue_id: data.issue_id,
+                        issue_code: data.issue_code,
+                        status: 'failed',
+                        error: data.error,
+                    });
+                    this.fixProgress.message = `Errore: ${data.error}`;
+                    break;
+
+                case 'fix_issue_skipped':
+                    this.fixProgress.results.push({
+                        issue_id: data.issue_id,
+                        issue_code: data.issue_code,
+                        status: 'skipped',
+                    });
+                    break;
+
+                case 'fix_session_completed':
+                    this.fixProgress.message = `Completato: ${data.issues_fixed}/${this.fixProgress.total} fix applicati`;
+                    break;
+
+                case 'fix_session_error':
+                    this.fixProgress.message = `Errore sessione: ${data.error}`;
+                    break;
+            }
+        },
+
+        async submitClarification() {
+            if (!this.clarificationAnswer || !this.fixProgress.clarificationQuestionId) return;
+
+            try {
+                await fetch('/api/fix/clarification/answer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: this.fixSessionId,
+                        question_id: this.fixProgress.clarificationQuestionId,
+                        answer: this.clarificationAnswer,
+                    }),
+                });
+                this.clarificationAnswer = '';
+            } catch (e) {
+                console.error('Failed to submit clarification:', e);
+            }
+        },
+
+        closeFixModal() {
+            if (!this.isFixing) {
+                this.showFixModal = false;
+            }
+        },
+
+        async ignoreIssue(issue) {
+            try {
+                await fetch(`/api/fix/issues/${issue.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'ignored' }),
+                });
+                issue.status = 'ignored';
+                await this.loadIssues();
+            } catch (e) {
+                console.error('Failed to ignore issue:', e);
             }
         },
 

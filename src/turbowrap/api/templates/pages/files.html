@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block title %}File Editor - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="fileEditor()" x-init="init()">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold">File Editor</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Modifica file di documentazione e configurazione</p>
+        </div>
+    </div>
+
+    <!-- Repository and File Selection -->
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- Sidebar: File Tree -->
+        <div class="lg:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div class="p-4 border-b dark:border-gray-700">
+                <label class="block text-sm text-gray-500 mb-2">Repository</label>
+                <select x-model="selectedRepoId" @change="loadFileTree()"
+                        class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="">Seleziona repository</option>
+                    {% for repo in repos %}
+                    <option value="{{ repo.id }}">{{ repo.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- File type filter -->
+            <div class="p-4 border-b dark:border-gray-700">
+                <label class="block text-sm text-gray-500 mb-2">Tipo file</label>
+                <select x-model="fileExtension" @change="loadFileTree()"
+                        class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value=".md">Markdown (.md)</option>
+                    <option value=".md,.txt">Markdown e Text</option>
+                    <option value=".json,.yaml,.yml">Config (json/yaml)</option>
+                    <option value=".py">Python (.py)</option>
+                    <option value=".js,.ts">JavaScript/TypeScript</option>
+                </select>
+            </div>
+
+            <!-- File list -->
+            <div class="overflow-y-auto max-h-[60vh]">
+                <div x-show="loadingTree" class="p-4 text-center text-gray-500">
+                    <svg class="animate-spin w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </div>
+
+                <div x-show="!loadingTree && files.length === 0 && selectedRepoId" class="p-4 text-center text-gray-500">
+                    Nessun file trovato
+                </div>
+
+                <div x-show="!loadingTree && !selectedRepoId" class="p-4 text-center text-gray-500">
+                    Seleziona un repository
+                </div>
+
+                <div class="divide-y dark:divide-gray-700">
+                    <template x-for="file in files" :key="file.path">
+                        <button @click="loadFile(file.path)"
+                                class="w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-2"
+                                :class="currentFilePath === file.path ? 'bg-primary/10 border-l-2 border-primary' : ''">
+                            <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <span class="text-sm truncate" x-text="file.path"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Editor Area -->
+        <div class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col">
+            <!-- Editor Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-2">
+                    <span x-show="currentFilePath" class="font-mono text-sm" x-text="currentFilePath"></span>
+                    <span x-show="!currentFilePath" class="text-gray-500">Seleziona un file</span>
+                    <span x-show="isDirty" class="text-xs text-orange-500">(modificato)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button @click="reloadFile()"
+                            :disabled="!currentFilePath || loading"
+                            class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50 transition-colors"
+                            title="Ricarica">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                    <button @click="saveFile()"
+                            :disabled="!isDirty || saving"
+                            class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2">
+                        <svg x-show="saving" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        <span x-text="saving ? 'Salvataggio...' : 'Salva'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading state -->
+            <div x-show="loading" class="flex-1 flex items-center justify-center">
+                <svg class="animate-spin w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="!loading && !currentFilePath" class="flex-1 flex items-center justify-center text-gray-500">
+                <div class="text-center">
+                    <svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p>Seleziona un file dalla lista per modificarlo</p>
+                </div>
+            </div>
+
+            <!-- Editor -->
+            <div x-show="!loading && currentFilePath" class="flex-1 flex flex-col min-h-0">
+                <textarea x-model="content"
+                          @input="isDirty = true"
+                          class="flex-1 w-full p-4 font-mono text-sm bg-gray-50 dark:bg-gray-900 resize-none focus:outline-none"
+                          placeholder="Contenuto del file..."
+                          spellcheck="false"></textarea>
+            </div>
+
+            <!-- Status bar -->
+            <div x-show="currentFilePath" class="px-4 py-2 border-t dark:border-gray-700 text-xs text-gray-500 flex justify-between shrink-0">
+                <span x-text="content.length + ' caratteri'"></span>
+                <span x-text="content.split('\\n').length + ' righe'"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save with commit modal -->
+    <div x-show="showCommitModal"
+         x-transition
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="showCommitModal = false">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div class="p-4 border-b dark:border-gray-700">
+                <h3 class="font-semibold">Salva con commit</h3>
+            </div>
+            <div class="p-4 space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-500 mb-1">Messaggio commit (opzionale)</label>
+                    <input x-model="commitMessage"
+                           type="text"
+                           class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg"
+                           placeholder="Update documentation">
+                </div>
+                <p class="text-sm text-gray-500">
+                    Lascia vuoto per salvare senza creare un commit.
+                </p>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex justify-end gap-2">
+                <button @click="showCommitModal = false"
+                        class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Annulla
+                </button>
+                <button @click="confirmSave()"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                    Salva
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div x-show="toast.show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 translate-y-2"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 translate-y-2"
+         class="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg"
+         :class="toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'">
+        <span x-text="toast.message"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fileEditor() {
+    return {
+        selectedRepoId: '',
+        fileExtension: '.md',
+        files: [],
+        loadingTree: false,
+        currentFilePath: '',
+        content: '',
+        originalContent: '',
+        loading: false,
+        saving: false,
+        isDirty: false,
+        showCommitModal: false,
+        commitMessage: '',
+        toast: { show: false, message: '', type: 'success' },
+
+        init() {
+            // Check URL for repo parameter
+            const params = new URLSearchParams(window.location.search);
+            const repoId = params.get('repo');
+            if (repoId) {
+                this.selectedRepoId = repoId;
+                this.loadFileTree();
+            }
+        },
+
+        async loadFileTree() {
+            if (!this.selectedRepoId) {
+                this.files = [];
+                return;
+            }
+
+            this.loadingTree = true;
+            try {
+                const response = await fetch(
+                    `/api/repos/${this.selectedRepoId}/files/tree?extensions=${encodeURIComponent(this.fileExtension)}`
+                );
+                if (response.ok) {
+                    this.files = await response.json();
+                } else {
+                    this.showToast('Errore caricamento file', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading file tree:', error);
+                this.showToast('Errore connessione', 'error');
+            }
+            this.loadingTree = false;
+        },
+
+        async loadFile(path) {
+            if (this.isDirty && !confirm('Hai modifiche non salvate. Vuoi continuare?')) {
+                return;
+            }
+
+            this.loading = true;
+            this.currentFilePath = path;
+
+            try {
+                const response = await fetch(
+                    `/api/repos/${this.selectedRepoId}/files/content?path=${encodeURIComponent(path)}`
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    this.content = data.content;
+                    this.originalContent = data.content;
+                    this.isDirty = false;
+                } else {
+                    const error = await response.json();
+                    this.showToast(error.detail || 'Errore caricamento', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading file:', error);
+                this.showToast('Errore connessione', 'error');
+            }
+            this.loading = false;
+        },
+
+        reloadFile() {
+            if (this.currentFilePath) {
+                this.loadFile(this.currentFilePath);
+            }
+        },
+
+        saveFile() {
+            this.showCommitModal = true;
+            this.commitMessage = '';
+        },
+
+        async confirmSave() {
+            this.showCommitModal = false;
+            this.saving = true;
+
+            try {
+                const response = await fetch(
+                    `/api/repos/${this.selectedRepoId}/files/content?path=${encodeURIComponent(this.currentFilePath)}`,
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            content: this.content,
+                            commit_message: this.commitMessage || null,
+                        }),
+                    }
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.originalContent = this.content;
+                    this.isDirty = false;
+                    if (data.committed) {
+                        this.showToast('Salvato e committato!', 'success');
+                    } else {
+                        this.showToast('File salvato', 'success');
+                    }
+                } else {
+                    const error = await response.json();
+                    this.showToast(error.detail || 'Errore salvataggio', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving file:', error);
+                this.showToast('Errore connessione', 'error');
+            }
+            this.saving = false;
+        },
+
+        showToast(message, type = 'success') {
+            this.toast = { show: true, message, type };
+            setTimeout(() => {
+                this.toast.show = false;
+            }, 3000);
+        }
+    }
+}
+</script>
+{% endblock %}

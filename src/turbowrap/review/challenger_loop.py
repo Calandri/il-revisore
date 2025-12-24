@@ -72,12 +72,15 @@ class ChallengerLoop:
         self.reviewer = reviewer
         self.challenger = challenger
 
-        # Default values
-        self.satisfaction_threshold = satisfaction_threshold or 99.0
-        self.max_iterations = max_iterations or 5
-        self.min_improvement_threshold = min_improvement_threshold or 2.0
-        self.stagnation_window = stagnation_window or 3
-        self.forced_acceptance_threshold = forced_acceptance_threshold or 85.0
+        # Get defaults from config
+        settings = get_settings()
+        challenger_config = settings.challenger
+
+        self.satisfaction_threshold = satisfaction_threshold or challenger_config.satisfaction_threshold
+        self.max_iterations = max_iterations or challenger_config.max_iterations
+        self.min_improvement_threshold = min_improvement_threshold or challenger_config.min_improvement_threshold
+        self.stagnation_window = stagnation_window or challenger_config.stagnation_window
+        self.forced_acceptance_threshold = forced_acceptance_threshold or challenger_config.forced_acceptance_threshold
 
     async def run(
         self,

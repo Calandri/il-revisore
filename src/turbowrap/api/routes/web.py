@@ -153,6 +153,21 @@ async def issues_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/files", response_class=HTMLResponse)
+async def files_page(request: Request, db: Session = Depends(get_db)):
+    """File editor page."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/files.html",
+        {
+            "request": request,
+            "repos": repos,
+            "active_page": "files",
+        }
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     """Settings page for configuring TurboWrap."""

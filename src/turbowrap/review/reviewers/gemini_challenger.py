@@ -51,7 +51,7 @@ class GeminiChallenger(BaseReviewer):
         settings = get_settings()
         self.api_key = api_key or settings.agents.effective_google_key
         self.cli_path = cli_path
-        self.threshold = 99.0  # Default threshold
+        self.threshold = settings.challenger.satisfaction_threshold  # From config
 
     async def review(self, context: ReviewContext) -> ReviewOutput:
         """
@@ -108,191 +108,92 @@ class GeminiChallenger(BaseReviewer):
         iteration: int,
     ) -> str:
         """Build the challenge prompt for Gemini."""
-        prompt = f"""# Code Review Challenge - Iteration {iteration}
+        prompt = f"""# Review Quality Evaluation - Iteration {iteration}
 
-You are an expert code review challenger. Your mission is to ensure the review is thorough, secure, accurate, and production-ready.
+You are evaluating the QUALITY of a code review, not the code itself.
+Your job is to determine if the reviewer did a good job.
 
-## Review to Evaluate
+## The Review to Evaluate
 
 ```json
 {review.model_dump_json(indent=2)}
 ```
 
-## Original Code Context
+## The Code/Context Being Reviewed
 
-{context.get_code_context(max_chars=50000)}
+{context.get_code_context(max_chars=30000)}
 
-"""
-        if context.diff:
-            prompt += f"""## Code Changes (Diff)
+## Your Task
 
-```diff
-{context.diff[:20000]}
-```
+Evaluate the REVIEW on these 4 dimensions (0-100 each):
 
-"""
+### 1. Completeness (weight: 25%)
+- Did the reviewer analyze ALL relevant files?
+- Did they cover security, performance, architecture, and maintainability?
+- Did they miss any obvious areas that should have been reviewed?
 
-        # Add linked repos context if available
-        if hasattr(context, 'linked_repos') and context.linked_repos:
-            prompt += """## Linked Repositories Context
+### 2. Accuracy (weight: 30%)
+- Are the issues found by the reviewer REAL problems?
+- Are the severity levels (CRITICAL, HIGH, MEDIUM, LOW) appropriate?
+- Are there any false positives (issues that aren't really issues)?
 
-This repository has linked repositories. Consider cross-repo implications:
+### 3. Depth (weight: 25%)
+- Did the reviewer identify ROOT CAUSES or just symptoms?
+- Did they understand the business logic implications?
+- Did they trace dependencies across files?
 
-"""
-            for linked in context.linked_repos:
-                prompt += f"""- **{linked.get('name', 'Unknown')}** ({linked.get('link_type', 'related')}, {linked.get('direction', 'linked')})
-  - Repo type: {linked.get('repo_type', 'unknown')}
-"""
-            prompt += """
-When evaluating, check for:
-- API contract consistency between frontend and backend
-- Shared type definitions and interfaces
-- Breaking changes that affect linked repos
-- Authentication/authorization flow consistency
-- Data format compatibility (request/response schemas)
+### 4. Actionability (weight: 20%)
+- Are the fix suggestions clear and specific?
+- Could a developer implement the fixes without guessing?
+- Are code examples correct and usable?
 
-"""
+## Output Format
 
-        prompt += """## Evaluation Dimensions
-
-Evaluate the review on these dimensions (0-100 score each):
-
-### 1. **Completeness** (weight: 25%)
-- Are ALL files in scope reviewed (not just changed files)?
-- Are all categories covered: security, performance, architecture, maintainability?
-- Are edge cases and error paths considered?
-- Are integration points and external API calls analyzed?
-- Are database queries and data access patterns reviewed?
-
-### 2. **Security** (weight: 30%) ⚠️ CRITICAL
-Apply OWASP Top 10 checklist rigorously:
-- **Injection**: SQL, NoSQL, OS command, LDAP injection vulnerabilities
-- **Broken Auth**: Weak passwords, session management, credential exposure
-- **Sensitive Data**: PII/secrets in logs, unencrypted data, insecure storage
-- **XXE/XSS**: XML external entities, cross-site scripting vectors
-- **Access Control**: Missing authorization, IDOR, privilege escalation
-- **Security Misconfig**: Debug mode, default credentials, verbose errors
-- **Insecure Deserialization**: Untrusted data deserialization
-- **Vulnerable Components**: Outdated dependencies with known CVEs
-- **Logging Failures**: Missing audit logs, sensitive data in logs
-- **SSRF**: Server-side request forgery vulnerabilities
-
-Also check:
-- Input validation on ALL user inputs
-- Rate limiting and DoS protection
-- CORS configuration
-- JWT/token handling
-- File upload security
-- Path traversal prevention
-
-### 3. **Code Quality** (weight: 20%)
-Evaluate technical debt and maintainability:
-- **Complexity**: Functions with high cyclomatic complexity (>10)
-- **Code Smells**: Long methods, god classes, feature envy, data clumps
-- **DRY Violations**: Duplicated code blocks (>5 lines)
-- **SOLID Violations**: Single responsibility, dependency inversion issues
-- **Error Handling**: Swallowed exceptions, generic catches, missing error types
-- **Type Safety**: Missing types, any abuse, unsafe casts
-- **Test Coverage**: Missing tests for critical paths, edge cases untested
-- **Documentation**: Missing JSDoc/docstrings for public APIs
-
-### 4. **Depth** (weight: 15%)
-- Are ROOT CAUSES identified, not just symptoms?
-- Is business logic impact analyzed?
-- Are cross-file and cross-module dependencies traced?
-- Are database schema implications considered?
-- Is performance impact quantified where possible?
-
-### 5. **Actionability** (weight: 10%)
-- Are fix suggestions COPY-PASTE ready?
-- Are code examples syntactically correct and tested?
-- Is priority/effort guidance realistic?
-- Are migration steps clear for breaking changes?
-
-## Required Output Format
-
-Output ONLY valid JSON matching this schema:
+Return ONLY valid JSON:
 
 ```json
-{
+{{
   "satisfaction_score": <weighted average 0-100>,
   "status": "APPROVED|NEEDS_REFINEMENT|MAJOR_ISSUES",
-  "dimension_scores": {
+  "dimension_scores": {{
     "completeness": <0-100>,
-    "security": <0-100>,
-    "code_quality": <0-100>,
+    "accuracy": <0-100>,
     "depth": <0-100>,
     "actionability": <0-100>
-  },
-  "security_checklist": {
-    "injection_checked": <true|false>,
-    "auth_checked": <true|false>,
-    "data_exposure_checked": <true|false>,
-    "access_control_checked": <true|false>,
-    "input_validation_checked": <true|false>,
-    "critical_findings": ["<finding 1>", "<finding 2>"]
-  },
-  "code_quality_metrics": {
-    "high_complexity_functions": ["<func1>", "<func2>"],
-    "duplicated_code_blocks": <count>,
-    "missing_error_handling": ["<location1>", "<location2>"],
-    "type_safety_issues": <count>
-  },
-  "cross_repo_issues": [
-    {
-      "type": "api_mismatch|breaking_change|type_inconsistency|auth_flow",
-      "description": "<what's inconsistent>",
-      "affected_repos": ["<repo1>", "<repo2>"],
-      "suggested_fix": "<how to resolve>"
-    }
-  ],
+  }},
   "missed_issues": [
-    {
-      "type": "security|performance|architecture|logic|quality",
-      "description": "<what was missed>",
+    {{
+      "type": "security|performance|architecture|logic",
+      "description": "<what the reviewer missed>",
       "file": "<file path>",
       "lines": "<line range or null>",
-      "why_important": "<impact explanation>",
-      "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW",
-      "owasp_category": "<if security: A01-A10 or null>"
-    }
+      "why_important": "<why this matters>",
+      "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW"
+    }}
   ],
   "challenges": [
-    {
-      "issue_id": "<id of challenged issue>",
-      "challenge_type": "severity|fix_incomplete|false_positive|needs_context|security_underrated",
-      "challenge": "<the challenge>",
-      "reasoning": "<detailed reasoning>",
-      "suggested_change": "<what to change>"
-    }
+    {{
+      "issue_id": "<id of issue to challenge>",
+      "challenge_type": "severity|false_positive|fix_incomplete",
+      "challenge": "<what's wrong with this issue>",
+      "reasoning": "<why>",
+      "suggested_change": "<how to fix>"
+    }}
   ],
-  "improvements_needed": [
-    "<specific improvement 1>",
-    "<specific improvement 2>"
-  ],
-  "positive_feedback": [
-    "<what was done well 1>"
-  ]
-}
+  "improvements_needed": ["<improvement 1>", "<improvement 2>"],
+  "positive_feedback": ["<what was done well>"]
+}}
 ```
 
-## Scoring Guidelines
+## Scoring Guide
 
-- **99-100**: Production ready, all security checks pass, comprehensive coverage
-- **90-98**: Minor improvements needed, no security issues
-- **70-89**: Significant gaps, requires refinement
-- **50-69**: Major issues missed, especially security
-- **<50**: Review is inadequate, restart recommended
+- **90-100**: Excellent review, comprehensive and accurate
+- **70-89**: Good review with minor gaps
+- **50-69**: Adequate review but missing important areas
+- **<50**: Poor review, major issues missed
 
-## Critical Rules
-
-1. **SECURITY IS NON-NEGOTIABLE**: Any missed CRITICAL/HIGH security issue = automatic score cap at 70
-2. **Be rigorous but fair**: Flag real problems, not style preferences
-3. **Cross-repo consistency matters**: API contracts must match
-4. **Quantify when possible**: "3 SQL injection points" not "some injection risks"
-5. **Every missed CRITICAL issue must be documented in missed_issues**
-
-Output ONLY the JSON, no markdown blocks or explanations.
+Be fair but rigorous. Only flag REAL problems with the review.
+Output ONLY the JSON, no markdown or explanations.
 """
         return prompt
 
@@ -408,8 +309,7 @@ Output ONLY the JSON, no markdown blocks or explanations.
             dim_data = data.get("dimension_scores", {})
             dimension_scores = DimensionScores(
                 completeness=dim_data.get("completeness", 50),
-                security=dim_data.get("security", 50),
-                code_quality=dim_data.get("code_quality", 50),
+                accuracy=dim_data.get("accuracy", 50),
                 depth=dim_data.get("depth", 50),
                 actionability=dim_data.get("actionability", 50),
             )
@@ -471,8 +371,7 @@ Output ONLY the JSON, no markdown blocks or explanations.
                 status=ChallengerStatus.NEEDS_REFINEMENT,
                 dimension_scores=DimensionScores(
                     completeness=50,
-                    security=50,
-                    code_quality=50,
+                    accuracy=50,
                     depth=50,
                     actionability=50,
                 ),
@@ -497,8 +396,7 @@ Output ONLY the JSON, no markdown blocks or explanations.
             "status": "NEEDS_REFINEMENT",
             "dimension_scores": {
                 "completeness": 80,
-                "security": 80,
-                "code_quality": 80,
+                "accuracy": 80,
                 "depth": 80,
                 "actionability": 80,
             },
