@@ -391,9 +391,9 @@ Important: Output ONLY the commands you ran and a brief summary. No explanations
                 else:
                     raise SyncError(f"Claude failed to resolve conflicts: {stderr.decode()}")
 
-        # 5. Push
+        # 5. Push (with -u to set upstream if needed)
         push_result = subprocess.run(
-            ["git", "push"],
+            ["git", "push", "-u", "origin", "HEAD"],
             cwd=repo_path,
             check=True,
             capture_output=True,

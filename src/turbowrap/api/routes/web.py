@@ -291,7 +291,13 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
 async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
     """HTMX: push repository changes with automatic conflict resolution via Claude CLI."""
+    import json
+    import logging
     from pathlib import Path
+
+    logger = logging.getLogger(__name__)
+    push_message = None
+    push_error = None
 
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if repo and repo.local_path:
@@ -303,16 +309,28 @@ async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(g
                 api_key=api_key,
             )
             if result.get("claude_resolved"):
-                print(f"Push completed - Claude resolved conflicts for {repo.name}")
+                push_message = f"✅ Push completato - Claude ha risolto i conflitti per {repo.name}"
             else:
-                print(f"Push completed for {repo.name}")
+                push_message = f"✅ Push completato per {repo.name}"
+            logger.info(push_message)
         except Exception as e:
-            print(f"Push error for {repo.name}: {e}")
+            push_error = f"❌ Push fallito per {repo.name}: {str(e)}"
+            logger.error(push_error)
+    else:
+        push_error = "❌ Repository non trovata"
 
-    # Return updated list
+    # Return updated list with HX-Trigger for toast notification
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "components/repo_list.html",
         {"request": request, "repos": repos}
     )
+
+    # Add HX-Trigger header for toast notification
+    if push_message:
+        response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": push_message, "type": "success"}})
+    elif push_error:
+        response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": push_error, "type": "error"}})
+
+    return response

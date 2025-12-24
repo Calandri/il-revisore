@@ -141,6 +141,51 @@ class ClaudeCLIReviewer(BaseReviewer):
             logger.warning(f"Failed to save thinking to S3: {e}")
             return None
 
+    async def _save_raw_output_to_s3(
+        self,
+        raw_output: str,
+        review_id: str,
+        context: ReviewContext,
+    ) -> Optional[str]:
+        """
+        Save raw NDJSON output from Claude CLI to S3 for debugging.
+
+        This captures the complete stream-json output before parsing,
+        essential for debugging truncation or parsing issues.
+
+        Args:
+            raw_output: The raw NDJSON output from Claude CLI
+            review_id: Unique identifier for this review
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not raw_output or not self.s3_bucket:
+            return None
+
+        try:
+            # Create S3 key with timestamp
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"raw-output/{timestamp}/{review_id}_{self.name}.ndjson"
+
+            # Upload raw output as-is
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=raw_output.encode("utf-8"),
+                ContentType="application/x-ndjson",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"Saved raw NDJSON output to {s3_url} ({len(raw_output)} chars)")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save raw output to S3: {e}")
+            return None
+
     async def review(
         self,
         context: ReviewContext,
@@ -167,14 +212,20 @@ class ClaudeCLIReviewer(BaseReviewer):
         prompt = self._build_review_prompt(context, files_to_review)
 
         # Run Claude CLI with streaming
-        output, model_usage, thinking_content = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        output, model_usage, thinking_content, raw_output = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+
+        # Get review_id for S3 logging
+        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+
+        # Always save raw NDJSON output to S3 for debugging
+        if raw_output:
+            await self._save_raw_output_to_s3(raw_output, review_id, context)
 
         if output is None:
             return self._create_error_output("Claude CLI failed to execute")
 
         # Save thinking to S3 if available
         if thinking_content:
-            review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
             await self._save_thinking_to_s3(thinking_content, review_id, context)
 
         # Parse the response
@@ -215,14 +266,21 @@ class ClaudeCLIReviewer(BaseReviewer):
         prompt = self._build_refinement_prompt(context, previous_review, feedback, files_to_review)
 
         # Run Claude CLI with streaming
-        output, model_usage, thinking_content = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        output, model_usage, thinking_content, raw_output = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+
+        # Get review_id for S3 logging
+        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+
+        # Always save raw NDJSON output to S3 for debugging (with iteration suffix)
+        if raw_output:
+            iteration_review_id = f"{review_id}_iter{previous_review.iteration + 1}"
+            await self._save_raw_output_to_s3(raw_output, iteration_review_id, context)
 
         if output is None:
             return self._create_error_output("Claude CLI refinement failed")
 
         # Save thinking to S3 if available
         if thinking_content:
-            review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
             await self._save_thinking_to_s3(thinking_content, review_id, context)
 
         # Parse the response
@@ -267,11 +325,9 @@ class ClaudeCLIReviewer(BaseReviewer):
 1. **Read the files** listed above using your file reading capabilities
 2. **Explore freely** - you can read other files (imports, dependencies, tests) if needed
 3. **Apply your expertise** from the system prompt above
-4. **Output ONLY valid JSON** matching the schema below
 
 ## Output Schema
 
-```json
 {
   "summary": {
     "files_reviewed": <int>,
@@ -289,8 +345,8 @@ class ClaudeCLIReviewer(BaseReviewer):
       "file": "<file path>",
       "line": <line number or null>,
       "title": "<brief title>",
-      "description": "<detailed description>",
-      "suggested_fix": "<how to fix - code or explanation>"
+      "description": "<max 150 chars>",
+      "suggested_fix": "<max 100 chars>"
     }
   ],
   "checklists": {
@@ -299,9 +355,15 @@ class ClaudeCLIReviewer(BaseReviewer):
     "architecture": { "passed": <int>, "failed": <int>, "skipped": <int> }
   }
 }
-```
 
-Output ONLY the JSON, no markdown code blocks, no explanations.
+## CRITICAL OUTPUT REQUIREMENTS
+- Your ENTIRE response must be ONLY the JSON object above
+- Start with `{` - NO text before it (no "Here is...", no "Let me...")
+- End with `}` - NO text after it
+- NO markdown code blocks (no ```)
+- Keep descriptions SHORT (max 150 chars) to prevent truncation
+- Limit to TOP 10 most important issues only
+- VERIFY your JSON is complete before outputting
 """)
 
         return "".join(sections)
@@ -352,7 +414,7 @@ Output the complete refined review as JSON (same schema as before).
         prompt: str,
         repo_path: Path | None,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
-    ) -> tuple[str | None, list[ModelUsageInfo], str]:
+    ) -> tuple[str | None, list[ModelUsageInfo], str, str]:
         """
         Run Claude CLI with the prompt, streaming output.
 
@@ -362,7 +424,7 @@ Output the complete refined review as JSON (same schema as before).
             on_chunk: Optional callback for streaming chunks
 
         Returns:
-            Tuple of (CLI output or None if failed, list of model usage info, thinking content)
+            Tuple of (CLI output or None if failed, list of model usage info, thinking content, raw NDJSON output)
         """
         cwd = str(repo_path) if repo_path else None
 
@@ -438,7 +500,7 @@ Output the complete refined review as JSON (same schema as before).
                 # Claude CLI crashed before accepting input - check stderr
                 stderr = await process.stderr.read()
                 logger.error(f"Claude CLI crashed on stdin: {stderr.decode()[:500]}")
-                return None, [], ""
+                return None, [], "", ""
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries
@@ -467,7 +529,7 @@ Output the complete refined review as JSON (same schema as before).
             except asyncio.TimeoutError:
                 logger.error(f"Claude CLI timed out after {self.timeout}s")
                 process.kill()
-                return None, [], ""
+                return None, [], "", ""
 
             await process.wait()
 
@@ -482,7 +544,7 @@ Output the complete refined review as JSON (same schema as before).
             if process.returncode != 0:
                 logger.error(f"[CLAUDE CLI] FAILED with code {process.returncode}")
                 logger.error(f"[CLAUDE CLI] Full stderr: {stderr_text}")
-                return None, [], ""
+                return None, [], "", ""
 
             raw_output = "".join(output_chunks)
             logger.info(f"[CLAUDE CLI] Raw output collected: {len(raw_output)} chars")
@@ -562,14 +624,127 @@ Output the complete refined review as JSON (same schema as before).
             logger.info(f"[CLAUDE CLI] Completed, output length: {len(output)}")
             logger.info(f"[CLAUDE CLI] Output preview: {output[:500] if output else 'EMPTY'}")
             logger.info(f"[CLAUDE CLI] Output end: ...{output[-500:] if output and len(output) > 500 else ''}")
-            return output, model_usage_list, thinking_content
+            return output, model_usage_list, thinking_content, raw_output
 
         except FileNotFoundError:
             logger.error(f"[CLAUDE CLI] NOT FOUND at: {self.cli_path}")
-            return None, [], ""
+            return None, [], "", ""
         except Exception as e:
             logger.exception(f"[CLAUDE CLI] EXCEPTION: {e}")
-            return None, [], ""
+            return None, [], "", ""
+
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """
+        Extract JSON from Claude's response, handling:
+        - Markdown code blocks (```json ... ```)
+        - Conversational text before/after JSON
+        - Raw JSON starting with {
+        """
+        text = response_text.strip()
+
+        # Strategy 1: Look for markdown code blocks
+        if "```json" in text:
+            # Find content between ```json and ```
+            start = text.find("```json")
+            if start != -1:
+                start += 7  # Length of ```json
+                end = text.find("```", start)
+                if end != -1:
+                    json_text = text[start:end].strip()
+                    logger.info(f"[CLAUDE PARSE] Extracted JSON from markdown block: {len(json_text)} chars")
+                    return json_text
+
+        # Strategy 2: Look for code blocks without language specifier
+        if "```" in text:
+            lines = text.split("\n")
+            json_lines = []
+            in_block = False
+            for line in lines:
+                if line.strip().startswith("```"):
+                    if in_block:
+                        # End of block - check if we collected valid JSON
+                        if json_lines and json_lines[0].strip().startswith("{"):
+                            json_text = "\n".join(json_lines)
+                            logger.info(f"[CLAUDE PARSE] Extracted JSON from code block: {len(json_text)} chars")
+                            return json_text
+                        json_lines = []
+                    in_block = not in_block
+                    continue
+                if in_block:
+                    json_lines.append(line)
+
+        # Strategy 3: Find first { and last } to extract raw JSON
+        first_brace = text.find("{")
+        if first_brace != -1:
+            last_brace = text.rfind("}")
+            if last_brace != -1 and last_brace > first_brace:
+                json_text = text[first_brace:last_brace + 1]
+                logger.info(f"[CLAUDE PARSE] Extracted JSON by brace matching: {len(json_text)} chars")
+                return json_text
+
+        # Fallback: return original text and let JSON parser fail with proper error
+        logger.warning("[CLAUDE PARSE] Could not extract JSON, returning raw text")
+        return text
+
+    def _repair_truncated_json(self, json_text: str) -> str:
+        """
+        Attempt to repair truncated JSON by closing open structures.
+
+        This handles cases where Claude's output was cut off mid-JSON.
+        """
+        # Count open/close braces and brackets
+        open_braces = json_text.count("{")
+        close_braces = json_text.count("}")
+        open_brackets = json_text.count("[")
+        close_brackets = json_text.count("]")
+
+        # If balanced, nothing to repair
+        if open_braces == close_braces and open_brackets == close_brackets:
+            return json_text
+
+        logger.warning(
+            f"[CLAUDE PARSE] Detected truncated JSON: "
+            f"braces {open_braces}/{close_braces}, brackets {open_brackets}/{close_brackets}"
+        )
+
+        # Try to find a valid stopping point (after a complete issue)
+        # Look for the last complete issue object
+        repaired = json_text.rstrip()
+
+        # Remove trailing incomplete content (after last complete structure)
+        # Find last complete issue by looking for pattern: }, or }]
+        last_complete = max(
+            repaired.rfind("},"),
+            repaired.rfind("}]"),
+        )
+
+        if last_complete > 0:
+            # Truncate to last complete structure
+            repaired = repaired[:last_complete + 2]
+            logger.info(f"[CLAUDE PARSE] Truncated to last complete structure at pos {last_complete}")
+
+        # Now close any remaining open structures
+        # Count again after truncation
+        open_braces = repaired.count("{")
+        close_braces = repaired.count("}")
+        open_brackets = repaired.count("[")
+        close_brackets = repaired.count("]")
+
+        # Add missing closing characters
+        # Order matters: close brackets before braces (issues array before root object)
+        missing_brackets = open_brackets - close_brackets
+        missing_braces = open_braces - close_braces
+
+        if missing_brackets > 0:
+            repaired += "]" * missing_brackets
+        if missing_braces > 0:
+            repaired += "}" * missing_braces
+
+        logger.info(
+            f"[CLAUDE PARSE] Repaired JSON: added {missing_brackets} brackets, {missing_braces} braces"
+        )
+
+        return repaired
 
     def _parse_response(
         self,
@@ -579,23 +754,21 @@ Output the complete refined review as JSON (same schema as before).
         """Parse Claude's response into ReviewOutput."""
         logger.info(f"[CLAUDE PARSE] Parsing response of {len(response_text)} chars")
         try:
-            # Try to extract JSON from response
-            json_text = response_text.strip()
+            json_text = self._extract_json_from_response(response_text)
 
-            # Handle markdown code blocks
-            if json_text.startswith("```"):
-                lines = json_text.split("\n")
-                json_lines = []
-                in_block = False
-                for line in lines:
-                    if line.startswith("```"):
-                        in_block = not in_block
-                        continue
-                    if in_block:
-                        json_lines.append(line)
-                json_text = "\n".join(json_lines)
-
-            data = json.loads(json_text)
+            # First attempt: parse as-is
+            try:
+                data = json.loads(json_text)
+            except json.JSONDecodeError as first_error:
+                # Second attempt: try to repair truncated JSON
+                logger.warning(f"[CLAUDE PARSE] First parse failed: {first_error}")
+                repaired_json = self._repair_truncated_json(json_text)
+                try:
+                    data = json.loads(repaired_json)
+                    logger.info("[CLAUDE PARSE] Successfully parsed repaired JSON")
+                except json.JSONDecodeError:
+                    # Both attempts failed, re-raise original error
+                    raise first_error
             logger.info(f"[CLAUDE PARSE] JSON parsed successfully, keys: {list(data.keys())}")
 
             # Build ReviewOutput from parsed data
