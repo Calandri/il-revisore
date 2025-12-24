@@ -162,8 +162,9 @@ class ChallengerLoop:
 
             # Record iteration history
             issues_added = len(challenger_feedback.missed_issues)
+            # addressed_challenges is already an int (count of challenges)
             challenges_resolved = (
-                len(current_review.refinement_notes[-1].get("addressed_challenges", []))
+                current_review.refinement_notes[-1].get("addressed_challenges", 0)
                 if current_review.refinement_notes
                 else 0
             )
