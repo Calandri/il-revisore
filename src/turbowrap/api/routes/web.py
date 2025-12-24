@@ -188,3 +188,24 @@ async def htmx_delete_repo(request: Request, repo_id: str, db: Session = Depends
         "components/repo_list.html",
         {"request": request, "repos": repos}
     )
+
+
+@router.post("/htmx/repos/{repo_id}/sync", response_class=HTMLResponse)
+async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+    """HTMX: sync a repository and return updated list."""
+    from ...core.repo_manager import RepoManager
+
+    manager = RepoManager(db)
+    try:
+        manager.sync(repo_id)
+    except Exception as e:
+        # Log error but continue to return updated list
+        print(f"Sync error: {e}")
+
+    # Return updated list
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "components/repo_list.html",
+        {"request": request, "repos": repos}
+    )

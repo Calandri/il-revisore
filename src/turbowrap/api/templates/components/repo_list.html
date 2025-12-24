@@ -1,53 +1,89 @@
 {% if repos %}
 <div class="divide-y dark:divide-gray-700">
     {% for repo in repos %}
-    <div class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-        <div class="flex items-center gap-4">
-            <!-- Icon -->
-            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                </svg>
+    <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <!-- Icon -->
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                </div>
+
+                <!-- Info -->
+                <div>
+                    <h3 class="font-medium">{{ repo.name or repo.url.split('/')[-1] }}</h3>
+                    <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                        <span>{{ repo.default_branch }}</span>
+                        <span>•</span>
+                        <span>{{ repo.repo_type or 'unknown' }}</span>
+                        {% if repo.metadata_ and repo.metadata_.total_files %}
+                        <span>•</span>
+                        <span>{{ repo.metadata_.total_files }} files</span>
+                        <span>•</span>
+                        <span>{{ (repo.metadata_.total_tokens / 1000)|round(1) }}k tokens</span>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
 
-            <!-- Info -->
-            <div>
-                <h3 class="font-medium">{{ repo.name or repo.url.split('/')[-1] }}</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400">{{ repo.url }}</p>
+            <!-- Actions -->
+            <div class="flex items-center gap-2">
+                <!-- Status badge -->
+                <span class="px-2 py-1 text-xs rounded-full
+                    {% if repo.status == 'active' %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400
+                    {% elif repo.status == 'syncing' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400
+                    {% elif repo.status == 'error' %}bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400
+                    {% else %}bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300{% endif %}">
+                    {{ repo.status }}
+                </span>
+
+                <!-- Sync button -->
+                <button hx-post="/htmx/repos/{{ repo.id }}/sync"
+                        hx-target="#repo-list"
+                        hx-indicator="#sync-spinner-{{ repo.id }}"
+                        class="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                        title="Sincronizza">
+                    <svg id="sync-spinner-{{ repo.id }}" class="w-5 h-5 htmx-indicator animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <svg class="w-5 h-5 htmx-indicator-hide" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+
+                <!-- Review button -->
+                <a href="/review?repo={{ repo.id }}"
+                   class="p-2 text-gray-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                   title="Code Review">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                    </svg>
+                </a>
+
+                <!-- Delete button -->
+                <button hx-delete="/htmx/repos/{{ repo.id }}"
+                        hx-target="#repo-list"
+                        hx-confirm="Sei sicuro di voler rimuovere questa repository?"
+                        class="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title="Elimina">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                </button>
             </div>
         </div>
-
-        <!-- Actions -->
-        <div class="flex items-center gap-2">
-            <!-- Status badge -->
-            <span class="px-2 py-1 text-xs rounded-full
-                {% if repo.status == 'ready' %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400
-                {% elif repo.status == 'analyzing' %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400
-                {% else %}bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300{% endif %}">
-                {{ repo.status }}
-            </span>
-
-            <!-- Analyze button -->
-            <a href="/repos/{{ repo.id }}"
-               class="p-2 text-gray-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M9 5l7 7-7 7"/>
-                </svg>
-            </a>
-
-            <!-- Delete button -->
-            <button hx-delete="/htmx/repos/{{ repo.id }}"
-                    hx-target="#repo-list"
-                    hx-confirm="Sei sicuro di voler rimuovere questa repository?"
-                    class="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                </svg>
-            </button>
+        {% if repo.last_synced_at %}
+        <div class="mt-2 ml-14 text-xs text-gray-400">
+            Ultimo sync: {{ repo.last_synced_at.strftime('%d/%m/%Y %H:%M') if repo.last_synced_at else 'mai' }}
         </div>
+        {% endif %}
     </div>
     {% endfor %}
 </div>
