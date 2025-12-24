@@ -881,6 +881,7 @@ function reviewApp() {
                 case 'reviewer_started':
                     this.agents[data.reviewer_name] = {
                         displayName: data.reviewer_display_name || data.reviewer_name,
+                        model: data.model || null,
                         status: 'running',
                         iteration: 0,
                         maxIterations: 5,
@@ -1191,10 +1192,93 @@ function reviewApp() {
         renderMarkdown(content) {
             if (!content) return '';
             try {
-                return marked.parse(content);
+                // Clean ANSI escape codes and format stream-json output
+                const cleaned = this.cleanCliOutput(content);
+                return marked.parse(cleaned);
             } catch (e) {
                 return content.replace(/\n/g, '<br>');
             }
+        },
+
+        cleanCliOutput(content) {
+            if (!content) return '';
+
+            // Remove ANSI escape codes
+            let cleaned = content.replace(/\u001b\[[0-9;]*m/g, '');
+            cleaned = cleaned.replace(/\x1b\[[0-9;]*m/g, '');
+
+            // Try to parse as NDJSON (stream-json format)
+            const lines = cleaned.split('\n');
+            const textParts = [];
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+
+                // Try to parse as JSON
+                if (trimmed.startsWith('{')) {
+                    try {
+                        const event = JSON.parse(trimmed);
+                        // Extract text from assistant messages
+                        if (event.type === 'assistant' && event.message?.content) {
+                            for (const block of event.message.content) {
+                                if (block.type === 'text' && block.text) {
+                                    textParts.push(block.text);
+                                }
+                            }
+                        } else if (event.type === 'result' && event.result) {
+                            textParts.push(event.result);
+                        }
+                        // Skip system events
+                        continue;
+                    } catch (e) {
+                        // Not valid JSON, keep as-is
+                    }
+                }
+                textParts.push(trimmed);
+            }
+
+            return textParts.join('\n') || cleaned;
+        },
+
+        formatModelName(model) {
+            if (!model) return '';
+            // claude-opus-4-5-20251101 -> Opus 4.5
+            // gemini-3-flash-preview -> Flash
+            // gemini-3-pro-preview -> Pro
+            if (model.includes('opus')) {
+                const match = model.match(/opus-(\d+)-(\d+)/);
+                return match ? `Opus ${match[1]}.${match[2]}` : 'Opus';
+            }
+            if (model.includes('sonnet')) {
+                return 'Sonnet';
+            }
+            if (model.includes('flash')) {
+                return 'Flash';
+            }
+            if (model.includes('pro')) {
+                return 'Pro';
+            }
+            // Fallback: extract middle part
+            const parts = model.split('-');
+            return parts.length > 1 ? parts[1].charAt(0).toUpperCase() + parts[1].slice(1) : model;
+        },
+
+        getModelColor(model) {
+            if (!model) return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+            if (model.includes('opus')) {
+                return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400';
+            }
+            if (model.includes('sonnet')) {
+                return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+            }
+            if (model.includes('flash')) {
+                return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+            }
+            if (model.includes('pro')) {
+                return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+            }
+            return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
         },
 
         // Relationships analysis functions

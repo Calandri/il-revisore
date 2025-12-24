@@ -126,6 +126,7 @@ class Orchestrator:
                     type=ProgressEventType.REVIEWER_STARTED,
                     reviewer_name=reviewer_name,
                     reviewer_display_name=display_name,
+                    model=self.settings.agents.claude_model,
                     message=f"Starting {display_name}...",
                 ))
 
@@ -203,6 +204,7 @@ class Orchestrator:
                     type=ProgressEventType.REVIEWER_STARTED,
                     reviewer_name=reviewer_name,
                     reviewer_display_name=display_name,
+                    model=self.settings.agents.claude_model,
                 ))
 
                 try:
