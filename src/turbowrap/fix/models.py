@@ -46,6 +46,135 @@ class FixEventType(str, Enum):
     FIX_ISSUE_ERROR = "fix_issue_error"
     FIX_ISSUE_SKIPPED = "fix_issue_skipped"
 
+    # Challenger events
+    FIX_CHALLENGER_EVALUATING = "fix_challenger_evaluating"
+    FIX_CHALLENGER_RESULT = "fix_challenger_result"
+    FIX_CHALLENGER_APPROVED = "fix_challenger_approved"
+    FIX_CHALLENGER_REJECTED = "fix_challenger_rejected"
+    FIX_REGENERATING = "fix_regenerating"
+
+
+class FixChallengerStatus(str, Enum):
+    """Status from fix challenger evaluation."""
+
+    APPROVED = "APPROVED"
+    NEEDS_IMPROVEMENT = "NEEDS_IMPROVEMENT"
+    REJECTED = "REJECTED"
+
+
+class FixQualityScores(BaseModel):
+    """Quality scores for fix evaluation."""
+
+    correctness: float = Field(
+        ..., ge=0, le=100,
+        description="Does the fix actually solve the issue?"
+    )
+    safety: float = Field(
+        ..., ge=0, le=100,
+        description="Does the fix avoid introducing new bugs/vulnerabilities?"
+    )
+    minimality: float = Field(
+        ..., ge=0, le=100,
+        description="Is the fix minimal and focused (not over-engineered)?"
+    )
+    style_consistency: float = Field(
+        ..., ge=0, le=100,
+        description="Does the fix maintain code style consistency?"
+    )
+
+    @property
+    def weighted_score(self) -> float:
+        """Calculate weighted satisfaction score."""
+        weights = {
+            "correctness": 0.40,
+            "safety": 0.30,
+            "minimality": 0.15,
+            "style_consistency": 0.15,
+        }
+        return (
+            self.correctness * weights["correctness"]
+            + self.safety * weights["safety"]
+            + self.minimality * weights["minimality"]
+            + self.style_consistency * weights["style_consistency"]
+        )
+
+
+class FixIssue(BaseModel):
+    """An issue found in the proposed fix."""
+
+    type: str = Field(..., description="Issue type: bug, vulnerability, style, logic")
+    description: str = Field(..., description="Description of the problem")
+    line: Optional[int] = Field(default=None, description="Line number in the fix")
+    severity: str = Field(default="MEDIUM", description="Severity: CRITICAL, HIGH, MEDIUM, LOW")
+    suggestion: Optional[str] = Field(default=None, description="How to fix this issue")
+
+
+class FixChallengerFeedback(BaseModel):
+    """Feedback from the fix challenger."""
+
+    iteration: int = Field(..., description="Challenger iteration number")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    satisfaction_score: float = Field(
+        ..., ge=0, le=100,
+        description="Overall satisfaction with the fix"
+    )
+    threshold: float = Field(..., description="Required threshold to pass")
+    status: FixChallengerStatus
+
+    quality_scores: FixQualityScores
+    issues_found: list[FixIssue] = Field(
+        default_factory=list,
+        description="Issues found in the proposed fix"
+    )
+    improvements_needed: list[str] = Field(
+        default_factory=list,
+        description="Improvements needed"
+    )
+    positive_feedback: list[str] = Field(
+        default_factory=list,
+        description="What was done well"
+    )
+
+    # Thinking output (if available)
+    thinking_content: Optional[str] = Field(
+        default=None,
+        description="Thinking process from Gemini (if thinking mode enabled)"
+    )
+
+    @property
+    def passed(self) -> bool:
+        """Check if the fix passes the threshold."""
+        return self.satisfaction_score >= self.threshold
+
+    def to_refinement_prompt(self) -> str:
+        """Generate a prompt for the fixer to improve the fix."""
+        sections = []
+
+        if self.issues_found:
+            sections.append("## Issues Found in Your Fix\n")
+            for i, issue in enumerate(self.issues_found, 1):
+                sections.append(
+                    f"{i}. **{issue.type.upper()}** ({issue.severity})"
+                    f"{f' at line {issue.line}' if issue.line else ''}\n"
+                    f"   - {issue.description}\n"
+                )
+                if issue.suggestion:
+                    sections.append(f"   - Suggestion: {issue.suggestion}\n")
+
+        if self.improvements_needed:
+            sections.append("\n## Improvements Needed\n")
+            for improvement in self.improvements_needed:
+                sections.append(f"- {improvement}\n")
+
+        sections.append(f"\n## Scores\n")
+        sections.append(f"- Correctness: {self.quality_scores.correctness:.0f}/100\n")
+        sections.append(f"- Safety: {self.quality_scores.safety:.0f}/100\n")
+        sections.append(f"- Minimality: {self.quality_scores.minimality:.0f}/100\n")
+        sections.append(f"- Style: {self.quality_scores.style_consistency:.0f}/100\n")
+
+        return "".join(sections)
+
 
 class FixRequest(BaseModel):
     """Request to fix one or more issues."""

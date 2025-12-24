@@ -153,6 +153,30 @@ class ChallengerSettings(BaseSettings):
     )
 
 
+class FixChallengerSettings(BaseSettings):
+    """Fix challenger configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_FIX_CHALLENGER_")
+
+    enabled: bool = Field(default=True, description="Enable fix challenger")
+    model: str = Field(
+        default="gemini-3-pro-preview",
+        description="Model for fix evaluation (Pro for better reasoning)"
+    )
+    satisfaction_threshold: float = Field(
+        default=80.0, ge=0, le=100,
+        description="Required satisfaction score to approve fix (0-100)"
+    )
+    max_iterations: int = Field(
+        default=2, ge=1, le=5,
+        description="Maximum fix refinement iterations"
+    )
+    thinking_budget: int = Field(
+        default=10000, ge=0, le=24576,
+        description="Token budget for Gemini thinking mode (0 to disable)"
+    )
+
+
 class ThinkingSettings(BaseSettings):
     """Extended thinking configuration for Claude Opus."""
 
@@ -192,6 +216,7 @@ class Settings(BaseSettings):
     tasks: TaskSettings = Field(default_factory=TaskSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     challenger: ChallengerSettings = Field(default_factory=ChallengerSettings)
+    fix_challenger: FixChallengerSettings = Field(default_factory=FixChallengerSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     thinking: ThinkingSettings = Field(default_factory=ThinkingSettings)
 

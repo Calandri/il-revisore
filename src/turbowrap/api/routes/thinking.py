@@ -51,8 +51,11 @@ async def get_thinking_log(
         # List objects with prefix to find the file
         paginator = s3_client.get_paginator("list_objects_v2")
 
-        found_key = None
-        latest_modified = None
+        # Track exact match (with task_id) and fallback (any file for this reviewer)
+        exact_match_key = None
+        exact_match_time = None
+        fallback_key = None
+        fallback_time = None
 
         for page in paginator.paginate(
             Bucket=settings.thinking.s3_bucket,
@@ -62,21 +65,24 @@ async def get_thinking_log(
                 key = obj["Key"]
                 filename = key.split("/")[-1]
 
-                # Match files for this reviewer
-                # Pattern 1: {task_id}_{reviewer_name}.md
-                # Pattern 2: {reviewer_name}_{timestamp}.md (legacy)
-                if filename.endswith(f"_{reviewer_name}.md"):
-                    # Check if it's for this task_id
-                    if task_id in key or task_id in filename:
-                        # Found exact match for task
-                        if latest_modified is None or obj["LastModified"] > latest_modified:
-                            found_key = key
-                            latest_modified = obj["LastModified"]
-                elif filename.startswith(f"{reviewer_name}_") and filename.endswith(".md"):
-                    # Legacy format: get the most recent one
-                    if latest_modified is None or obj["LastModified"] > latest_modified:
-                        found_key = key
-                        latest_modified = obj["LastModified"]
+                # Check if this file is for the requested reviewer
+                # Filename format: {something}_{reviewer_name}.md
+                if not filename.endswith(f"_{reviewer_name}.md"):
+                    continue
+
+                # Check if it's an exact match for this task_id
+                if task_id in key or task_id in filename:
+                    if exact_match_time is None or obj["LastModified"] > exact_match_time:
+                        exact_match_key = key
+                        exact_match_time = obj["LastModified"]
+                else:
+                    # Fallback: any file for this reviewer (get most recent)
+                    if fallback_time is None or obj["LastModified"] > fallback_time:
+                        fallback_key = key
+                        fallback_time = obj["LastModified"]
+
+        # Prefer exact match, fall back to most recent for this reviewer
+        found_key = exact_match_key or fallback_key
 
         if not found_key:
             raise HTTPException(
