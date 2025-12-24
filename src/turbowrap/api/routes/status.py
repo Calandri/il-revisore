@@ -192,6 +192,100 @@ def queue_status():
     return queue.get_status()
 
 
+@router.get("/reviews")
+def active_reviews_status():
+    """Get status of active background reviews."""
+    from ..review_manager import get_review_manager
+
+    manager = get_review_manager()
+    sessions = manager.get_active_sessions()
+
+    return {
+        "active_count": len(sessions),
+        "reviews": [
+            {
+                "task_id": s.task_id,
+                "repository_id": s.repository_id,
+                "started_at": s.started_at.isoformat(),
+                "status": s.status,
+                "events_buffered": len(s.events),
+                "subscribers": len(s.subscribers),
+            }
+            for s in sessions
+        ],
+    }
+
+
+@router.get("/live")
+def live_status():
+    """
+    Get real-time system status for frontend polling.
+
+    Returns CPU, memory, and active review information.
+    Designed for lightweight polling (every 2-5 seconds).
+    """
+    from ..review_manager import get_review_manager
+
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "uptime_seconds": (datetime.now() - SERVER_START_TIME).total_seconds(),
+    }
+
+    # System metrics
+    try:
+        import psutil
+
+        # CPU (non-blocking, uses last interval)
+        cpu_percent = psutil.cpu_percent(interval=None)
+        if cpu_percent == 0.0:
+            # First call returns 0, do a quick measure
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+
+        memory = psutil.virtual_memory()
+
+        result["system"] = {
+            "cpu_percent": round(cpu_percent, 1),
+            "cpu_count": psutil.cpu_count(),
+            "memory_percent": round(memory.percent, 1),
+            "memory_used_gb": round((memory.total - memory.available) / (1024**3), 2),
+            "memory_total_gb": round(memory.total / (1024**3), 2),
+        }
+    except ImportError:
+        result["system"] = {"error": "psutil not installed"}
+
+    # Active reviews
+    try:
+        manager = get_review_manager()
+        sessions = manager.get_active_sessions()
+        result["reviews"] = {
+            "active": len(sessions),
+            "tasks": [
+                {
+                    "task_id": s.task_id,
+                    "repository_id": s.repository_id,
+                    "status": s.status,
+                    "events": len(s.events),
+                }
+                for s in sessions
+            ],
+        }
+    except Exception as e:
+        result["reviews"] = {"error": str(e)[:100]}
+
+    # Task queue
+    try:
+        queue = get_task_queue()
+        q_status = queue.get_status()
+        result["queue"] = {
+            "pending": q_status.get("pending", 0),
+            "processing": q_status.get("processing", 0),
+        }
+    except Exception as e:
+        result["queue"] = {"error": str(e)[:100]}
+
+    return result
+
+
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
     """Get overall statistics."""
