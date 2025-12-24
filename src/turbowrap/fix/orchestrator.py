@@ -637,7 +637,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             env = os.environ.copy()
             api_key = get_google_api_key()
             if api_key:
-                env["GOOGLE_API_KEY"] = api_key
+                env["GEMINI_API_KEY"] = api_key
 
             # Use Pro model from settings (for better reasoning in review)
             model = self.settings.agents.gemini_pro_model
