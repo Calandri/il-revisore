@@ -14,68 +14,67 @@
 ### __init__.py
 *27 lines, 158 tokens*
 
-- **Constant**: `__version__` - Package version identifier string.
+- **Constant**: `__version__` - Current version of the TurboWrap package.
 - **Constant**: `__author__` - Name of the package creator.
-- **Class**: `GeminiClient` - Client for Google Gemini API interactions.
-- **Class**: `GeminiProClient` - Client for Gemini Pro model API.
-- **Class**: `ClaudeClient` - Client for Anthropic Claude API interactions.
-- **Class**: `BaseAgent` - Fundamental class for AI agent implementation.
-- **Class**: `AgentResponse` - Data model for agent execution results.
-- **Class**: `Orchestrator` - Coordinates high-level review system workflows.
-- **Class**: `ChallengerLoop` - Manages iterative refinement and verification processes.
-- **Class**: `ReportGenerator` - Component for generating final analysis reports.
+- **Class**: `GeminiClient` - Client interface for Google Gemini AI models.
+- **Class**: `GeminiProClient` - Client interface for Google Gemini Pro models.
+- **Class**: `ClaudeClient` - Client interface for Anthropic Claude AI models.
+- **Class**: `BaseAgent` - Foundational class for building AI-driven agents.
+- **Class**: `AgentResponse` - Standard format for AI agent output data.
+- **Class**: `Orchestrator` - Main controller for managing the review workflow.
+- **Class**: `ChallengerLoop` - System for iterative review and refinement cycles.
+- **Class**: `ReportGenerator` - Tool for generating final analysis reports.
 
 ### cli.py
 *407 lines, 2,769 tokens*
 
-- **Constant**: `app` - Main Typer CLI application instance
-- **Constant**: `console` - Rich console instance for terminal formatting
-- **Constant**: `repo_app` - Typer sub-command application for repository management
-- **Decorator**: `@repo_app.command` - Marks functions as repository-specific CLI sub-commands
-- **Function**: `repo_clone` - Clones GitHub repositories and saves metadata to database
-- **Function**: `repo_list` - Displays a table of all managed repositories
-- **Function**: `repo_sync` - Pulls updates for a specific repository by ID
-- **Function**: `repo_remove` - Deletes repository records and optionally local files
-- **Decorator**: `@app.command` - Marks functions as top-level CLI commands
-- **Function**: `run_review` - Orchestrates AI-powered code review on a repository
+- **Constant**: `app` - Main Typer application entry point for the CLI.
+- **Constant**: `repo_app` - Typer sub-app dedicated to repository management commands.
+- **Decorator**: `repo_app.command` - Registers a function as a repository sub-command.
+- **Function**: `repo_clone` - Command to clone a GitHub repository to local storage.
+- **Function**: `repo_list` - Command to list all repositories in a formatted table.
+- **Function**: `repo_sync` - Command to pull updates for a specific repository.
+- **Function**: `repo_remove` - Command to delete a repository from the system.
+- **Decorator**: `app.command` - Registers a function as a top-level CLI command.
+- **Function**: `run_review` - Command to trigger an automated code review task.
 
 ### config.py
 *158 lines, 1,237 tokens*
 
-- **Class**: `DatabaseSettings` - Configuration for SQLite or PostgreSQL database connections.
-- **Class**: `AgentSettings` - AI model settings for Gemini and Claude providers.
-- **Class**: `TaskSettings` - Parameters for parallel worker execution and file limits.
-- **Class**: `ServerSettings` - Configuration for API host, port, and CORS settings.
-- **Class**: `Settings` - Primary configuration class aggregating all settings categories.
-- **Function**: `get_settings` - Retrieves and caches the global application settings.
-- **Function**: `reset_settings` - Resets the cached settings for testing purposes.
-- **Decorator**: `lru_cache` - Caches the results of the settings singleton function.
+- **Class**: `DatabaseSettings` - Manages database connection and pooling configurations.
+- **Class**: `AgentSettings` - Configures AI models and associated API keys.
+- **Class**: `TaskSettings` - Defines limits for parallel task execution and file sizes.
+- **Class**: `ServerSettings` - Configures API server network settings and CORS origins.
+- **Class**: `Settings` - Main configuration class aggregating all system settings.
+- **Function**: `get_settings` - Returns a cached instance of the application settings.
+- **Function**: `reset_settings` - Clears the cached settings instance for testing purposes.
 - **Decorator**: `field_validator` - Validates specific field formats within Pydantic models.
+- **Decorator**: `lru_cache` - Caches the output of the settings provider function.
 
 ### exceptions.py
 *52 lines, 182 tokens*
 
 - **Class**: `TurboWrapError` - Base exception for all TurboWrap errors.
-- **Class**: `ConfigError` - Error raised for configuration issues.
+- **Class**: `ConfigError` - Raised for configuration-related issues.
 - **Class**: `RepositoryError` - Base class for repository operation errors.
-- **Class**: `CloneError` - Exception for failed repository cloning operations.
-- **Class**: `SyncError` - Exception for failed repository synchronization.
-- **Class**: `TaskError` - Error raised during task execution.
-- **Class**: `AgentError` - Base class for agent communication failures.
-- **Class**: `GeminiError` - Specific error for Gemini API communication issues.
-- **Class**: `ClaudeError` - Specific error for Claude API communication issues.
-- **Class**: `DatabaseError` - Error raised during database operations.
+- **Class**: `CloneError` - Raised when repository cloning fails.
+- **Class**: `SyncError` - Raised when repository synchronization fails.
+- **Class**: `TaskError` - Raised during task execution errors.
+- **Class**: `AgentError` - Base class for agent communication errors.
+- **Class**: `GeminiError` - Specific error for Gemini API failures.
+- **Class**: `ClaudeError` - Specific error for Claude API failures.
+- **Class**: `DatabaseError` - Raised for database operation errors.
 
 ## Subdirectories
 
-- [api/](api/STRUCTURE.md) - 3 files
-- [core/](core/STRUCTURE.md) - 4 files
-- [db/](db/STRUCTURE.md) - 4 files
-- [llm/](llm/STRUCTURE.md) - 5 files
-- [review/](review/STRUCTURE.md) - 4 files
-- [tasks/](tasks/STRUCTURE.md) - 5 files
-- [tools/](tools/STRUCTURE.md) - 3 files
-- [utils/](utils/STRUCTURE.md) - 3 files
+- [api/](api/STRUCTURE.md) - API entry and dependencies
+- [core/](core/STRUCTURE.md) - Core orchestration and management
+- [db/](db/STRUCTURE.md) - Database session and connectivity
+- [llm/](llm/STRUCTURE.md) - AI language model integrations
+- [review/](review/STRUCTURE.md) - Code review automation workflows
+- [tasks/](tasks/STRUCTURE.md) - Task logic and registry
+- [tools/](tools/STRUCTURE.md) - Development and structure tools
+- [utils/](utils/STRUCTURE.md) - Shared helper function library
 
 ---
-*Generated by TurboWrap - 2025-12-24 15:29*
+*Generated by TurboWrap - 2025-12-24 15:47*

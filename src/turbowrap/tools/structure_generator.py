@@ -114,6 +114,7 @@ class DirectoryStructure:
     depth: int
     files: list[FileStructure] = field(default_factory=list)
     subdirectories: list["DirectoryStructure"] = field(default_factory=list)
+    purpose: str = ""  # Brief description of directory purpose (from Gemini)
 
 
 def count_tokens(content: str) -> int:
@@ -376,6 +377,61 @@ DESCRIPTION: <description>
         except Exception:
             pass
 
+    def _analyze_directory_purposes(self, directories: list[DirectoryStructure]) -> None:
+        """Use Gemini to analyze the purpose of each subdirectory."""
+        if not self.gemini_client:
+            return
+
+        # Collect all subdirectories that need purpose analysis
+        subdirs_to_analyze: list[DirectoryStructure] = []
+        for dir_struct in directories:
+            for sub in dir_struct.subdirectories:
+                if not sub.purpose:
+                    subdirs_to_analyze.append(sub)
+
+        if not subdirs_to_analyze:
+            return
+
+        # Build batch prompt for all directories
+        dir_list = []
+        for sub in subdirs_to_analyze:
+            files = [f.path.name for f in sub.files[:5]]
+            dir_list.append(f"- {sub.path.name}/: files={', '.join(files) or 'none'}")
+
+        prompt = f"""Analyze these directories and provide a brief purpose for each.
+
+Directories:
+{chr(10).join(dir_list)}
+
+For EACH directory, provide a 3-5 word purpose description in English.
+Format: directory_name: purpose
+
+Example:
+api: REST API endpoints and routes
+utils: Shared helper functions
+models: Data models and schemas
+"""
+
+        try:
+            result = self.gemini_client.generate(prompt)
+
+            # Parse response
+            purposes: dict[str, str] = {}
+            for line in result.strip().split("\n"):
+                if ":" in line:
+                    parts = line.split(":", 1)
+                    dir_name = parts[0].strip().rstrip("/")
+                    purpose = parts[1].strip()
+                    if dir_name and purpose:
+                        purposes[dir_name] = purpose[:50]  # Limit length
+
+            # Assign purposes to directories
+            for sub in subdirs_to_analyze:
+                sub.purpose = purposes.get(sub.path.name, "")
+
+        except Exception:
+            pass
+
     def discover_directories(self) -> list[DirectoryStructure]:
         """
         Discover directories to process respecting max depth.
@@ -386,8 +442,8 @@ DESCRIPTION: <description>
         directories: list[DirectoryStructure] = []
 
         def scan_dir(current_path: Path, depth: int) -> Optional[DirectoryStructure]:
-            if depth > self.max_depth:
-                return None
+            # Note: We continue scanning beyond max_depth to find nested files
+            # (they'll be inlined in parent STRUCTURE.md, not get their own file)
             if should_ignore(current_path):
                 return None
 
@@ -419,16 +475,16 @@ DESCRIPTION: <description>
             except PermissionError:
                 pass
 
-            # Recurse into subdirectories (only if not at limit)
-            if depth < self.max_depth:
-                try:
-                    for item in sorted(current_path.iterdir()):
-                        if item.is_dir() and not should_ignore(item):
-                            sub_struct = scan_dir(item, depth + 1)
-                            if sub_struct and (sub_struct.files or sub_struct.subdirectories):
-                                dir_struct.subdirectories.append(sub_struct)
-                except PermissionError:
-                    pass
+            # Always recurse into subdirectories to find all files
+            # (even beyond max_depth, for inlining in parent STRUCTURE.md)
+            try:
+                for item in sorted(current_path.iterdir()):
+                    if item.is_dir() and not should_ignore(item):
+                        sub_struct = scan_dir(item, depth + 1)
+                        if sub_struct and (sub_struct.files or sub_struct.subdirectories):
+                            dir_struct.subdirectories.append(sub_struct)
+            except PermissionError:
+                pass
 
             return dir_struct if (dir_struct.files or dir_struct.subdirectories) else None
 
@@ -691,25 +747,53 @@ Be concise. Only list the most important elements (max 10).
 
                 lines.append("")
 
-        # Subdirectories section (only if depth < MAX)
-        if dir_struct.subdirectories and dir_struct.depth < self.max_depth:
-            lines.extend(["## Subdirectories", ""])
+        # Subdirectories section
+        if dir_struct.subdirectories:
+            if dir_struct.depth < self.max_depth:
+                # Link to child STRUCTURE.md files
+                lines.extend(["## Subdirectories", ""])
 
-            for sub in sorted(dir_struct.subdirectories, key=lambda s: s.path.name):
-                sub_name = sub.path.name
-                # Calculate brief description
-                file_count = len(sub.files)
-                sub_count = len(sub.subdirectories)
-                desc_parts = []
-                if file_count:
-                    desc_parts.append(f"{file_count} file{'s' if file_count > 1 else ''}")
-                if sub_count:
-                    desc_parts.append(f"{sub_count} subfolder{'s' if sub_count > 1 else ''}")
-                desc = ", ".join(desc_parts) if desc_parts else "Empty"
+                for sub in sorted(dir_struct.subdirectories, key=lambda s: s.path.name):
+                    sub_name = sub.path.name
+                    # Use purpose if available, otherwise fall back to file count
+                    if sub.purpose:
+                        desc = sub.purpose
+                    else:
+                        file_count = len(sub.files)
+                        sub_count = len(sub.subdirectories)
+                        desc_parts = []
+                        if file_count:
+                            desc_parts.append(f"{file_count} file{'s' if file_count > 1 else ''}")
+                        if sub_count:
+                            desc_parts.append(f"{sub_count} subfolder{'s' if sub_count > 1 else ''}")
+                        desc = ", ".join(desc_parts) if desc_parts else "Empty"
 
-                lines.append(f"- [{sub_name}/]({sub_name}/{STRUCTURE_FILENAME}) - {desc}")
+                    lines.append(f"- [{sub_name}/]({sub_name}/{STRUCTURE_FILENAME}) - {desc}")
 
-            lines.append("")
+                lines.append("")
+            else:
+                # At max depth: inline nested directory info (no separate STRUCTURE.md)
+                lines.extend(["## Nested Directories", ""])
+                lines.append("*Directories beyond max depth, included inline:*")
+                lines.append("")
+
+                for sub in sorted(dir_struct.subdirectories, key=lambda s: s.path.name):
+                    sub_name = sub.path.name
+                    file_count = len(sub.files)
+                    purpose = sub.purpose or "nested module"
+
+                    lines.append(f"### {sub_name}/ ({file_count} files)")
+                    lines.append(f"*{purpose}*")
+                    lines.append("")
+
+                    # List files with elements
+                    for file_struct in sorted(sub.files, key=lambda f: f.path.name):
+                        file_name = file_struct.path.name
+                        lines.append(f"**{file_name}** - {file_struct.lines} lines")
+                        if file_struct.elements:
+                            for elem in file_struct.elements[:5]:  # Limit to 5
+                                lines.append(f"- `{elem.name}` ({elem.type})")
+                        lines.append("")
 
         # Footer
         lines.extend([
@@ -813,13 +897,20 @@ Be concise. Only list the most important elements (max 10).
                 processed_files.get(f.path, f) for f in dir_struct.files
             ]
 
-        # 7. Generate STRUCTURE.md for each directory
+        # 6b. Analyze directory purposes
+        if self.gemini_client:
+            if verbose:
+                print("   Analyzing directory purposes...")
+            self._analyze_directory_purposes(directories)
+
+        # 7. Generate STRUCTURE.md for each directory (only up to max_depth)
+        dirs_to_generate = [d for d in directories if d.depth <= self.max_depth]
         if verbose:
-            print(f"\n   Generating {len(directories)} STRUCTURE.md files...")
+            print(f"\n   Generating {len(dirs_to_generate)} STRUCTURE.md files...")
 
         generated_files: list[Path] = []
 
-        for i, dir_struct in enumerate(directories):
+        for i, dir_struct in enumerate(dirs_to_generate):
             try:
                 is_root = (str(dir_struct.path) == ".")
                 output_path = self._generate_structure_md(

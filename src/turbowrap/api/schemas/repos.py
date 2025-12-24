@@ -48,14 +48,48 @@ class RepoResponse(BaseModel):
         default=None, description="Detected repository type"
     )
     last_synced_at: datetime | None = Field(default=None, description="Last sync timestamp")
-    metadata_: dict[str, Any] | None = Field(
+    metadata: dict[str, Any] | None = Field(
         default=None,
-        alias="metadata",
-        serialization_alias="metadata",
         description="Additional metadata"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v: Any) -> dict[str, Any] | None:
+        """Convert metadata from SQLAlchemy model."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        # Try to get actual metadata from SQLAlchemy object
+        if hasattr(v, "metadata_"):
+            return getattr(v, "metadata_", None)
+        # Handle SQLAlchemy MetaData collision - return None
+        return None
+
+    @classmethod
+    def model_validate(cls, obj: Any, **kwargs):
+        """Override to handle SQLAlchemy metadata_ attribute."""
+        # If it's a SQLAlchemy model, extract metadata_ manually
+        if hasattr(obj, "metadata_") and not hasattr(obj, "metadata"):
+            # Create a dict with the data
+            data = {
+                "id": obj.id,
+                "name": obj.name,
+                "url": obj.url,
+                "local_path": obj.local_path,
+                "default_branch": obj.default_branch,
+                "status": obj.status,
+                "repo_type": obj.repo_type,
+                "last_synced_at": obj.last_synced_at,
+                "metadata": obj.metadata_,  # Map metadata_ to metadata
+                "created_at": obj.created_at,
+                "updated_at": obj.updated_at,
+            }
+            return super().model_validate(data, **kwargs)
+        return super().model_validate(obj, **kwargs)
 
 
 class GitStatus(BaseModel):

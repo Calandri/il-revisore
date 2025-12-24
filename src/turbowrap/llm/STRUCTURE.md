@@ -15,55 +15,59 @@
 ### __init__.py
 *18 lines, 108 tokens*
 
-- **Class**: `BaseAgent` - Abstract base class for defining LLM interaction agents.
-- **Class**: `AgentResponse` - Data structure for holding agent execution results.
-- **Class**: `GeminiClient` - Client interface for Google Gemini API interactions.
-- **Class**: `GeminiProClient` - Specialized client for Gemini Pro model variations.
-- **Class**: `ClaudeClient` - Client interface for Anthropic Claude API interactions.
-- **Function**: `load_prompt` - Retrieves a specific prompt template from storage.
-- **Function**: `get_available_prompts` - Returns a list of all accessible prompt templates.
-- **Function**: `reload_prompts` - Refreshes the prompt template cache from source.
-- **Constant**: `__all__` - Defines the public interface exported by this module.
+- **Class**: `BaseAgent` - Base interface for all LLM agent implementations.
+- **Class**: `AgentResponse` - Structure for standardized responses from LLM agents.
+- **Class**: `GeminiClient` - Client for connecting to Google Gemini LLM services.
+- **Class**: `GeminiProClient` - Client for specific Gemini Pro model interactions.
+- **Class**: `ClaudeClient` - Client for connecting to Anthropic Claude LLM services.
+- **Function**: `load_prompt` - Retrieves a prompt template from storage.
+- **Function**: `get_available_prompts` - Lists all accessible prompt templates.
+- **Function**: `reload_prompts` - Refreshes prompt templates from the file system.
+- **Constant**: `__all__` - Exports public symbols for the package.
 
 ### base.py
 *75 lines, 447 tokens*
 
-- **Class**: `AgentResponse` - Data model for LLM responses with token metadata.
-- **Class**: `BaseAgent` - Abstract base class defining the standard LLM client interface.
-- **Function**: `total_tokens` - Calculates the sum of input and output tokens.
-- **Function**: `name` - Abstract property for the client's name identifier.
-- **Function**: `model` - Abstract property identifying the specific LLM used.
+- **Class**: `AgentResponse` - Pydantic model for LLM output and token usage metadata.
+- **Function**: `total_tokens` - Property calculating sum of prompt and completion tokens.
+- **Class**: `BaseAgent` - Abstract base class for implementing various LLM clients.
+- **Function**: `name` - Abstract property returning the client's identifier string.
+- **Function**: `model` - Abstract property returning the specific LLM model identifier.
 - **Function**: `agent_type` - Abstract property identifying the LLM provider type.
-- **Function**: `generate` - Abstract method to generate text from a prompt.
-- **Function**: `generate_with_metadata` - Abstract method returning text content and token metadata.
-- **Decorator**: `computed_field` - Includes property results in Pydantic model outputs.
-- **Decorator**: `abstractmethod` - Marks methods that must be implemented by subclasses.
+- **Function**: `generate` - Abstract method generating text content from a prompt.
+- **Function**: `generate_with_metadata` - Abstract method returning content and token usage statistics.
 
 ### claude.py
 *158 lines, 1,076 tokens*
 
-- **Constant**: `DEFAULT_SYSTEM_PROMPT` - Default instructions for senior code reviewer agent.
-- **Class**: `ClaudeClient` - Anthropic Claude API client for deep code analysis.
-- **Function**: `generate` - Generates text content synchronously from prompt input.
-- **Function**: `generate_with_metadata` - Generates response content with token usage metadata.
-- **Function**: `stream` - Synchronously streams response chunks from the API.
-- **Function**: `astream` - Asynchronously streams response chunks from the API.
+- **Constant**: `DEFAULT_SYSTEM_PROMPT` - Default prompt for senior code reviewer persona.
+- **Class**: `ClaudeClient` - Client for Anthropic Claude API for deep analysis.
+- **Function**: `generate` - Generates text content using the Claude API.
+- **Function**: `generate_with_metadata` - Generates content including token usage statistics.
+- **Function**: `stream` - Streams response tokens synchronously from the API.
+- **Function**: `astream` - Streams response tokens asynchronously from the API.
 
 ### gemini.py
 *128 lines, 858 tokens*
 
-- **Class**: `GeminiClient` - Client for Google Gemini Flash API for fast analysis.
-- **Function**: `__init__` - Initializes Gemini client and validates API credentials.
-- **Function**: `generate` - Generates text response using the Gemini model.
-- **Function**: `generate_with_metadata` - Generates response while extracting token usage statistics.
-- **Class**: `GeminiProClient` - Specialized client for Gemini Pro complex reasoning tasks.
+- **Class**: `GeminiClient` - Client for Google Gemini API Flash model.
+- **Function**: `__init__` - Initializes Gemini client with API key and settings.
+- **Function**: `name` - Returns the unique identifier for the flash agent.
+- **Function**: `model` - Returns the name of the active Gemini model.
+- **Function**: `agent_type` - Returns the literal agent type identifier.
+- **Function**: `generate` - Generates text content using the Gemini model.
+- **Function**: `generate_with_metadata` - Generates content and includes token usage metadata.
+- **Class**: `GeminiProClient` - Client for complex reasoning tasks using Gemini Pro.
+- **Function**: `__init__` - Initializes the specialized Gemini Pro client.
+- **Function**: `name` - Returns the unique identifier for the pro agent.
 
 ### prompts.py
 *53 lines, 271 tokens*
 
-- **Function**: `load_prompt` - Loads prompt content from the configured agents directory.
-- **Function**: `get_available_prompts` - Lists all available markdown prompt files in agents directory.
+- **Function**: `load_prompt` - Loads prompt content from the agents directory.
+- **Function**: `get_available_prompts` - Lists all available markdown prompt names.
 - **Function**: `reload_prompts` - Clears the cache to reload prompts from disk.
+- **Decorator**: `lru_cache` - Caches prompt loading results to optimize performance.
 
 ---
-*Generated by TurboWrap - 2025-12-24 15:29*
+*Generated by TurboWrap - 2025-12-24 15:47*

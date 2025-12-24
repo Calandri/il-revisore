@@ -13,43 +13,43 @@
 ### __init__.py
 *38 lines, 160 tokens*
 
-- **Function**: `discover_files` - Recursively locates files within a directory structure.
-- **Function**: `should_ignore` - Checks if a file matches exclusion criteria.
-- **Class**: `FileInfo` - Stores metadata and details about a specific file.
-- **Constant**: `BE_EXTENSIONS` - Defines list of allowed backend file extensions.
-- **Function**: `clone_repo` - Downloads a remote Git repository to local storage.
-- **Function**: `pull_repo` - Fetches and merges updates from a remote repository.
-- **Function**: `push_repo` - Uploads local commits to a remote Git repository.
-- **Function**: `get_repo_status` - Returns the operational status of a Git repository.
-- **Function**: `get_current_branch` - Identifies the currently active Git branch name.
-- **Function**: `parse_github_url` - Extracts repository data from a GitHub URL string.
+- **Function**: `should_ignore` - Determines if a file/directory should be skipped.
+- **Function**: `discover_files` - Recursively finds files within a directory.
+- **Class**: `FileInfo` - Data structure for storing file-related information.
+- **Constant**: `BE_EXTENSIONS` - List of supported backend file extensions.
+- **Constant**: `FE_EXTENSIONS` - List of supported frontend file extensions.
+- **Function**: `clone_repo` - Clones a Git repository from a remote URL.
+- **Function**: `pull_repo` - Fetches and merges changes from a remote repository.
+- **Function**: `push_repo` - Uploads local changes to a remote repository.
+- **Function**: `get_repo_status` - Retrieves the current state of a Git repository.
+- **Function**: `parse_github_url` - Extracts repository details from a GitHub URL.
 
 ### file_utils.py
 *189 lines, 1,223 tokens*
 
-- **Constant**: `BE_EXTENSIONS` - Set of extensions identifying backend source files.
-- **Constant**: `FE_EXTENSIONS` - Set of extensions identifying frontend source files.
-- **Constant**: `IGNORE_DIRS` - Set of directory names skipped during file discovery.
-- **Class**: `FileInfo` - Dataclass storing path, type, and token metrics for files.
-- **Function**: `_get_tokenizer` - Retrieves and caches the tiktoken BPE encoding instance.
-- **Function**: `calculate_tokens` - Computes characters, lines, and real BPE token counts.
-- **Function**: `should_ignore` - Checks if a file path matches exclusion criteria.
-- **Function**: `discover_files` - Scans a repository for relevant backend and frontend files.
-- **Function**: `load_file_content` - Reads file text and populates token statistics.
-- **Function**: `detect_repo_type` - Categorizes repository type based on file distribution.
+- **Constant**: `BE_EXTENSIONS` - Set of backend file extensions like .py.
+- **Constant**: `FE_EXTENSIONS` - Set of frontend file extensions like .tsx and .ts.
+- **Class**: `FileInfo` - Dataclass storing metadata and content for discovered files.
+- **Function**: `calculate_tokens` - Calculates character, line, and BPE token counts for text.
+- **Function**: `discover_files` - Recursively identifies backend and frontend files in a repository.
+- **Function**: `load_file_content` - Reads file content and populates statistics into FileInfo.
+- **Function**: `should_ignore` - Determines if a path should be excluded from processing.
+- **Function**: `detect_repo_type` - Classifies repository as backend, frontend, or fullstack.
+- **Constant**: `IGNORE_DIRS` - Set of directory names to skip during file discovery.
+- **Function**: `_get_tokenizer` - Retrieves and caches the tiktoken encoder instance.
 
 ### git_utils.py
 *278 lines, 1,633 tokens*
 
-- **Class**: `GitStatus` - Model representing the current status of a Git repository.
-- **Class**: `GitHubRepo` - Model for parsed GitHub owner and repository information.
-- **Function**: `parse_github_url` - Extracts owner and repository names from GitHub URLs.
-- **Function**: `get_repo_hash` - Generates unique short hash for a repository URL.
-- **Function**: `get_local_path` - Determines the local filesystem path for a repository.
-- **Function**: `clone_repo` - Clones a repository or pulls if it already exists.
-- **Function**: `pull_repo` - Fetches and merges latest changes from the remote.
-- **Function**: `push_repo` - Stages, commits, and pushes local changes to remote.
-- **Function**: `get_current_branch` - Retrieves the name of the currently active branch.
+- **Class**: `GitStatus` - Model representing current Git repository status
+- **Class**: `GitHubRepo` - Model for parsed GitHub owner and repository information
+- **Function**: `parse_github_url` - Extracts owner and name from GitHub URLs
+- **Function**: `get_repo_hash` - Generates unique short hash for repository URL
+- **Function**: `get_local_path` - Determines local storage path for repository
+- **Function**: `clone_repo` - Clones a repository or pulls if already exists
+- **Function**: `pull_repo` - Pulls latest remote changes for a repository
+- **Function**: `push_repo` - Stages, commits, and pushes local changes to remote
+- **Function**: `get_current_branch` - Retrieves the active branch name for a repository
 
 ---
-*Generated by TurboWrap - 2025-12-24 15:29*
+*Generated by TurboWrap - 2025-12-24 15:47*
