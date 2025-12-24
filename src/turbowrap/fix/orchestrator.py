@@ -29,6 +29,7 @@ from turbowrap.fix.git_utils import (
 from turbowrap.fix.models import (
     ClarificationAnswer,
     ClarificationQuestion,
+    FixChallengerFeedback,
     FixContext,
     FixEventType,
     FixProgressEvent,
@@ -38,6 +39,7 @@ from turbowrap.fix.models import (
     IssueFixResult,
 )
 from turbowrap.fix.validator import validate_issue_for_fix
+from turbowrap.fix.fix_challenger import GeminiFixChallenger
 from turbowrap.llm import GeminiClient, load_prompt
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,25 @@ class FixOrchestrator:
         self.thinking_enabled = self.settings.thinking.enabled
         self.s3_bucket = self.settings.thinking.s3_bucket
         self.s3_region = self.settings.thinking.s3_region
+
+        # Fix challenger settings
+        fix_challenger_config = self.settings.fix_challenger
+        self.challenger_enabled = fix_challenger_config.enabled
+        self.challenger_threshold = fix_challenger_config.satisfaction_threshold
+        self.challenger_max_iterations = fix_challenger_config.max_iterations
+
+        # Initialize challenger
+        self._challenger = None
+        if self.challenger_enabled:
+            try:
+                self._challenger = GeminiFixChallenger(
+                    model=fix_challenger_config.model,
+                    thinking_budget=fix_challenger_config.thinking_budget,
+                    satisfaction_threshold=fix_challenger_config.satisfaction_threshold,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize fix challenger: {e}")
+                self.challenger_enabled = False
 
         # Lazy S3 client
         self._s3_client = None
@@ -418,10 +439,10 @@ Your response MUST be in this exact format:
                     **common_fields,
                 ))
 
-            # Step 4: Generate fix with Claude
+            # Step 4: Generate fix with Claude (with challenger loop)
             await emit(FixProgressEvent(
                 type=FixEventType.FIX_ISSUE_GENERATING,
-                message="Generating fix with Claude...",
+                message="Generating fix with Claude + Extended Thinking...",
                 **common_fields,
             ))
 
@@ -439,6 +460,30 @@ Your response MUST be in this exact format:
                 ))
 
                 return result
+
+            # Step 4b: Challenger loop (if enabled)
+            if self.challenger_enabled and self._challenger:
+                fixed_content, changes_summary = await self._run_challenger_loop(
+                    context=context,
+                    original_content=context.file_content,
+                    fixed_content=fixed_content,
+                    changes_summary=changes_summary,
+                    emit=emit,
+                    common_fields=common_fields,
+                )
+
+                if not fixed_content:
+                    result.status = FixStatus.FAILED
+                    result.error = "Fix rejected by challenger after max iterations"
+                    result.completed_at = datetime.utcnow()
+
+                    await emit(FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_ERROR,
+                        error="Fix rejected by challenger",
+                        **common_fields,
+                    ))
+
+                    return result
 
             # Step 5: Apply fix
             await emit(FixProgressEvent(
@@ -783,4 +828,230 @@ Format your response as:
 
         except Exception as e:
             logger.exception("Error generating fix with extended thinking")
+            return None, None
+
+    async def _run_challenger_loop(
+        self,
+        context: FixContext,
+        original_content: str,
+        fixed_content: str,
+        changes_summary: Optional[str],
+        emit: ProgressCallback,
+        common_fields: dict,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Run the challenger loop to validate and improve the fix.
+
+        Args:
+            context: Fix context
+            original_content: Original file content
+            fixed_content: Current fixed content
+            changes_summary: Summary of changes
+            emit: Progress callback
+            common_fields: Common event fields
+
+        Returns:
+            Tuple of (final_fixed_content, final_changes_summary) or (None, None) if rejected
+        """
+        iteration = 0
+        current_fix = fixed_content
+        current_summary = changes_summary
+        last_feedback: Optional[FixChallengerFeedback] = None
+
+        while iteration < self.challenger_max_iterations:
+            iteration += 1
+
+            # Emit challenger evaluation event
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                message=f"Gemini Pro evaluating fix (iteration {iteration}/{self.challenger_max_iterations})...",
+                **common_fields,
+            ))
+
+            # Evaluate with challenger
+            feedback = await self._challenger.evaluate(
+                context=context,
+                original_content=original_content,
+                fixed_content=current_fix,
+                changes_summary=current_summary,
+                iteration=iteration,
+            )
+            last_feedback = feedback
+
+            # Emit challenger result
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_CHALLENGER_RESULT,
+                message=f"Score: {feedback.satisfaction_score:.0f}/100 ({feedback.status.value})",
+                content=f"Correctness: {feedback.quality_scores.correctness:.0f}, "
+                        f"Safety: {feedback.quality_scores.safety:.0f}, "
+                        f"Minimality: {feedback.quality_scores.minimality:.0f}, "
+                        f"Style: {feedback.quality_scores.style_consistency:.0f}",
+                **common_fields,
+            ))
+
+            # Check if approved
+            if feedback.passed:
+                await emit(FixProgressEvent(
+                    type=FixEventType.FIX_CHALLENGER_APPROVED,
+                    message=f"Fix approved! Score: {feedback.satisfaction_score:.0f}/100",
+                    **common_fields,
+                ))
+                return current_fix, current_summary
+
+            # Check if we've exhausted iterations
+            if iteration >= self.challenger_max_iterations:
+                # Accept if above forced threshold (80% of target)
+                forced_threshold = self.challenger_threshold * 0.8
+                if feedback.satisfaction_score >= forced_threshold:
+                    await emit(FixProgressEvent(
+                        type=FixEventType.FIX_CHALLENGER_APPROVED,
+                        message=f"Fix accepted (forced after {iteration} iterations, score: {feedback.satisfaction_score:.0f})",
+                        **common_fields,
+                    ))
+                    return current_fix, current_summary
+                else:
+                    await emit(FixProgressEvent(
+                        type=FixEventType.FIX_CHALLENGER_REJECTED,
+                        message=f"Fix rejected after {iteration} iterations (score: {feedback.satisfaction_score:.0f})",
+                        **common_fields,
+                    ))
+                    return None, None
+
+            # Regenerate with feedback
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_REGENERATING,
+                message=f"Regenerating fix based on challenger feedback...",
+                **common_fields,
+            ))
+
+            new_fix, new_summary = await self._regenerate_fix(
+                context=context,
+                previous_fix=current_fix,
+                feedback=feedback,
+                emit=emit,
+                common_fields=common_fields,
+            )
+
+            if not new_fix:
+                logger.warning("Failed to regenerate fix, using previous version")
+                # Continue with previous fix for next iteration or exit
+                continue
+
+            current_fix = new_fix
+            current_summary = new_summary
+
+        # Should not reach here, but handle edge case
+        return current_fix, current_summary
+
+    async def _regenerate_fix(
+        self,
+        context: FixContext,
+        previous_fix: str,
+        feedback: FixChallengerFeedback,
+        emit: ProgressCallback,
+        common_fields: dict,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Regenerate fix based on challenger feedback.
+
+        Args:
+            context: Fix context
+            previous_fix: Previous fix that was rejected
+            feedback: Challenger feedback with issues found
+            emit: Progress callback
+            common_fields: Common event fields
+
+        Returns:
+            Tuple of (fixed_content, changes_summary) or (None, None) on failure
+        """
+        refinement_prompt = feedback.to_refinement_prompt()
+
+        prompt = f"""Improve your previous fix based on the feedback below.
+
+## Original Issue
+Issue: {context.title}
+Description: {context.description}
+File: {context.file_path}
+
+## Your Previous Fix (needs improvement)
+```
+{previous_fix}
+```
+
+## Challenger Feedback
+{refinement_prompt}
+
+## Instructions
+1. Address ALL issues found by the challenger
+2. Maintain what was done well
+3. Return the COMPLETE improved file content
+4. Keep changes minimal and focused
+
+Format your response as:
+<file_content>
+[complete file content]
+</file_content>
+
+<changes_summary>
+[brief description of improvements]
+</changes_summary>
+"""
+
+        try:
+            system_prompt = self._get_system_prompt_for_file(context.file_path)
+
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_ISSUE_STREAMING,
+                content="[Regenerating with Extended Thinking...]\n\n",
+                **common_fields,
+            ))
+
+            thinking_content, response_text = await asyncio.to_thread(
+                self._stream_with_thinking_sync,
+                system_prompt,
+                prompt,
+            )
+
+            # Save thinking to S3
+            if thinking_content:
+                asyncio.create_task(
+                    self._save_thinking_to_s3(
+                        thinking_content,
+                        f"{context.issue_id}_regen_{feedback.iteration}",
+                        context
+                    )
+                )
+
+            await emit(FixProgressEvent(
+                type=FixEventType.FIX_ISSUE_STREAMING,
+                content=response_text[:500] + "...",  # Truncate for UI
+                **common_fields,
+            ))
+
+            # Parse response
+            file_match = re.search(
+                r"<file_content>\s*(.*?)\s*</file_content>",
+                response_text,
+                re.DOTALL,
+            )
+            summary_match = re.search(
+                r"<changes_summary>\s*(.*?)\s*</changes_summary>",
+                response_text,
+                re.DOTALL,
+            )
+
+            if file_match:
+                fixed_content = file_match.group(1).strip()
+                changes_summary = summary_match.group(1).strip() if summary_match else "Improved based on feedback"
+                return fixed_content, changes_summary
+
+            # Fallback
+            code_match = re.search(r"```(?:\w+)?\s*(.*?)```", response_text, re.DOTALL)
+            if code_match:
+                return code_match.group(1).strip(), "Improved based on feedback"
+
+            return None, None
+
+        except Exception as e:
+            logger.exception("Error regenerating fix")
             return None, None

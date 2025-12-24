@@ -14,6 +14,22 @@
             </p>
         </div>
         <div class="flex items-center gap-3">
+            <!-- Analyze Relationships button -->
+            <button @click="analyzeRelationships()"
+                    :disabled="isAnalyzingRelationships || isRunning"
+                    class="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Analizza connessioni tra repository">
+                <svg x-show="!isAnalyzingRelationships" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                </svg>
+                <svg x-show="isAnalyzingRelationships" class="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                <span x-text="isAnalyzingRelationships ? 'Analisi...' : 'Collega Repo'"></span>
+            </button>
+
             <!-- Cancel button (shown during review) -->
             <button x-show="isRunning && taskId"
                     @click="cancelReview()"
@@ -493,6 +509,148 @@
                     </div>
                     <div x-html="renderMarkdown(thinkingContent)"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Relationships Analysis Modal -->
+    <div x-show="showRelationshipsModal"
+         x-transition
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="showRelationshipsModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden m-4">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                        <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold">Analisi Relazioni Repository</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Identifica connessioni FE/BE tra i tuoi progetti</p>
+                    </div>
+                </div>
+                <button @click="showRelationshipsModal = false"
+                        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="p-6 overflow-y-auto max-h-[60vh]">
+                <!-- Loading state -->
+                <div x-show="isAnalyzingRelationships" class="flex flex-col items-center justify-center py-12">
+                    <svg class="animate-spin w-10 h-10 text-indigo-500 mb-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <p class="text-gray-600 dark:text-gray-400 font-medium" x-text="relationshipsProgress"></p>
+                    <p class="text-sm text-gray-500 mt-1">Gemini Flash sta analizzando i STRUCTURE.md...</p>
+                </div>
+
+                <!-- Error state -->
+                <div x-show="relationshipsError && !isAnalyzingRelationships" class="text-center py-12">
+                    <div class="p-3 bg-red-100 dark:bg-red-900/30 rounded-full inline-block mb-3">
+                        <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <p class="text-gray-700 dark:text-gray-300 font-medium" x-text="relationshipsError"></p>
+                </div>
+
+                <!-- Results -->
+                <div x-show="!isAnalyzingRelationships && !relationshipsError && relationshipsResult">
+                    <!-- Summary -->
+                    <div class="mb-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800/30">
+                        <p class="text-sm text-indigo-700 dark:text-indigo-300">
+                            <span class="font-medium">Analizzati:</span>
+                            <span x-text="relationshipsResult?.repos_analyzed"></span> repository su
+                            <span x-text="relationshipsResult?.total_repos"></span> totali
+                        </p>
+                        <p class="text-sm text-indigo-600 dark:text-indigo-400 mt-1" x-text="relationshipsResult?.analysis_summary"></p>
+                    </div>
+
+                    <!-- Connections found -->
+                    <div x-show="relationshipsResult?.connections_found?.length > 0">
+                        <h4 class="font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Connessioni Identificate
+                        </h4>
+                        <div class="space-y-3">
+                            <template x-for="(conn, idx) in relationshipsResult?.connections_found" :key="idx">
+                                <div class="p-4 bg-white dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="flex items-center gap-2">
+                                            <input type="checkbox"
+                                                   :value="idx"
+                                                   x-model="selectedConnections"
+                                                   class="w-4 h-4 rounded border-gray-300 text-indigo-500 focus:ring-indigo-500">
+                                            <span class="font-medium" x-text="conn.source_repo_name"></span>
+                                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                                            </svg>
+                                            <span class="font-medium" x-text="conn.target_repo_name"></span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="px-2 py-1 text-xs font-medium rounded-full"
+                                                  :class="{
+                                                      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': conn.link_type === 'frontend_for',
+                                                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': conn.link_type === 'backend_for',
+                                                      'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': conn.link_type === 'shared_lib',
+                                                      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': conn.link_type === 'microservice',
+                                                      'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-400': conn.link_type === 'related'
+                                                  }"
+                                                  x-text="conn.link_type.replace('_', ' ')"></span>
+                                            <span class="text-sm"
+                                                  :class="conn.confidence >= 0.8 ? 'text-green-600' : conn.confidence >= 0.5 ? 'text-yellow-600' : 'text-red-600'"
+                                                  x-text="Math.round(conn.confidence * 100) + '%'"></span>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400" x-text="conn.reason"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- No connections -->
+                    <div x-show="relationshipsResult?.connections_found?.length === 0" class="text-center py-8">
+                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                        </svg>
+                        <p class="text-gray-600 dark:text-gray-400">Nessuna connessione identificata tra i repository</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div x-show="!isAnalyzingRelationships && relationshipsResult?.connections_found?.length > 0"
+                 class="px-6 py-4 border-t dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-800/50">
+                <div class="flex items-center gap-4">
+                    <button @click="selectAllConnections()"
+                            class="text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">
+                        Seleziona tutte
+                    </button>
+                    <button @click="selectedConnections = []"
+                            class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400">
+                        Deseleziona
+                    </button>
+                </div>
+                <button @click="applySelectedConnections()"
+                        :disabled="selectedConnections.length === 0 || isApplyingConnections"
+                        class="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                    <svg x-show="isApplyingConnections" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <span x-text="isApplyingConnections ? 'Applicando...' : 'Applica Selezionate (' + selectedConnections.length + ')'"></span>
+                </button>
             </div>
         </div>
     </div>

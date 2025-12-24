@@ -11,6 +11,7 @@ from .fix import router as fix_router
 from .auth import router as auth_router
 from .users import router as users_router
 from .thinking import router as thinking_router
+from .relationships import router as relationships_router
 
 __all__ = [
     "repos_router",
@@ -24,4 +25,5 @@ __all__ = [
     "auth_router",
     "users_router",
     "thinking_router",
+    "relationships_router",
 ]
