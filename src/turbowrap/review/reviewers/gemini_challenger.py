@@ -404,11 +404,12 @@ Output ONLY the JSON, no markdown blocks or explanations.
 
             data = json.loads(json_text)
 
-            # Parse dimension scores
+            # Parse dimension scores (matching the prompt's requested fields)
             dim_data = data.get("dimension_scores", {})
             dimension_scores = DimensionScores(
                 completeness=dim_data.get("completeness", 50),
-                accuracy=dim_data.get("accuracy", 50),
+                security=dim_data.get("security", 50),
+                code_quality=dim_data.get("code_quality", 50),
                 depth=dim_data.get("depth", 50),
                 actionability=dim_data.get("actionability", 50),
             )
@@ -470,7 +471,8 @@ Output ONLY the JSON, no markdown blocks or explanations.
                 status=ChallengerStatus.NEEDS_REFINEMENT,
                 dimension_scores=DimensionScores(
                     completeness=50,
-                    accuracy=50,
+                    security=50,
+                    code_quality=50,
                     depth=50,
                     actionability=50,
                 ),
@@ -495,7 +497,8 @@ Output ONLY the JSON, no markdown blocks or explanations.
             "status": "NEEDS_REFINEMENT",
             "dimension_scores": {
                 "completeness": 80,
-                "accuracy": 80,
+                "security": 80,
+                "code_quality": 80,
                 "depth": 80,
                 "actionability": 80,
             },
