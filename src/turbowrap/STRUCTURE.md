@@ -2,79 +2,124 @@
 
 ## Files
 
-**Directory Stats:** 4 files, 644 lines, 4,346 tokens
+**Directory Stats:** 4 files, 649 lines, 4,378 tokens
 
 | File | Lines | Tokens |
 |------|------:|-------:|
 | `__init__.py` | 27 | 158 |
 | `cli.py` | 407 | 2,769 |
-| `config.py` | 158 | 1,237 |
+| `config.py` | 163 | 1,269 |
 | `exceptions.py` | 52 | 182 |
 
 ### __init__.py
 *27 lines, 158 tokens*
 
-- **Constant**: `__version__` - Current version of the TurboWrap package.
-- **Constant**: `__author__` - Name of the package creator.
-- **Class**: `GeminiClient` - Client interface for Google Gemini AI models.
-- **Class**: `GeminiProClient` - Client interface for Google Gemini Pro models.
-- **Class**: `ClaudeClient` - Client interface for Anthropic Claude AI models.
-- **Class**: `BaseAgent` - Foundational class for building AI-driven agents.
-- **Class**: `AgentResponse` - Standard format for AI agent output data.
-- **Class**: `Orchestrator` - Main controller for managing the review workflow.
-- **Class**: `ChallengerLoop` - System for iterative review and refinement cycles.
-- **Class**: `ReportGenerator` - Tool for generating final analysis reports.
+- *No exported elements detected*
 
 ### cli.py
 *407 lines, 2,769 tokens*
 
-- **Constant**: `app` - Main Typer application entry point for the CLI.
-- **Constant**: `repo_app` - Typer sub-app dedicated to repository management commands.
-- **Decorator**: `repo_app.command` - Registers a function as a repository sub-command.
-- **Function**: `repo_clone` - Command to clone a GitHub repository to local storage.
-- **Function**: `repo_list` - Command to list all repositories in a formatted table.
-- **Function**: `repo_sync` - Command to pull updates for a specific repository.
-- **Function**: `repo_remove` - Command to delete a repository from the system.
-- **Decorator**: `app.command` - Registers a function as a top-level CLI command.
-- **Function**: `run_review` - Command to trigger an automated code review task.
+- *No exported elements detected*
 
 ### config.py
-*158 lines, 1,237 tokens*
+*163 lines, 1,269 tokens*
 
-- **Class**: `DatabaseSettings` - Manages database connection and pooling configurations.
-- **Class**: `AgentSettings` - Configures AI models and associated API keys.
-- **Class**: `TaskSettings` - Defines limits for parallel task execution and file sizes.
-- **Class**: `ServerSettings` - Configures API server network settings and CORS origins.
-- **Class**: `Settings` - Main configuration class aggregating all system settings.
-- **Function**: `get_settings` - Returns a cached instance of the application settings.
-- **Function**: `reset_settings` - Clears the cached settings instance for testing purposes.
-- **Decorator**: `field_validator` - Validates specific field formats within Pydantic models.
-- **Decorator**: `lru_cache` - Caches the output of the settings provider function.
+- *No exported elements detected*
 
 ### exceptions.py
 *52 lines, 182 tokens*
 
-- **Class**: `TurboWrapError` - Base exception for all TurboWrap errors.
-- **Class**: `ConfigError` - Raised for configuration-related issues.
-- **Class**: `RepositoryError` - Base class for repository operation errors.
-- **Class**: `CloneError` - Raised when repository cloning fails.
-- **Class**: `SyncError` - Raised when repository synchronization fails.
-- **Class**: `TaskError` - Raised during task execution errors.
-- **Class**: `AgentError` - Base class for agent communication errors.
-- **Class**: `GeminiError` - Specific error for Gemini API failures.
-- **Class**: `ClaudeError` - Specific error for Claude API failures.
-- **Class**: `DatabaseError` - Raised for database operation errors.
+- *No exported elements detected*
 
-## Subdirectories
+## Nested Directories
 
-- [api/](api/STRUCTURE.md) - API entry and dependencies
-- [core/](core/STRUCTURE.md) - Core orchestration and management
-- [db/](db/STRUCTURE.md) - Database session and connectivity
-- [llm/](llm/STRUCTURE.md) - AI language model integrations
-- [review/](review/STRUCTURE.md) - Code review automation workflows
-- [tasks/](tasks/STRUCTURE.md) - Task logic and registry
-- [tools/](tools/STRUCTURE.md) - Development and structure tools
-- [utils/](utils/STRUCTURE.md) - Shared helper function library
+*Directories beyond max depth, included inline:*
+
+### api/ (3 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**deps.py** - 0 lines
+
+**main.py** - 0 lines
+
+### core/ (4 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**orchestrator.py** - 0 lines
+
+**repo_manager.py** - 0 lines
+
+**task_queue.py** - 0 lines
+
+### db/ (4 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**base.py** - 0 lines
+
+**models.py** - 0 lines
+
+**session.py** - 0 lines
+
+### llm/ (5 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**base.py** - 0 lines
+
+**claude.py** - 0 lines
+
+**gemini.py** - 0 lines
+
+**prompts.py** - 0 lines
+
+### review/ (4 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**challenger_loop.py** - 0 lines
+
+**orchestrator.py** - 0 lines
+
+**report_generator.py** - 0 lines
+
+### tasks/ (5 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**base.py** - 0 lines
+
+**develop.py** - 0 lines
+
+**registry.py** - 0 lines
+
+**review.py** - 0 lines
+
+### tools/ (3 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**__main__.py** - 0 lines
+
+**structure_generator.py** - 0 lines
+
+### utils/ (3 files)
+*nested module*
+
+**__init__.py** - 0 lines
+
+**file_utils.py** - 0 lines
+
+**git_utils.py** - 0 lines
 
 ---
-*Generated by TurboWrap - 2025-12-24 15:47*
+*Generated by TurboWrap - 2025-12-24 16:20*

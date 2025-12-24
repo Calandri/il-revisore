@@ -250,7 +250,7 @@ class ChallengerLoop:
             if all(imp < self.min_improvement_threshold for imp in improvements):
                 return ConvergenceStatus.STAGNATED
 
-        return ConvergenceStatus.THRESHOLD_MET  # Continue
+        return ConvergenceStatus.IN_PROGRESS  # Loop should continue
 
     def _determine_final_convergence(
         self,
