@@ -177,6 +177,8 @@ class Task(Base, SoftDeleteMixin):
     config = Column(JSON, nullable=True)  # task-specific config
     result = Column(JSON, nullable=True)  # output del task
     error = Column(Text, nullable=True)  # error message if failed
+    progress = Column(Integer, default=0)  # 0-100 percentage
+    progress_message = Column(String(255), nullable=True)  # Current step description
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

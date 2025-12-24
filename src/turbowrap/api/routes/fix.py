@@ -1,12 +1,15 @@
 """Fix routes for issue remediation."""
 
 import asyncio
+import hashlib
 import logging
-from datetime import datetime
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
@@ -29,6 +32,130 @@ router = APIRouter(prefix="/fix", tags=["fix"])
 # Store for pending clarifications (session_id -> Question)
 _pending_clarifications: dict[str, ClarificationQuestion] = {}
 _clarification_answers: dict[str, asyncio.Future] = {}
+
+# Idempotency tracking
+IDEMPOTENCY_TTL_SECONDS = 3600  # 1 hour
+
+
+@dataclass
+class IdempotencyEntry:
+    """Entry for tracking idempotent requests."""
+    session_id: str
+    status: str  # "in_progress", "completed", "failed"
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+    result: Optional[dict] = None
+
+
+class IdempotencyStore:
+    """Thread-safe store for idempotency tracking.
+
+    Prevents duplicate fix requests for the same set of issues.
+    Uses an idempotency key based on issue IDs or a client-provided header.
+    """
+
+    def __init__(self):
+        self._store: dict[str, IdempotencyEntry] = {}
+        self._lock = threading.RLock()
+
+    def generate_key(
+        self,
+        repository_id: str,
+        task_id: str,
+        issue_ids: list[str],
+        client_key: Optional[str] = None,
+    ) -> str:
+        """Generate idempotency key.
+
+        Args:
+            repository_id: Repository ID.
+            task_id: Task ID.
+            issue_ids: List of issue IDs.
+            client_key: Optional client-provided idempotency key.
+
+        Returns:
+            Idempotency key string.
+        """
+        if client_key:
+            return f"client:{client_key}"
+
+        # Generate key from issue IDs
+        sorted_ids = sorted(issue_ids)
+        data = f"{repository_id}:{task_id}:{','.join(sorted_ids)}"
+        return f"auto:{hashlib.sha256(data.encode()).hexdigest()[:16]}"
+
+    def check_and_register(
+        self,
+        key: str,
+        session_id: str,
+    ) -> tuple[bool, Optional[IdempotencyEntry]]:
+        """Check if request is duplicate and register if not.
+
+        Args:
+            key: Idempotency key.
+            session_id: New session ID.
+
+        Returns:
+            Tuple of (is_duplicate, existing_entry).
+            If is_duplicate is True, existing_entry contains the prior request.
+        """
+        now = datetime.utcnow()
+        cutoff = now - timedelta(seconds=IDEMPOTENCY_TTL_SECONDS)
+
+        with self._lock:
+            # Clean up expired entries
+            expired_keys = [
+                k for k, v in self._store.items()
+                if v.created_at < cutoff
+            ]
+            for k in expired_keys:
+                del self._store[k]
+
+            # Check for existing entry
+            existing = self._store.get(key)
+            if existing:
+                # Only consider it a duplicate if still in progress or recent
+                if existing.status == "in_progress":
+                    logger.info(f"Duplicate fix request blocked (in progress): {key}")
+                    return True, existing
+                elif existing.created_at > cutoff:
+                    logger.info(f"Duplicate fix request detected (recent): {key}")
+                    return True, existing
+
+            # Register new entry
+            self._store[key] = IdempotencyEntry(
+                session_id=session_id,
+                status="in_progress",
+            )
+            return False, None
+
+    def update_status(
+        self,
+        key: str,
+        status: str,
+        result: Optional[dict] = None,
+    ) -> None:
+        """Update entry status.
+
+        Args:
+            key: Idempotency key.
+            status: New status.
+            result: Optional result data.
+        """
+        with self._lock:
+            if key in self._store:
+                self._store[key].status = status
+                self._store[key].completed_at = datetime.utcnow()
+                self._store[key].result = result
+
+    def remove(self, key: str) -> None:
+        """Remove an entry (e.g., on cancellation)."""
+        with self._lock:
+            self._store.pop(key, None)
+
+
+# Global idempotency store
+_idempotency_store = IdempotencyStore()
 
 
 class FixStartRequest(BaseModel):
@@ -154,6 +281,11 @@ def update_issue(
 async def start_fix(
     request: FixStartRequest,
     db: Session = Depends(get_db),
+    x_idempotency_key: Optional[str] = Header(
+        default=None,
+        description="Optional client-provided idempotency key. "
+        "If not provided, a key is generated from issue IDs."
+    ),
 ):
     """
     Start fixing issues with SSE streaming.
@@ -163,15 +295,62 @@ async def start_fix(
     2. Analysis for clarification needs
     3. Fix generation with Claude
     4. File modification and commit
+
+    Idempotency:
+    - If the same set of issues is already being fixed, returns 409 Conflict
+    - Use X-Idempotency-Key header to track specific requests
+    - Idempotency keys expire after 1 hour
     """
+    import uuid
+
+    # Generate idempotency key
+    idempotency_key = _idempotency_store.generate_key(
+        repository_id=request.repository_id,
+        task_id=request.task_id,
+        issue_ids=request.issue_ids,
+        client_key=x_idempotency_key,
+    )
+
+    # Generate session ID early for idempotency tracking
+    session_id = str(uuid.uuid4())
+
+    # Check for duplicate request
+    is_duplicate, existing = _idempotency_store.check_and_register(
+        key=idempotency_key,
+        session_id=session_id,
+    )
+
+    if is_duplicate and existing:
+        if existing.status == "in_progress":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "Fix session already in progress for these issues",
+                    "session_id": existing.session_id,
+                    "status": existing.status,
+                    "started_at": existing.created_at.isoformat(),
+                },
+            )
+        else:
+            # Return previous result
+            return {
+                "status": "duplicate",
+                "message": "Request already processed",
+                "previous_session_id": existing.session_id,
+                "previous_status": existing.status,
+                "completed_at": existing.completed_at.isoformat() if existing.completed_at else None,
+            }
+
     # Verify repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
     if not repo:
+        _idempotency_store.remove(idempotency_key)
         raise HTTPException(status_code=404, detail="Repository not found")
 
     # Verify task
     task = db.query(Task).filter(Task.id == request.task_id).first()
     if not task:
+        _idempotency_store.remove(idempotency_key)
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Load issues
@@ -183,6 +362,7 @@ async def start_fix(
     )
 
     if not issues:
+        _idempotency_store.remove(idempotency_key)
         raise HTTPException(status_code=404, detail="No valid issues found")
 
     # Order issues by the requested order

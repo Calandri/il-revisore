@@ -2,13 +2,108 @@
 GitHub integration for TurboWrap.
 """
 
+import logging
 import re
-from typing import Optional
+import time
+from functools import wraps
+from typing import Callable, Optional, TypeVar
 
-from github import Github, GithubException
+from github import Github, GithubException, RateLimitExceededException
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.report import FinalReport, Recommendation
+
+logger = logging.getLogger(__name__)
+
+# Rate limit configuration
+MAX_RETRIES = 3
+BASE_RETRY_DELAY = 5  # seconds
+MAX_RETRY_DELAY = 60  # seconds
+
+T = TypeVar("T")
+
+
+class GitHubRateLimitError(Exception):
+    """Raised when GitHub rate limit is exceeded and retries are exhausted."""
+
+    def __init__(self, message: str, reset_time: int | None = None):
+        super().__init__(message)
+        self.reset_time = reset_time
+
+
+def with_rate_limit_retry(func: Callable[..., T]) -> Callable[..., T]:
+    """Decorator to handle GitHub rate limits with exponential backoff.
+
+    Catches RateLimitExceededException and GithubException with rate limit errors,
+    waits for the appropriate time, and retries the operation.
+
+    Args:
+        func: Function to wrap.
+
+    Returns:
+        Wrapped function with retry logic.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> T:
+        last_exception = None
+        retry_count = 0
+
+        while retry_count <= MAX_RETRIES:
+            try:
+                return func(*args, **kwargs)
+
+            except RateLimitExceededException as e:
+                last_exception = e
+                retry_count += 1
+
+                # Get rate limit reset time
+                reset_time = getattr(e, "reset_time", None)
+                if reset_time:
+                    wait_seconds = max(0, reset_time - int(time.time()))
+                else:
+                    wait_seconds = min(
+                        BASE_RETRY_DELAY * (2 ** (retry_count - 1)),
+                        MAX_RETRY_DELAY
+                    )
+
+                if retry_count <= MAX_RETRIES:
+                    logger.warning(
+                        f"GitHub rate limit exceeded. Waiting {wait_seconds}s before retry "
+                        f"({retry_count}/{MAX_RETRIES})"
+                    )
+                    time.sleep(wait_seconds)
+                else:
+                    break
+
+            except GithubException as e:
+                # Check if it's a rate limit error (403 with rate limit message)
+                if e.status == 403 and "rate limit" in str(e).lower():
+                    last_exception = e
+                    retry_count += 1
+
+                    wait_seconds = min(
+                        BASE_RETRY_DELAY * (2 ** (retry_count - 1)),
+                        MAX_RETRY_DELAY
+                    )
+
+                    if retry_count <= MAX_RETRIES:
+                        logger.warning(
+                            f"GitHub rate limit error. Waiting {wait_seconds}s before retry "
+                            f"({retry_count}/{MAX_RETRIES})"
+                        )
+                        time.sleep(wait_seconds)
+                    else:
+                        break
+                else:
+                    raise
+
+        raise GitHubRateLimitError(
+            f"GitHub rate limit exceeded after {MAX_RETRIES} retries. "
+            f"Last error: {last_exception}",
+            reset_time=getattr(last_exception, "reset_time", None),
+        )
+
+    return wrapper
 
 
 class GitHubClient:
@@ -35,6 +130,7 @@ class GitHubClient:
 
         self.github = Github(self.token)
 
+    @with_rate_limit_retry
     def get_pr_files(self, pr_url: str) -> list[str]:
         """
         Get list of files changed in a PR.
@@ -44,6 +140,9 @@ class GitHubClient:
 
         Returns:
             List of file paths
+
+        Raises:
+            GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
         if not all([owner, repo, pr_number]):
@@ -54,6 +153,7 @@ class GitHubClient:
 
         return [f.filename for f in pr.get_files()]
 
+    @with_rate_limit_retry
     def get_pr_diff(self, pr_url: str) -> str:
         """
         Get the diff for a PR.
@@ -63,7 +163,12 @@ class GitHubClient:
 
         Returns:
             Diff content
+
+        Raises:
+            GitHubRateLimitError: If rate limit is exceeded after retries.
         """
+        import requests
+
         owner, repo, pr_number = self._parse_pr_url(pr_url)
         if not all([owner, repo, pr_number]):
             raise ValueError(f"Invalid PR URL: {pr_url}")
@@ -71,18 +176,29 @@ class GitHubClient:
         repository = self.github.get_repo(f"{owner}/{repo}")
         pr = repository.get_pull(pr_number)
 
-        # Get diff via API
-        import requests
-
+        # Get diff via API with rate limit handling
         headers = {"Authorization": f"token {self.token}"}
         response = requests.get(
             pr.diff_url,
             headers=headers,
+            timeout=30,
         )
-        response.raise_for_status()
 
+        # Check for rate limit in response headers
+        if response.status_code == 403:
+            remaining = response.headers.get("X-RateLimit-Remaining", "")
+            if remaining == "0":
+                reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                raise RateLimitExceededException(
+                    response.status_code,
+                    {"message": "Rate limit exceeded"},
+                    headers=dict(response.headers),
+                )
+
+        response.raise_for_status()
         return response.text
 
+    @with_rate_limit_retry
     def post_review_comment(
         self,
         pr_url: str,
@@ -99,6 +215,9 @@ class GitHubClient:
 
         Returns:
             Comment ID
+
+        Raises:
+            GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
         if not all([owner, repo, pr_number]):
@@ -120,6 +239,7 @@ class GitHubClient:
         comment = pr.create_issue_comment(comment_body)
         return comment.id
 
+    @with_rate_limit_retry
     def create_review(
         self,
         pr_url: str,
@@ -134,6 +254,9 @@ class GitHubClient:
 
         Returns:
             Review ID
+
+        Raises:
+            GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
         if not all([owner, repo, pr_number]):
@@ -184,6 +307,7 @@ class GitHubClient:
                 return review.id
             raise
 
+    @with_rate_limit_retry
     def set_commit_status(
         self,
         pr_url: str,
@@ -195,6 +319,9 @@ class GitHubClient:
         Args:
             pr_url: GitHub PR URL
             report: The final review report
+
+        Raises:
+            GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
         if not all([owner, repo, pr_number]):

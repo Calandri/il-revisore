@@ -2,9 +2,12 @@
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any
+
+# Default timeout for zombie detection (30 minutes)
+DEFAULT_ZOMBIE_TIMEOUT_SECONDS = 1800
 
 
 @dataclass
@@ -16,6 +19,7 @@ class QueuedTask:
     config: dict = field(default_factory=dict)
     priority: int = 0
     created_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime | None = field(default=None)  # When processing started
 
 
 class TaskQueue:
@@ -64,6 +68,7 @@ class TaskQueue:
                 return None
 
             task = self._queue.popleft()
+            task.started_at = datetime.utcnow()  # Track when processing started
             self._processing[task.task_id] = task
             return task
 
@@ -136,6 +141,83 @@ class TaskQueue:
         """Get queue size."""
         with self._lock:
             return len(self._queue)
+
+    def get_zombie_tasks(
+        self, timeout_seconds: int = DEFAULT_ZOMBIE_TIMEOUT_SECONDS
+    ) -> list[QueuedTask]:
+        """Find tasks that have been processing for too long (zombies).
+
+        A zombie task is one that started processing but never completed,
+        likely due to a crash, timeout, or other failure without cleanup.
+
+        Args:
+            timeout_seconds: Consider a task zombie after this many seconds.
+                            Default is 30 minutes.
+
+        Returns:
+            List of zombie QueuedTask objects.
+        """
+        with self._lock:
+            now = datetime.utcnow()
+            cutoff = now - timedelta(seconds=timeout_seconds)
+            zombies = []
+
+            for task in self._processing.values():
+                if task.started_at and task.started_at < cutoff:
+                    zombies.append(task)
+
+            return zombies
+
+    def cleanup_zombie_tasks(
+        self,
+        timeout_seconds: int = DEFAULT_ZOMBIE_TIMEOUT_SECONDS,
+        requeue: bool = False,
+    ) -> list[str]:
+        """Find and remove zombie tasks from processing.
+
+        Args:
+            timeout_seconds: Consider a task zombie after this many seconds.
+            requeue: If True, put zombie tasks back in the queue for retry.
+                    If False, just remove them from processing.
+
+        Returns:
+            List of task IDs that were cleaned up.
+        """
+        with self._lock:
+            now = datetime.utcnow()
+            cutoff = now - timedelta(seconds=timeout_seconds)
+            zombie_ids = []
+
+            # Find zombies
+            for task_id, task in list(self._processing.items()):
+                if task.started_at and task.started_at < cutoff:
+                    zombie_ids.append(task_id)
+
+            # Clean up zombies
+            for task_id in zombie_ids:
+                task = self._processing.pop(task_id)
+                if requeue:
+                    # Reset started_at and put back in queue
+                    task.started_at = None
+                    task.priority += 1  # Slightly higher priority for retry
+                    self._queue.appendleft(task)
+
+            return zombie_ids
+
+    def get_task_age(self, task_id: str) -> timedelta | None:
+        """Get how long a task has been processing.
+
+        Args:
+            task_id: Task ID to check.
+
+        Returns:
+            Time since task started processing, or None if not found.
+        """
+        with self._lock:
+            task = self._processing.get(task_id)
+            if task and task.started_at:
+                return datetime.utcnow() - task.started_at
+            return None
 
 
 # Global queue instance

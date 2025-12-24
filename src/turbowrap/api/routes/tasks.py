@@ -164,6 +164,50 @@ def get_task(
     return task
 
 
+@router.get("/{task_id}/progress")
+def get_task_progress(
+    task_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get task progress details.
+
+    Returns progress percentage, elapsed time, and estimated remaining time.
+    Useful for polling task status during execution.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Calculate elapsed time
+    elapsed = None
+    if task.started_at:
+        if task.completed_at:
+            elapsed = (task.completed_at - task.started_at).total_seconds()
+        else:
+            elapsed = (datetime.utcnow() - task.started_at).total_seconds()
+
+    # Estimate remaining time
+    estimated_remaining = None
+    progress = task.progress or 0
+
+    if elapsed and progress > 0 and progress < 100:
+        time_per_percent = elapsed / progress
+        remaining_percent = 100 - progress
+        estimated_remaining = round(time_per_percent * remaining_percent, 1)
+
+    return {
+        "task_id": task.id,
+        "status": task.status,
+        "progress": {
+            "percentage": progress,
+            "message": task.progress_message,
+            "elapsed_seconds": round(elapsed, 1) if elapsed else None,
+            "estimated_remaining_seconds": estimated_remaining,
+        },
+        "is_complete": task.status in ("completed", "failed", "cancelled"),
+    }
+
+
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: str,

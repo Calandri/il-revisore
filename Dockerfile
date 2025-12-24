@@ -10,7 +10,7 @@ WORKDIR /app
 
 # Copy and install dependencies first (better layer caching)
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . email-validator
 
 # Copy application code
 COPY src/ ./src/

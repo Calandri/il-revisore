@@ -43,6 +43,17 @@ class TaskCreate(BaseModel):
         return v
 
 
+class TaskProgress(BaseModel):
+    """Progress information for a running task."""
+
+    percentage: int = Field(..., ge=0, le=100, description="Progress percentage (0-100)")
+    message: str | None = Field(default=None, description="Current step description")
+    elapsed_seconds: float | None = Field(default=None, description="Time elapsed since start")
+    estimated_remaining_seconds: float | None = Field(
+        default=None, description="Estimated time remaining"
+    )
+
+
 class TaskResponse(BaseModel):
     """Task response."""
 
@@ -56,6 +67,8 @@ class TaskResponse(BaseModel):
     config: dict[str, Any] | None = Field(default=None, description="Task configuration")
     result: dict[str, Any] | None = Field(default=None, description="Task result data")
     error: str | None = Field(default=None, description="Error message if failed")
+    progress: int = Field(default=0, ge=0, le=100, description="Progress percentage")
+    progress_message: str | None = Field(default=None, description="Current step")
     started_at: datetime | None = Field(default=None, description="Execution start time")
     completed_at: datetime | None = Field(default=None, description="Execution end time")
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -67,6 +80,34 @@ class TaskResponse(BaseModel):
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return None
+
+    @property
+    def elapsed_seconds(self) -> float | None:
+        """Calculate elapsed time for running tasks."""
+        if self.started_at:
+            if self.completed_at:
+                return (self.completed_at - self.started_at).total_seconds()
+            from datetime import datetime
+            return (datetime.utcnow() - self.started_at).total_seconds()
+        return None
+
+    def get_progress(self) -> TaskProgress:
+        """Get structured progress information."""
+        elapsed = self.elapsed_seconds
+        estimated_remaining = None
+
+        if elapsed and self.progress > 0 and self.progress < 100:
+            # Estimate remaining time based on current progress
+            time_per_percent = elapsed / self.progress
+            remaining_percent = 100 - self.progress
+            estimated_remaining = time_per_percent * remaining_percent
+
+        return TaskProgress(
+            percentage=self.progress,
+            message=self.progress_message,
+            elapsed_seconds=elapsed,
+            estimated_remaining_seconds=estimated_remaining,
+        )
 
 
 class TaskSummary(BaseModel):
