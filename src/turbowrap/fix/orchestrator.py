@@ -46,6 +46,10 @@ AnswerProvider = Callable[[ClarificationQuestion], Awaitable[ClarificationAnswer
 class FixOrchestrator:
     """Orchestrates the fixing of code review issues."""
 
+    # File extensions for backend vs frontend
+    BE_EXTENSIONS = {".py", ".go", ".java", ".rs", ".rb", ".php"}
+    FE_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"}
+
     def __init__(
         self,
         repo_path: Path,
@@ -66,11 +70,72 @@ class FixOrchestrator:
         self.git = GitUtils(repo_path)
 
         # Load agent prompts
+        self._load_prompts()
+
+    def _load_prompts(self) -> None:
+        """Load all required agent prompts."""
+        # Base: engineering principles (always)
+        try:
+            self.engineering_prompt = load_prompt("engineering_principles")
+        except FileNotFoundError:
+            logger.warning("engineering_principles.md not found")
+            self.engineering_prompt = ""
+
+        # Backend developer prompt
+        try:
+            self.dev_be_prompt = load_prompt("dev_be")
+        except FileNotFoundError:
+            logger.warning("dev_be.md not found")
+            self.dev_be_prompt = ""
+
+        # Frontend developer prompt
+        try:
+            self.dev_fe_prompt = load_prompt("dev_fe")
+        except FileNotFoundError:
+            logger.warning("dev_fe.md not found")
+            self.dev_fe_prompt = ""
+
+        # Fixer-specific prompt
         try:
             self.fixer_prompt = load_prompt("fixer")
         except FileNotFoundError:
-            logger.warning("fixer.md prompt not found, using default")
+            logger.warning("fixer.md not found, using default")
             self.fixer_prompt = self._default_fixer_prompt()
+
+    def _get_system_prompt_for_file(self, file_path: str) -> str:
+        """
+        Build system prompt based on file type.
+
+        Args:
+            file_path: Path to the file being fixed
+
+        Returns:
+            Combined system prompt: engineering + (dev_be|dev_fe) + fixer
+        """
+        suffix = Path(file_path).suffix.lower()
+
+        # Determine if BE or FE
+        if suffix in self.BE_EXTENSIONS:
+            dev_prompt = self.dev_be_prompt
+            file_type = "Backend"
+        elif suffix in self.FE_EXTENSIONS:
+            dev_prompt = self.dev_fe_prompt
+            file_type = "Frontend"
+        else:
+            # Default to fixer only for unknown types
+            dev_prompt = ""
+            file_type = "General"
+
+        # Combine prompts
+        parts = []
+        if self.engineering_prompt:
+            parts.append(f"# Engineering Principles\n\n{self.engineering_prompt}")
+        if dev_prompt:
+            parts.append(f"# {file_type} Development Guidelines\n\n{dev_prompt}")
+        if self.fixer_prompt:
+            parts.append(f"# Fixer Instructions\n\n{self.fixer_prompt}")
+
+        return "\n\n---\n\n".join(parts) if parts else self._default_fixer_prompt()
 
     def _default_fixer_prompt(self) -> str:
         """Default fixer prompt if agents/fixer.md is not found."""
@@ -537,8 +602,11 @@ Format your response as:
         try:
             full_response = ""
 
+            # Build system prompt based on file type
+            system_prompt = self._get_system_prompt_for_file(context.file_path)
+
             # Stream the response
-            async for chunk in self.claude.astream(prompt, self.fixer_prompt):
+            async for chunk in self.claude.astream(prompt, system_prompt):
                 full_response += chunk
                 await emit(FixProgressEvent(
                     type=FixEventType.FIX_ISSUE_STREAMING,

@@ -103,6 +103,42 @@ class ServerSettings(BaseSettings):
     workers: int = Field(default=1, ge=1, le=16, description="Number of workers")
 
 
+class ChallengerSettings(BaseSettings):
+    """Challenger loop configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_CHALLENGER_")
+
+    enabled: bool = Field(default=True, description="Enable challenger loop")
+    reviewer_model: str = Field(
+        default="claude-opus-4-5-20251101",
+        description="Model for the primary reviewer"
+    )
+    challenger_model: str = Field(
+        default="gemini-3-flash-preview",
+        description="Model for the challenger"
+    )
+    satisfaction_threshold: float = Field(
+        default=50.0, ge=0, le=100,
+        description="Required satisfaction score (0-100)"
+    )
+    max_iterations: int = Field(
+        default=5, ge=1, le=10,
+        description="Maximum challenger iterations"
+    )
+    min_improvement_threshold: float = Field(
+        default=2.0, ge=0, le=100,
+        description="Minimum % improvement per iteration"
+    )
+    stagnation_window: int = Field(
+        default=2, ge=1, le=5,
+        description="Iterations to detect stagnation"
+    )
+    forced_acceptance_threshold: float = Field(
+        default=90.0, ge=0, le=100,
+        description="Accept if above this after max iterations"
+    )
+
+
 class Settings(BaseSettings):
     """Main TurboWrap settings."""
 
@@ -117,6 +153,7 @@ class Settings(BaseSettings):
     agents: AgentSettings = Field(default_factory=AgentSettings)
     tasks: TaskSettings = Field(default_factory=TaskSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
+    challenger: ChallengerSettings = Field(default_factory=ChallengerSettings)
 
     # Paths
     repos_dir: Path = Field(
