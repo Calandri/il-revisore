@@ -134,7 +134,6 @@ class ClaudeCLIReviewer(BaseReviewer):
             )
 
             s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"Saved thinking to {s3_url}")
             return s3_url
 
         except ClientError as e:
@@ -166,7 +165,6 @@ class ClaudeCLIReviewer(BaseReviewer):
         # Delete old output file if exists
         if output_file.exists():
             output_file.unlink()
-            logger.info(f"Deleted old output file: {output_file}")
 
         # Run Claude CLI with streaming
         cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
@@ -189,7 +187,6 @@ class ClaudeCLIReviewer(BaseReviewer):
 
         try:
             output = output_file.read_text(encoding="utf-8")
-            logger.info(f"Read review from file: {output_file} ({len(output)} chars)")
             return output, model_usage, None
         except Exception as e:
             logger.error(f"Failed to read output file: {e}")
@@ -198,7 +195,6 @@ class ClaudeCLIReviewer(BaseReviewer):
             # Clean up output file
             try:
                 output_file.unlink()
-                logger.info(f"Cleaned up output file: {output_file}")
             except Exception:
                 pass
 
@@ -442,7 +438,6 @@ After writing, just say "Review saved to {output_file}"
             api_key = get_anthropic_api_key()
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
-                logger.info("ANTHROPIC_API_KEY loaded from AWS Secrets Manager")
             else:
                 logger.warning("ANTHROPIC_API_KEY not found in AWS - using environment")
 
@@ -455,14 +450,11 @@ After writing, just say "Review saved to {output_file}"
             for sock in vscode_sockets:
                 try:
                     os.remove(sock)
-                    logger.info(f"Removed VSCode socket: {sock}")
                 except OSError:
                     pass  # Socket may be in use
 
             # Use model from settings
             model = self.settings.agents.claude_model
-
-            logger.info(f"Running Claude CLI for {self.name} in {cwd} with model={model}")
 
             # Build CLI arguments with stream-json for real-time streaming
             args = [
@@ -480,13 +472,6 @@ After writing, just say "Review saved to {output_file}"
             if self.settings.thinking.enabled:
                 thinking_settings = {"alwaysThinkingEnabled": True}
                 args.extend(["--settings", json.dumps(thinking_settings)])
-                logger.info("Extended thinking enabled for Claude CLI")
-
-            # LOG: Full command and prompt
-            logger.info(f"[CLAUDE CLI] Command: {' '.join(args)}")
-            logger.info(f"[CLAUDE CLI] CWD: {cwd}")
-            logger.info(f"[CLAUDE CLI] Prompt length: {len(prompt)} chars")
-            logger.info(f"[CLAUDE CLI] Prompt preview: {prompt[:500]}...")
 
             process = await asyncio.create_subprocess_exec(
                 *args,
@@ -499,7 +484,6 @@ After writing, just say "Review saved to {output_file}"
 
             # Write prompt to stdin
             prompt_bytes = prompt.encode()
-            logger.info(f"Sending prompt to Claude CLI: {len(prompt_bytes)} bytes")
             try:
                 process.stdin.write(prompt_bytes)
                 await process.stdin.drain()
@@ -533,7 +517,6 @@ After writing, just say "Review saved to {output_file}"
                             # Emit chunk for streaming
                             if on_chunk:
                                 await on_chunk(decoded)
-                            logger.debug(f"Claude CLI chunk: {len(decoded)} chars")
             except asyncio.TimeoutError:
                 logger.error(f"Claude CLI timed out after {self.timeout}s")
                 process.kill()
@@ -545,7 +528,6 @@ After writing, just say "Review saved to {output_file}"
             stderr_bytes = await process.stderr.read()
             stderr_text = stderr_bytes.decode() if stderr_bytes else ""
 
-            logger.info(f"[CLAUDE CLI] Exit code: {process.returncode}")
             if stderr_text:
                 logger.warning(f"[CLAUDE CLI] STDERR: {stderr_text[:1000]}")
 
@@ -555,15 +537,9 @@ After writing, just say "Review saved to {output_file}"
                 return None, [], "", ""
 
             raw_output = "".join(output_chunks)
-            logger.info(f"[CLAUDE CLI] Raw output collected: {len(raw_output)} chars")
             model_usage_list: list[ModelUsageInfo] = []
             output = ""
             thinking_chunks: list[str] = []  # Collect thinking content
-
-            # Log raw output for debugging
-            logger.info(f"Claude CLI raw output length: {len(raw_output)}")
-            if len(raw_output) < 2000:
-                logger.debug(f"Claude CLI raw output: {raw_output}")
 
             # Parse stream-json output (NDJSON - one JSON per line)
             # Look for the "result" type line which contains final output and costs
@@ -573,7 +549,6 @@ After writing, just say "Review saved to {output_file}"
                 try:
                     event = json.loads(line)
                     event_type = event.get("type")
-                    logger.debug(f"Stream event type: {event_type}")
 
                     # Capture thinking content from assistant messages
                     if event_type == "assistant":
@@ -584,7 +559,6 @@ After writing, just say "Review saved to {output_file}"
                                 thinking_text = block.get("thinking", "")
                                 if thinking_text:
                                     thinking_chunks.append(thinking_text)
-                                    logger.debug(f"Captured thinking block: {len(thinking_text)} chars")
 
                     if event_type == "result":
                         # Final result with content and model usage
@@ -593,8 +567,6 @@ After writing, just say "Review saved to {output_file}"
                         # Extract model usage
                         model_usage = event.get("modelUsage", {})
                         if model_usage:
-                            models_used = list(model_usage.keys())
-                            logger.info(f"Claude CLI models used: {models_used}")
                             for model_name, usage in model_usage.items():
                                 info = ModelUsageInfo(
                                     model=model_name,
@@ -605,14 +577,6 @@ After writing, just say "Review saved to {output_file}"
                                     cost_usd=usage.get("costUSD", 0.0),
                                 )
                                 model_usage_list.append(info)
-                                logger.info(
-                                    f"  {model_name}: in={info.input_tokens}, "
-                                    f"out={info.output_tokens}, cost=${info.cost_usd:.4f}"
-                                )
-
-                        # Log total cost
-                        total_cost = event.get("total_cost_usd", 0)
-                        logger.info(f"Total cost: ${total_cost:.4f}")
 
                 except json.JSONDecodeError:
                     # Skip non-JSON lines
@@ -620,18 +584,12 @@ After writing, just say "Review saved to {output_file}"
 
             # Combine thinking chunks
             thinking_content = "\n\n".join(thinking_chunks)
-            if thinking_content:
-                logger.info(f"[CLAUDE CLI] Captured {len(thinking_chunks)} thinking blocks, total {len(thinking_content)} chars")
 
             # Fallback if no result found
             if not output:
                 logger.warning("No result found in stream-json output, using raw")
-                logger.warning(f"Raw output first 500 chars: {raw_output[:500]}")
                 output = raw_output
 
-            logger.info(f"[CLAUDE CLI] Completed, output length: {len(output)}")
-            logger.info(f"[CLAUDE CLI] Output preview: {output[:500] if output else 'EMPTY'}")
-            logger.info(f"[CLAUDE CLI] Output end: ...{output[-500:] if output and len(output) > 500 else ''}")
             return output, model_usage_list, thinking_content, raw_output
 
         except FileNotFoundError:
@@ -659,7 +617,6 @@ After writing, just say "Review saved to {output_file}"
                 end = text.find("```", start)
                 if end != -1:
                     json_text = text[start:end].strip()
-                    logger.info(f"[CLAUDE PARSE] Extracted JSON from markdown block: {len(json_text)} chars")
                     return json_text
 
         # Strategy 2: Look for code blocks without language specifier
@@ -673,7 +630,6 @@ After writing, just say "Review saved to {output_file}"
                         # End of block - check if we collected valid JSON
                         if json_lines and json_lines[0].strip().startswith("{"):
                             json_text = "\n".join(json_lines)
-                            logger.info(f"[CLAUDE PARSE] Extracted JSON from code block: {len(json_text)} chars")
                             return json_text
                         json_lines = []
                     in_block = not in_block
@@ -687,7 +643,6 @@ After writing, just say "Review saved to {output_file}"
             last_brace = text.rfind("}")
             if last_brace != -1 and last_brace > first_brace:
                 json_text = text[first_brace:last_brace + 1]
-                logger.info(f"[CLAUDE PARSE] Extracted JSON by brace matching: {len(json_text)} chars")
                 return json_text
 
         # Fallback: return original text and let JSON parser fail with proper error
@@ -729,7 +684,6 @@ After writing, just say "Review saved to {output_file}"
         if last_complete > 0:
             # Truncate to last complete structure
             repaired = repaired[:last_complete + 2]
-            logger.info(f"[CLAUDE PARSE] Truncated to last complete structure at pos {last_complete}")
 
         # Now close any remaining open structures
         # Count again after truncation
@@ -748,10 +702,6 @@ After writing, just say "Review saved to {output_file}"
         if missing_braces > 0:
             repaired += "}" * missing_braces
 
-        logger.info(
-            f"[CLAUDE PARSE] Repaired JSON: added {missing_brackets} brackets, {missing_braces} braces"
-        )
-
         return repaired
 
     def _parse_response(
@@ -760,7 +710,6 @@ After writing, just say "Review saved to {output_file}"
         file_list: list[str],
     ) -> ReviewOutput:
         """Parse Claude's response into ReviewOutput."""
-        logger.info(f"[CLAUDE PARSE] Parsing response of {len(response_text)} chars")
         try:
             json_text = self._extract_json_from_response(response_text)
 
@@ -773,11 +722,9 @@ After writing, just say "Review saved to {output_file}"
                 repaired_json = self._repair_truncated_json(json_text)
                 try:
                     data = json.loads(repaired_json)
-                    logger.info("[CLAUDE PARSE] Successfully parsed repaired JSON")
                 except json.JSONDecodeError:
                     # Both attempts failed, re-raise original error
                     raise first_error
-            logger.info(f"[CLAUDE PARSE] JSON parsed successfully, keys: {list(data.keys())}")
 
             # Build ReviewOutput from parsed data
             summary_data = data.get("summary", {})
@@ -839,8 +786,6 @@ After writing, just say "Review saved to {output_file}"
 
         except json.JSONDecodeError as e:
             logger.error(f"[CLAUDE PARSE] JSON DECODE ERROR: {e}")
-            logger.error(f"[CLAUDE PARSE] Failed text preview: {response_text[:1000]}")
-            logger.error(f"[CLAUDE PARSE] Failed text end: ...{response_text[-500:] if len(response_text) > 500 else ''}")
             return self._create_error_output(
                 f"JSON parse error: {str(e)}\n\nRaw output:\n{response_text[:1000]}"
             )

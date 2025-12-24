@@ -185,7 +185,6 @@ class GeminiCLIChallenger(BaseReviewer):
             )
 
             s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[GEMINI S3] Saved challenge log to {s3_url}")
             return s3_url
 
         except ClientError as e:
@@ -388,14 +387,9 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
             if api_key:
                 env["GOOGLE_API_KEY"] = api_key
                 env["GEMINI_API_KEY"] = api_key  # Gemini CLI uses this
-                logger.info("GOOGLE_API_KEY/GEMINI_API_KEY loaded from AWS Secrets Manager")
-            else:
-                logger.warning("GOOGLE_API_KEY not found in AWS - using environment")
 
             # Use model from settings
             model = self.settings.agents.gemini_model
-
-            logger.info(f"Running Gemini CLI for challenge in {cwd} with model={model}")
 
             # Build CLI arguments
             args = [
@@ -406,12 +400,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 "--output-format",
                 "json",
             ]
-
-            # LOG: Full command and prompt
-            logger.info(f"[GEMINI CLI] Command: {' '.join(args)}")
-            logger.info(f"[GEMINI CLI] CWD: {cwd}")
-            logger.info(f"[GEMINI CLI] Prompt length: {len(prompt)} chars")
-            logger.info(f"[GEMINI CLI] Prompt preview: {prompt[:500]}...")
 
             process = await asyncio.create_subprocess_exec(
                 *args,
@@ -450,7 +438,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                             # Emit chunk for streaming
                             if on_chunk:
                                 await on_chunk(decoded)
-                            logger.debug(f"Gemini CLI chunk: {len(decoded)} chars")
             except asyncio.TimeoutError:
                 logger.error(f"Gemini CLI timed out after {self.timeout}s")
                 process.kill()
@@ -462,7 +449,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
             stderr_bytes = await process.stderr.read()
             stderr_text = stderr_bytes.decode() if stderr_bytes else ""
 
-            logger.info(f"[GEMINI CLI] Exit code: {process.returncode}")
             if stderr_text:
                 logger.warning(f"[GEMINI CLI] STDERR: {stderr_text[:1000]}")
 
@@ -472,7 +458,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 return None
 
             raw_output = "".join(output_chunks)
-            logger.info(f"[GEMINI CLI] Raw output collected: {len(raw_output)} chars")
 
             # Parse JSON output to extract result and model info
             try:
@@ -487,26 +472,11 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 # Extract result - Gemini uses 'result' or 'response'
                 output = cli_response.get("result") or cli_response.get("response", raw_output)
 
-                # Log model info if available
-                model_info = cli_response.get("model") or cli_response.get("modelUsed")
-                if model_info:
-                    logger.info(f"Gemini CLI model used: {model_info}")
-
-                # Log token usage if available
-                usage = cli_response.get("usage", {})
-                if usage:
-                    logger.info(
-                        f"Gemini CLI usage: in={usage.get('inputTokens', 0)}, "
-                        f"out={usage.get('outputTokens', 0)}"
-                    )
             except json.JSONDecodeError:
                 # Fallback to raw output if not valid JSON
                 output = raw_output
                 logger.warning("Gemini CLI output not valid JSON, using raw output")
 
-            logger.info(f"[GEMINI CLI] Completed, output length: {len(output)}")
-            logger.info(f"[GEMINI CLI] Output preview: {output[:500] if output else 'EMPTY'}")
-            logger.info(f"[GEMINI CLI] Output end: ...{output[-500:] if output and len(output) > 500 else ''}")
             return output
 
         except FileNotFoundError:
@@ -522,7 +492,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
         iteration: int,
     ) -> ChallengerFeedback:
         """Parse Gemini's response into ChallengerFeedback."""
-        logger.info(f"[GEMINI PARSE] Parsing response of {len(response_text)} chars")
         try:
             # Try to extract JSON from response
             json_text = response_text.strip()
@@ -541,7 +510,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 json_text = "\n".join(json_lines)
 
             data = json.loads(json_text)
-            logger.info(f"[GEMINI PARSE] JSON parsed successfully, keys: {list(data.keys())}")
 
             # Parse dimension scores
             dim_data = data.get("dimension_scores", {})
@@ -606,8 +574,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
 
         except json.JSONDecodeError as e:
             logger.error(f"[GEMINI PARSE] JSON DECODE ERROR: {e}")
-            logger.error(f"[GEMINI PARSE] Failed text preview: {response_text[:1000]}")
-            logger.error(f"[GEMINI PARSE] Failed text end: ...{response_text[-500:] if len(response_text) > 500 else ''}")
             return self._create_fallback_feedback(iteration)
 
     def _score_to_status(self, score: float) -> ChallengerStatus:

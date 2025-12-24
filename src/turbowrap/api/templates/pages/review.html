@@ -269,7 +269,7 @@
                             </div>
                             <div x-show="agent.content"
                                  class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap"
-                                 x-html="renderMarkdown(agent.content)"></div>
+                                 x-html="agent.status === 'completed' ? renderMarkdown(agent.content) : escapeHtml(agent.content.slice(-2000))"></div>
                             <span x-show="agent.status === 'running'" class="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1"></span>
                         </div>
 
@@ -902,12 +902,31 @@ function reviewApp() {
 
                 case 'reviewer_streaming':
                     if (this.agents[data.reviewer_name] && data.content) {
-                        this.agents[data.reviewer_name].content += data.content;
-                        this.scrollToBottom(data.reviewer_name);
+                        // Batch content updates to avoid excessive reactivity
+                        this._pendingContent = this._pendingContent || {};
+                        this._pendingContent[data.reviewer_name] = (this._pendingContent[data.reviewer_name] || '') + data.content;
+
+                        if (!this._contentUpdateTimeout) {
+                            this._contentUpdateTimeout = setTimeout(() => {
+                                Object.keys(this._pendingContent).forEach(name => {
+                                    if (this.agents[name]) {
+                                        this.agents[name].content += this._pendingContent[name];
+                                    }
+                                });
+                                this._pendingContent = {};
+                                this._contentUpdateTimeout = null;
+                                this.scrollToBottom(data.reviewer_name);
+                            }, 50);  // Batch updates every 50ms
+                        }
                     }
                     break;
 
                 case 'reviewer_completed':
+                    // Flush any pending content first
+                    if (this._pendingContent && this._pendingContent[data.reviewer_name]) {
+                        this.agents[data.reviewer_name].content += this._pendingContent[data.reviewer_name];
+                        delete this._pendingContent[data.reviewer_name];
+                    }
                     if (this.agents[data.reviewer_name]) {
                         this.agents[data.reviewer_name].status = 'completed';
                         this.agents[data.reviewer_name].satisfaction = data.satisfaction_score || 100;
@@ -1179,14 +1198,27 @@ function reviewApp() {
         },
 
         scrollToBottom(agentName) {
-            this.$nextTick(() => {
-                const el = this.$refs.contentArea;
-                if (el) el.scrollTop = el.scrollHeight;
-            });
+            // Debounce scroll to avoid performance issues during streaming
+            if (this._scrollTimeout) clearTimeout(this._scrollTimeout);
+            this._scrollTimeout = setTimeout(() => {
+                this.$nextTick(() => {
+                    const el = this.$refs.contentArea;
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+            }, 100);
         },
 
         expandAgent(name) {
             this.expandedAgent = name;
+        },
+
+        escapeHtml(content) {
+            if (!content) return '';
+            return content
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\n/g, '<br>');
         },
 
         renderMarkdown(content) {
