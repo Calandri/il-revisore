@@ -1227,6 +1227,49 @@ function reviewApp() {
             }
         },
 
+        async mergeAndPush(issue) {
+            if (this.isMerging || !issue.fix_commit_sha) return;
+
+            this.isMerging = true;
+            this.mergeResult = null;
+
+            try {
+                // Use fix_branch from issue (saved in DB) or fallback to fixProgress
+                const branchName = issue.fix_branch || this.fixProgress.branchName || `fix/${this.taskId}`;
+
+                const response = await fetch('/api/fix/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: this.selectedRepo,
+                        branch_name: branchName,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    this.mergeResult = {
+                        success: true,
+                        message: `Merged to main and pushed! Commit: ${data.merge_commit?.slice(0, 7) || 'OK'}`,
+                    };
+                } else {
+                    this.mergeResult = {
+                        success: false,
+                        message: data.detail || 'Merge failed',
+                    };
+                }
+            } catch (e) {
+                console.error('Merge error:', e);
+                this.mergeResult = {
+                    success: false,
+                    message: `Error: ${e.message}`,
+                };
+            } finally {
+                this.isMerging = false;
+            }
+        },
+
         async cancelReview() {
             if (!this.taskId || this.isCancelling) return;
 

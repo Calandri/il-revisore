@@ -3,6 +3,8 @@
 import asyncio
 import hashlib
 import logging
+import os
+import re
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -24,6 +26,7 @@ from turbowrap.fix import (
     FixProgressEvent,
     FixRequest,
 )
+from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +196,7 @@ class IssueListResponse(BaseModel):
     fix_explanation: Optional[str] = None
     fix_files_modified: Optional[list[str]] = None
     fix_commit_sha: Optional[str] = None
+    fix_branch: Optional[str] = None
     fixed_at: Optional[datetime] = None
     fixed_by: Optional[str] = None
 
@@ -253,6 +257,7 @@ def list_issues(
             fix_explanation=i.fix_explanation,
             fix_files_modified=i.fix_files_modified,
             fix_commit_sha=i.fix_commit_sha,
+            fix_branch=i.fix_branch,
             fixed_at=i.fixed_at,
             fixed_by=i.fixed_by,
         )
@@ -438,6 +443,7 @@ async def start_fix(
                             db_issue.fix_explanation = issue_result.fix_explanation
                             db_issue.fix_files_modified = issue_result.fix_files_modified
                             db_issue.fix_commit_sha = issue_result.commit_sha
+                            db_issue.fix_branch = result.branch_name
                             db_issue.fixed_at = datetime.utcnow()
                             db_issue.fixed_by = "fixer_claude"
                             completed_count += 1
@@ -521,3 +527,110 @@ async def submit_clarification(data: ClarificationAnswerRequest):
         future.set_result(answer)
 
     return {"status": "received", "question_id": question_id}
+
+
+class MergeRequest(BaseModel):
+    """Request to merge fix branch to main and push."""
+
+    repository_id: str = Field(..., description="Repository ID")
+    branch_name: str = Field(..., description="Branch name to merge (e.g., fix/<task_id>)")
+
+
+@router.post("/merge")
+async def merge_and_push(
+    request: MergeRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Merge fix branch to main and push to GitHub.
+
+    Uses Claude CLI to execute git commands:
+    1. git checkout main
+    2. git pull origin main
+    3. git merge <branch>
+    4. git push origin main
+    """
+    # Verify repository
+    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+    if not repo_path.exists():
+        raise HTTPException(status_code=400, detail="Repository path not found")
+
+    # Build prompt for Claude CLI
+    merge_prompt = f"""
+Execute the following git commands in order:
+
+1. git checkout main
+2. git pull origin main
+3. git merge {request.branch_name} --no-edit
+4. git push origin main
+
+If any step fails, report the error. After pushing, report the latest commit SHA on main.
+"""
+
+    try:
+        # Build environment with API key
+        env = os.environ.copy()
+        api_key = get_anthropic_api_key()
+        if api_key:
+            env["ANTHROPIC_API_KEY"] = api_key
+
+        # Find Claude CLI
+        cli_path = "/Users/niccolocalandri/.claude/local/claude"
+        if not Path(cli_path).exists():
+            cli_path = "claude"  # Fallback to PATH
+
+        # Run Claude CLI
+        process = await asyncio.create_subprocess_exec(
+            cli_path,
+            "--print",
+            "--dangerously-skip-permissions",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(repo_path),
+            env=env,
+        )
+
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(input=merge_prompt.encode()),
+            timeout=120,
+        )
+
+        output = stdout.decode() if stdout else ""
+        error = stderr.decode() if stderr else ""
+
+        if process.returncode != 0:
+            logger.error(f"Merge failed: {error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Merge failed: {error[:500]}",
+            )
+
+        # Extract commit SHA from output (Claude should report it)
+        merge_commit = None
+        for line in output.split("\n"):
+            if "commit" in line.lower() and len(line) > 10:
+                # Try to find a SHA-like string
+                sha_match = re.search(r"[a-f0-9]{7,40}", line)
+                if sha_match:
+                    merge_commit = sha_match.group()
+                    break
+
+        logger.info(f"Merged {request.branch_name} to main: {merge_commit}")
+
+        return {
+            "status": "merged",
+            "branch_name": request.branch_name,
+            "merge_commit": merge_commit,
+            "message": output[:500],
+        }
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Merge operation timed out")
+    except Exception as e:
+        logger.exception("Merge failed")
+        raise HTTPException(status_code=500, detail=str(e))

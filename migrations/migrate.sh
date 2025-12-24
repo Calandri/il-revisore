@@ -61,5 +61,9 @@ sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN fixed_by VARCHAR(50);" 2>/dev/
     echo "  - Added fixed_by to issues" || \
     echo "  - issues.fixed_by already exists"
 
+sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN fix_branch VARCHAR(100);" 2>/dev/null && \
+    echo "  - Added fix_branch to issues" || \
+    echo "  - issues.fix_branch already exists"
+
 echo ""
 echo "Migrations complete!"
