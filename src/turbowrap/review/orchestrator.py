@@ -305,6 +305,9 @@ class Orchestrator:
         else:
             context.repo_path = Path.cwd()
 
+        # Check and regenerate stale STRUCTURE.md files BEFORE loading
+        await self._refresh_stale_structures(context, emit)
+
         # Load STRUCTURE.md files first (used in all modes)
         self._load_structure_docs(context)
 
@@ -873,3 +876,120 @@ class Orchestrator:
             ))
 
         return steps
+
+    async def _refresh_stale_structures(
+        self,
+        context: ReviewContext,
+        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+    ) -> None:
+        """
+        Check and regenerate stale STRUCTURE.md files.
+
+        A STRUCTURE.md is stale if:
+        1. Any code file in its directory has been modified after the "Generated At" timestamp
+        2. Git shows the directory has commits newer than the STRUCTURE.md
+
+        Args:
+            context: Review context with repo_path set
+            emit: Optional callback for progress events
+        """
+        import re
+
+        if not context.repo_path or not context.repo_path.exists():
+            return
+
+        stale_dirs: list[Path] = []
+
+        # Find all STRUCTURE.md files
+        for structure_file in context.repo_path.rglob("STRUCTURE.md"):
+            # Skip ignored directories
+            if any(part.startswith(".") or part in {
+                "node_modules", "__pycache__", ".venv", "venv", "dist", "build"
+            } for part in structure_file.parts):
+                continue
+
+            try:
+                content = structure_file.read_text()
+            except Exception:
+                continue
+
+            # Extract "Generated At" timestamp from STRUCTURE.md
+            # Format: **Generated At**: `1703456789`
+            match = re.search(r"\*\*Generated At\*\*:\s*`?(\d+)`?", content)
+            if not match:
+                # No timestamp - consider stale
+                stale_dirs.append(structure_file.parent)
+                continue
+
+            generated_at = int(match.group(1))
+            parent_dir = structure_file.parent
+
+            # Check if any code file was modified after the generation timestamp
+            is_stale = False
+            for code_file in parent_dir.iterdir():
+                if not code_file.is_file():
+                    continue
+
+                suffix = code_file.suffix.lower()
+                if suffix not in {".py", ".ts", ".tsx", ".js", ".jsx"}:
+                    continue
+
+                # Compare file mtime with generation timestamp
+                file_mtime = int(code_file.stat().st_mtime)
+                if file_mtime > generated_at:
+                    is_stale = True
+                    logger.info(
+                        f"STRUCTURE.md stale: {code_file.name} modified after generation "
+                        f"(file: {file_mtime}, gen: {generated_at})"
+                    )
+                    break
+
+            if is_stale:
+                try:
+                    rel_path = parent_dir.relative_to(context.repo_path)
+                    stale_dirs.append(rel_path if str(rel_path) != "." else Path("."))
+                except ValueError:
+                    stale_dirs.append(Path("."))
+
+        if not stale_dirs:
+            logger.info("All STRUCTURE.md files are up to date")
+            return
+
+        logger.info(f"Found {len(stale_dirs)} stale STRUCTURE.md files to regenerate")
+
+        # Emit progress event
+        if emit:
+            await emit(ProgressEvent(
+                type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
+                message=f"Regenerating {len(stale_dirs)} stale STRUCTURE.md files...",
+            ))
+
+        # Use StructureGenerator to regenerate
+        try:
+            generator = StructureGenerator(
+                str(context.repo_path),
+                gemini_client=None,  # Quick mode without Gemini for refresh
+            )
+
+            # Run regeneration in executor (sync method)
+            loop = asyncio.get_event_loop()
+            regenerated = await loop.run_in_executor(
+                None,
+                lambda: generator.regenerate_stale(verbose=True)
+            )
+
+            if emit:
+                await emit(ProgressEvent(
+                    type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
+                    message=f"Regenerated {len(regenerated)} STRUCTURE.md files",
+                ))
+
+            logger.info(f"Regenerated {len(regenerated)} STRUCTURE.md files")
+
+        except Exception as e:
+            logger.error(f"Failed to regenerate STRUCTURE.md files: {e}")
+            if emit:
+                await emit(ProgressEvent(
+                    type=ProgressEventType.REVIEW_ERROR,
+                    error=f"Structure refresh failed: {str(e)}",
+                ))

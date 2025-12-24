@@ -32,6 +32,7 @@ class Recommendation(str, Enum):
 class ConvergenceStatus(str, Enum):
     """Challenger loop convergence status."""
 
+    IN_PROGRESS = "IN_PROGRESS"  # Loop should continue
     THRESHOLD_MET = "THRESHOLD_MET"
     MAX_ITERATIONS_REACHED = "MAX_ITERATIONS_REACHED"
     STAGNATED = "STAGNATED"
