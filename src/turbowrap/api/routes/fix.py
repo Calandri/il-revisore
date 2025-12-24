@@ -188,6 +188,14 @@ class IssueListResponse(BaseModel):
     status: str
     created_at: datetime
 
+    # Fix result fields (populated when resolved)
+    fix_code: Optional[str] = None
+    fix_explanation: Optional[str] = None
+    fix_files_modified: Optional[list[str]] = None
+    fix_commit_sha: Optional[str] = None
+    fixed_at: Optional[datetime] = None
+    fixed_by: Optional[str] = None
+
 
 class IssueUpdateRequest(BaseModel):
     """Request to update issue status."""
@@ -240,6 +248,13 @@ def list_issues(
             description=i.description,
             status=i.status,
             created_at=i.created_at,
+            # Fix result fields
+            fix_code=i.fix_code,
+            fix_explanation=i.fix_explanation,
+            fix_files_modified=i.fix_files_modified,
+            fix_commit_sha=i.fix_commit_sha,
+            fixed_at=i.fixed_at,
+            fixed_by=i.fixed_by,
         )
         for i in issues
     ]
@@ -369,6 +384,11 @@ async def start_fix(
     issue_order = {id: i for i, id in enumerate(request.issue_ids)}
     issues = sorted(issues, key=lambda x: issue_order.get(x.id, 999))
 
+    # Set issues to in_progress immediately
+    for issue in issues:
+        issue.status = IssueStatus.IN_PROGRESS.value
+    db.commit()
+
     # Capture for closure
     repo_path = Path(repo.local_path)
     fix_request = FixRequest(
@@ -389,31 +409,6 @@ async def start_fix(
                 session_id = event.session_id
             await event_queue.put(event)
 
-        async def answer_provider(question: ClarificationQuestion) -> ClarificationAnswer:
-            """Get answer from user via SSE interaction."""
-            if not session_id:
-                raise RuntimeError("No session ID available")
-
-            # Store pending question
-            _pending_clarifications[question.id] = question
-
-            # Create future for answer
-            answer_future: asyncio.Future = asyncio.Future()
-            _clarification_answers[question.id] = answer_future
-
-            try:
-                # Wait for answer (with timeout)
-                answer = await asyncio.wait_for(answer_future, timeout=300)  # 5 min
-                return answer
-            except asyncio.TimeoutError:
-                return ClarificationAnswer(
-                    question_id=question.id,
-                    answer="Proceed with default approach",
-                )
-            finally:
-                _pending_clarifications.pop(question.id, None)
-                _clarification_answers.pop(question.id, None)
-
         async def run_fix():
             """Run fix in background."""
             try:
@@ -422,7 +417,6 @@ async def start_fix(
                     request=fix_request,
                     issues=issues,
                     emit=progress_callback,
-                    answer_provider=answer_provider,
                 )
 
                 # Update issue statuses in database
@@ -439,8 +433,16 @@ async def start_fix(
                                 if issue_result.commit_sha
                                 else "Fixed"
                             )
+                            # Save fix result fields
+                            db_issue.fix_code = issue_result.fix_code
+                            db_issue.fix_explanation = issue_result.fix_explanation
+                            db_issue.fix_files_modified = issue_result.fix_files_modified
+                            db_issue.fix_commit_sha = issue_result.commit_sha
+                            db_issue.fixed_at = datetime.utcnow()
+                            db_issue.fixed_by = "fixer_claude"
                             completed_count += 1
                         elif issue_result.status.value == "failed":
+                            db_issue.status = IssueStatus.OPEN.value  # Reset to open on failure
                             db_issue.resolution_note = f"Fix failed: {issue_result.error}"
                             failed_count += 1
                 db.commit()
@@ -458,6 +460,12 @@ async def start_fix(
 
             except Exception as e:
                 logger.exception("Fix session error")
+                # Reset all issues to open on error
+                for issue in issues:
+                    db_issue = db.query(Issue).filter(Issue.id == issue.id).first()
+                    if db_issue and db_issue.status == IssueStatus.IN_PROGRESS.value:
+                        db_issue.status = IssueStatus.OPEN.value
+                db.commit()
                 # Mark idempotency entry as failed
                 _idempotency_store.update_status(idempotency_key, "failed")
                 await event_queue.put(
