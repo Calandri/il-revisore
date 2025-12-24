@@ -148,9 +148,20 @@ class ReviewRequirements(BaseModel):
     ticket_url: Optional[str] = Field(None, description="Linear/Jira ticket URL")
 
 
+class ReviewMode(str, Enum):
+    """Review mode types."""
+
+    INITIAL = "initial"  # Full repo review using only STRUCTURE.md files
+    DIFF = "diff"  # Review only changed files (PR, commit, or specified files)
+
+
 class ReviewOptions(BaseModel):
     """Review configuration options."""
 
+    mode: ReviewMode = Field(
+        ReviewMode.DIFF,
+        description="Review mode: initial (STRUCTURE.md only) or diff (changed files)"
+    )
     include_functional: bool = Field(
         True, description="Include functional analyst"
     )

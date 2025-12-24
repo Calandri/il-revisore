@@ -86,6 +86,12 @@ Examples:
         default="both",
         help="Output format (default: both)"
     )
+    parser.add_argument(
+        "--mode",
+        choices=["initial", "diff"],
+        default="diff",
+        help="Review mode: initial (STRUCTURE.md only) or diff (changed files)"
+    )
 
     args = parser.parse_args()
 
@@ -103,6 +109,7 @@ Examples:
     print("=" * 60)
     print(f"   Repository: {repo_path}")
     print(f"   Output: {output_dir}")
+    print(f"   Mode: {args.mode.upper()}")
     print(f"   Challenger: {'Enabled' if not args.no_challenger else 'Disabled'}")
     print(f"   Functional: {'Enabled' if not args.no_functional else 'Disabled'}")
     print("=" * 60)
@@ -114,6 +121,7 @@ Examples:
             ReviewRequest,
             ReviewRequestSource,
             ReviewOptions,
+            ReviewMode,
         )
         from turbowrap.review.report_generator import ReportGenerator
     except ImportError as e:
@@ -122,10 +130,12 @@ Examples:
         sys.exit(1)
 
     # Build request
+    review_mode = ReviewMode.INITIAL if args.mode == "initial" else ReviewMode.DIFF
     request = ReviewRequest(
         type="directory",
         source=ReviewRequestSource(directory=str(repo_path)),
         options=ReviewOptions(
+            mode=review_mode,
             include_functional=not args.no_functional,
             challenger_enabled=not args.no_challenger,
             satisfaction_threshold=args.satisfaction_threshold,
@@ -135,7 +145,10 @@ Examples:
 
     # Run review
     print("\nStarting review...")
-    print("   Reviewers will run in parallel with challenger loop")
+    if args.mode == "initial":
+        print("   Mode: INITIAL - Analyzing STRUCTURE.md files only")
+    else:
+        print("   Mode: DIFF - Reviewing changed files with challenger loop")
     print("")
 
     try:
@@ -149,7 +162,12 @@ Examples:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        files_dict = ReportGenerator.save_report(report, output_dir, formats=[args.format])
+        # Handle format option
+        if args.format == "both":
+            formats = ["markdown", "json"]
+        else:
+            formats = [args.format]
+        files_dict = ReportGenerator.save_report(report, output_dir, formats=formats)
         files = list(files_dict.values())
     except Exception as e:
         print(f"\nError generating report: {e}")
@@ -165,20 +183,20 @@ Examples:
     print("Review Complete!")
     print("=" * 60)
     print(f"   Recommendation: {report.summary.recommendation.value}")
-    print(f"   Score: {report.summary.score:.1f}/10")
+    print(f"   Score: {report.summary.overall_score:.1f}/10")
     print("")
     print("   Issues:")
-    print(f"      Critical: {report.summary.severity.critical}")
-    print(f"      High: {report.summary.severity.high}")
-    print(f"      Medium: {report.summary.severity.medium}")
-    print(f"      Low: {report.summary.severity.low}")
+    print(f"      Critical: {report.summary.by_severity.critical}")
+    print(f"      High: {report.summary.by_severity.high}")
+    print(f"      Medium: {report.summary.by_severity.medium}")
+    print(f"      Low: {report.summary.by_severity.low}")
     print("")
 
     if report.challenger.enabled:
         print("   Challenger Loop:")
         print(f"      Total iterations: {report.challenger.total_iterations}")
-        print(f"      Avg satisfaction: {report.challenger.average_satisfaction:.1f}%")
-        print(f"      Convergence: {report.challenger.convergence_status.value if report.challenger.convergence_status else 'N/A'}")
+        print(f"      Final satisfaction: {report.challenger.final_satisfaction_score:.1f}%")
+        print(f"      Convergence: {report.challenger.convergence.value}")
         print("")
 
     print("   Reviewers:")

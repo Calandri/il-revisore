@@ -36,6 +36,9 @@ class ReviewContext:
     # Agent system prompt (from markdown files)
     agent_prompt: Optional[str] = None
 
+    # Structure documentation (STRUCTURE.md files found in repo)
+    structure_docs: dict[str, str] = field(default_factory=dict)
+
     # Previous review (for refinement)
     previous_review: Optional[ReviewOutput] = None
     challenger_feedback: Optional[ChallengerFeedback] = None
@@ -56,9 +59,31 @@ class ReviewContext:
 
         return "\n".join(lines)
 
+    def get_structure_context(self) -> str:
+        """
+        Get structure documentation context.
+
+        Returns:
+            Formatted STRUCTURE.md contents
+        """
+        if not self.structure_docs:
+            return ""
+
+        sections = ["## Repository Structure Documentation\n"]
+        sections.append("The following STRUCTURE.md files describe the codebase architecture:\n")
+
+        for path, content in sorted(self.structure_docs.items()):
+            sections.append(f"### {path}\n")
+            sections.append(f"{content}\n")
+            sections.append("---\n")
+
+        return "\n".join(sections)
+
     def get_code_context(self, max_chars: int = 100000) -> str:
         """
         Get concatenated code context for review.
+
+        Includes structure documentation first, then file contents.
 
         Args:
             max_chars: Maximum characters to include
@@ -68,6 +93,11 @@ class ReviewContext:
         """
         sections = []
         total_chars = 0
+
+        # Include structure docs first (they don't count against max_chars)
+        structure_context = self.get_structure_context()
+        if structure_context:
+            sections.append(structure_context)
 
         for file_path, content in self.file_contents.items():
             if total_chars + len(content) > max_chars:

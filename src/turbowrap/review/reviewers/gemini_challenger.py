@@ -277,7 +277,7 @@ Output ONLY the JSON, no markdown blocks or explanations.
             if self.api_key:
                 genai.configure(api_key=self.api_key)
 
-            model = genai.GenerativeModel("gemini-2.0-flash-exp")
+            model = genai.GenerativeModel("gemini-3-flash-preview")
             response = model.generate_content(prompt)
 
             return response.text

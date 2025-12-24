@@ -97,6 +97,19 @@ async def chat_session_page(
     )
 
 
+@router.get("/system-status", response_class=HTMLResponse)
+async def status_page(request: Request):
+    """System status monitoring page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/status.html",
+        {
+            "request": request,
+            "active_page": "status",
+        }
+    )
+
+
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):

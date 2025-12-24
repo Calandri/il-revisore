@@ -41,7 +41,7 @@ class AgentSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="", populate_by_name=True)
 
     gemini_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3-flash-preview",
         min_length=1,
         description="Gemini Flash model (fast analysis)",
     )

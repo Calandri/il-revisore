@@ -1,19 +1,24 @@
 """Task routes."""
 
+import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
+from typing import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 
 from ..deps import get_db
 from ..schemas.tasks import TaskCreate, TaskResponse, TaskQueueStatus
 from ...core.repo_manager import RepoManager
 from ...core.task_queue import get_task_queue, QueuedTask
-from ...db.models import Task
+from ...db.models import Task, Repository
 from ...tasks import get_task_registry, TaskContext
 from ...exceptions import TaskError
+from ...review.models.progress import ProgressEvent, ProgressEventType
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -185,3 +190,97 @@ def cancel_task(
             status_code=400,
             detail="Task is already running and cannot be cancelled"
         )
+
+
+@router.post("/{repository_id}/review/stream")
+async def stream_review(
+    repository_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Start a review task and stream progress via SSE.
+
+    Returns server-sent events with progress updates from all parallel reviewers.
+    """
+    # Verify repository exists
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Create task record
+    task = Task(
+        repository_id=repository_id,
+        type="review",
+        status="running",
+        config={},
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    async def generate() -> AsyncIterator[dict]:
+        """Generate SSE events from review progress."""
+        from ...review.orchestrator import Orchestrator
+        from ...review.models.review import ReviewRequest, ReviewSource, ReviewOptions
+
+        # Queue for progress events
+        event_queue: asyncio.Queue[ProgressEvent] = asyncio.Queue()
+
+        async def progress_callback(event: ProgressEvent):
+            """Callback to enqueue progress events."""
+            await event_queue.put(event)
+
+        async def run_review():
+            """Run the review in background."""
+            try:
+                orchestrator = Orchestrator()
+
+                request = ReviewRequest(
+                    source=ReviewSource(directory=repo.local_path),
+                    options=ReviewOptions(
+                        challenger_enabled=True,
+                        include_functional=True,
+                    ),
+                )
+
+                report = await orchestrator.review(request, progress_callback)
+
+                # Update task record
+                task.status = "completed"
+                task.result = report.model_dump()
+                db.commit()
+
+            except Exception as e:
+                # Send error event
+                await event_queue.put(ProgressEvent(
+                    type=ProgressEventType.REVIEW_ERROR,
+                    error=str(e),
+                    message=f"Review failed: {str(e)[:100]}",
+                ))
+
+                task.status = "failed"
+                task.error = str(e)
+                db.commit()
+
+            finally:
+                # Signal completion
+                await event_queue.put(None)
+
+        # Start review task
+        review_task = asyncio.create_task(run_review())
+
+        try:
+            # Stream events until done
+            while True:
+                event = await event_queue.get()
+
+                if event is None:
+                    break
+
+                yield event.to_sse()
+
+        except asyncio.CancelledError:
+            review_task.cancel()
+            raise
+
+    return EventSourceResponse(generate())

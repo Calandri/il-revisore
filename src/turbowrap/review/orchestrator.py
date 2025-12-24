@@ -7,12 +7,13 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.review import (
     ReviewRequest,
     ReviewOutput,
+    ReviewMode,
     Issue,
     IssueSeverity,
 )
@@ -27,6 +28,11 @@ from turbowrap.review.models.report import (
     ChallengerMetadata,
     NextStep,
 )
+from turbowrap.review.models.progress import (
+    ProgressEvent,
+    ProgressEventType,
+    get_reviewer_display_name,
+)
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
 from turbowrap.review.utils.repo_detector import RepoDetector, detect_repo_type
@@ -35,6 +41,9 @@ from turbowrap.review.utils.file_utils import FileUtils
 
 
 logger = logging.getLogger(__name__)
+
+# Type alias for progress callback
+ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
 
 class Orchestrator:
@@ -55,12 +64,17 @@ class Orchestrator:
         self.settings = get_settings()
         self.repo_detector = RepoDetector()
 
-    async def review(self, request: ReviewRequest) -> FinalReport:
+    async def review(
+        self,
+        request: ReviewRequest,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> FinalReport:
         """
         Perform a complete code review.
 
         Args:
             request: Review request with source and options
+            progress_callback: Optional async callback for progress events
 
         Returns:
             FinalReport with all findings
@@ -69,6 +83,19 @@ class Orchestrator:
         report_id = f"rev_{uuid.uuid4().hex[:12]}"
 
         logger.info(f"Starting review {report_id}")
+
+        # Helper to emit events
+        async def emit(event: ProgressEvent):
+            if progress_callback:
+                event.review_id = report_id
+                await progress_callback(event)
+
+        # Emit review started
+        await emit(ProgressEvent(
+            type=ProgressEventType.REVIEW_STARTED,
+            review_id=report_id,
+            message="Starting code review...",
+        ))
 
         # Step 1: Prepare context
         context = await self._prepare_context(request)
@@ -81,58 +108,142 @@ class Orchestrator:
         reviewers = self._get_reviewers(repo_type, request.options.include_functional)
         logger.info(f"Running reviewers: {reviewers}")
 
-        # Step 4: Run challenger loops for each reviewer
+        # Step 4: Run challenger loops for each reviewer IN PARALLEL
         reviewer_results: list[ReviewerResult] = []
         all_issues: list[Issue] = []
         loop_results: list[ChallengerLoopResult] = []
 
         if request.options.challenger_enabled:
-            # Run with challenger pattern
-            for reviewer_name in reviewers:
+            # Run all reviewers in PARALLEL with progress callbacks
+            async def run_reviewer_with_progress(reviewer_name: str):
+                """Run a single reviewer with progress events."""
+                display_name = get_reviewer_display_name(reviewer_name)
+
+                await emit(ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STARTED,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    message=f"Starting {display_name}...",
+                ))
+
                 try:
-                    result = await self._run_challenger_loop(context, reviewer_name)
-                    loop_results.append(result)
+                    result = await self._run_challenger_loop_with_progress(
+                        context,
+                        reviewer_name,
+                        emit,
+                    )
+
+                    await emit(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_COMPLETED,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        iteration=result.iterations,
+                        satisfaction_score=result.final_satisfaction,
+                        issues_found=len(result.final_review.issues),
+                        message=f"{display_name} completed with {len(result.final_review.issues)} issues",
+                    ))
+
+                    return (reviewer_name, "success", result)
+
+                except Exception as e:
+                    logger.error(f"Reviewer {reviewer_name} failed: {e}")
+
+                    await emit(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_ERROR,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        error=str(e),
+                        message=f"{display_name} failed: {str(e)[:50]}",
+                    ))
+
+                    return (reviewer_name, "error", str(e))
+
+            # Execute all reviewers in parallel
+            tasks = [run_reviewer_with_progress(name) for name in reviewers]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+
+                reviewer_name, status, data = result
+
+                if status == "success":
+                    loop_result = data
+                    loop_results.append(loop_result)
 
                     reviewer_results.append(ReviewerResult(
                         name=reviewer_name,
                         status="completed",
-                        issues_found=len(result.final_review.issues),
-                        duration_seconds=result.final_review.duration_seconds,
-                        iterations=result.iterations,
-                        final_satisfaction=result.final_satisfaction,
+                        issues_found=len(loop_result.final_review.issues),
+                        duration_seconds=loop_result.final_review.duration_seconds,
+                        iterations=loop_result.iterations,
+                        final_satisfaction=loop_result.final_satisfaction,
                     ))
 
-                    all_issues.extend(result.final_review.issues)
-
-                except Exception as e:
-                    logger.error(f"Reviewer {reviewer_name} failed: {e}")
+                    all_issues.extend(loop_result.final_review.issues)
+                else:
                     reviewer_results.append(ReviewerResult(
                         name=reviewer_name,
                         status="error",
-                        error=str(e),
+                        error=data,
                     ))
+
         else:
-            # Run without challenger pattern (simple mode)
-            for reviewer_name in reviewers:
+            # Run without challenger pattern (simple mode) - still parallel
+            async def run_simple_with_progress(reviewer_name: str):
+                display_name = get_reviewer_display_name(reviewer_name)
+
+                await emit(ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STARTED,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                ))
+
                 try:
                     result = await self._run_simple_review(context, reviewer_name)
 
+                    await emit(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_COMPLETED,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        issues_found=len(result.issues),
+                    ))
+
+                    return (reviewer_name, "success", result)
+
+                except Exception as e:
+                    await emit(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_ERROR,
+                        reviewer_name=reviewer_name,
+                        error=str(e),
+                    ))
+                    return (reviewer_name, "error", str(e))
+
+            tasks = [run_simple_with_progress(name) for name in reviewers]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+
+                reviewer_name, status, data = result
+
+                if status == "success":
                     reviewer_results.append(ReviewerResult(
                         name=reviewer_name,
                         status="completed",
-                        issues_found=len(result.issues),
-                        duration_seconds=result.duration_seconds,
+                        issues_found=len(data.issues),
+                        duration_seconds=data.duration_seconds,
                         iterations=1,
                     ))
-
-                    all_issues.extend(result.issues)
-
-                except Exception as e:
-                    logger.error(f"Reviewer {reviewer_name} failed: {e}")
+                    all_issues.extend(data.issues)
+                else:
                     reviewer_results.append(ReviewerResult(
                         name=reviewer_name,
                         status="error",
-                        error=str(e),
+                        error=data,
                     ))
 
         # Step 5: Deduplicate and prioritize issues
@@ -157,37 +268,62 @@ class Orchestrator:
             f"recommendation={report.summary.recommendation.value}"
         )
 
+        # Emit review completed
+        await emit(ProgressEvent(
+            type=ProgressEventType.REVIEW_COMPLETED,
+            review_id=report_id,
+            issues_found=report.summary.total_issues,
+            message=f"Review completed with {report.summary.total_issues} issues (score: {report.summary.overall_score:.1f})",
+        ))
+
         return report
 
     async def _prepare_context(self, request: ReviewRequest) -> ReviewContext:
         """Prepare the review context from the request."""
         context = ReviewContext(request=request)
-
         source = request.source
+        mode = request.options.mode
 
-        # Handle different source types
-        if source.pr_url:
-            context = await self._prepare_pr_context(source.pr_url, context)
-
-        elif source.commit_sha:
-            # Get changed files from commit
-            git = GitUtils(source.directory or Path.cwd())
-            context.files = git.get_changed_files(head_ref=source.commit_sha)
-            context.diff = git.get_diff(head_ref=source.commit_sha)
-            context.commit_sha = source.commit_sha
-            context.repo_path = Path(source.directory or Path.cwd())
-
-        elif source.files:
-            context.files = source.files
-            context.repo_path = Path(source.directory or Path.cwd())
-
-        elif source.directory:
-            # Scan directory for files
+        # Set repo_path first (needed for all modes)
+        if source.directory:
             context.repo_path = Path(source.directory)
-            context.files = self._scan_directory(context.repo_path)
+        elif source.pr_url or source.commit_sha or source.files:
+            context.repo_path = Path(source.directory or Path.cwd())
+        else:
+            context.repo_path = Path.cwd()
 
-        # Load file contents
-        await self._load_file_contents(context)
+        # Load STRUCTURE.md files first (used in all modes)
+        self._load_structure_docs(context)
+
+        # INITIAL mode: Only use STRUCTURE.md, no code files
+        if mode == ReviewMode.INITIAL:
+            logger.info("INITIAL mode: Reviewing architecture via STRUCTURE.md files only")
+            if not context.structure_docs:
+                logger.warning("No STRUCTURE.md files found! Initial review may be limited.")
+            # No file contents loaded - reviewers use only structure docs
+
+        # DIFF mode: Load only changed/specified files
+        else:
+            logger.info("DIFF mode: Reviewing changed files")
+
+            if source.pr_url:
+                context = await self._prepare_pr_context(source.pr_url, context)
+
+            elif source.commit_sha:
+                git = GitUtils(context.repo_path)
+                context.files = git.get_changed_files(head_ref=source.commit_sha)
+                context.diff = git.get_diff(head_ref=source.commit_sha)
+                context.commit_sha = source.commit_sha
+
+            elif source.files:
+                context.files = source.files
+
+            elif source.directory:
+                # Fallback: scan directory (limited)
+                context.files = self._scan_directory(context.repo_path)
+
+            # Load file contents for diff mode
+            await self._load_file_contents(context)
 
         # Get git info
         try:
@@ -243,6 +379,48 @@ class Orchestrator:
 
         return files[:100]  # Limit to 100 files
 
+    def _load_structure_docs(self, context: ReviewContext) -> None:
+        """
+        Find and load all STRUCTURE.md files in the repository.
+
+        These files contain important documentation about the codebase
+        architecture and are loaded into context.structure_docs.
+        """
+        if not context.repo_path:
+            return
+
+        logger.info("Scanning for STRUCTURE.md files...")
+
+        # Find all STRUCTURE.md files
+        structure_files = list(context.repo_path.rglob("STRUCTURE.md"))
+
+        # Also check for structure.md (lowercase)
+        structure_files.extend(context.repo_path.rglob("structure.md"))
+
+        # Filter out common excluded directories
+        exclude_dirs = {
+            ".git", "node_modules", "__pycache__", ".venv", "venv",
+            ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
+        }
+
+        for structure_file in structure_files:
+            # Skip if in excluded directory
+            if any(part in exclude_dirs for part in structure_file.parts):
+                continue
+
+            try:
+                relative_path = str(structure_file.relative_to(context.repo_path))
+                content = structure_file.read_text(encoding="utf-8")
+                context.structure_docs[relative_path] = content
+                logger.info(f"  Loaded: {relative_path}")
+            except Exception as e:
+                logger.warning(f"  Failed to read {structure_file}: {e}")
+
+        if context.structure_docs:
+            logger.info(f"Found {len(context.structure_docs)} STRUCTURE.md file(s)")
+        else:
+            logger.info("No STRUCTURE.md files found")
+
     async def _load_file_contents(self, context: ReviewContext) -> None:
         """Load content of files in context."""
         for file_path in context.files:
@@ -280,8 +458,8 @@ class Orchestrator:
             reviewers.append("reviewer_fe_architecture")
             reviewers.append("reviewer_fe_quality")
 
-        if include_functional:
-            reviewers.append("analyst_func")
+        # ALWAYS launch analyst_func - business logic is critical
+        reviewers.append("analyst_func")
 
         return reviewers
 
@@ -293,6 +471,45 @@ class Orchestrator:
         """Run the challenger loop for a reviewer."""
         loop = ChallengerLoop()
         return await loop.run(context, reviewer_name)
+
+    async def _run_challenger_loop_with_progress(
+        self,
+        context: ReviewContext,
+        reviewer_name: str,
+        emit: Callable[[ProgressEvent], Awaitable[None]],
+    ) -> ChallengerLoopResult:
+        """Run the challenger loop with progress updates."""
+        display_name = get_reviewer_display_name(reviewer_name)
+
+        # Create iteration callback
+        async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
+            await emit(ProgressEvent(
+                type=ProgressEventType.REVIEWER_ITERATION,
+                reviewer_name=reviewer_name,
+                reviewer_display_name=display_name,
+                iteration=iteration,
+                max_iterations=5,
+                satisfaction_score=satisfaction,
+                issues_found=issues_count,
+                message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
+            ))
+
+        # Create streaming callback for token-by-token updates
+        async def on_content(content: str):
+            await emit(ProgressEvent(
+                type=ProgressEventType.REVIEWER_STREAMING,
+                reviewer_name=reviewer_name,
+                reviewer_display_name=display_name,
+                content=content,
+            ))
+
+        loop = ChallengerLoop()
+        return await loop.run(
+            context,
+            reviewer_name,
+            on_iteration_callback=on_iteration,
+            on_content_callback=on_content,
+        )
 
     async def _run_simple_review(
         self,

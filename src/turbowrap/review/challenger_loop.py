@@ -6,7 +6,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.review import ReviewOutput
@@ -18,6 +18,10 @@ from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger
 
 
 logger = logging.getLogger(__name__)
+
+# Callback types
+IterationCallback = Callable[[int, float, int], Awaitable[None]]  # iteration, satisfaction, issues_count
+ContentCallback = Callable[[str], Awaitable[None]]  # streaming content
 
 
 @dataclass
@@ -79,6 +83,8 @@ class ChallengerLoop:
         self,
         context: ReviewContext,
         reviewer_name: str = "reviewer_be",
+        on_iteration_callback: Optional[IterationCallback] = None,
+        on_content_callback: Optional[ContentCallback] = None,
     ) -> ChallengerLoopResult:
         """
         Run the challenger loop.
@@ -86,6 +92,8 @@ class ChallengerLoop:
         Args:
             context: Review context with files to review
             reviewer_name: Name of the reviewer agent
+            on_iteration_callback: Called after each iteration with (iteration, satisfaction, issues_count)
+            on_content_callback: Called with streaming content chunks
 
         Returns:
             ChallengerLoopResult with final review and metadata
@@ -166,6 +174,14 @@ class ChallengerLoop:
                 issues_added=issues_added,
                 challenges_resolved=challenges_resolved,
             ))
+
+            # Call iteration callback if provided
+            if on_iteration_callback:
+                await on_iteration_callback(
+                    iteration,
+                    satisfaction_score,
+                    len(current_review.issues) if current_review else 0,
+                )
 
             # Extract insights from significant issues found
             for missed in challenger_feedback.missed_issues:
