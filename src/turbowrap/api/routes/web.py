@@ -1,10 +1,10 @@
 """Web routes for HTML pages."""
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from ..deps import get_db
+from ..deps import get_db, get_current_user
 from ...db.models import Repository, ChatSession, Setting
 
 router = APIRouter(tags=["web"])
@@ -21,6 +21,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "repos": repos,
             "active_page": "dashboard",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -36,6 +37,7 @@ async def repos_page(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "repos": repos,
             "active_page": "repos",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -58,6 +60,7 @@ async def chat_page(request: Request, db: Session = Depends(get_db)):
             "session": None,
             "messages": [],
             "active_page": "chat",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -71,6 +74,7 @@ async def chat_session_page(
     """Specific chat session page."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     templates = request.app.state.templates
+    current_user = get_current_user(request)
 
     if not session:
         return templates.TemplateResponse(
@@ -82,6 +86,7 @@ async def chat_session_page(
                 "messages": [],
                 "active_page": "chat",
                 "error": "Session not found",
+                "current_user": current_user,
             },
             status_code=404
         )
@@ -93,6 +98,7 @@ async def chat_session_page(
             "session": session,
             "messages": session.messages,
             "active_page": "chat",
+            "current_user": current_user,
         }
     )
 
@@ -106,6 +112,7 @@ async def status_page(request: Request):
         {
             "request": request,
             "active_page": "status",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -121,6 +128,7 @@ async def review_page(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "repos": repos,
             "active_page": "review",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -134,6 +142,7 @@ async def tasks_page(request: Request):
         {
             "request": request,
             "active_page": "tasks",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -149,6 +158,7 @@ async def issues_page(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "repos": repos,
             "active_page": "issues",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -164,6 +174,7 @@ async def files_page(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "repos": repos,
             "active_page": "files",
+            "current_user": get_current_user(request),
         }
     )
 
@@ -192,6 +203,27 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
             "claude_model": claude_model.value if claude_model else config.agents.claude_model,
             "gemini_model": gemini_model.value if gemini_model else config.agents.gemini_model,
             "gemini_pro_model": gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model,
+            "current_user": get_current_user(request),
+        }
+    )
+
+
+@router.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request):
+    """User management page (admin only)."""
+    current_user = get_current_user(request)
+
+    # Redirect se non admin
+    if not current_user or not current_user.get("is_admin"):
+        return RedirectResponse(url="/", status_code=302)
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/users.html",
+        {
+            "request": request,
+            "active_page": "users",
+            "current_user": current_user,
         }
     )
 

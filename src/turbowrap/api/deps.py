@@ -39,10 +39,15 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
         return None
 
     # Return user info from claims
+    email = claims.get("email") or claims.get("username")
+    # Determina se admin (hardcoded per niccolo.calandri)
+    is_admin = email and "niccolo.calandri" in email.lower()
+
     return {
         "sub": claims.get("sub"),
-        "email": claims.get("email") or claims.get("username"),
+        "email": email,
         "username": claims.get("username") or claims.get("cognito:username"),
+        "is_admin": is_admin,
     }
 
 
@@ -59,5 +64,21 @@ def require_auth(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
+        )
+    return current_user
+
+
+def require_admin(
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> dict[str, Any]:
+    """
+    Dependency that requires admin privileges.
+
+    Raises HTTPException 403 if not admin.
+    """
+    if not current_user.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accesso riservato agli amministratori",
         )
     return current_user
