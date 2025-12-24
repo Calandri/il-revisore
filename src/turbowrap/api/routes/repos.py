@@ -50,12 +50,48 @@ class FileWriteRequest(BaseModel):
 @router.get("", response_model=list[RepoResponse])
 def list_repos(
     status: str | None = None,
+    project: str | None = Query(default=None, description="Filter by project name"),
     db: Session = Depends(get_db),
 ):
-    """List all repositories."""
+    """List all repositories, optionally filtered by status or project."""
     manager = RepoManager(db)
-    repos = manager.list(status=status)
+    repos = manager.list(status=status, project_name=project)
     return repos
+
+
+@router.get("/projects")
+def list_projects(db: Session = Depends(get_db)):
+    """List all unique project names with their repository counts."""
+    from ...db.models import Repository
+    from sqlalchemy import func
+
+    results = (
+        db.query(
+            Repository.project_name,
+            func.count(Repository.id).label("repo_count")
+        )
+        .filter(Repository.project_name.isnot(None))
+        .filter(Repository.deleted_at.is_(None))
+        .group_by(Repository.project_name)
+        .order_by(Repository.project_name)
+        .all()
+    )
+
+    # Get repos without project
+    unassigned = (
+        db.query(func.count(Repository.id))
+        .filter(Repository.project_name.is_(None))
+        .filter(Repository.deleted_at.is_(None))
+        .scalar()
+    )
+
+    return {
+        "projects": [
+            {"name": name, "repo_count": count}
+            for name, count in results
+        ],
+        "unassigned_count": unassigned,
+    }
 
 
 @router.post("", response_model=RepoResponse)
@@ -77,6 +113,12 @@ def clone_repo(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+class RepoUpdate(BaseModel):
+    """Request to update repository metadata."""
+    project_name: str | None = None
+    repo_type: str | None = None
+
+
 @router.get("/{repo_id}", response_model=RepoResponse)
 def get_repo(
     repo_id: str,
@@ -87,6 +129,29 @@ def get_repo(
     repo = manager.get(repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
+    return repo
+
+
+@router.patch("/{repo_id}", response_model=RepoResponse)
+def update_repo(
+    repo_id: str,
+    data: RepoUpdate,
+    db: Session = Depends(get_db),
+):
+    """Update repository metadata (project_name, repo_type)."""
+    from ...db.models import Repository
+
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    if data.project_name is not None:
+        repo.project_name = data.project_name if data.project_name else None
+    if data.repo_type is not None:
+        repo.repo_type = data.repo_type if data.repo_type else None
+
+    db.commit()
+    db.refresh(repo)
     return repo
 
 

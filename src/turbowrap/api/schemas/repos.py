@@ -77,6 +77,9 @@ class RepoResponse(BaseModel):
     repo_type: Literal["backend", "frontend", "fullstack", "unknown"] | None = Field(
         default=None, description="Detected repository type"
     )
+    project_name: str | None = Field(
+        default=None, description="Project name to group related repositories"
+    )
     last_synced_at: datetime | None = Field(default=None, description="Last sync timestamp")
     metadata: dict[str, Any] | None = Field(
         default=None,
@@ -119,6 +122,7 @@ class RepoResponse(BaseModel):
                 "default_branch": obj.default_branch,
                 "status": obj.status,
                 "repo_type": obj.repo_type,
+                "project_name": getattr(obj, "project_name", None),
                 "last_synced_at": obj.last_synced_at,
                 "metadata": obj.metadata_,  # Map metadata_ to metadata
                 "created_at": obj.created_at,

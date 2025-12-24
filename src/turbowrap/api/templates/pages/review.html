@@ -703,6 +703,15 @@ function reviewApp() {
             results: [],
         },
 
+        // Relationships analysis
+        showRelationshipsModal: false,
+        isAnalyzingRelationships: false,
+        isApplyingConnections: false,
+        relationshipsProgress: '',
+        relationshipsError: '',
+        relationshipsResult: null,
+        selectedConnections: [],
+
         init() {
             // Initialize empty agent states
         },
@@ -1143,6 +1152,112 @@ function reviewApp() {
                 return marked.parse(content);
             } catch (e) {
                 return content.replace(/\n/g, '<br>');
+            }
+        },
+
+        // Relationships analysis functions
+        async analyzeRelationships() {
+            this.showRelationshipsModal = true;
+            this.isAnalyzingRelationships = true;
+            this.relationshipsError = '';
+            this.relationshipsResult = null;
+            this.selectedConnections = [];
+            this.relationshipsProgress = 'Avvio analisi...';
+
+            try {
+                const response = await fetch('/api/relationships/analyze/stream');
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let currentEvent = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            currentEvent = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            try {
+                                const data = JSON.parse(line.slice(5));
+                                this.handleRelationshipsEvent(currentEvent, data);
+                            } catch (e) {
+                                console.error('Failed to parse event data:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Relationships analysis error:', error);
+                this.relationshipsError = error.message || 'Errore durante l\'analisi';
+            } finally {
+                this.isAnalyzingRelationships = false;
+            }
+        },
+
+        handleRelationshipsEvent(eventType, data) {
+            switch (eventType) {
+                case 'started':
+                case 'progress':
+                    this.relationshipsProgress = data.message;
+                    break;
+                case 'completed':
+                    this.relationshipsResult = {
+                        total_repos: data.total_repos,
+                        repos_analyzed: data.repos_analyzed,
+                        connections_found: data.connections,
+                        analysis_summary: data.summary,
+                    };
+                    break;
+                case 'error':
+                    this.relationshipsError = data.error;
+                    break;
+            }
+        },
+
+        selectAllConnections() {
+            if (this.relationshipsResult?.connections_found) {
+                this.selectedConnections = this.relationshipsResult.connections_found.map((_, idx) => idx);
+            }
+        },
+
+        async applySelectedConnections() {
+            if (this.selectedConnections.length === 0) return;
+
+            this.isApplyingConnections = true;
+
+            try {
+                const connectionsToApply = this.selectedConnections.map(idx =>
+                    this.relationshipsResult.connections_found[idx]
+                );
+
+                const response = await fetch('/api/relationships/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        connections: connectionsToApply,
+                        overwrite_existing: false,
+                    }),
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`Connessioni applicate: ${result.created} create, ${result.skipped} gia esistenti`);
+                    this.showRelationshipsModal = false;
+                } else {
+                    const error = await response.json();
+                    alert('Errore: ' + (error.detail || 'Errore sconosciuto'));
+                }
+            } catch (error) {
+                console.error('Apply connections error:', error);
+                alert('Errore: ' + error.message);
+            } finally {
+                this.isApplyingConnections = false;
             }
         }
     }

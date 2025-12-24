@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it" x-data="{ sidebarOpen: true, darkMode: localStorage.getItem('darkMode') === 'true' }"
+<html lang="it" x-data="{ sidebarOpen: window.innerWidth >= 768, darkMode: localStorage.getItem('darkMode') === 'true' }"
       :class="{ 'dark': darkMode }"
       x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))">
 <head>
@@ -37,6 +37,39 @@
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
 
+    <!-- Mobile Header - visible only on mobile -->
+    <header class="fixed top-0 left-0 right-0 h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 z-30 flex items-center justify-between px-4 md:hidden">
+        <button @click="sidebarOpen = !sidebarOpen"
+                class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+        </button>
+        <div class="flex items-center gap-2">
+            <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-white font-bold text-sm">T</div>
+            <span class="font-bold">TurboWrap</span>
+        </div>
+        <button @click="darkMode = !darkMode" class="p-2 -mr-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <svg x-show="!darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+            <svg x-show="darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+        </button>
+    </header>
+
+    <!-- Mobile sidebar backdrop -->
+    <div x-show="sidebarOpen"
+         x-transition:enter="transition-opacity ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition-opacity ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click="sidebarOpen = false"
+         class="fixed inset-0 bg-black/50 z-40 md:hidden"></div>
+
     <!-- Toast notifications -->
     <div id="toast-container"
          x-data="toastManager()"
@@ -64,8 +97,8 @@
         {% include "components/sidebar.html" %}
 
         <!-- Main content -->
-        <main class="flex-1 overflow-auto transition-all duration-300"
-              :class="sidebarOpen ? 'ml-64' : 'ml-16'">
+        <main class="flex-1 overflow-auto transition-all duration-300 pt-14 md:pt-0"
+              :class="sidebarOpen ? 'md:ml-64' : 'md:ml-16'">
             <div class="p-6">
                 {% block content %}{% endblock %}
             </div>

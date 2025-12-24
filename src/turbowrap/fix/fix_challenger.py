@@ -19,6 +19,7 @@ from turbowrap.fix.models import (
     FixIssue,
     FixQualityScores,
 )
+from turbowrap.llm import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,13 @@ class GeminiFixChallenger:
         self.thinking_budget = thinking_budget
         self.threshold = satisfaction_threshold
         self._types = types
+
+        # Load challenger system prompt
+        try:
+            self.system_prompt = load_prompt("fix_challenger")
+        except FileNotFoundError:
+            logger.warning("fix_challenger.md not found, using default prompt")
+            self.system_prompt = self._default_system_prompt()
 
     async def evaluate(
         self,
