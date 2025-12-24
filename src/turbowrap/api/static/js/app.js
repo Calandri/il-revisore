@@ -97,6 +97,61 @@ function debounce(func, wait) {
     };
 }
 
+// Mobile touch gestures for sidebar
+function initTouchGestures() {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+    const swipeThreshold = 80; // Minimum pixels for a swipe
+    const edgeThreshold = 30; // Distance from left edge to trigger open
+
+    document.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', function(e) {
+        touchEndX = e.changedTouches[0].screenX;
+        touchEndY = e.changedTouches[0].screenY;
+        handleSwipe();
+    }, { passive: true });
+
+    function handleSwipe() {
+        // Only on mobile
+        if (window.innerWidth >= 768) return;
+
+        const swipeDistanceX = touchEndX - touchStartX;
+        const swipeDistanceY = Math.abs(touchEndY - touchStartY);
+
+        // Ignore if vertical swipe is dominant (scrolling)
+        if (swipeDistanceY > Math.abs(swipeDistanceX)) return;
+
+        // Get Alpine data from html element
+        const htmlEl = document.documentElement;
+        const alpineData = Alpine.$data(htmlEl);
+        if (!alpineData) return;
+
+        // Swipe right from left edge - open sidebar
+        if (swipeDistanceX > swipeThreshold && touchStartX < edgeThreshold) {
+            alpineData.sidebarOpen = true;
+        }
+
+        // Swipe left - close sidebar (if open)
+        if (swipeDistanceX < -swipeThreshold && alpineData.sidebarOpen) {
+            alpineData.sidebarOpen = false;
+        }
+    }
+}
+
+// Initialize touch gestures when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Only initialize on touch devices
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        initTouchGestures();
+    }
+});
+
 // Format date utility
 function formatDate(dateString) {
     const date = new Date(dateString);

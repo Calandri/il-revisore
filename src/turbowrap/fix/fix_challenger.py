@@ -159,6 +159,31 @@ class GeminiFixChallenger:
             )
             return response.text, None
 
+    def _default_system_prompt(self) -> str:
+        """Default system prompt if fix_challenger.md is not found."""
+        return """# Fix Challenger - Quality Evaluation System
+
+You are a meticulous code fix evaluator. Score fixes on 4 dimensions (0-100 each):
+
+## Dimensions
+
+1. **Correctness (40%)**: Does the fix solve the issue? Handle edge cases?
+2. **Safety (30%)**: No new bugs/vulnerabilities? No breaking changes?
+3. **Minimality (15%)**: Changes focused only on the issue? No scope creep?
+4. **Style (15%)**: Matches existing code style? Consistent naming/formatting?
+
+## Scoring
+
+- 90-100: Excellent, ready to apply
+- 80-89: Good with minor issues
+- 70-79: Acceptable but needs refinement
+- <70: Needs rework
+
+Status: APPROVED (>=80), NEEDS_IMPROVEMENT (50-79), REJECTED (<50)
+
+Output ONLY valid JSON with: satisfaction_score, status, quality_scores, issues_found, improvements_needed, positive_feedback
+"""
+
     def _build_evaluation_prompt(
         self,
         context: FixContext,
@@ -166,20 +191,22 @@ class GeminiFixChallenger:
         fixed_content: str,
         changes_summary: Optional[str] = None,
     ) -> str:
-        """Build the evaluation prompt."""
-        return f"""# Fix Quality Evaluation
+        """Build the evaluation prompt with system context."""
+        # Combine system prompt with fix details
+        user_prompt = f"""## Fix Evaluation Request
 
-You are evaluating a code fix. Your job is to determine if the fix is correct and safe to apply.
+### The Issue Being Fixed
 
-## The Issue Being Fixed
+| Field | Value |
+|-------|-------|
+| **Issue Code** | {context.issue_code} |
+| **Title** | {context.title} |
+| **Category** | {context.category} |
+| **Severity** | {context.severity} |
+| **File** | {context.file_path} |
+| **Line** | {context.line or "Unknown"} |
 
-**Code**: {context.issue_code}
-**Title**: {context.title}
 **Description**: {context.description}
-**Category**: {context.category}
-**Severity**: {context.severity}
-**File**: {context.file_path}
-**Line**: {context.line or "Unknown"}
 
 ### Original Problematic Code
 ```
@@ -191,51 +218,35 @@ You are evaluating a code fix. Your job is to determine if the fix is correct an
 {context.suggested_fix or "Not specified"}
 ```
 
-## The Fix to Evaluate
+---
 
-### Original File
+## Code to Evaluate
+
+### BEFORE (Original File)
 ```
-{original_content}
+{original_content[:8000] if len(original_content) > 8000 else original_content}
 ```
+{f"... (truncated, {len(original_content)} chars total)" if len(original_content) > 8000 else ""}
 
-### Fixed File
+### AFTER (Fixed File)
 ```
-{fixed_content}
+{fixed_content[:8000] if len(fixed_content) > 8000 else fixed_content}
 ```
+{f"... (truncated, {len(fixed_content)} chars total)" if len(fixed_content) > 8000 else ""}
 
-{f"### Changes Summary{chr(10)}{changes_summary}" if changes_summary else ""}
+{f"### Changes Summary from Fixer{chr(10)}{changes_summary}" if changes_summary else ""}
 
-## Your Task
+---
 
-Evaluate the fix on these 4 dimensions (0-100 each):
+## Your Evaluation
 
-### 1. Correctness (weight: 40%)
-- Does the fix actually solve the reported issue?
-- Is the logic correct?
-- Does it handle edge cases?
-
-### 2. Safety (weight: 30%)
-- Does the fix introduce any new bugs?
-- Any security vulnerabilities added?
-- Any breaking changes to existing behavior?
-
-### 3. Minimality (weight: 15%)
-- Is the fix focused on just the issue?
-- Any unnecessary changes or over-engineering?
-- Is the solution the simplest that works?
-
-### 4. Style Consistency (weight: 15%)
-- Does it maintain the existing code style?
-- Consistent indentation, naming, etc.?
-- Follows the project's conventions?
-
-## Output Format
+Apply the scoring rubrics from your system instructions.
+Calculate weighted score: (Correctness*0.40) + (Safety*0.30) + (Minimality*0.15) + (Style*0.15)
 
 Return ONLY valid JSON:
-
 ```json
 {{
-  "satisfaction_score": <weighted average 0-100>,
+  "satisfaction_score": <0-100>,
   "status": "APPROVED|NEEDS_IMPROVEMENT|REJECTED",
   "quality_scores": {{
     "correctness": <0-100>,
@@ -245,33 +256,19 @@ Return ONLY valid JSON:
   }},
   "issues_found": [
     {{
-      "type": "bug|vulnerability|style|logic",
-      "description": "<what's wrong>",
-      "line": <line number or null>,
+      "type": "bug|vulnerability|style|logic|performance|breaking",
+      "description": "<specific problem>",
+      "line": <number or null>,
       "severity": "CRITICAL|HIGH|MEDIUM|LOW",
       "suggestion": "<how to fix>"
     }}
   ],
-  "improvements_needed": ["<improvement 1>", "<improvement 2>"],
+  "improvements_needed": ["<specific action 1>"],
   "positive_feedback": ["<what was done well>"]
 }}
 ```
-
-## Scoring Guide
-
-- **90-100**: Excellent fix, ready to apply
-- **80-89**: Good fix with minor issues
-- **70-79**: Acceptable but needs refinement
-- **<70**: Fix has problems, needs rework
-
-Status mapping:
-- APPROVED: score >= 80
-- NEEDS_IMPROVEMENT: 50 <= score < 80
-- REJECTED: score < 50
-
-Be fair but rigorous. The fix must not introduce new bugs.
-Output ONLY the JSON, no markdown or explanations.
 """
+        return f"{self.system_prompt}\n\n---\n\n{user_prompt}"
 
     def _parse_response(
         self,

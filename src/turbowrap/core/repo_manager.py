@@ -264,11 +264,12 @@ class RepoManager:
         """Get repository by name (owner/repo)."""
         return self.db.query(Repository).filter(Repository.name == name).first()
 
-    def list(self, status: str | None = None) -> list[Repository]:
+    def list(self, status: str | None = None, project_name: str | None = None) -> list[Repository]:
         """List all repositories.
 
         Args:
             status: Optional status filter.
+            project_name: Optional project name filter.
 
         Returns:
             List of Repository records.
@@ -277,6 +278,9 @@ class RepoManager:
 
         if status:
             query = query.filter(Repository.status == status)
+
+        if project_name:
+            query = query.filter(Repository.project_name == project_name)
 
         return query.order_by(Repository.updated_at.desc()).all()
 

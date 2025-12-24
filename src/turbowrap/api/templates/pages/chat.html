@@ -3,7 +3,7 @@
 {% block title %}Chat AI - TurboWrap{% endblock %}
 
 {% block content %}
-<div class="h-[calc(100vh-3rem)] flex gap-4" x-data="chatApp('{{ session.id if session else '' }}')">
+<div class="h-[calc(100vh-3rem)] flex gap-4 relative" x-data="{ ...chatApp('{{ session.id if session else '' }}'), showSessions: false }">
 
     <!-- Sessions Sidebar -->
     <div class="w-64 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col">

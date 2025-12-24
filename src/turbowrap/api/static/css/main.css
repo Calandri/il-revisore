@@ -136,17 +136,45 @@ main {
     display: none;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
+/* Mobile-specific adjustments */
+@media (max-width: 767px) {
+    /* Sidebar animation */
     aside {
-        transform: translateX(-100%);
+        will-change: transform;
     }
 
-    aside.open {
-        transform: translateX(0);
+    /* Prevent body scroll when sidebar is open */
+    body.sidebar-open {
+        overflow: hidden;
     }
 
-    main {
-        margin-left: 0 !important;
+    /* Touch-friendly tap targets */
+    nav a, button {
+        min-height: 44px;
+    }
+
+    /* Improve touch scrolling */
+    .overflow-y-auto {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Safe area padding for notched devices */
+    .pt-14 {
+        padding-top: max(3.5rem, env(safe-area-inset-top));
+    }
+}
+
+/* Tablet adjustments */
+@media (min-width: 768px) and (max-width: 1023px) {
+    /* Slightly smaller sidebar on tablet */
+    aside.w-64 {
+        width: 14rem;
+    }
+}
+
+/* Desktop sidebar collapsed state */
+@media (min-width: 768px) {
+    aside {
+        transform: translateX(0) !important;
     }
 }
