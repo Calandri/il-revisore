@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from ..deps import get_db
 from ...db.models import Issue, IssueStatus, Repository
@@ -103,7 +103,7 @@ def list_issues(
         query = query.filter(Issue.file.contains(file))
 
     # Order by severity (CRITICAL first) and creation date
-    severity_order = func.case(
+    severity_order = case(
         (Issue.severity == "CRITICAL", 1),
         (Issue.severity == "HIGH", 2),
         (Issue.severity == "MEDIUM", 3),
