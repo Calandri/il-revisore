@@ -10,23 +10,24 @@ import json
 import logging
 import os
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
 
 from turbowrap.config import get_settings
-from turbowrap.utils.aws_secrets import get_anthropic_api_key
+from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.models.review import (
+    ChecklistResult,
+    Issue,
+    IssueCategory,
+    IssueSeverity,
+    ModelUsageInfo,
+    ReviewMetrics,
     ReviewOutput,
     ReviewSummary,
-    Issue,
-    IssueSeverity,
-    IssueCategory,
-    ChecklistResult,
-    ReviewMetrics,
 )
-from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
+from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +69,8 @@ class ClaudeCLIReviewer(BaseReviewer):
     async def review(
         self,
         context: ReviewContext,
-        file_list: Optional[list[str]] = None,
-        on_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
+        file_list: list[str] | None = None,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> ReviewOutput:
         """
         Perform code review using Claude CLI.
@@ -91,7 +92,7 @@ class ClaudeCLIReviewer(BaseReviewer):
         prompt = self._build_review_prompt(context, files_to_review)
 
         # Run Claude CLI with streaming
-        output = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        output, model_usage = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
 
         if output is None:
             return self._create_error_output("Claude CLI failed to execute")
@@ -101,6 +102,7 @@ class ClaudeCLIReviewer(BaseReviewer):
         review_output.duration_seconds = time.time() - start_time
         review_output.reviewer = self.name
         review_output.timestamp = datetime.utcnow()
+        review_output.model_usage = model_usage
 
         return review_output
 
@@ -109,8 +111,8 @@ class ClaudeCLIReviewer(BaseReviewer):
         context: ReviewContext,
         previous_review: ReviewOutput,
         feedback: ChallengerFeedback,
-        file_list: Optional[list[str]] = None,
-        on_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
+        file_list: list[str] | None = None,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> ReviewOutput:
         """
         Refine review based on challenger feedback.
@@ -130,12 +132,10 @@ class ClaudeCLIReviewer(BaseReviewer):
         files_to_review = file_list or context.files
 
         # Build refinement prompt
-        prompt = self._build_refinement_prompt(
-            context, previous_review, feedback, files_to_review
-        )
+        prompt = self._build_refinement_prompt(context, previous_review, feedback, files_to_review)
 
         # Run Claude CLI with streaming
-        output = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        output, model_usage = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
 
         if output is None:
             return self._create_error_output("Claude CLI refinement failed")
@@ -146,6 +146,7 @@ class ClaudeCLIReviewer(BaseReviewer):
         review_output.reviewer = self.name
         review_output.timestamp = datetime.utcnow()
         review_output.iteration = previous_review.iteration + 1
+        review_output.model_usage = model_usage
 
         return review_output
 
@@ -265,9 +266,9 @@ Output the complete refined review as JSON (same schema as before).
     async def _run_claude_cli(
         self,
         prompt: str,
-        repo_path: Optional[Path],
-        on_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
-    ) -> Optional[str]:
+        repo_path: Path | None,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> tuple[str | None, list[ModelUsageInfo]]:
         """
         Run Claude CLI with the prompt, streaming output.
 
@@ -277,23 +278,45 @@ Output the complete refined review as JSON (same schema as before).
             on_chunk: Optional callback for streaming chunks
 
         Returns:
-            CLI output or None if failed
+            Tuple of (CLI output or None if failed, list of model usage info)
         """
         cwd = str(repo_path) if repo_path else None
 
         try:
-            logger.info(f"Running Claude CLI for {self.name} in {cwd}")
-
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
             api_key = get_anthropic_api_key()
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
+                logger.info("ANTHROPIC_API_KEY loaded from AWS Secrets Manager")
+            else:
+                logger.warning("ANTHROPIC_API_KEY not found in AWS - using environment")
 
-            process = await asyncio.create_subprocess_exec(
+            # Use model from settings
+            model = self.settings.agents.claude_model
+
+            logger.info(f"Running Claude CLI for {self.name} in {cwd} with model={model}")
+
+            # Build CLI arguments with stream-json for real-time streaming
+            args = [
                 self.cli_path,
                 "--print",
                 "--dangerously-skip-permissions",
+                "--model",
+                model,
+                "--output-format",
+                "stream-json",
+                "--verbose",  # Required for stream-json
+            ]
+
+            # Add extended thinking settings if enabled
+            if self.settings.thinking.enabled:
+                thinking_settings = {"alwaysThinkingEnabled": True}
+                args.extend(["--settings", json.dumps(thinking_settings)])
+                logger.info("Extended thinking enabled for Claude CLI")
+
+            process = await asyncio.create_subprocess_exec(
+                *args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -325,25 +348,74 @@ Output the complete refined review as JSON (same schema as before).
             except asyncio.TimeoutError:
                 logger.error(f"Claude CLI timed out after {self.timeout}s")
                 process.kill()
-                return None
+                return None, []
 
             await process.wait()
 
             if process.returncode != 0:
                 stderr = await process.stderr.read()
                 logger.error(f"Claude CLI failed: {stderr.decode()}")
-                return None
+                return None, []
 
-            output = "".join(output_chunks)
+            raw_output = "".join(output_chunks)
+            model_usage_list: list[ModelUsageInfo] = []
+            output = ""
+
+            # Parse stream-json output (NDJSON - one JSON per line)
+            # Look for the "result" type line which contains final output and costs
+            for line in raw_output.strip().split("\n"):
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                    event_type = event.get("type")
+
+                    if event_type == "result":
+                        # Final result with content and model usage
+                        output = event.get("result", "")
+
+                        # Extract model usage
+                        model_usage = event.get("modelUsage", {})
+                        if model_usage:
+                            models_used = list(model_usage.keys())
+                            logger.info(f"Claude CLI models used: {models_used}")
+                            for model_name, usage in model_usage.items():
+                                info = ModelUsageInfo(
+                                    model=model_name,
+                                    input_tokens=usage.get("inputTokens", 0),
+                                    output_tokens=usage.get("outputTokens", 0),
+                                    cache_read_tokens=usage.get("cacheReadInputTokens", 0),
+                                    cache_creation_tokens=usage.get("cacheCreationInputTokens", 0),
+                                    cost_usd=usage.get("costUSD", 0.0),
+                                )
+                                model_usage_list.append(info)
+                                logger.info(
+                                    f"  {model_name}: in={info.input_tokens}, "
+                                    f"out={info.output_tokens}, cost=${info.cost_usd:.4f}"
+                                )
+
+                        # Log total cost
+                        total_cost = event.get("total_cost_usd", 0)
+                        logger.info(f"Total cost: ${total_cost:.4f}")
+
+                except json.JSONDecodeError:
+                    # Skip non-JSON lines
+                    continue
+
+            # Fallback if no result found
+            if not output:
+                logger.warning("No result found in stream-json output, using raw")
+                output = raw_output
+
             logger.info(f"Claude CLI completed, output length: {len(output)}")
-            return output
+            return output, model_usage_list
 
         except FileNotFoundError:
             logger.error(f"Claude CLI not found at: {self.cli_path}")
-            return None
+            return None, []
         except Exception as e:
             logger.exception(f"Claude CLI error: {e}")
-            return None
+            return None, []
 
     def _parse_response(
         self,

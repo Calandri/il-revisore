@@ -9,21 +9,21 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
 
 from turbowrap.config import get_settings
-from turbowrap.utils.aws_secrets import get_gemini_api_key
-from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.models.challenger import (
+    Challenge,
     ChallengerFeedback,
     ChallengerStatus,
     DimensionScores,
     MissedIssue,
-    Challenge,
 )
+from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
+from turbowrap.utils.aws_secrets import get_gemini_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +77,9 @@ class GeminiCLIChallenger(BaseReviewer):
         self,
         review: ReviewOutput,
         file_list: list[str],
-        repo_path: Optional[Path],
+        repo_path: Path | None,
         iteration: int = 1,
-        on_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> ChallengerFeedback:
         """
         Challenge a review produced by Claude CLI.
@@ -217,9 +217,9 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
     async def _run_gemini_cli(
         self,
         prompt: str,
-        repo_path: Optional[Path],
-        on_chunk: Optional[Callable[[str], Awaitable[None]]] = None,
-    ) -> Optional[str]:
+        repo_path: Path | None,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> str | None:
         """
         Run Gemini CLI with the prompt, streaming output.
 
@@ -234,16 +234,27 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
         cwd = str(repo_path) if repo_path else None
 
         try:
-            logger.info(f"Running Gemini CLI for challenge in {cwd}")
-
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
             api_key = get_gemini_api_key()
             if api_key:
                 env["GEMINI_API_KEY"] = api_key
+                logger.info("GEMINI_API_KEY loaded from AWS Secrets Manager")
+            else:
+                logger.warning("GEMINI_API_KEY not found in AWS - using environment")
+
+            # Use model from settings
+            model = self.settings.agents.gemini_model
+
+            logger.info(f"Running Gemini CLI for challenge in {cwd} with model={model}")
 
             process = await asyncio.create_subprocess_exec(
                 self.cli_path,
+                "-m",
+                model,
+                "--yolo",
+                "--output-format",
+                "json",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -284,7 +295,38 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 logger.error(f"Gemini CLI failed: {stderr.decode()}")
                 return None
 
-            output = "".join(output_chunks)
+            raw_output = "".join(output_chunks)
+
+            # Parse JSON output to extract result and model info
+            try:
+                cli_response = json.loads(raw_output)
+
+                # Check for error
+                if "error" in cli_response:
+                    error_msg = cli_response["error"].get("message", "Unknown error")
+                    logger.error(f"Gemini CLI error: {error_msg}")
+                    return None
+
+                # Extract result - Gemini uses 'result' or 'response'
+                output = cli_response.get("result") or cli_response.get("response", raw_output)
+
+                # Log model info if available
+                model_info = cli_response.get("model") or cli_response.get("modelUsed")
+                if model_info:
+                    logger.info(f"Gemini CLI model used: {model_info}")
+
+                # Log token usage if available
+                usage = cli_response.get("usage", {})
+                if usage:
+                    logger.info(
+                        f"Gemini CLI usage: in={usage.get('inputTokens', 0)}, "
+                        f"out={usage.get('outputTokens', 0)}"
+                    )
+            except json.JSONDecodeError:
+                # Fallback to raw output if not valid JSON
+                output = raw_output
+                logger.warning("Gemini CLI output not valid JSON, using raw output")
+
             logger.info(f"Gemini CLI completed, output length: {len(output)}")
             return output
 
@@ -332,25 +374,29 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
             # Parse missed issues
             missed_issues = []
             for mi_data in data.get("missed_issues", []):
-                missed_issues.append(MissedIssue(
-                    type=mi_data.get("type", "unknown"),
-                    description=mi_data.get("description", ""),
-                    file=mi_data.get("file", "unknown"),
-                    lines=mi_data.get("lines"),
-                    why_important=mi_data.get("why_important", ""),
-                    suggested_severity=mi_data.get("suggested_severity"),
-                ))
+                missed_issues.append(
+                    MissedIssue(
+                        type=mi_data.get("type", "unknown"),
+                        description=mi_data.get("description", ""),
+                        file=mi_data.get("file", "unknown"),
+                        lines=mi_data.get("lines"),
+                        why_important=mi_data.get("why_important", ""),
+                        suggested_severity=mi_data.get("suggested_severity"),
+                    )
+                )
 
             # Parse challenges
             challenges = []
             for ch_data in data.get("challenges", []):
-                challenges.append(Challenge(
-                    issue_id=ch_data.get("issue_id", "unknown"),
-                    challenge_type=ch_data.get("challenge_type", "needs_context"),
-                    challenge=ch_data.get("challenge", ""),
-                    reasoning=ch_data.get("reasoning", ""),
-                    suggested_change=ch_data.get("suggested_change"),
-                ))
+                challenges.append(
+                    Challenge(
+                        issue_id=ch_data.get("issue_id", "unknown"),
+                        challenge_type=ch_data.get("challenge_type", "needs_context"),
+                        challenge=ch_data.get("challenge", ""),
+                        reasoning=ch_data.get("reasoning", ""),
+                        suggested_change=ch_data.get("suggested_change"),
+                    )
+                )
 
             # Determine status
             score = data.get("satisfaction_score", dimension_scores.weighted_score)
@@ -385,10 +431,9 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
         """Convert satisfaction score to status."""
         if score >= self.threshold:
             return ChallengerStatus.APPROVED
-        elif score >= 70:
+        if score >= 70:
             return ChallengerStatus.NEEDS_REFINEMENT
-        else:
-            return ChallengerStatus.MAJOR_ISSUES
+        return ChallengerStatus.MAJOR_ISSUES
 
     def _create_fallback_feedback(self, iteration: int) -> ChallengerFeedback:
         """Create fallback feedback when CLI fails."""
@@ -403,8 +448,6 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 depth=80,
                 actionability=80,
             ),
-            improvements_needed=[
-                "Gemini CLI unavailable - manual review recommended."
-            ],
+            improvements_needed=["Gemini CLI unavailable - manual review recommended."],
             positive_feedback=["Review structure appears reasonable."],
         )

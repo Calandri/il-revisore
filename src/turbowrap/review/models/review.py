@@ -100,6 +100,17 @@ class ReviewSummary(BaseModel):
         )
 
 
+class ModelUsageInfo(BaseModel):
+    """Model usage information from CLI."""
+
+    model: str = Field(..., description="Model name used")
+    input_tokens: int = Field(0, description="Input tokens used")
+    output_tokens: int = Field(0, description="Output tokens generated")
+    cache_read_tokens: int = Field(0, description="Tokens read from cache")
+    cache_creation_tokens: int = Field(0, description="Tokens written to cache")
+    cost_usd: float = Field(0.0, description="Cost in USD")
+
+
 class ReviewOutput(BaseModel):
     """Complete output from a reviewer."""
 
@@ -117,6 +128,9 @@ class ReviewOutput(BaseModel):
     metrics: ReviewMetrics = Field(default_factory=ReviewMetrics)
     refinement_notes: list[dict] = Field(
         default_factory=list, description="Notes from challenger refinements"
+    )
+    model_usage: list[ModelUsageInfo] = Field(
+        default_factory=list, description="Models used and their token usage"
     )
 
     def get_issue(self, issue_id: str) -> Optional[Issue]:

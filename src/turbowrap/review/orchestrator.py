@@ -144,6 +144,7 @@ class Orchestrator:
                         satisfaction_score=result.final_satisfaction,
                         issues_found=len(result.final_review.issues),
                         message=f"{display_name} completed with {len(result.final_review.issues)} issues",
+                        model_usage=[m.model_dump() for m in result.final_review.model_usage],
                     ))
 
                     return (reviewer_name, "success", result)
@@ -212,6 +213,7 @@ class Orchestrator:
                         reviewer_name=reviewer_name,
                         reviewer_display_name=display_name,
                         issues_found=len(result.issues),
+                        model_usage=[m.model_dump() for m in result.model_usage],
                     ))
 
                     return (reviewer_name, "success", result)

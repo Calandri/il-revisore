@@ -6,6 +6,7 @@ Both CLIs have full access to the system - they do ALL the work.
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -488,10 +489,29 @@ The reviewer found issues with the previous fix. Address this feedback:
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
 
-            process = await asyncio.create_subprocess_exec(
+            # Use Opus model from settings
+            model = self.settings.agents.claude_model
+
+            # Build CLI arguments with stream-json for consistency
+            args = [
                 "claude",
                 "--print",
                 "--dangerously-skip-permissions",
+                "--model",
+                model,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+            ]
+
+            # Add extended thinking settings if enabled
+            if self.settings.thinking.enabled:
+                thinking_settings = {"alwaysThinkingEnabled": True}
+                args.extend(["--settings", json.dumps(thinking_settings)])
+                logger.info("Extended thinking enabled for Claude CLI")
+
+            process = await asyncio.create_subprocess_exec(
+                *args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -508,7 +528,32 @@ The reviewer found issues with the previous fix. Address this feedback:
                 logger.error(f"Claude CLI failed: {stderr.decode()}")
                 return None
 
-            return stdout.decode()
+            # Parse stream-json output (NDJSON)
+            raw_output = stdout.decode()
+            for line in raw_output.strip().split("\n"):
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                    if event.get("type") == "result":
+                        # Log model usage
+                        model_usage = event.get("modelUsage", {})
+                        if model_usage:
+                            for model_name, usage in model_usage.items():
+                                logger.info(
+                                    f"  {model_name}: in={usage.get('inputTokens', 0)}, "
+                                    f"out={usage.get('outputTokens', 0)}, "
+                                    f"cost=${usage.get('costUSD', 0):.4f}"
+                                )
+                        total_cost = event.get("total_cost_usd", 0)
+                        logger.info(f"Claude CLI total cost: ${total_cost:.4f}")
+                        return event.get("result", "")
+                except json.JSONDecodeError:
+                    continue
+
+            # Fallback to raw output
+            logger.warning("No result found in stream-json, using raw output")
+            return raw_output
 
         except asyncio.TimeoutError:
             logger.error(f"Claude CLI timed out after {timeout}s")
@@ -530,8 +575,13 @@ The reviewer found issues with the previous fix. Address this feedback:
             if api_key:
                 env["GEMINI_API_KEY"] = api_key
 
+            # Use Pro model from settings (for better reasoning in review)
+            model = self.settings.agents.gemini_pro_model
+
             process = await asyncio.create_subprocess_exec(
                 "gemini",
+                "-m",
+                model,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

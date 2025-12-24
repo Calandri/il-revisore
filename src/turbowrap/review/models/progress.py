@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -59,6 +59,11 @@ class ProgressEvent(BaseModel):
 
     # Error info
     error: Optional[str] = Field(default=None, description="Error message if failed")
+
+    # Model usage info (from CLI)
+    model_usage: Optional[list[dict[str, Any]]] = Field(
+        default=None, description="Models used and their token/cost info"
+    )
 
     def to_sse(self) -> dict:
         """Convert to SSE format."""
