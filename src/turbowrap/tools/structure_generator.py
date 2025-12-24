@@ -973,8 +973,9 @@ Be concise. Only list the most important elements (max 10).
                 if suffix not in BE_EXTENSIONS and suffix not in FE_EXTENSIONS:
                     continue
 
+                # 10 second tolerance to avoid false positives from timing issues
                 file_mtime = int(code_file.stat().st_mtime)
-                if file_mtime > generated_at:
+                if file_mtime > generated_at + 10:
                     is_stale = True
                     break
 

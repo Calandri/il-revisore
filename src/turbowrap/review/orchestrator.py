@@ -940,9 +940,9 @@ class Orchestrator:
                 if suffix not in {".py", ".ts", ".tsx", ".js", ".jsx"}:
                     continue
 
-                # Compare file mtime with generation timestamp
+                # Compare file mtime with generation timestamp (10s tolerance)
                 file_mtime = int(code_file.stat().st_mtime)
-                if file_mtime > generated_at:
+                if file_mtime > generated_at + 10:
                     is_stale = True
                     logger.info(
                         f"STRUCTURE.md stale: {code_file.name} modified after generation "
