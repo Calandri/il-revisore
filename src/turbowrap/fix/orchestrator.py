@@ -25,7 +25,7 @@ from turbowrap.fix.models import (
     FixSessionResult,
     FixStatus,
 )
-from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_gemini_api_key
+from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_google_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -635,9 +635,9 @@ The reviewer found issues with the previous fix. Address this feedback:
         try:
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
-            api_key = get_gemini_api_key()
+            api_key = get_google_api_key()
             if api_key:
-                env["GEMINI_API_KEY"] = api_key
+                env["GOOGLE_API_KEY"] = api_key
 
             # Use Pro model from settings (for better reasoning in review)
             model = self.settings.agents.gemini_pro_model

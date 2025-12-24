@@ -24,7 +24,7 @@ from turbowrap.review.models.challenger import (
 )
 from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
-from turbowrap.utils.aws_secrets import get_gemini_api_key
+from turbowrap.utils.aws_secrets import get_google_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -237,12 +237,12 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
         try:
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
-            api_key = get_gemini_api_key()
+            api_key = get_google_api_key()
             if api_key:
-                env["GEMINI_API_KEY"] = api_key
-                logger.info("GEMINI_API_KEY loaded from AWS Secrets Manager")
+                env["GOOGLE_API_KEY"] = api_key
+                logger.info("GOOGLE_API_KEY loaded from AWS Secrets Manager")
             else:
-                logger.warning("GEMINI_API_KEY not found in AWS - using environment")
+                logger.warning("GOOGLE_API_KEY not found in AWS - using environment")
 
             # Use model from settings
             model = self.settings.agents.gemini_model
