@@ -199,6 +199,12 @@
                               }"></span>
                         <h3 class="font-semibold" x-text="agent.displayName"></h3>
 
+                        <!-- Model chip -->
+                        <span x-show="agent.model"
+                              class="px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="getModelColor(agent.model)"
+                              x-text="formatModelName(agent.model)"></span>
+
                         <!-- Thinking button (only for Claude reviewers) -->
                         <button x-show="isClaudeReviewer(name) && agent.status === 'completed'"
                                 @click.stop="openThinkingModal(name)"
