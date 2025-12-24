@@ -351,12 +351,13 @@ async def analyze_relationships_stream(
                     "reason": conn.get("reason", ""),
                 })
 
-            yield f"event: completed\ndata: {json.dumps({
+            completed_data = json.dumps({
                 'total_repos': len(repos),
                 'repos_analyzed': len(repo_structures),
                 'connections': connections,
                 'summary': result.get('summary', '')
-            })}\n\n"
+            })
+            yield f"event: completed\ndata: {completed_data}\n\n"
 
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
