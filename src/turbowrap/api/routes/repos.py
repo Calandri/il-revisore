@@ -4,7 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..deps import get_db
-from ..schemas.repos import RepoCreate, RepoResponse, RepoStatus
+from ..schemas.repos import (
+    RepoCreate,
+    RepoResponse,
+    RepoStatus,
+    LinkCreate,
+    LinkResponse,
+    LinkedRepoSummary,
+)
 from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
 
@@ -95,3 +102,91 @@ def delete_repo(
         return {"status": "deleted", "id": repo_id}
     except RepositoryError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# --- Repository Link Endpoints ---
+
+
+@router.post("/{repo_id}/links", response_model=LinkResponse)
+def create_link(
+    repo_id: str,
+    data: LinkCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a link from this repository to another.
+
+    Link types:
+    - `frontend_for`: This repo is the frontend for target backend
+    - `backend_for`: This repo is the backend for target frontend
+    - `shared_lib`: Target is a shared library used by this repo
+    - `microservice`: Target is a related microservice
+    - `monorepo_module`: Target is another module in same monorepo
+    - `related`: Generic relationship
+    """
+    manager = RepoManager(db)
+    try:
+        link = manager.link_repositories(
+            source_id=repo_id,
+            target_id=data.target_repo_id,
+            link_type=data.link_type.value,
+            metadata=data.metadata,
+        )
+        return LinkResponse.model_validate(link)
+    except RepositoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{repo_id}/links", response_model=list[LinkedRepoSummary])
+def list_linked_repos(
+    repo_id: str,
+    link_type: str | None = None,
+    direction: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """List all repositories linked to this repository.
+
+    Args:
+        repo_id: Repository UUID
+        link_type: Optional filter by link type (frontend_for, backend_for, etc.)
+        direction: Optional filter: 'outgoing', 'incoming', or omit for both
+    """
+    manager = RepoManager(db)
+    try:
+        linked = manager.get_linked_repos(
+            repo_id=repo_id,
+            link_type=link_type,
+            direction=direction,
+        )
+        return linked
+    except RepositoryError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{repo_id}/links/{link_id}")
+def delete_link(
+    repo_id: str,
+    link_id: str,
+    db: Session = Depends(get_db),
+):
+    """Remove a repository link.
+
+    The link must belong to this repository (as source).
+    """
+    manager = RepoManager(db)
+
+    # Verify the link belongs to this repo
+    link = manager.get_link(link_id)
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    if link.source_repo_id != repo_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Link does not belong to this repository"
+        )
+
+    try:
+        manager.unlink_repositories(link_id)
+        return {"status": "deleted", "link_id": link_id}
+    except RepositoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))

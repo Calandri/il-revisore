@@ -3,45 +3,69 @@
 {% block title %}Chat AI - TurboWrap{% endblock %}
 
 {% block content %}
-<div class="h-[calc(100vh-3rem)] flex flex-col" x-data="chatApp('{{ session.id if session else '' }}')">
+<div class="h-[calc(100vh-3rem)] flex gap-4" x-data="chatApp('{{ session.id if session else '' }}')">
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-4">
-        <div>
-            <h1 class="text-2xl font-bold">Chat con AI</h1>
-            <p class="text-gray-500 dark:text-gray-400 text-sm" x-text="sessionId ? 'Sessione: ' + sessionId.slice(0, 8) + '...' : 'Nuova conversazione'"></p>
+    <!-- Sessions Sidebar -->
+    <div class="w-64 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col">
+        <div class="p-4 border-b dark:border-gray-700">
+            <button @click="newSession()"
+                    class="w-full bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Nuova Chat
+            </button>
         </div>
-        <button @click="newSession()"
-                class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            Nuova Chat
-        </button>
+
+        <!-- Session list -->
+        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+            <template x-if="sessions.length === 0">
+                <p class="text-center text-gray-400 text-sm py-4">Nessuna sessione</p>
+            </template>
+            <template x-for="sess in sessions" :key="sess.id">
+                <div class="group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors"
+                     :class="sess.id === sessionId ? 'bg-primary/10 text-primary' : 'hover:bg-gray-100 dark:hover:bg-gray-700'"
+                     @click="loadSession(sess.id)">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                    </svg>
+                    <span class="flex-1 truncate text-sm" x-text="sess.title || 'Chat ' + sess.id.slice(0, 8)"></span>
+                    <button @click.stop="deleteSession(sess.id)"
+                            class="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </template>
+        </div>
     </div>
 
     <!-- Chat container -->
     <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col">
+
+        <!-- Header -->
+        <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+            <div>
+                <h1 class="text-lg font-bold">Chat con AI</h1>
+                <p class="text-gray-500 dark:text-gray-400 text-xs" x-text="sessionId ? 'Sessione: ' + sessionId.slice(0, 8) + '...' : 'Nuova conversazione'"></p>
+            </div>
+        </div>
 
         <!-- Messages area -->
         <div id="messages"
              class="flex-1 overflow-y-auto p-4 space-y-4"
              x-ref="messagesContainer">
 
-            {% if messages %}
-                {% for msg in messages %}
-                    {% include "components/chat_message.html" %}
-                {% endfor %}
-            {% else %}
-                <div x-show="messages.length === 0 && !isStreaming" class="text-center text-gray-500 py-12">
-                    <svg class="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-                    </svg>
-                    <p class="text-lg mb-2">Inizia una conversazione</p>
-                    <p class="text-sm">Scrivi un messaggio per parlare con l'AI</p>
-                </div>
-            {% endif %}
+            <div x-show="messages.length === 0 && !isStreaming" class="text-center text-gray-500 py-12">
+                <svg class="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                </svg>
+                <p class="text-lg mb-2">Inizia una conversazione</p>
+                <p class="text-sm">Scrivi un messaggio per parlare con l'AI</p>
+            </div>
 
             <!-- Dynamic messages from Alpine -->
             <template x-for="msg in messages" :key="msg.id">
@@ -116,10 +140,44 @@ function chatApp(initialSessionId) {
         isStreaming: false,
         streamingContent: '',
         messages: [],
+        sessions: [],
 
         async init() {
-            if (!this.sessionId) {
-                // Don't auto-create session, wait for first message
+            await this.loadSessions();
+            if (this.sessionId) {
+                await this.loadMessages();
+            }
+        },
+
+        async loadSessions() {
+            try {
+                const response = await fetch('/api/chat/sessions');
+                this.sessions = await response.json();
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+            }
+        },
+
+        async loadSession(sessionId) {
+            this.sessionId = sessionId;
+            this.messages = [];
+            history.pushState({}, '', `/chat/${sessionId}`);
+            await this.loadMessages();
+        },
+
+        async loadMessages() {
+            if (!this.sessionId) return;
+            try {
+                const response = await fetch(`/api/chat/sessions/${this.sessionId}/messages`);
+                const msgs = await response.json();
+                this.messages = msgs.map(m => ({
+                    id: m.id,
+                    role: m.role,
+                    content: m.content
+                }));
+                this.scrollToBottom();
+            } catch (error) {
+                console.error('Error loading messages:', error);
             }
         },
 
@@ -133,9 +191,25 @@ function chatApp(initialSessionId) {
                 const session = await response.json();
                 this.sessionId = session.id;
                 this.messages = [];
+                this.sessions.unshift(session);
                 history.pushState({}, '', `/chat/${session.id}`);
             } catch (error) {
                 console.error('Error creating session:', error);
+            }
+        },
+
+        async deleteSession(sessionId) {
+            if (!confirm('Eliminare questa sessione?')) return;
+            try {
+                await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
+                this.sessions = this.sessions.filter(s => s.id !== sessionId);
+                if (this.sessionId === sessionId) {
+                    this.sessionId = null;
+                    this.messages = [];
+                    history.pushState({}, '', '/chat');
+                }
+            } catch (error) {
+                console.error('Error deleting session:', error);
             }
         },
 

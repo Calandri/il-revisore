@@ -15,7 +15,7 @@ from ..deps import get_db
 from ..schemas.tasks import TaskCreate, TaskResponse, TaskQueueStatus
 from ...core.repo_manager import RepoManager
 from ...core.task_queue import get_task_queue, QueuedTask
-from ...db.models import Task, Repository
+from ...db.models import Task, Repository, Issue
 from ...tasks import get_task_registry, TaskContext
 from ...exceptions import TaskError
 from ...review.models.progress import ProgressEvent, ProgressEventType
@@ -282,6 +282,27 @@ async def stream_review(
                 # Update task record
                 task.status = "completed"
                 task.result = report.model_dump()
+
+                # Save issues to database for tracking
+                for issue in report.issues:
+                    db_issue = Issue(
+                        task_id=task.id,
+                        repository_id=repository_id,
+                        issue_code=issue.id,  # e.g., BE-CRIT-001
+                        severity=issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity),
+                        category=issue.category.value if hasattr(issue.category, 'value') else str(issue.category),
+                        rule=issue.rule,
+                        file=issue.file,
+                        line=issue.line,
+                        title=issue.title,
+                        description=issue.description,
+                        current_code=issue.current_code,
+                        suggested_fix=issue.suggested_fix,
+                        references=issue.references if issue.references else None,
+                        flagged_by=issue.flagged_by if issue.flagged_by else None,
+                    )
+                    db.add(db_issue)
+
                 db.commit()
 
             except Exception as e:
@@ -302,6 +323,12 @@ async def stream_review(
 
         # Start review task
         review_task = asyncio.create_task(run_review())
+
+        # Emit initial event with task_id for cancellation support
+        yield {
+            "event": "task_started",
+            "data": f'{{"task_id": "{task.id}"}}',
+        }
 
         try:
             # Stream events until done

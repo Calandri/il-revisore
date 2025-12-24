@@ -2,9 +2,21 @@
 
 import re
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+
+class LinkTypeEnum(str, Enum):
+    """Link type for API requests/responses."""
+
+    FRONTEND_FOR = "frontend_for"
+    BACKEND_FOR = "backend_for"
+    SHARED_LIB = "shared_lib"
+    MICROSERVICE = "microservice"
+    MONOREPO_MODULE = "monorepo_module"
+    RELATED = "related"
 
 
 class RepoCreate(BaseModel):
@@ -125,3 +137,83 @@ class RepoStatus(BaseModel):
     last_synced_at: datetime | None = Field(default=None, description="Last sync")
     git: GitStatus = Field(..., description="Git status")
     files: FileStats | None = Field(default=None, description="File statistics")
+
+
+# --- Link Schemas ---
+
+
+class LinkCreate(BaseModel):
+    """Request to create a repository link."""
+
+    target_repo_id: str = Field(
+        ...,
+        min_length=36,
+        max_length=36,
+        description="Target repository UUID to link to",
+    )
+    link_type: LinkTypeEnum = Field(
+        ...,
+        description="Type of relationship between repositories",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional additional metadata for the link",
+    )
+
+
+class LinkResponse(BaseModel):
+    """Repository link response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(..., description="Link UUID")
+    source_repo_id: str = Field(..., description="Source repository UUID")
+    target_repo_id: str = Field(..., description="Target repository UUID")
+    link_type: LinkTypeEnum = Field(..., description="Type of link")
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Additional link metadata",
+    )
+    created_at: datetime = Field(..., description="Creation timestamp")
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v: Any) -> dict[str, Any] | None:
+        """Handle SQLAlchemy metadata_ attribute."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        if hasattr(v, "metadata_"):
+            return getattr(v, "metadata_", None)
+        return None
+
+    @classmethod
+    def model_validate(cls, obj: Any, **kwargs):
+        """Override to handle SQLAlchemy metadata_ attribute."""
+        if hasattr(obj, "metadata_") and not hasattr(obj, "metadata"):
+            data = {
+                "id": obj.id,
+                "source_repo_id": obj.source_repo_id,
+                "target_repo_id": obj.target_repo_id,
+                "link_type": obj.link_type,
+                "metadata": obj.metadata_,
+                "created_at": obj.created_at,
+            }
+            return super().model_validate(data, **kwargs)
+        return super().model_validate(obj, **kwargs)
+
+
+class LinkedRepoSummary(BaseModel):
+    """Summary of a linked repository."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(..., description="Repository UUID")
+    name: str = Field(..., description="Repository name (owner/repo)")
+    repo_type: str | None = Field(default=None, description="Detected repository type")
+    link_id: str = Field(..., description="The link ID")
+    link_type: LinkTypeEnum = Field(..., description="Type of link")
+    direction: Literal["outgoing", "incoming"] = Field(
+        ..., description="Link direction relative to queried repo"
+    )

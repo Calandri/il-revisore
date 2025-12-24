@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .deps import get_db
-from .routes import repos_router, tasks_router, chat_router, status_router, web_router, settings_router
+from .routes import repos_router, tasks_router, chat_router, status_router, web_router, settings_router, issues_router
 from .websocket import ChatWebSocketHandler
 from ..config import get_settings
 from ..db.session import init_db
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(chat_router, prefix="/api")
     app.include_router(status_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
+    app.include_router(issues_router, prefix="/api")
 
     # Web routes (no prefix - these are the HTML pages)
     app.include_router(web_router)

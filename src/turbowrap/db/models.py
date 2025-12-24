@@ -2,12 +2,43 @@
 
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Literal
 
 from sqlalchemy import Column, String, Text, Integer, Float, DateTime, JSON, ForeignKey, Index
 from sqlalchemy.orm import relationship
 
 from .base import Base
+
+
+class LinkType(str, Enum):
+    """Types of repository relationships."""
+
+    FRONTEND_FOR = "frontend_for"  # FE repo linked to its BE
+    BACKEND_FOR = "backend_for"  # BE repo linked to its FE
+    SHARED_LIB = "shared_lib"  # Shared library dependency
+    MICROSERVICE = "microservice"  # Related microservice
+    MONOREPO_MODULE = "monorepo_module"  # Module in same monorepo
+    RELATED = "related"  # Generic relation
+
+
+class IssueSeverity(str, Enum):
+    """Issue severity levels."""
+
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+
+class IssueStatus(str, Enum):
+    """Issue tracking status."""
+
+    OPEN = "open"  # Newly found, needs attention
+    IN_PROGRESS = "in_progress"  # Being worked on
+    RESOLVED = "resolved"  # Fixed
+    IGNORED = "ignored"  # Marked as false positive or won't fix
+    DUPLICATE = "duplicate"  # Duplicate of another issue
 
 
 def generate_uuid() -> str:
@@ -35,9 +66,59 @@ class Repository(Base):
     # Relationships
     tasks = relationship("Task", back_populates="repository", cascade="all, delete-orphan")
     chat_sessions = relationship("ChatSession", back_populates="repository", cascade="all, delete-orphan")
+    issues = relationship("Issue", back_populates="repository", cascade="all, delete-orphan")
+
+    # Link relationships
+    outgoing_links = relationship(
+        "RepositoryLink",
+        foreign_keys="RepositoryLink.source_repo_id",
+        back_populates="source_repo",
+        cascade="all, delete-orphan",
+    )
+    incoming_links = relationship(
+        "RepositoryLink",
+        foreign_keys="RepositoryLink.target_repo_id",
+        back_populates="target_repo",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Repository {self.name}>"
+
+
+class RepositoryLink(Base):
+    """Link between two repositories."""
+
+    __tablename__ = "repository_links"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    source_repo_id = Column(String(36), ForeignKey("repositories.id"), nullable=False)
+    target_repo_id = Column(String(36), ForeignKey("repositories.id"), nullable=False)
+    link_type = Column(String(50), nullable=False)  # Uses LinkType enum values
+    metadata_ = Column("metadata", JSON, nullable=True)  # Additional info
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    source_repo = relationship(
+        "Repository",
+        foreign_keys=[source_repo_id],
+        back_populates="outgoing_links",
+    )
+    target_repo = relationship(
+        "Repository",
+        foreign_keys=[target_repo_id],
+        back_populates="incoming_links",
+    )
+
+    __table_args__ = (
+        Index("idx_repository_links_source", "source_repo_id"),
+        Index("idx_repository_links_target", "target_repo_id"),
+        Index("idx_repository_links_type", "link_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<RepositoryLink {self.source_repo_id[:8]}--{self.link_type}-->{self.target_repo_id[:8]}>"
 
 
 class Task(Base):
@@ -61,6 +142,7 @@ class Task(Base):
     # Relationships
     repository = relationship("Repository", back_populates="tasks")
     agent_runs = relationship("AgentRun", back_populates="task", cascade="all, delete-orphan")
+    issues = relationship("Issue", back_populates="task", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_tasks_repository", "repository_id"),
@@ -156,3 +238,57 @@ class Setting(Base):
 
     def __repr__(self) -> str:
         return f"<Setting {self.key}>"
+
+
+class Issue(Base):
+    """Code review issue found in a repository."""
+
+    __tablename__ = "issues"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False)
+    repository_id = Column(String(36), ForeignKey("repositories.id"), nullable=False)
+
+    # Issue identification
+    issue_code = Column(String(50), nullable=False)  # e.g., BE-CRIT-001
+    severity = Column(String(20), nullable=False)  # CRITICAL, HIGH, MEDIUM, LOW
+    category = Column(String(50), nullable=False)  # security, performance, architecture, etc.
+    rule = Column(String(100), nullable=True)  # Linting rule code if applicable
+
+    # Location
+    file = Column(String(500), nullable=False)
+    line = Column(Integer, nullable=True)
+    end_line = Column(Integer, nullable=True)
+
+    # Content
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=False)
+    current_code = Column(Text, nullable=True)
+    suggested_fix = Column(Text, nullable=True)
+    references = Column(JSON, nullable=True)  # List of URLs/docs
+    flagged_by = Column(JSON, nullable=True)  # List of agents that flagged this
+
+    # Tracking
+    status = Column(String(20), default=IssueStatus.OPEN.value)
+    resolution_note = Column(Text, nullable=True)  # Why it was resolved/ignored
+    resolved_at = Column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    task = relationship("Task", back_populates="issues")
+    repository = relationship("Repository", back_populates="issues")
+
+    __table_args__ = (
+        Index("idx_issues_repository", "repository_id"),
+        Index("idx_issues_task", "task_id"),
+        Index("idx_issues_severity", "severity"),
+        Index("idx_issues_status", "status"),
+        Index("idx_issues_category", "category"),
+        Index("idx_issues_file", "file"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Issue {self.issue_code} ({self.severity})>"

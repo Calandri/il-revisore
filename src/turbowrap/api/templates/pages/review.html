@@ -13,21 +13,39 @@
                 Multi-agent parallel review con streaming
             </p>
         </div>
-        <button @click="startReview()"
-                :disabled="!selectedRepo || isRunning"
-                class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-            <svg x-show="!isRunning" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <svg x-show="isRunning" class="animate-spin w-5 h-5" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-            <span x-text="isRunning ? 'Review in corso...' : 'Avvia Review'"></span>
-        </button>
+        <div class="flex items-center gap-3">
+            <!-- Cancel button (shown during review) -->
+            <button x-show="isRunning && taskId"
+                    @click="cancelReview()"
+                    :disabled="isCancelling"
+                    class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50">
+                <svg x-show="!isCancelling" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                <svg x-show="isCancelling" class="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                <span x-text="isCancelling ? 'Annullando...' : 'Annulla'"></span>
+            </button>
+
+            <!-- Start button -->
+            <button @click="startReview()"
+                    :disabled="!selectedRepo || isRunning"
+                    class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg x-show="!isRunning" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <svg x-show="isRunning" class="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                <span x-text="isRunning ? 'Review in corso...' : 'Avvia Review'"></span>
+            </button>
+        </div>
     </div>
 
     <!-- Configuration Panel -->
@@ -251,11 +269,14 @@ function reviewApp() {
         challengerEnabled: true,
         includeFunctional: true,
         isRunning: false,
+        isCancelling: false,
+        taskId: null,
         reviewStatus: '',
         statusMessage: '',
         agents: {},
         expandedAgent: null,
         eventSource: null,
+        abortController: null,
 
         init() {
             // Initialize empty agent states
@@ -265,13 +286,17 @@ function reviewApp() {
             if (!this.selectedRepo || this.isRunning) return;
 
             this.isRunning = true;
+            this.isCancelling = false;
+            this.taskId = null;
             this.reviewStatus = 'running';
             this.statusMessage = 'Avvio review parallela...';
             this.agents = {};
+            this.abortController = new AbortController();
 
             try {
                 // Connect to SSE endpoint with configuration
                 const response = await fetch(`/api/tasks/${this.selectedRepo}/review/stream`, {
+                    signal: this.abortController.signal,
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -318,6 +343,10 @@ function reviewApp() {
 
         handleEvent(eventType, data) {
             switch (eventType) {
+                case 'task_started':
+                    this.taskId = data.task_id;
+                    break;
+
                 case 'review_started':
                     this.statusMessage = 'Review avviata - agenti in preparazione...';
                     break;
@@ -385,6 +414,44 @@ function reviewApp() {
                     this.reviewStatus = 'error';
                     this.statusMessage = data.message || 'Review fallita';
                     break;
+            }
+        },
+
+        async cancelReview() {
+            if (!this.taskId || this.isCancelling) return;
+
+            this.isCancelling = true;
+
+            try {
+                // Abort the fetch request
+                if (this.abortController) {
+                    this.abortController.abort();
+                }
+
+                // Call cancel API
+                const response = await fetch(`/api/tasks/${this.taskId}/cancel`, {
+                    method: 'POST',
+                });
+
+                if (response.ok) {
+                    this.reviewStatus = 'cancelled';
+                    this.statusMessage = 'Review annullata';
+                    // Mark all running agents as cancelled
+                    Object.keys(this.agents).forEach(name => {
+                        if (this.agents[name].status === 'running') {
+                            this.agents[name].status = 'error';
+                            this.agents[name].content += '\n\n⚠️ Annullato dall\'utente';
+                        }
+                    });
+                } else {
+                    const error = await response.json();
+                    console.error('Cancel error:', error);
+                }
+            } catch (error) {
+                console.error('Cancel failed:', error);
+            } finally {
+                this.isRunning = false;
+                this.isCancelling = false;
             }
         },
 

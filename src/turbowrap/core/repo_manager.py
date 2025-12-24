@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..db.models import Repository, Setting
+from ..db.models import Repository, RepositoryLink, LinkType, Setting
 from ..utils.git_utils import (
     clone_repo,
     pull_repo,
@@ -263,3 +263,169 @@ class RepoManager:
             },
             "files": repo.metadata_,
         }
+
+    # --- Repository Link Methods ---
+
+    def link_repositories(
+        self,
+        source_id: str,
+        target_id: str,
+        link_type: str,
+        metadata: dict | None = None,
+    ) -> RepositoryLink:
+        """Create a link between two repositories.
+
+        Args:
+            source_id: Source repository UUID.
+            target_id: Target repository UUID.
+            link_type: Type of link (from LinkType enum values).
+            metadata: Optional additional metadata.
+
+        Returns:
+            Created RepositoryLink record.
+
+        Raises:
+            RepositoryError: If source or target not found, or link already exists.
+        """
+        # Validate repositories exist
+        source = self.get(source_id)
+        if not source:
+            raise RepositoryError(f"Source repository not found: {source_id}")
+
+        target = self.get(target_id)
+        if not target:
+            raise RepositoryError(f"Target repository not found: {target_id}")
+
+        # Prevent self-linking
+        if source_id == target_id:
+            raise RepositoryError("Cannot link a repository to itself")
+
+        # Validate link type
+        try:
+            LinkType(link_type)
+        except ValueError:
+            valid_types = [t.value for t in LinkType]
+            raise RepositoryError(
+                f"Invalid link type: {link_type}. Valid types: {valid_types}"
+            )
+
+        # Check for existing link (same type)
+        existing = self.db.query(RepositoryLink).filter(
+            RepositoryLink.source_repo_id == source_id,
+            RepositoryLink.target_repo_id == target_id,
+            RepositoryLink.link_type == link_type,
+        ).first()
+
+        if existing:
+            raise RepositoryError(
+                f"Link already exists: {source.name} --{link_type}--> {target.name}"
+            )
+
+        # Create link
+        link = RepositoryLink(
+            source_repo_id=source_id,
+            target_repo_id=target_id,
+            link_type=link_type,
+            metadata_=metadata,
+        )
+
+        self.db.add(link)
+        self.db.commit()
+        self.db.refresh(link)
+
+        return link
+
+    def unlink_repositories(self, link_id: str) -> None:
+        """Remove a repository link.
+
+        Args:
+            link_id: Link UUID to remove.
+
+        Raises:
+            RepositoryError: If link not found.
+        """
+        link = self.db.query(RepositoryLink).filter(
+            RepositoryLink.id == link_id
+        ).first()
+
+        if not link:
+            raise RepositoryError(f"Link not found: {link_id}")
+
+        self.db.delete(link)
+        self.db.commit()
+
+    def get_linked_repos(
+        self,
+        repo_id: str,
+        link_type: str | None = None,
+        direction: str | None = None,
+    ) -> list[dict]:
+        """Get all repositories linked to a repository.
+
+        Args:
+            repo_id: Repository UUID.
+            link_type: Optional filter by link type.
+            direction: Optional filter: 'outgoing', 'incoming', or None (both).
+
+        Returns:
+            List of dicts with repo info, link details, and direction.
+
+        Raises:
+            RepositoryError: If repository not found.
+        """
+        repo = self.get(repo_id)
+        if not repo:
+            raise RepositoryError(f"Repository not found: {repo_id}")
+
+        linked_repos = []
+
+        # Outgoing links (this repo is the source)
+        if direction is None or direction == "outgoing":
+            query = self.db.query(RepositoryLink).filter(
+                RepositoryLink.source_repo_id == repo_id
+            )
+            if link_type:
+                query = query.filter(RepositoryLink.link_type == link_type)
+
+            for link in query.all():
+                linked_repos.append({
+                    "id": link.target_repo.id,
+                    "name": link.target_repo.name,
+                    "repo_type": link.target_repo.repo_type,
+                    "link_id": link.id,
+                    "link_type": link.link_type,
+                    "direction": "outgoing",
+                })
+
+        # Incoming links (this repo is the target)
+        if direction is None or direction == "incoming":
+            query = self.db.query(RepositoryLink).filter(
+                RepositoryLink.target_repo_id == repo_id
+            )
+            if link_type:
+                query = query.filter(RepositoryLink.link_type == link_type)
+
+            for link in query.all():
+                linked_repos.append({
+                    "id": link.source_repo.id,
+                    "name": link.source_repo.name,
+                    "repo_type": link.source_repo.repo_type,
+                    "link_id": link.id,
+                    "link_type": link.link_type,
+                    "direction": "incoming",
+                })
+
+        return linked_repos
+
+    def get_link(self, link_id: str) -> RepositoryLink | None:
+        """Get a specific link by ID.
+
+        Args:
+            link_id: Link UUID.
+
+        Returns:
+            RepositoryLink or None if not found.
+        """
+        return self.db.query(RepositoryLink).filter(
+            RepositoryLink.id == link_id
+        ).first()

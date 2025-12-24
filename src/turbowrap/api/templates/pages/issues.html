@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+
+{% block title %}Issues - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="issuesApp()">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold">Issues</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Problemi trovati nelle code review</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button @click="refresh()"
+                    :disabled="loading"
+                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Aggiorna
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+            <div class="text-sm text-gray-500">Totali</div>
+            <div class="text-2xl font-bold" x-text="summary.total || 0"></div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-red-200 dark:border-red-800">
+            <div class="text-sm text-gray-500">Critical</div>
+            <div class="text-2xl font-bold text-red-600" x-text="summary.by_severity?.CRITICAL || 0"></div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-orange-200 dark:border-orange-800">
+            <div class="text-sm text-gray-500">High</div>
+            <div class="text-2xl font-bold text-orange-500" x-text="summary.by_severity?.HIGH || 0"></div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-yellow-200 dark:border-yellow-800">
+            <div class="text-sm text-gray-500">Medium</div>
+            <div class="text-2xl font-bold text-yellow-500" x-text="summary.by_severity?.MEDIUM || 0"></div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-blue-200 dark:border-blue-800">
+            <div class="text-sm text-gray-500">Low</div>
+            <div class="text-2xl font-bold text-blue-500" x-text="summary.by_severity?.LOW || 0"></div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+        <div class="flex flex-wrap gap-4">
+            <!-- Repository filter -->
+            <div>
+                <label class="block text-sm text-gray-500 mb-1">Repository</label>
+                <select x-model="filters.repository_id" @change="refresh()"
+                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="">Tutti</option>
+                    {% for repo in repos %}
+                    <option value="{{ repo.id }}">{{ repo.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Severity filter -->
+            <div>
+                <label class="block text-sm text-gray-500 mb-1">Severity</label>
+                <select x-model="filters.severity" @change="refresh()"
+                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="">Tutti</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+            </div>
+
+            <!-- Status filter -->
+            <div>
+                <label class="block text-sm text-gray-500 mb-1">Status</label>
+                <select x-model="filters.status" @change="refresh()"
+                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="">Tutti</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="ignored">Ignored</option>
+                </select>
+            </div>
+
+            <!-- Category filter -->
+            <div>
+                <label class="block text-sm text-gray-500 mb-1">Category</label>
+                <select x-model="filters.category" @change="refresh()"
+                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="">Tutti</option>
+                    <option value="security">Security</option>
+                    <option value="performance">Performance</option>
+                    <option value="architecture">Architecture</option>
+                    <option value="code_quality">Code Quality</option>
+                    <option value="maintainability">Maintainability</option>
+                    <option value="testing">Testing</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Issues List -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+            <h2 class="font-semibold">Lista Issues</h2>
+            <span class="text-sm text-gray-500" x-text="issues.length + ' risultati'"></span>
+        </div>
+
+        <div x-show="loading" class="p-8 text-center">
+            <svg class="animate-spin w-8 h-8 mx-auto text-primary" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+        </div>
+
+        <div x-show="!loading && issues.length === 0" class="p-8 text-center text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p>Nessuna issue trovata</p>
+        </div>
+
+        <div x-show="!loading && issues.length > 0" class="divide-y dark:divide-gray-700">
+            <template x-for="issue in issues" :key="issue.id">
+                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex items-start gap-4 flex-1">
+                            <!-- Severity icon -->
+                            <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                                 :class="{
+                                     'bg-red-100 dark:bg-red-900/30': issue.severity === 'CRITICAL',
+                                     'bg-orange-100 dark:bg-orange-900/30': issue.severity === 'HIGH',
+                                     'bg-yellow-100 dark:bg-yellow-900/30': issue.severity === 'MEDIUM',
+                                     'bg-blue-100 dark:bg-blue-900/30': issue.severity === 'LOW'
+                                 }">
+                                <svg class="w-5 h-5"
+                                     :class="{
+                                         'text-red-600 dark:text-red-400': issue.severity === 'CRITICAL',
+                                         'text-orange-600 dark:text-orange-400': issue.severity === 'HIGH',
+                                         'text-yellow-600 dark:text-yellow-400': issue.severity === 'MEDIUM',
+                                         'text-blue-600 dark:text-blue-400': issue.severity === 'LOW'
+                                     }"
+                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                            </div>
+
+                            <!-- Content -->
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-mono text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded"
+                                          x-text="issue.issue_code"></span>
+                                    <span class="px-2 py-0.5 text-xs rounded-full"
+                                          :class="{
+                                              'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': issue.severity === 'CRITICAL',
+                                              'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': issue.severity === 'HIGH',
+                                              'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.severity === 'MEDIUM',
+                                              'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': issue.severity === 'LOW'
+                                          }"
+                                          x-text="issue.severity"></span>
+                                    <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded"
+                                          x-text="issue.category"></span>
+                                </div>
+                                <h3 class="font-medium mt-1" x-text="issue.title"></h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2" x-text="issue.description"></p>
+                                <div class="mt-2 text-xs text-gray-400 flex gap-4">
+                                    <span x-text="issue.file + (issue.line ? ':' + issue.line : '')"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex items-center gap-2 shrink-0">
+                            <!-- Status badge -->
+                            <span class="px-2 py-1 text-xs rounded-full"
+                                  :class="{
+                                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': issue.status === 'resolved',
+                                      'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.status === 'in_progress',
+                                      'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300': issue.status === 'open',
+                                      'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': issue.status === 'ignored'
+                                  }"
+                                  x-text="issue.status">
+                            </span>
+
+                            <!-- Quick actions -->
+                            <div class="flex gap-1" x-show="issue.status === 'open'">
+                                <button @click="resolveIssue(issue.id)"
+                                        class="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                                        title="Risolvi">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                </button>
+                                <button @click="ignoreIssue(issue.id)"
+                                        class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                        title="Ignora">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <button x-show="issue.status === 'resolved' || issue.status === 'ignored'"
+                                    @click="reopenIssue(issue.id)"
+                                    class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                    title="Riapri">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                            </button>
+
+                            <!-- View details -->
+                            <button @click="viewIssue(issue)"
+                                    class="p-2 text-gray-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                                    title="Dettagli">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Issue Detail Modal -->
+    <div x-show="selectedIssue"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="selectedIssue = null">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden">
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-sm px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded"
+                          x-text="selectedIssue?.issue_code"></span>
+                    <span class="px-2 py-0.5 text-xs rounded-full"
+                          :class="{
+                              'bg-red-100 text-red-700': selectedIssue?.severity === 'CRITICAL',
+                              'bg-orange-100 text-orange-700': selectedIssue?.severity === 'HIGH',
+                              'bg-yellow-100 text-yellow-700': selectedIssue?.severity === 'MEDIUM',
+                              'bg-blue-100 text-blue-700': selectedIssue?.severity === 'LOW'
+                          }"
+                          x-text="selectedIssue?.severity"></span>
+                </div>
+                <button @click="selectedIssue = null" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[70vh]">
+                <template x-if="selectedIssue">
+                    <div class="space-y-4">
+                        <h2 class="text-xl font-semibold" x-text="selectedIssue.title"></h2>
+
+                        <div class="flex gap-2 flex-wrap">
+                            <span class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded" x-text="selectedIssue.category"></span>
+                            <span class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded" x-text="'Status: ' + selectedIssue.status"></span>
+                            <span x-show="selectedIssue.rule" class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded font-mono" x-text="selectedIssue.rule"></span>
+                        </div>
+
+                        <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                            <div class="text-sm text-gray-500">File</div>
+                            <div class="font-mono text-sm" x-text="selectedIssue.file + (selectedIssue.line ? ':' + selectedIssue.line : '')"></div>
+                        </div>
+
+                        <div>
+                            <h4 class="font-medium mb-2">Descrizione</h4>
+                            <p class="text-gray-600 dark:text-gray-300 whitespace-pre-wrap" x-text="selectedIssue.description"></p>
+                        </div>
+
+                        <div x-show="selectedIssue.current_code">
+                            <h4 class="font-medium mb-2">Codice Attuale</h4>
+                            <pre class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-xs overflow-x-auto font-mono"
+                                 x-text="selectedIssue.current_code"></pre>
+                        </div>
+
+                        <div x-show="selectedIssue.suggested_fix">
+                            <h4 class="font-medium mb-2">Fix Suggerito</h4>
+                            <pre class="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg text-xs overflow-x-auto font-mono"
+                                 x-text="selectedIssue.suggested_fix"></pre>
+                        </div>
+
+                        <div x-show="selectedIssue.references?.length > 0">
+                            <h4 class="font-medium mb-2">Riferimenti</h4>
+                            <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300">
+                                <template x-for="ref in selectedIssue.references" :key="ref">
+                                    <li><a :href="ref" target="_blank" class="text-primary hover:underline" x-text="ref"></a></li>
+                                </template>
+                            </ul>
+                        </div>
+
+                        <div x-show="selectedIssue.resolution_note">
+                            <h4 class="font-medium mb-2">Nota Risoluzione</h4>
+                            <p class="text-gray-600 dark:text-gray-300" x-text="selectedIssue.resolution_note"></p>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex gap-2 pt-4 border-t dark:border-gray-700">
+                            <button x-show="selectedIssue.status === 'open'"
+                                    @click="resolveIssue(selectedIssue.id); selectedIssue = null"
+                                    class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                                Risolvi
+                            </button>
+                            <button x-show="selectedIssue.status === 'open'"
+                                    @click="ignoreIssue(selectedIssue.id); selectedIssue = null"
+                                    class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                                Ignora
+                            </button>
+                            <button x-show="selectedIssue.status === 'resolved' || selectedIssue.status === 'ignored'"
+                                    @click="reopenIssue(selectedIssue.id); selectedIssue = null"
+                                    class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors">
+                                Riapri
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function issuesApp() {
+    return {
+        loading: true,
+        issues: [],
+        summary: {},
+        selectedIssue: null,
+        filters: {
+            repository_id: '',
+            severity: '',
+            status: 'open',
+            category: ''
+        },
+
+        async init() {
+            await this.refresh();
+        },
+
+        async refresh() {
+            this.loading = true;
+            try {
+                // Build query params
+                const params = new URLSearchParams();
+                if (this.filters.repository_id) params.set('repository_id', this.filters.repository_id);
+                if (this.filters.severity) params.set('severity', this.filters.severity);
+                if (this.filters.status) params.set('status', this.filters.status);
+                if (this.filters.category) params.set('category', this.filters.category);
+
+                const [issuesRes, summaryRes] = await Promise.all([
+                    fetch('/api/issues?' + params.toString()),
+                    fetch('/api/issues/summary?' + params.toString())
+                ]);
+                this.issues = await issuesRes.json();
+                this.summary = await summaryRes.json();
+            } catch (error) {
+                console.error('Error loading issues:', error);
+            }
+            this.loading = false;
+        },
+
+        async resolveIssue(issueId) {
+            try {
+                await fetch(`/api/issues/${issueId}/resolve`, { method: 'POST' });
+                await this.refresh();
+            } catch (error) {
+                console.error('Error resolving issue:', error);
+            }
+        },
+
+        async ignoreIssue(issueId) {
+            try {
+                await fetch(`/api/issues/${issueId}/ignore`, { method: 'POST' });
+                await this.refresh();
+            } catch (error) {
+                console.error('Error ignoring issue:', error);
+            }
+        },
+
+        async reopenIssue(issueId) {
+            try {
+                await fetch(`/api/issues/${issueId}/reopen`, { method: 'POST' });
+                await this.refresh();
+            } catch (error) {
+                console.error('Error reopening issue:', error);
+            }
+        },
+
+        viewIssue(issue) {
+            this.selectedIssue = issue;
+        }
+    }
+}
+</script>
+{% endblock %}

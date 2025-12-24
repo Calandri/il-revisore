@@ -125,6 +125,34 @@ async def review_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/tasks", response_class=HTMLResponse)
+async def tasks_page(request: Request):
+    """Task history page."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/tasks.html",
+        {
+            "request": request,
+            "active_page": "tasks",
+        }
+    )
+
+
+@router.get("/issues", response_class=HTMLResponse)
+async def issues_page(request: Request, db: Session = Depends(get_db)):
+    """Issues tracking page."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/issues.html",
+        {
+            "request": request,
+            "repos": repos,
+            "active_page": "issues",
+        }
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     """Settings page for configuring TurboWrap."""

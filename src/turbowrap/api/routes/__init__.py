@@ -6,6 +6,7 @@ from .chat import router as chat_router
 from .status import router as status_router
 from .web import router as web_router
 from .settings import router as settings_router
+from .issues import router as issues_router
 
 __all__ = [
     "repos_router",
@@ -14,4 +15,5 @@ __all__ = [
     "status_router",
     "web_router",
     "settings_router",
+    "issues_router",
 ]
