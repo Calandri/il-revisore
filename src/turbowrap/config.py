@@ -51,7 +51,7 @@ class AgentSettings(BaseSettings):
         description="Gemini Pro model (complex reasoning)",
     )
     claude_model: str = Field(
-        default="claude-opus-4-20250514",
+        default="claude-opus-4-5-20251101",
         min_length=1,
         description="Claude model name",
     )

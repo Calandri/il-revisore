@@ -426,6 +426,8 @@ async def start_fix(
                 )
 
                 # Update issue statuses in database
+                completed_count = 0
+                failed_count = 0
                 for issue_result in result.results:
                     db_issue = db.query(Issue).filter(Issue.id == issue_result.issue_id).first()
                     if db_issue:
@@ -437,12 +439,27 @@ async def start_fix(
                                 if issue_result.commit_sha
                                 else "Fixed"
                             )
+                            completed_count += 1
                         elif issue_result.status.value == "failed":
                             db_issue.resolution_note = f"Fix failed: {issue_result.error}"
+                            failed_count += 1
                 db.commit()
+
+                # Mark idempotency entry as completed
+                _idempotency_store.update_status(
+                    idempotency_key,
+                    "completed",
+                    {
+                        "completed": completed_count,
+                        "failed": failed_count,
+                        "total": len(result.results),
+                    },
+                )
 
             except Exception as e:
                 logger.exception("Fix session error")
+                # Mark idempotency entry as failed
+                _idempotency_store.update_status(idempotency_key, "failed")
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,

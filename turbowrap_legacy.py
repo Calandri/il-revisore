@@ -148,7 +148,7 @@ class GeminiProClient(GeminiClient):
 class ClaudeClient:
     """Client for Anthropic Claude API (Opus model for deep review)."""
 
-    def __init__(self, model: str = "claude-opus-4-20250514"):
+    def __init__(self, model: str = "claude-opus-4-5-20251101"):
         import anthropic
 
         api_key = os.environ.get("ANTHROPIC_API_KEY")
