@@ -15,58 +15,55 @@
 ### __init__.py
 *18 lines, 108 tokens*
 
-- **Class**: `BaseAgent` - Classe base per definire agenti LLM personalizzati.
-- **Class**: `AgentResponse` - Modello per le risposte generate dagli agenti.
-- **Class**: `GeminiClient` - Client per l'integrazione con i modelli Google Gemini.
-- **Class**: `GeminiProClient` - Client specializzato per il modello Gemini Pro.
-- **Class**: `ClaudeClient` - Client per l'integrazione con i modelli Anthropic Claude.
-- **Function**: `load_prompt` - Carica un prompt specifico per l'utilizzo.
-- **Function**: `get_available_prompts` - Elenca tutti i prompt attualmente disponibili.
-- **Function**: `reload_prompts` - Aggiorna e ricarica i prompt dal sistema.
-- **Constant**: `__all__` - Lista dei componenti esportati pubblicamente dal modulo.
+- **Class**: `BaseAgent` - Abstract base class for defining LLM interaction agents.
+- **Class**: `AgentResponse` - Data structure for holding agent execution results.
+- **Class**: `GeminiClient` - Client interface for Google Gemini API interactions.
+- **Class**: `GeminiProClient` - Specialized client for Gemini Pro model variations.
+- **Class**: `ClaudeClient` - Client interface for Anthropic Claude API interactions.
+- **Function**: `load_prompt` - Retrieves a specific prompt template from storage.
+- **Function**: `get_available_prompts` - Returns a list of all accessible prompt templates.
+- **Function**: `reload_prompts` - Refreshes the prompt template cache from source.
+- **Constant**: `__all__` - Defines the public interface exported by this module.
 
 ### base.py
 *75 lines, 447 tokens*
 
-- **Class**: `AgentResponse` - Rappresenta la risposta LLM con metadati dei token.
-- **Function**: `total_tokens` - Calcola la somma totale dei token consumati.
-- **Class**: `BaseAgent` - Interfaccia base astratta per i vari client LLM.
-- **Function**: `generate` - Genera testo partendo da prompt e istruzioni.
-- **Function**: `generate_with_metadata` - Restituisce risposta testuale e metadati dei token.
-- **Decorator**: `abstractmethod` - Vincola l'implementazione del metodo nelle classi derivate.
-- **Decorator**: `computed_field` - Trasforma una proprietà in un campo dati calcolato.
-- **Function**: `name` - Identificatore univoco del client LLM.
-- **Function**: `model` - Restituisce l'identificativo del modello utilizzato.
-- **Function**: `agent_type` - Specifica la tipologia di LLM utilizzata.
+- **Class**: `AgentResponse` - Data model for LLM responses with token metadata.
+- **Class**: `BaseAgent` - Abstract base class defining the standard LLM client interface.
+- **Function**: `total_tokens` - Calculates the sum of input and output tokens.
+- **Function**: `name` - Abstract property for the client's name identifier.
+- **Function**: `model` - Abstract property identifying the specific LLM used.
+- **Function**: `agent_type` - Abstract property identifying the LLM provider type.
+- **Function**: `generate` - Abstract method to generate text from a prompt.
+- **Function**: `generate_with_metadata` - Abstract method returning text content and token metadata.
+- **Decorator**: `computed_field` - Includes property results in Pydantic model outputs.
+- **Decorator**: `abstractmethod` - Marks methods that must be implemented by subclasses.
 
 ### claude.py
 *158 lines, 1,076 tokens*
 
-- **Constant**: `DEFAULT_SYSTEM_PROMPT` - Prompt predefinito per la revisione senior del codice.
-- **Class**: `ClaudeClient` - Client per interagire con il modello Claude Opus.
-- **Function**: `__init__` - Inizializza il client validando API key e parametri.
-- **Function**: `generate` - Genera una risposta testuale basata sul prompt fornito.
-- **Function**: `generate_with_metadata` - Restituisce testo e metadati sull'utilizzo dei token.
-- **Function**: `stream` - Gestisce lo streaming sincrono dei token della risposta.
-- **Function**: `astream` - Gestisce lo streaming asincrono dei token della risposta.
+- **Constant**: `DEFAULT_SYSTEM_PROMPT` - Default instructions for senior code reviewer agent.
+- **Class**: `ClaudeClient` - Anthropic Claude API client for deep code analysis.
+- **Function**: `generate` - Generates text content synchronously from prompt input.
+- **Function**: `generate_with_metadata` - Generates response content with token usage metadata.
+- **Function**: `stream` - Synchronously streams response chunks from the API.
+- **Function**: `astream` - Asynchronously streams response chunks from the API.
 
 ### gemini.py
 *128 lines, 858 tokens*
 
-- **Class**: `GeminiClient` - Client per l'integrazione con l'API Google Gemini Flash.
-- **Function**: `name` - Restituisce il nome identificativo dell'agente.
-- **Function**: `model` - Restituisce il nome del modello Gemini configurato.
-- **Function**: `agent_type` - Specifica la tipologia di agente come "gemini".
-- **Function**: `generate` - Genera una risposta testuale basata su un prompt.
-- **Function**: `generate_with_metadata` - Genera testo includendo informazioni sull'utilizzo dei token.
-- **Class**: `GeminiProClient` - Client specializzato per compiti di ragionamento complesso.
+- **Class**: `GeminiClient` - Client for Google Gemini Flash API for fast analysis.
+- **Function**: `__init__` - Initializes Gemini client and validates API credentials.
+- **Function**: `generate` - Generates text response using the Gemini model.
+- **Function**: `generate_with_metadata` - Generates response while extracting token usage statistics.
+- **Class**: `GeminiProClient` - Specialized client for Gemini Pro complex reasoning tasks.
 
 ### prompts.py
 *53 lines, 271 tokens*
 
-- **Function**: `load_prompt` - Carica un file prompt markdown dalla directory configurata.
-- **Function**: `get_available_prompts` - Restituisce i nomi di tutti i prompt disponibili.
-- **Function**: `reload_prompts` - Svuota la cache interna per ricaricare i prompt.
+- **Function**: `load_prompt` - Loads prompt content from the configured agents directory.
+- **Function**: `get_available_prompts` - Lists all available markdown prompt files in agents directory.
+- **Function**: `reload_prompts` - Clears the cache to reload prompts from disk.
 
 ---
-*Generated by TurboWrap - 2025-12-24 14:48*
+*Generated by TurboWrap - 2025-12-24 15:29*

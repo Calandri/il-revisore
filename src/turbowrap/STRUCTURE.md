@@ -2,67 +2,80 @@
 
 ## Files
 
-**Directory Stats:** 4 files, 644 lines, 4,347 tokens
+**Directory Stats:** 4 files, 644 lines, 4,346 tokens
 
 | File | Lines | Tokens |
 |------|------:|-------:|
 | `__init__.py` | 27 | 158 |
 | `cli.py` | 407 | 2,769 |
-| `config.py` | 158 | 1,238 |
+| `config.py` | 158 | 1,237 |
 | `exceptions.py` | 52 | 182 |
 
 ### __init__.py
 *27 lines, 158 tokens*
 
-- **Constant**: `__version__` - Versione attuale del pacchetto TurboWrap.
-- **Constant**: `__author__` - Nome dell'autore del progetto.
-- **Class**: `GeminiClient` - Client per interazione con modelli Google Gemini.
-- **Class**: `GeminiProClient` - Client specifico per la versione Gemini Pro.
-- **Class**: `ClaudeClient` - Client per interazione con modelli Anthropic Claude.
-- **Class**: `BaseAgent` - Classe base per la creazione di agenti AI.
-- **Class**: `AgentResponse` - Modello per le risposte generate dagli agenti.
-- **Class**: `Orchestrator` - Gestore principale del flusso di lavoro e agenti.
-- **Class**: `ChallengerLoop` - Sistema di revisione e validazione dei risultati.
-- **Class**: `ReportGenerator` - Generatore di report basati sull'analisi effettuata.
+- **Constant**: `__version__` - Package version identifier string.
+- **Constant**: `__author__` - Name of the package creator.
+- **Class**: `GeminiClient` - Client for Google Gemini API interactions.
+- **Class**: `GeminiProClient` - Client for Gemini Pro model API.
+- **Class**: `ClaudeClient` - Client for Anthropic Claude API interactions.
+- **Class**: `BaseAgent` - Fundamental class for AI agent implementation.
+- **Class**: `AgentResponse` - Data model for agent execution results.
+- **Class**: `Orchestrator` - Coordinates high-level review system workflows.
+- **Class**: `ChallengerLoop` - Manages iterative refinement and verification processes.
+- **Class**: `ReportGenerator` - Component for generating final analysis reports.
 
 ### cli.py
 *407 lines, 2,769 tokens*
 
-- **Constant**: `app` - Applicazione CLI principale per l'orchestratore TurboWrap.
-- **Constant**: `repo_app` - Sotto-applicazione per la gestione specifica dei repository.
-- **Function**: `repo_clone` - Clona un repository GitHub e lo registra nel database.
-- **Function**: `repo_list` - Visualizza una tabella dei repository monitorati dal sistema.
-- **Function**: `repo_sync` - Sincronizza i file locali di un repository specifico.
-- **Function**: `repo_remove` - Elimina un repository e opzionalmente i suoi file locali.
-- **Function**: `run_review` - Avvia l'attività di revisione del codice tramite AI.
-- **Decorator**: `repo_app.command` - Registra una funzione come comando per la gestione repository.
-- **Decorator**: `app.command` - Definisce un comando principale nell'interfaccia Typer.
-- **Constant**: `console` - Istanza per la gestione dell'output formattato nel terminale.
+- **Constant**: `app` - Main Typer CLI application instance
+- **Constant**: `console` - Rich console instance for terminal formatting
+- **Constant**: `repo_app` - Typer sub-command application for repository management
+- **Decorator**: `@repo_app.command` - Marks functions as repository-specific CLI sub-commands
+- **Function**: `repo_clone` - Clones GitHub repositories and saves metadata to database
+- **Function**: `repo_list` - Displays a table of all managed repositories
+- **Function**: `repo_sync` - Pulls updates for a specific repository by ID
+- **Function**: `repo_remove` - Deletes repository records and optionally local files
+- **Decorator**: `@app.command` - Marks functions as top-level CLI commands
+- **Function**: `run_review` - Orchestrates AI-powered code review on a repository
 
 ### config.py
-*158 lines, 1,238 tokens*
+*158 lines, 1,237 tokens*
 
-- **Class**: `DatabaseSettings` - Gestisce configurazione e validazione dell'URL del database.
-- **Class**: `AgentSettings` - Configura modelli AI e chiavi API di Google e Claude.
-- **Class**: `TaskSettings` - Definisce parametri per l'esecuzione parallela dei task.
-- **Class**: `ServerSettings` - Configura host, porta e impostazioni CORS del server.
-- **Class**: `Settings` - Aggregatore principale di tutte le configurazioni di sistema.
-- **Function**: `get_settings` - Ottiene le impostazioni globali caricate in cache.
-- **Function**: `reset_settings` - Pulisce la cache delle impostazioni globali.
+- **Class**: `DatabaseSettings` - Configuration for SQLite or PostgreSQL database connections.
+- **Class**: `AgentSettings` - AI model settings for Gemini and Claude providers.
+- **Class**: `TaskSettings` - Parameters for parallel worker execution and file limits.
+- **Class**: `ServerSettings` - Configuration for API host, port, and CORS settings.
+- **Class**: `Settings` - Primary configuration class aggregating all settings categories.
+- **Function**: `get_settings` - Retrieves and caches the global application settings.
+- **Function**: `reset_settings` - Resets the cached settings for testing purposes.
+- **Decorator**: `lru_cache` - Caches the results of the settings singleton function.
+- **Decorator**: `field_validator` - Validates specific field formats within Pydantic models.
 
 ### exceptions.py
 *52 lines, 182 tokens*
 
-- **Class**: `TurboWrapError` - Eccezione base per il sistema TurboWrap.
-- **Class**: `ConfigError` - Errore durante la gestione della configurazione.
-- **Class**: `RepositoryError` - Errore generico per operazioni su repository Git.
-- **Class**: `CloneError` - Errore specifico nel clonare un repository.
-- **Class**: `SyncError` - Errore durante la sincronizzazione dei dati.
-- **Class**: `TaskError` - Errore nell'esecuzione di un task specifico.
-- **Class**: `AgentError` - Errore nella comunicazione con agenti esterni.
-- **Class**: `GeminiError` - Errore relativo all'integrazione con Google Gemini.
-- **Class**: `ClaudeError` - Errore relativo all'integrazione con Anthropic Claude.
-- **Class**: `DatabaseError` - Errore durante l'interazione con il database.
+- **Class**: `TurboWrapError` - Base exception for all TurboWrap errors.
+- **Class**: `ConfigError` - Error raised for configuration issues.
+- **Class**: `RepositoryError` - Base class for repository operation errors.
+- **Class**: `CloneError` - Exception for failed repository cloning operations.
+- **Class**: `SyncError` - Exception for failed repository synchronization.
+- **Class**: `TaskError` - Error raised during task execution.
+- **Class**: `AgentError` - Base class for agent communication failures.
+- **Class**: `GeminiError` - Specific error for Gemini API communication issues.
+- **Class**: `ClaudeError` - Specific error for Claude API communication issues.
+- **Class**: `DatabaseError` - Error raised during database operations.
+
+## Subdirectories
+
+- [api/](api/STRUCTURE.md) - 3 files
+- [core/](core/STRUCTURE.md) - 4 files
+- [db/](db/STRUCTURE.md) - 4 files
+- [llm/](llm/STRUCTURE.md) - 5 files
+- [review/](review/STRUCTURE.md) - 4 files
+- [tasks/](tasks/STRUCTURE.md) - 5 files
+- [tools/](tools/STRUCTURE.md) - 3 files
+- [utils/](utils/STRUCTURE.md) - 3 files
 
 ---
-*Generated by TurboWrap - 2025-12-24 14:48*
+*Generated by TurboWrap - 2025-12-24 15:29*

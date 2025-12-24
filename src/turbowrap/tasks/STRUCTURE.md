@@ -15,28 +15,28 @@
 ### __init__.py
 *17 lines, 87 tokens*
 
-- **Class**: `BaseTask` - Classe base per la definizione dei task.
-- **Class**: `TaskContext` - Contesto di esecuzione per i task.
-- **Class**: `TaskResult` - Rappresenta il risultato di un task eseguito.
-- **Class**: `ReviewTask` - Task dedicato alla revisione delle attività.
-- **Class**: `DevelopTask` - Task dedicato allo sviluppo di nuove funzionalità.
-- **Class**: `TaskRegistry` - Registro per organizzare e recuperare i task.
-- **Function**: `get_task_registry` - Funzione per recuperare il registro dei task.
-- **Constant**: `__all__` - Elenco dei componenti pubblici esportati dal modulo.
+- **Class**: `BaseTask` - Base class for all task implementations.
+- **Class**: `TaskContext` - Context and state management for task execution.
+- **Class**: `TaskResult` - Data structure for task execution results.
+- **Class**: `ReviewTask` - Task implementation for performing reviews.
+- **Class**: `DevelopTask` - Task implementation for development activities.
+- **Class**: `TaskRegistry` - Manager for registering and accessing task definitions.
+- **Function**: `get_task_registry` - Helper to retrieve the global task registry.
+- **Constant**: `__all__` - Specifies the public exports of the module.
 
 ### base.py
 *119 lines, 783 tokens*
 
-- **Class**: `TaskConfig` - Configurazione base per i task con parametri di repository.
-- **Class**: `ReviewTaskConfig` - Configurazione specifica per attività di revisione del codice.
-- **Class**: `DevelopTaskConfig` - Configurazione per compiti di sviluppo e modifica file.
-- **Class**: `TaskContext` - Gestisce il contesto di esecuzione e la sessione DB.
-- **Class**: `TaskResult` - Contiene i risultati e lo stato finale dell'esecuzione.
-- **Class**: `BaseTask` - Classe base astratta per implementare l'interfaccia dei task.
-- **Function**: `validate_repo_path` - Verifica l'esistenza del percorso del repository locale.
-- **Function**: `execute` - Metodo astratto per l'esecuzione della logica del task.
-- **Function**: `validate_config` - Valida la configurazione in ingresso per il task.
-- **Decorator**: `field_validator` - Valida i singoli campi dei modelli Pydantic.
+- **Class**: `TaskConfig` - Base model for shared task configuration parameters.
+- **Class**: `ReviewTaskConfig` - Specific configuration for code review task operations.
+- **Class**: `DevelopTaskConfig` - Specific configuration for development and instruction tasks.
+- **Class**: `TaskContext` - Encapsulates database sessions and repository paths for execution.
+- **Class**: `TaskResult` - Captures status, data, and timing of finished tasks.
+- **Class**: `BaseTask` - Abstract base defining the interface for all tasks.
+- **Decorator**: `field_validator` - Pydantic decorator for validating specific class attributes.
+- **Decorator**: `abstractmethod` - Marks methods that subclasses must implement.
+- **Function**: `validate_repo_path` - Ensures the repository directory exists on the filesystem.
+- **Function**: `validate_config` - Validates input dictionaries against the task's configuration class.
 
 ### develop.py
 *235 lines, 1,316 tokens*
@@ -46,20 +46,24 @@
 ### registry.py
 *87 lines, 439 tokens*
 
-- **Class**: `TaskRegistry` - Gestisce la registrazione e l'istanziazione di diverse tipologie task.
-- **Constant**: `_registry` - Istanza globale per il pattern singleton del registro task.
-- **Function**: `get_task_registry` - Fornisce l'accesso centralizzato all'istanza globale del registro.
+- **Class**: `TaskRegistry` - Registry for managing and instantiating task types.
+- **Function**: `register` - Adds a task class to the internal registry.
+- **Function**: `get` - Retrieves a registered task class by name.
+- **Function**: `create` - Instantiates a registered task by its name.
+- **Function**: `list_tasks` - Returns metadata for all registered task types.
+- **Constant**: `_registry` - Global singleton storage for the task registry instance.
+- **Function**: `get_task_registry` - Retrieves or initializes the shared global registry instance.
 
 ### review.py
 *357 lines, 2,350 tokens*
 
-- **Class**: `ReviewTask` - Task di revisione codice con 5 revisori AI specializzati.
-- **Function**: `name` - Ritorna il nome univoco del task di revisione.
-- **Function**: `description` - Fornisce una descrizione dettagliata delle funzionalità del task.
-- **Function**: `config_class` - Definisce la classe di configurazione per la revisione.
-- **Function**: `execute` - Coordina l'esecuzione del processo di revisione del codice.
-- **Function**: `_build_request` - Genera una richiesta di revisione dai parametri di contesto.
-- **Function**: `_report_to_dict` - Converte il report finale in dizionario per il database.
+- **Class**: `ReviewTask` - AI-driven code review task with specialized reviewers.
+- **Function**: `name` - Property returning the unique task identifier.
+- **Function**: `description` - Property describing the deep code review process.
+- **Function**: `config_class` - Property specifying the configuration class used.
+- **Function**: `execute` - Orchestrates the review process and handles database updates.
+- **Function**: `_build_request` - Prepares the review request from task context.
+- **Function**: `_report_to_dict` - Serializes the review report into a dictionary format.
 
 ---
-*Generated by TurboWrap - 2025-12-24 14:48*
+*Generated by TurboWrap - 2025-12-24 15:29*

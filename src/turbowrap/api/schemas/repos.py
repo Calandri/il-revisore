@@ -36,7 +36,7 @@ class RepoCreate(BaseModel):
 class RepoResponse(BaseModel):
     """Repository response."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str = Field(..., description="Repository UUID")
     name: str = Field(..., description="Repository name (owner/repo)")
@@ -44,11 +44,16 @@ class RepoResponse(BaseModel):
     local_path: str = Field(..., description="Local filesystem path")
     default_branch: str = Field(..., description="Default branch name")
     status: Literal["active", "syncing", "error"] = Field(..., description="Repository status")
-    repo_type: Literal["backend", "frontend", "fullstack"] | None = Field(
+    repo_type: Literal["backend", "frontend", "fullstack", "unknown"] | None = Field(
         default=None, description="Detected repository type"
     )
     last_synced_at: datetime | None = Field(default=None, description="Last sync timestamp")
-    metadata: dict[str, Any] | None = Field(default=None, description="Additional metadata")
+    metadata_: dict[str, Any] | None = Field(
+        default=None,
+        alias="metadata",
+        serialization_alias="metadata",
+        description="Additional metadata"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -75,7 +80,7 @@ class RepoStatus(BaseModel):
     id: str = Field(..., description="Repository UUID")
     name: str = Field(..., description="Repository name")
     status: Literal["active", "syncing", "error"] = Field(..., description="Current status")
-    repo_type: Literal["backend", "frontend", "fullstack"] | None = Field(
+    repo_type: Literal["backend", "frontend", "fullstack", "unknown"] | None = Field(
         default=None, description="Detected type"
     )
     last_synced_at: datetime | None = Field(default=None, description="Last sync")

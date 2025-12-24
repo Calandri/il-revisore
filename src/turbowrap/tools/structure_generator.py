@@ -358,7 +358,7 @@ Dependencies: {', '.join(d.name for d in self.metadata.dependencies[:10])}
 
 Provide:
 1. PATTERN: One of: Monolith, Modular Monolith, Microservices, CLI Tool, Library, API Server
-2. DESCRIPTION: 2-3 sentences describing the architecture and layers (in Italian)
+2. DESCRIPTION: 2-3 sentences describing the architecture and layers (in English)
 
 Format:
 PATTERN: <pattern>
@@ -496,7 +496,7 @@ Extract ONLY these types: {elements_to_find}
 For EACH element found, provide:
 - Type (exactly one of: {elements_to_find})
 - Name (the identifier/function/class name)
-- Description (max 10 words)
+- Description (max 10 words, in English)
 
 Format your response as a simple list:
 TYPE: Name - Description
@@ -581,6 +581,7 @@ Be concise. Only list the most important elements (max 10).
 
         # Add repo type metadata only for root STRUCTURE.md
         if is_root:
+            generated_at = int(time.time())
             lines.extend([
                 "## Metadata",
                 "",
@@ -589,6 +590,7 @@ Be concise. Only list the most important elements (max 10).
                 f"**Frontend Files**: {self.fe_file_count}",
                 f"**Total Tokens**: {self.total_tokens:,}",
                 f"**Total Lines**: {self.total_lines:,}",
+                f"**Generated At**: `{generated_at}`",
                 "",
             ])
 
