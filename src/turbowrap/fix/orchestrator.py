@@ -222,12 +222,31 @@ class FixOrchestrator:
                     )
                 )
 
+                # Create streaming callbacks for BE and FE
+                async def on_chunk_be(chunk: str) -> None:
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            content=f"[BE] {chunk}",
+                        )
+                    )
+
+                async def on_chunk_fe(chunk: str) -> None:
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            content=f"[FE] {chunk}",
+                        )
+                    )
+
                 tasks = []
                 task_types = []
 
                 if has_be:
                     prompt_be = self._build_fix_prompt(be_issues, "be", feedback_be, iteration)
-                    tasks.append(self._run_claude_cli(prompt_be))
+                    tasks.append(self._run_claude_cli(prompt_be, on_chunk=on_chunk_be))
                     task_types.append("be")
                     await safe_emit(
                         FixProgressEvent(
@@ -239,7 +258,7 @@ class FixOrchestrator:
 
                 if has_fe:
                     prompt_fe = self._build_fix_prompt(fe_issues, "fe", feedback_fe, iteration)
-                    tasks.append(self._run_claude_cli(prompt_fe))
+                    tasks.append(self._run_claude_cli(prompt_fe, on_chunk=on_chunk_fe))
                     task_types.append("fe")
                     await safe_emit(
                         FixProgressEvent(
@@ -274,8 +293,18 @@ class FixOrchestrator:
                     )
                 )
 
+                # Streaming callback for Gemini review
+                async def on_chunk_gemini(chunk: str) -> None:
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                            session_id=session_id,
+                            content=chunk,
+                        )
+                    )
+
                 review_prompt = self._build_review_prompt_batch(issues)
-                gemini_output = await self._run_gemini_cli(review_prompt)
+                gemini_output = await self._run_gemini_cli(review_prompt, on_chunk=on_chunk_gemini)
 
                 if gemini_output is None:
                     logger.warning("Gemini CLI failed, accepting fixes without review")
@@ -480,8 +509,9 @@ The reviewer found issues with the previous fix. Address this feedback:
         self,
         prompt: str,
         timeout: int = CLAUDE_CLI_TIMEOUT,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> str | None:
-        """Run Claude CLI with prompt."""
+        """Run Claude CLI with prompt and optional streaming callback."""
         try:
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
@@ -492,7 +522,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             # Use Opus model from settings
             model = self.settings.agents.claude_model
 
-            # Build CLI arguments with stream-json for consistency
+            # Build CLI arguments with stream-json for real-time streaming
             args = [
                 "claude",
                 "--print",
@@ -519,17 +549,40 @@ The reviewer found issues with the previous fix. Address this feedback:
                 env=env,
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=prompt.encode()),
-                timeout=timeout,
-            )
+            # Write prompt to stdin
+            process.stdin.write(prompt.encode())
+            await process.stdin.drain()
+            process.stdin.close()
+
+            # Read stdout in streaming mode
+            output_chunks: list[str] = []
+            try:
+                async with asyncio.timeout(timeout):
+                    while True:
+                        chunk = await process.stdout.read(1024)
+                        if not chunk:
+                            break
+                        decoded = chunk.decode()
+                        output_chunks.append(decoded)
+
+                        # Emit chunk for streaming
+                        if on_chunk:
+                            await on_chunk(decoded)
+
+            except asyncio.TimeoutError:
+                logger.error(f"Claude CLI timed out after {timeout}s")
+                process.kill()
+                return None
+
+            await process.wait()
 
             if process.returncode != 0:
+                stderr = await process.stderr.read()
                 logger.error(f"Claude CLI failed: {stderr.decode()}")
                 return None
 
             # Parse stream-json output (NDJSON)
-            raw_output = stdout.decode()
+            raw_output = "".join(output_chunks)
             for line in raw_output.strip().split("\n"):
                 if not line.strip():
                     continue
@@ -566,8 +619,9 @@ The reviewer found issues with the previous fix. Address this feedback:
         self,
         prompt: str,
         timeout: int = GEMINI_CLI_TIMEOUT,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> str | None:
-        """Run Gemini CLI with prompt."""
+        """Run Gemini CLI with prompt and optional streaming callback."""
         try:
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
@@ -589,16 +643,39 @@ The reviewer found issues with the previous fix. Address this feedback:
                 env=env,
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=prompt.encode()),
-                timeout=timeout,
-            )
+            # Write prompt to stdin
+            process.stdin.write(prompt.encode())
+            await process.stdin.drain()
+            process.stdin.close()
+
+            # Read stdout in streaming mode
+            output_chunks: list[str] = []
+            try:
+                async with asyncio.timeout(timeout):
+                    while True:
+                        chunk = await process.stdout.read(1024)
+                        if not chunk:
+                            break
+                        decoded = chunk.decode()
+                        output_chunks.append(decoded)
+
+                        # Emit chunk for streaming
+                        if on_chunk:
+                            await on_chunk(decoded)
+
+            except asyncio.TimeoutError:
+                logger.error(f"Gemini CLI timed out after {timeout}s")
+                process.kill()
+                return None
+
+            await process.wait()
 
             if process.returncode != 0:
+                stderr = await process.stderr.read()
                 logger.error(f"Gemini CLI failed: {stderr.decode()}")
                 return None
 
-            return stdout.decode()
+            return "".join(output_chunks)
 
         except asyncio.TimeoutError:
             logger.error(f"Gemini CLI timed out after {timeout}s")
