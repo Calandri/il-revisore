@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user
 from ...db.models import Repository, ChatSession, Setting
+from ...utils.git_utils import push_repo
 
 router = APIRouter(tags=["web"])
 
@@ -276,6 +277,27 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
     except Exception as e:
         # Log error but continue to return updated list
         print(f"Sync error: {e}")
+
+    # Return updated list
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "components/repo_list.html",
+        {"request": request, "repos": repos}
+    )
+
+
+@router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
+async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+    """HTMX: push repository changes (commit + push) and return updated list."""
+    from pathlib import Path
+
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if repo and repo.local_path:
+        try:
+            push_repo(Path(repo.local_path), message="Update via TurboWrap")
+        except Exception as e:
+            print(f"Push error: {e}")
 
     # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()

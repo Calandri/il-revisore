@@ -40,19 +40,36 @@
                     {{ repo.status }}
                 </span>
 
-                <!-- Sync button -->
+                <!-- Pull button -->
                 <button hx-post="/htmx/repos/{{ repo.id }}/sync"
                         hx-target="#repo-list"
-                        hx-indicator="#sync-spinner-{{ repo.id }}"
+                        hx-indicator="#pull-spinner-{{ repo.id }}"
                         class="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                        title="Sincronizza">
-                    <svg id="sync-spinner-{{ repo.id }}" class="w-5 h-5 htmx-indicator animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        title="Pull (aggiorna da remoto)">
+                    <svg id="pull-spinner-{{ repo.id }}" class="w-5 h-5 htmx-indicator animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                     </svg>
                     <svg class="w-5 h-5 htmx-indicator-hide" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+
+                <!-- Push button -->
+                <button hx-post="/htmx/repos/{{ repo.id }}/push"
+                        hx-target="#repo-list"
+                        hx-indicator="#push-spinner-{{ repo.id }}"
+                        hx-confirm="Vuoi pushare le modifiche? (commit + push)"
+                        class="p-2 text-gray-500 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors"
+                        title="Push (invia modifiche)">
+                    <svg id="push-spinner-{{ repo.id }}" class="w-5 h-5 htmx-indicator animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                    </svg>
+                    <svg class="w-5 h-5 htmx-indicator-hide" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
                     </svg>
                 </button>
 
