@@ -40,24 +40,21 @@ jobs:
 
       - name: Deploy to EC2 via SSM
         run: |
-          aws ssm send-command \
+          COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=[
-              "aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com",
-              "docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
-              "docker stop turbowrap || true",
-              "docker rm turbowrap || true",
-              "docker run -d --name turbowrap --restart always -p 8000:8000 -v /opt/turbowrap/data:/data --env-file /opt/turbowrap/.env 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest"
-            ]' \
-            --output text
+            --parameters 'commands=["aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com","docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","docker stop turbowrap || true","docker rm turbowrap || true","docker run -d --name turbowrap --restart always -p 8000:8000 -v /opt/turbowrap/data:/data --env-file /opt/turbowrap/.env 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest"]' \
+            --query 'Command.CommandId' --output text)
 
-          echo "Deployment triggered! Waiting for container to start..."
-          sleep 10
+          echo "Command ID: $COMMAND_ID"
+          sleep 15
+
+          aws ssm get-command-invocation \
+            --command-id $COMMAND_ID \
+            --instance-id ${{ env.EC2_INSTANCE_ID }} \
+            --query 'Status' --output text
 
       - name: Health check
         run: |
-          # Wait for deployment to complete
-          sleep 20
-          # Check if the service is healthy via ALB
-          curl -sf https://turbo-wrap.com/api/status || echo "Health check pending..."
+          sleep 10
+          curl -sf https://turbo-wrap.com/api/status && echo "✅ Deployment successful!" || echo "⏳ Deployment in progress..."
