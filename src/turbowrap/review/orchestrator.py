@@ -101,7 +101,7 @@ class Orchestrator:
         context = await self._prepare_context(request)
 
         # Step 2: Detect repository type
-        repo_type = self._detect_repo_type(context.files)
+        repo_type = self._detect_repo_type(context.files, context.structure_docs)
         logger.info(f"Detected repository type: {repo_type.value}")
 
         # Step 3: Determine which reviewers to run
@@ -434,9 +434,56 @@ class Orchestrator:
             except Exception as e:
                 logger.warning(f"Failed to read {file_path}: {e}")
 
-    def _detect_repo_type(self, files: list[str]) -> RepoType:
-        """Detect repository type from files."""
-        return self.repo_detector.detect(files)
+    def _detect_repo_type(
+        self,
+        files: list[str],
+        structure_docs: dict[str, str] | None = None,
+    ) -> RepoType:
+        """
+        Detect repository type from files or STRUCTURE.md.
+
+        For INITIAL mode (no files), parses repo type from root STRUCTURE.md.
+        For DIFF mode, uses file extensions.
+
+        Args:
+            files: List of file paths to analyze
+            structure_docs: STRUCTURE.md contents for fallback detection
+
+        Returns:
+            RepoType enum value
+        """
+        # If we have files, use file-based detection
+        if files:
+            return self.repo_detector.detect(files)
+
+        # In INITIAL mode, try to extract from STRUCTURE.md
+        if structure_docs:
+            # Look for root STRUCTURE.md (the one with Metadata section)
+            for path, content in structure_docs.items():
+                if "## Metadata" in content and "Repository Type" in content:
+                    # Parse repo type from: **Repository Type**: `BACKEND`
+                    import re
+                    match = re.search(
+                        r"\*\*Repository Type\*\*:\s*`?(\w+)`?",
+                        content,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        type_str = match.group(1).lower()
+                        logger.info(f"Detected repo type from STRUCTURE.md: {type_str}")
+                        if type_str == "backend":
+                            return RepoType.BACKEND
+                        elif type_str == "frontend":
+                            return RepoType.FRONTEND
+                        elif type_str == "fullstack":
+                            return RepoType.FULLSTACK
+
+            logger.warning(
+                "No repo type found in STRUCTURE.md. "
+                "Run `python -m turbowrap.tools.structure_generator` to generate updated docs."
+            )
+
+        return RepoType.UNKNOWN
 
     def _get_reviewers(self, repo_type: RepoType, include_functional: bool) -> list[str]:
         """Get list of reviewers to run based on repo type.

@@ -192,13 +192,38 @@ def cancel_task(
         )
 
 
+from pydantic import BaseModel, Field
+from typing import Literal
+
+
+class ReviewStreamRequest(BaseModel):
+    """Request body for streaming review."""
+    mode: Literal["initial", "diff"] = Field(
+        default="initial",
+        description="Review mode: 'initial' for STRUCTURE.md only, 'diff' for changed files"
+    )
+    challenger_enabled: bool = Field(
+        default=True,
+        description="Enable challenger validation loop"
+    )
+    include_functional: bool = Field(
+        default=True,
+        description="Include functional analyst reviewer"
+    )
+
+
 @router.post("/{repository_id}/review/stream")
 async def stream_review(
     repository_id: str,
+    request_body: ReviewStreamRequest = ReviewStreamRequest(),
     db: Session = Depends(get_db),
 ):
     """
     Start a review task and stream progress via SSE.
+
+    Args:
+        repository_id: Repository UUID
+        mode: 'initial' (STRUCTURE.md architecture review) or 'diff' (changed files)
 
     Returns server-sent events with progress updates from all parallel reviewers.
     """
@@ -212,16 +237,24 @@ async def stream_review(
         repository_id=repository_id,
         type="review",
         status="running",
-        config={},
+        config={
+            "mode": request_body.mode,
+            "challenger_enabled": request_body.challenger_enabled,
+        },
     )
     db.add(task)
     db.commit()
     db.refresh(task)
 
+    # Capture request options for use in async generator
+    review_mode = request_body.mode
+    challenger_enabled = request_body.challenger_enabled
+    include_functional = request_body.include_functional
+
     async def generate() -> AsyncIterator[dict]:
         """Generate SSE events from review progress."""
         from ...review.orchestrator import Orchestrator
-        from ...review.models.review import ReviewRequest, ReviewSource, ReviewOptions
+        from ...review.models.review import ReviewRequest, ReviewSource, ReviewOptions, ReviewMode
 
         # Queue for progress events
         event_queue: asyncio.Queue[ProgressEvent] = asyncio.Queue()
@@ -238,8 +271,9 @@ async def stream_review(
                 request = ReviewRequest(
                     source=ReviewSource(directory=repo.local_path),
                     options=ReviewOptions(
-                        challenger_enabled=True,
-                        include_functional=True,
+                        mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
+                        challenger_enabled=challenger_enabled,
+                        include_functional=include_functional,
                     ),
                 )
 

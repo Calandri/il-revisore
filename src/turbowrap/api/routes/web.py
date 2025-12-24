@@ -110,6 +110,21 @@ async def status_page(request: Request):
     )
 
 
+@router.get("/review", response_class=HTMLResponse)
+async def review_page(request: Request, db: Session = Depends(get_db)):
+    """Code review page with multi-agent streaming."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/review.html",
+        {
+            "request": request,
+            "repos": repos,
+            "active_page": "review",
+        }
+    )
+
+
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
