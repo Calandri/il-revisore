@@ -47,6 +47,9 @@ class ChallengerLoop:
     3. Stagnation detected (no improvement)
     """
 
+    # Hard safety limit - prevents infinite loops regardless of config
+    ABSOLUTE_MAX_ITERATIONS = 10
+
     def __init__(
         self,
         reviewer: Optional[ClaudeReviewer] = None,
@@ -64,7 +67,7 @@ class ChallengerLoop:
             reviewer: Claude reviewer instance
             challenger: Gemini challenger instance
             satisfaction_threshold: Required satisfaction score (0-100)
-            max_iterations: Maximum number of iterations
+            max_iterations: Maximum number of iterations (capped at 10)
             min_improvement_threshold: Minimum improvement per iteration
             stagnation_window: Number of iterations to detect stagnation
             forced_acceptance_threshold: Accept if above this after max iterations
@@ -77,7 +80,17 @@ class ChallengerLoop:
         challenger_config = settings.challenger
 
         self.satisfaction_threshold = satisfaction_threshold or challenger_config.satisfaction_threshold
-        self.max_iterations = max_iterations or challenger_config.max_iterations
+
+        # Apply hard safety cap to max_iterations
+        requested_max = max_iterations or challenger_config.max_iterations
+        self.max_iterations = min(requested_max, self.ABSOLUTE_MAX_ITERATIONS)
+
+        if requested_max > self.ABSOLUTE_MAX_ITERATIONS:
+            logger.warning(
+                f"max_iterations={requested_max} exceeds safety limit. "
+                f"Capped at {self.ABSOLUTE_MAX_ITERATIONS}."
+            )
+
         self.min_improvement_threshold = min_improvement_threshold or challenger_config.min_improvement_threshold
         self.stagnation_window = stagnation_window or challenger_config.stagnation_window
         self.forced_acceptance_threshold = forced_acceptance_threshold or challenger_config.forced_acceptance_threshold
@@ -134,6 +147,15 @@ class ChallengerLoop:
 
         while iteration < self.max_iterations:
             iteration += 1
+
+            # Safety check: absolute hard stop regardless of config
+            if iteration > self.ABSOLUTE_MAX_ITERATIONS:
+                logger.error(
+                    f"SAFETY STOP: Iteration {iteration} exceeds absolute limit "
+                    f"({self.ABSOLUTE_MAX_ITERATIONS}). Breaking loop."
+                )
+                break
+
             logger.info(f"=== Challenger Loop Iteration {iteration} ===")
 
             # Step 1: Reviewer performs/refines review

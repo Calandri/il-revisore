@@ -336,6 +336,52 @@ def get_file_tree(
     return sorted(files, key=lambda f: f.path)
 
 
+@router.get("/{repo_id}/structure")
+def get_structure_files(
+    repo_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get all STRUCTURE.md files with their content.
+
+    Returns a list of STRUCTURE.md files found in the repository,
+    including their full content for display.
+    """
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+
+    structure_files = []
+    for item in repo_path.rglob('STRUCTURE.md'):
+        # Skip hidden directories
+        if any(part.startswith('.') for part in item.parts):
+            continue
+
+        rel_path = str(item.relative_to(repo_path))
+        try:
+            content = item.read_text(encoding='utf-8')
+            structure_files.append({
+                "path": rel_path,
+                "directory": str(item.parent.relative_to(repo_path)) if item.parent != repo_path else "",
+                "content": content,
+                "size": item.stat().st_size,
+            })
+        except (UnicodeDecodeError, OSError):
+            continue
+
+    # Sort by path depth (root first) then alphabetically
+    structure_files.sort(key=lambda f: (f["path"].count('/'), f["path"]))
+
+    return {
+        "repo_id": repo_id,
+        "repo_name": repo.name,
+        "total": len(structure_files),
+        "files": structure_files,
+    }
+
+
 @router.get("/{repo_id}/files/content", response_model=FileContent)
 def read_file(
     repo_id: str,

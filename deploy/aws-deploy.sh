@@ -31,9 +31,10 @@ SUBNET_1=$(echo $SUBNET_IDS | cut -d',' -f1)
 SUBNET_2=$(echo $SUBNET_IDS | cut -d',' -f2)
 
 # Get latest Amazon Linux 2023 AMI
-AMI_ID=$(aws ssm get-parameters --region $REGION \
-  --names /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
-  --query 'Parameters[0].Value' --output text)
+AMI_ID=$(aws ec2 describe-images --region $REGION \
+  --owners amazon \
+  --filters "Name=name,Values=al2023-ami-2023*-x86_64" "Name=state,Values=available" \
+  --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)
 echo "   AMI ID: $AMI_ID"
 
 # === Step 2: Create Security Groups ===

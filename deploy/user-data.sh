@@ -6,33 +6,27 @@ exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
 echo "=== TurboRepo EC2 Bootstrap ==="
 
+# Configuration
+REGION="eu-west-3"
+SECRET_NAME="agent-zero/global/api-keys"
+ECR_REPO="198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest"
+
 # Update system
 yum update -y
 
-# Install Docker
-yum install -y docker git jq
+# Install Docker and AWS CLI
+yum install -y docker jq
 systemctl start docker
 systemctl enable docker
 
-# Install AWS CLI v2 (for Secrets Manager)
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-yum install -y unzip
-unzip awscliv2.zip
-./aws/install
-rm -rf aws awscliv2.zip
+# Login to ECR
+echo "Logging in to ECR..."
+aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin 198584570682.dkr.ecr.$REGION.amazonaws.com
 
 # Create app directory
-mkdir -p /opt/turbowrap
-cd /opt/turbowrap
-
-# Clone repository
-git clone https://github.com/3bee/ultraWrap.git .
-# Or if private: use deploy key or CodeCommit
+mkdir -p /opt/turbowrap/data
 
 # Get secrets from AWS Secrets Manager
-REGION="eu-west-3"
-SECRET_NAME="agent-zero/global/api-keys"
-
 echo "Fetching secrets from Secrets Manager..."
 SECRETS=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --region "$REGION" --query SecretString --output text)
 
@@ -53,12 +47,9 @@ TURBOWRAP_DB_URL=sqlite:////data/turbowrap.db
 TURBOWRAP_REPOS_DIR=/data/repos
 EOF
 
-# Create data directory
-mkdir -p /opt/turbowrap/data
-
-# Build Docker image
-echo "Building Docker image..."
-docker build -t turbowrap:latest .
+# Pull Docker image from ECR
+echo "Pulling Docker image from ECR..."
+docker pull $ECR_REPO
 
 # Run container
 echo "Starting container..."
@@ -68,7 +59,7 @@ docker run -d \
   -p 8000:8000 \
   -v /opt/turbowrap/data:/data \
   --env-file /opt/turbowrap/.env \
-  turbowrap:latest
+  $ECR_REPO
 
 # Wait for container to be healthy
 echo "Waiting for application to start..."

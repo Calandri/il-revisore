@@ -148,32 +148,40 @@ class ReviewTask(BaseTask):
         )
 
     def _report_to_dict(self, report: FinalReport) -> dict:
-        """Convert FinalReport to dictionary for storage."""
+        """Convert FinalReport to dictionary for storage.
+
+        Uses Pydantic's model_dump() for reliable serialization of nested objects,
+        then extracts the fields we need for the task result.
+        """
+        # Use Pydantic serialization for safety with nested objects
+        full_dump = report.model_dump(mode="json")
+
+        # Extract and flatten the fields we need
         return {
             "id": report.id,
             "recommendation": report.summary.recommendation.value,
-            "score": report.summary.score,
-            "total_issues": report.summary.severity.total,
-            "critical_issues": report.summary.severity.critical,
-            "high_issues": report.summary.severity.high,
-            "medium_issues": report.summary.severity.medium,
-            "low_issues": report.summary.severity.low,
+            "score": report.summary.overall_score,
+            "total_issues": report.summary.by_severity.total,
+            "critical_issues": report.summary.by_severity.critical,
+            "high_issues": report.summary.by_severity.high,
+            "medium_issues": report.summary.by_severity.medium,
+            "low_issues": report.summary.by_severity.low,
             "reviewers": [
                 {
                     "name": r.name,
                     "status": r.status,
                     "issues_found": r.issues_found,
                     "iterations": r.iterations,
-                    "satisfaction_score": r.satisfaction_score,
+                    "satisfaction_score": r.final_satisfaction,
                 }
                 for r in report.reviewers
             ],
             "challenger": {
                 "enabled": report.challenger.enabled,
                 "total_iterations": report.challenger.total_iterations,
-                "average_satisfaction": report.challenger.average_satisfaction,
-                "convergence_status": report.challenger.convergence_status.value
-                if report.challenger.convergence_status
+                "average_satisfaction": report.challenger.final_satisfaction_score,
+                "convergence_status": report.challenger.convergence.value
+                if report.challenger.convergence
                 else None,
             },
             "issues": [
@@ -191,10 +199,12 @@ class ReviewTask(BaseTask):
                 for i in report.issues
             ],
             "next_steps": [
-                {"priority": ns.priority, "action": ns.action}
+                {"priority": ns.priority, "action": ns.action, "issues": ns.issues}
                 for ns in report.next_steps
             ],
-            "timestamp": report.timestamp.isoformat() if hasattr(report, "timestamp") else None,
+            "timestamp": report.timestamp.isoformat(),
+            # Include full serialized data for debugging/completeness
+            "full_report": full_dump,
         }
 
     def _get_or_create_task(self, context: TaskContext) -> Task:

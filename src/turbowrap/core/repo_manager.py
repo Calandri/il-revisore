@@ -1,5 +1,7 @@
 """Repository management."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from pathlib import Path
 
@@ -58,6 +60,66 @@ class RepoManager:
         """Initialize with database session."""
         self.db = db
         self._settings = get_settings()
+
+    def _validate_path(self, path: Path, base_dir: Path | None = None) -> Path:
+        """Validate a path for security issues.
+
+        Checks for:
+        - Path traversal attacks (../)
+        - Symlinks pointing outside allowed directories
+        - Absolute paths when relative expected
+
+        Args:
+            path: Path to validate.
+            base_dir: If provided, ensures path stays within this directory.
+
+        Returns:
+            Resolved, validated Path.
+
+        Raises:
+            RepositoryError: If path is invalid or potentially malicious.
+        """
+        # Resolve to absolute path (follows symlinks)
+        try:
+            resolved = path.resolve()
+        except (OSError, RuntimeError) as e:
+            raise RepositoryError(f"Invalid path: {path} - {e}")
+
+        # Check for symlink escape if base_dir provided
+        if base_dir:
+            base_resolved = base_dir.resolve()
+
+            # Check if resolved path is within base directory
+            try:
+                resolved.relative_to(base_resolved)
+            except ValueError:
+                raise RepositoryError(
+                    f"Path traversal detected: {path} resolves outside {base_dir}"
+                )
+
+            # Additionally check if it's a symlink pointing outside
+            if path.is_symlink():
+                link_target = path.readlink()
+                if link_target.is_absolute():
+                    target_resolved = link_target.resolve()
+                else:
+                    target_resolved = (path.parent / link_target).resolve()
+
+                try:
+                    target_resolved.relative_to(base_resolved)
+                except ValueError:
+                    raise RepositoryError(
+                        f"Symlink escape detected: {path} points to {target_resolved} "
+                        f"outside {base_dir}"
+                    )
+
+        # Check for suspicious path components
+        path_str = str(path)
+        if ".." in path_str:
+            # Additional check even after resolve() for logging/alerting
+            raise RepositoryError(f"Path traversal attempt detected: {path}")
+
+        return resolved
 
     def _get_token(self, request_token: str | None = None) -> str | None:
         """Get GitHub token from request, database, or config.
@@ -150,6 +212,9 @@ class RepoManager:
 
         Returns:
             Updated Repository record.
+
+        Raises:
+            RepositoryError: If repository not found or path validation fails.
         """
         repo = self.db.query(Repository).filter(Repository.id == repo_id).first()
 
@@ -161,6 +226,10 @@ class RepoManager:
 
         try:
             local_path = Path(repo.local_path)
+
+            # Validate path stays within repos directory
+            self._validate_path(local_path, base_dir=self._settings.repos_dir)
+
             effective_token = self._get_token(token)
             pull_repo(local_path, effective_token)
 
@@ -217,7 +286,12 @@ class RepoManager:
         Args:
             repo_id: Repository ID.
             delete_local: Also delete local files.
+
+        Raises:
+            RepositoryError: If repository not found or path validation fails.
         """
+        import shutil
+
         repo = self.get(repo_id)
 
         if not repo:
@@ -225,8 +299,12 @@ class RepoManager:
 
         if delete_local:
             local_path = Path(repo.local_path)
+
+            # CRITICAL: Validate path before deletion to prevent directory traversal attacks
+            # This ensures we only delete within the repos directory
+            self._validate_path(local_path, base_dir=self._settings.repos_dir)
+
             if local_path.exists():
-                import shutil
                 shutil.rmtree(local_path)
 
         self.db.delete(repo)

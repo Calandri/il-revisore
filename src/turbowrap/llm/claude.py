@@ -2,6 +2,8 @@
 
 from typing import Iterator, AsyncIterator, Literal
 
+import httpx
+
 from turbowrap.config import get_settings
 from turbowrap.exceptions import ClaudeError
 from turbowrap.llm.base import BaseAgent, AgentResponse
@@ -9,16 +11,26 @@ from turbowrap.llm.base import BaseAgent, AgentResponse
 # Default system prompt for code review
 DEFAULT_SYSTEM_PROMPT = "You are a senior code reviewer with expertise in software architecture, security, and best practices."
 
+# API timeout configuration (in seconds)
+DEFAULT_TIMEOUT = 120.0  # 2 minutes for complex code analysis
+DEFAULT_CONNECT_TIMEOUT = 10.0
+
 
 class ClaudeClient(BaseAgent):
     """Client for Anthropic Claude API (Opus model for deep review)."""
 
-    def __init__(self, model: str | None = None, max_tokens: int = 8192):
+    def __init__(
+        self,
+        model: str | None = None,
+        max_tokens: int = 8192,
+        timeout: float = DEFAULT_TIMEOUT,
+    ):
         """Initialize Claude client.
 
         Args:
             model: Model name override. Defaults to config value.
             max_tokens: Maximum tokens in response (100-8192).
+            timeout: Request timeout in seconds. Default 120s.
         """
         try:
             import anthropic
@@ -34,10 +46,23 @@ class ClaudeClient(BaseAgent):
         if not 100 <= max_tokens <= 8192:
             raise ClaudeError(f"max_tokens must be between 100 and 8192, got {max_tokens}")
 
-        self._client = anthropic.Anthropic(api_key=api_key)
-        self._async_client = anthropic.AsyncAnthropic(api_key=api_key)
+        # Configure timeout for httpx client
+        http_timeout = httpx.Timeout(
+            timeout=timeout,
+            connect=DEFAULT_CONNECT_TIMEOUT,
+        )
+
+        self._client = anthropic.Anthropic(
+            api_key=api_key,
+            timeout=http_timeout,
+        )
+        self._async_client = anthropic.AsyncAnthropic(
+            api_key=api_key,
+            timeout=http_timeout,
+        )
         self._model = model or settings.agents.claude_model
         self._max_tokens = max_tokens
+        self._timeout = timeout
 
     @property
     def name(self) -> str:
@@ -62,7 +87,7 @@ class ClaudeClient(BaseAgent):
             Generated text content.
 
         Raises:
-            ClaudeError: If API call fails.
+            ClaudeError: If API call fails or times out.
         """
         try:
             message = self._client.messages.create(
@@ -72,6 +97,15 @@ class ClaudeClient(BaseAgent):
                 messages=[{"role": "user", "content": prompt}],
             )
             return message.content[0].text
+        except httpx.TimeoutException as e:
+            raise ClaudeError(
+                f"Claude API timeout after {self._timeout}s. "
+                "Consider increasing timeout or reducing prompt size."
+            ) from e
+        except httpx.ConnectError as e:
+            raise ClaudeError(
+                "Failed to connect to Claude API. Check network connection."
+            ) from e
         except Exception as e:
             raise ClaudeError(f"Claude API error: {e}") from e
 
@@ -86,7 +120,7 @@ class ClaudeClient(BaseAgent):
             AgentResponse with content and metadata.
 
         Raises:
-            ClaudeError: If API call fails.
+            ClaudeError: If API call fails or times out.
         """
         try:
             message = self._client.messages.create(
@@ -103,6 +137,15 @@ class ClaudeClient(BaseAgent):
                 model=self._model,
                 agent_type=self.agent_type,
             )
+        except httpx.TimeoutException as e:
+            raise ClaudeError(
+                f"Claude API timeout after {self._timeout}s. "
+                "Consider increasing timeout or reducing prompt size."
+            ) from e
+        except httpx.ConnectError as e:
+            raise ClaudeError(
+                "Failed to connect to Claude API. Check network connection."
+            ) from e
         except Exception as e:
             raise ClaudeError(f"Claude API error: {e}") from e
 
@@ -117,7 +160,7 @@ class ClaudeClient(BaseAgent):
             Text chunks as they arrive.
 
         Raises:
-            ClaudeError: If API call fails.
+            ClaudeError: If API call fails or times out.
         """
         try:
             with self._client.messages.stream(
@@ -128,6 +171,14 @@ class ClaudeClient(BaseAgent):
             ) as stream:
                 for text in stream.text_stream:
                     yield text
+        except httpx.TimeoutException as e:
+            raise ClaudeError(
+                f"Claude streaming timeout after {self._timeout}s."
+            ) from e
+        except httpx.ConnectError as e:
+            raise ClaudeError(
+                "Failed to connect to Claude API. Check network connection."
+            ) from e
         except Exception as e:
             raise ClaudeError(f"Claude streaming error: {e}") from e
 
@@ -142,7 +193,7 @@ class ClaudeClient(BaseAgent):
             Text chunks asynchronously.
 
         Raises:
-            ClaudeError: If API call fails.
+            ClaudeError: If API call fails or times out.
         """
         try:
             async with self._async_client.messages.stream(
@@ -153,5 +204,13 @@ class ClaudeClient(BaseAgent):
             ) as stream:
                 async for text in stream.text_stream:
                     yield text
+        except httpx.TimeoutException as e:
+            raise ClaudeError(
+                f"Claude async streaming timeout after {self._timeout}s."
+            ) from e
+        except httpx.ConnectError as e:
+            raise ClaudeError(
+                "Failed to connect to Claude API. Check network connection."
+            ) from e
         except Exception as e:
             raise ClaudeError(f"Claude async streaming error: {e}") from e

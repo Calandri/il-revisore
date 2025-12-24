@@ -179,7 +179,14 @@ class StructureGenerator:
         fe_count = 0
 
         for file_path in self.repo_path.rglob("*"):
-            if not file_path.is_file() or should_ignore(file_path):
+            if not file_path.is_file():
+                continue
+            # Use relative path to avoid issues with parent dirs like .turbowrap
+            try:
+                rel_path = file_path.relative_to(self.repo_path)
+            except ValueError:
+                continue
+            if should_ignore(rel_path):
                 continue
 
             suffix = file_path.suffix.lower()
@@ -444,14 +451,16 @@ models: Data models and schemas
         def scan_dir(current_path: Path, depth: int) -> Optional[DirectoryStructure]:
             # Note: We continue scanning beyond max_depth to find nested files
             # (they'll be inlined in parent STRUCTURE.md, not get their own file)
-            if should_ignore(current_path):
-                return None
 
-            # Relative path for display
+            # Relative path for display (and for should_ignore check)
             try:
                 rel_path = current_path.relative_to(self.repo_path)
             except ValueError:
                 rel_path = Path(".")
+
+            # Check ignore using relative path to avoid issues with parent dirs
+            if str(rel_path) != "." and should_ignore(rel_path):
+                return None
 
             dir_struct = DirectoryStructure(
                 path=rel_path if str(rel_path) != "." else Path("."),
@@ -461,17 +470,20 @@ models: Data models and schemas
             # Find processable files in current directory
             try:
                 for item in current_path.iterdir():
-                    if item.is_file() and not should_ignore(item):
-                        suffix = item.suffix.lower()
-                        rel_file = item.relative_to(self.repo_path)
-                        if suffix in BE_EXTENSIONS:
-                            dir_struct.files.append(
-                                FileStructure(path=rel_file, file_type="be")
-                            )
-                        elif suffix in FE_EXTENSIONS:
-                            dir_struct.files.append(
-                                FileStructure(path=rel_file, file_type="fe")
-                            )
+                    if not item.is_file():
+                        continue
+                    rel_file = item.relative_to(self.repo_path)
+                    if should_ignore(rel_file):
+                        continue
+                    suffix = item.suffix.lower()
+                    if suffix in BE_EXTENSIONS:
+                        dir_struct.files.append(
+                            FileStructure(path=rel_file, file_type="be")
+                        )
+                    elif suffix in FE_EXTENSIONS:
+                        dir_struct.files.append(
+                            FileStructure(path=rel_file, file_type="fe")
+                        )
             except PermissionError:
                 pass
 
@@ -479,10 +491,14 @@ models: Data models and schemas
             # (even beyond max_depth, for inlining in parent STRUCTURE.md)
             try:
                 for item in sorted(current_path.iterdir()):
-                    if item.is_dir() and not should_ignore(item):
-                        sub_struct = scan_dir(item, depth + 1)
-                        if sub_struct and (sub_struct.files or sub_struct.subdirectories):
-                            dir_struct.subdirectories.append(sub_struct)
+                    if not item.is_dir():
+                        continue
+                    rel_item = item.relative_to(self.repo_path)
+                    if should_ignore(rel_item):
+                        continue
+                    sub_struct = scan_dir(item, depth + 1)
+                    if sub_struct and (sub_struct.files or sub_struct.subdirectories):
+                        dir_struct.subdirectories.append(sub_struct)
             except PermissionError:
                 pass
 

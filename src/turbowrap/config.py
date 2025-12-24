@@ -114,6 +114,7 @@ class AuthSettings(BaseSettings):
     cognito_app_client_id: str = Field(default="", description="Cognito App Client ID")
     session_cookie_name: str = Field(default="turbowrap_session", description="Session cookie name")
     session_max_age: int = Field(default=86400 * 7, description="Session max age in seconds (7 days)")
+    secure_cookies: bool = Field(default=True, description="Use secure cookies (HTTPS only). Set to False for localhost dev.")
 
 
 class ChallengerSettings(BaseSettings):

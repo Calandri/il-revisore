@@ -22,6 +22,37 @@ repo_app = typer.Typer(help="Repository management")
 app.add_typer(repo_app, name="repo")
 
 
+def _check_api_keys(require_claude: bool = False, require_gemini: bool = False) -> bool:
+    """Check if required API keys are configured.
+
+    Args:
+        require_claude: Require ANTHROPIC_API_KEY.
+        require_gemini: Require GOOGLE_API_KEY.
+
+    Returns:
+        True if all required keys present, False otherwise.
+        Also prints helpful error messages.
+    """
+    settings = get_settings()
+    missing = []
+
+    if require_claude and not settings.agents.anthropic_api_key:
+        missing.append(("ANTHROPIC_API_KEY", "Claude Opus (code review)"))
+
+    if require_gemini and not settings.agents.effective_google_key:
+        missing.append(("GOOGLE_API_KEY", "Gemini Flash (challenger)"))
+
+    if missing:
+        console.print("\n[bold red]✗ Missing API keys:[/]")
+        for key, purpose in missing:
+            console.print(f"  • {key} - Required for {purpose}")
+        console.print("\n[dim]Set these environment variables and try again.[/]")
+        console.print("[dim]Example: export ANTHROPIC_API_KEY=sk-ant-...[/]")
+        return False
+
+    return True
+
+
 # ============================================================================
 # Repository Commands
 # ============================================================================
@@ -181,6 +212,10 @@ def run_review(
     from .core.repo_manager import RepoManager
     from .tasks import ReviewTask, TaskContext
 
+    # Check API keys before starting
+    if not _check_api_keys(require_claude=True, require_gemini=True):
+        raise typer.Exit(1)
+
     init_db()
     SessionLocal = get_session_local()
     db = SessionLocal()
@@ -244,6 +279,10 @@ def run_develop(
     """Run AI-assisted development on a repository."""
     from .core.repo_manager import RepoManager
     from .tasks import DevelopTask, TaskContext
+
+    # Check API keys before starting (develop uses Claude)
+    if not _check_api_keys(require_claude=True):
+        raise typer.Exit(1)
 
     init_db()
     SessionLocal = get_session_local()

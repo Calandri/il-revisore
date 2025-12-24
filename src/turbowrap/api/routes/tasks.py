@@ -293,6 +293,7 @@ async def stream_review(
                 orchestrator = Orchestrator()
 
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=repo.local_path),
                     options=ReviewOptions(
                         mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
@@ -305,7 +306,7 @@ async def stream_review(
 
                 # Update task record
                 task.status = "completed"
-                task.result = report.model_dump()
+                task.result = report.model_dump(mode="json")
 
                 # Save issues to database for tracking
                 for issue in report.issues:

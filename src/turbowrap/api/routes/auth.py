@@ -79,7 +79,7 @@ async def login(
         value=tokens["access_token"],
         max_age=settings.auth.session_max_age,
         httponly=True,
-        secure=True,  # HTTPS only
+        secure=settings.auth.secure_cookies,
         samesite="lax",
     )
 
@@ -90,7 +90,7 @@ async def login(
             value=tokens["refresh_token"],
             max_age=settings.auth.session_max_age,
             httponly=True,
-            secure=True,
+            secure=settings.auth.secure_cookies,
             samesite="lax",
         )
 

@@ -11,8 +11,13 @@ from ...db.models import ChatSession, ChatMessage
 from ...llm import ClaudeClient
 
 
+class SessionInvalidatedError(Exception):
+    """Raised when a chat session is deleted or invalidated during operation."""
+    pass
+
+
 class ChatWebSocketHandler:
-    """Handles WebSocket chat connections."""
+    """Handles WebSocket chat connections with session validation."""
 
     def __init__(self, websocket: WebSocket, session_id: str, db: Session):
         """Initialize handler.
@@ -34,16 +39,37 @@ class ChatWebSocketHandler:
             self._claude = ClaudeClient()
         return self._claude
 
-    async def handle(self):
-        """Main handler loop."""
-        await self.websocket.accept()
+    def _validate_session(self) -> ChatSession:
+        """Validate that the session still exists and is active.
 
-        # Verify session exists
+        Returns:
+            The valid ChatSession object.
+
+        Raises:
+            SessionInvalidatedError: If session was deleted or invalidated.
+        """
+        # Refresh the session to get latest state from DB
+        self.db.expire_all()
+
         session = self.db.query(ChatSession).filter(
             ChatSession.id == self.session_id
         ).first()
 
         if not session:
+            raise SessionInvalidatedError(
+                f"Session {self.session_id} was deleted during operation"
+            )
+
+        return session
+
+    async def handle(self):
+        """Main handler loop with session validation."""
+        await self.websocket.accept()
+
+        # Verify session exists at connection time
+        try:
+            self._validate_session()
+        except SessionInvalidatedError:
             await self.send_error("Session not found")
             await self.websocket.close()
             return
@@ -61,32 +87,54 @@ class ChatWebSocketHandler:
 
         except WebSocketDisconnect:
             pass
+        except SessionInvalidatedError as e:
+            # Session was deleted during operation - close gracefully
+            await self.send_error(str(e))
+            await self.websocket.close(code=4001, reason="Session invalidated")
         except Exception as e:
             await self.send_error(str(e))
 
     async def handle_message(self, content: str):
-        """Handle incoming chat message.
+        """Handle incoming chat message with session validation.
+
+        Validates session before each critical operation to handle
+        concurrent deletion/invalidation.
 
         Args:
             content: Message content.
+
+        Raises:
+            SessionInvalidatedError: If session was deleted during operation.
         """
         if not content.strip():
             return
 
-        # Save user message
-        user_message = ChatMessage(
-            session_id=self.session_id,
-            role="user",
-            content=content,
-        )
-        self.db.add(user_message)
-        self.db.commit()
+        # Validate session before saving user message
+        self._validate_session()
+
+        # Save user message with transaction safety
+        try:
+            user_message = ChatMessage(
+                session_id=self.session_id,
+                role="user",
+                content=content,
+            )
+            self.db.add(user_message)
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            # Check if session was deleted (foreign key constraint)
+            self._validate_session()  # Will raise if session gone
+            raise  # Re-raise original error if session exists
 
         # Send acknowledgment
         await self.send_json({
             "type": "message_received",
             "message_id": user_message.id,
         })
+
+        # Validate session before querying context
+        self._validate_session()
 
         # Get context from previous messages
         previous = (
@@ -120,14 +168,24 @@ Respond helpfully as an AI assistant for code development."""
                 lambda: self.claude.generate(prompt)
             )
 
-            # Save assistant message
-            assistant_message = ChatMessage(
-                session_id=self.session_id,
-                role="assistant",
-                content=response,
-            )
-            self.db.add(assistant_message)
-            self.db.commit()
+            # Validate session before saving response
+            # (session could be deleted during AI generation)
+            self._validate_session()
+
+            # Save assistant message with transaction safety
+            try:
+                assistant_message = ChatMessage(
+                    session_id=self.session_id,
+                    role="assistant",
+                    content=response,
+                )
+                self.db.add(assistant_message)
+                self.db.commit()
+            except Exception as e:
+                self.db.rollback()
+                # Check if session was deleted
+                self._validate_session()
+                raise
 
             # Send response
             await self.send_json({
@@ -137,6 +195,9 @@ Respond helpfully as an AI assistant for code development."""
                 "message_id": assistant_message.id,
             })
 
+        except SessionInvalidatedError:
+            # Re-raise to be handled by main loop
+            raise
         except Exception as e:
             await self.send_error(f"AI error: {e}")
 

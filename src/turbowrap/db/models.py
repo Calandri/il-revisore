@@ -6,9 +6,52 @@ from enum import Enum
 from typing import Literal
 
 from sqlalchemy import Column, String, Text, Integer, Float, DateTime, JSON, ForeignKey, Index
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declared_attr
 
 from .base import Base
+
+
+class SoftDeleteMixin:
+    """Mixin for soft delete functionality.
+
+    Adds a `deleted_at` column that marks when a record was "deleted".
+    Records with deleted_at set should be filtered out in normal queries.
+
+    Usage:
+        class MyModel(Base, SoftDeleteMixin):
+            ...
+
+        # Soft delete a record
+        record.soft_delete()
+
+        # Restore a soft-deleted record
+        record.restore()
+
+        # Check if deleted
+        if record.is_deleted:
+            ...
+
+        # Query only active records
+        session.query(MyModel).filter(MyModel.deleted_at.is_(None))
+    """
+
+    @declared_attr
+    def deleted_at(cls):
+        """Timestamp when the record was soft-deleted. None means active."""
+        return Column(DateTime, nullable=True, default=None, index=True)
+
+    @property
+    def is_deleted(self) -> bool:
+        """Check if this record has been soft-deleted."""
+        return self.deleted_at is not None
+
+    def soft_delete(self) -> None:
+        """Mark this record as deleted without removing from database."""
+        self.deleted_at = datetime.utcnow()
+
+    def restore(self) -> None:
+        """Restore a soft-deleted record."""
+        self.deleted_at = None
 
 
 class LinkType(str, Enum):
@@ -46,7 +89,7 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
-class Repository(Base):
+class Repository(Base, SoftDeleteMixin):
     """Cloned GitHub repository."""
 
     __tablename__ = "repositories"
@@ -121,7 +164,7 @@ class RepositoryLink(Base):
         return f"<RepositoryLink {self.source_repo_id[:8]}--{self.link_type}-->{self.target_repo_id[:8]}>"
 
 
-class Task(Base):
+class Task(Base, SoftDeleteMixin):
     """Task execution record."""
 
     __tablename__ = "tasks"
@@ -181,7 +224,7 @@ class AgentRun(Base):
         return f"<AgentRun {self.agent_type}/{self.agent_name}>"
 
 
-class ChatSession(Base):
+class ChatSession(Base, SoftDeleteMixin):
     """Chat session for interactive communication."""
 
     __tablename__ = "chat_sessions"
@@ -240,7 +283,7 @@ class Setting(Base):
         return f"<Setting {self.key}>"
 
 
-class Issue(Base):
+class Issue(Base, SoftDeleteMixin):
     """Code review issue found in a repository."""
 
     __tablename__ = "issues"

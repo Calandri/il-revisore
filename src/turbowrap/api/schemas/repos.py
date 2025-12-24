@@ -50,6 +50,19 @@ class RepoCreate(BaseModel):
         return v.rstrip("/")
 
 
+def _sanitize_local_path(path: str) -> str:
+    """Sanitize local path to hide sensitive directory names.
+
+    Replaces the home directory portion with a generic placeholder
+    to avoid exposing usernames or system structure in API responses.
+    """
+    import os
+    home = os.path.expanduser("~")
+    if path.startswith(home):
+        return path.replace(home, "~", 1)
+    return path
+
+
 class RepoResponse(BaseModel):
     """Repository response."""
 
@@ -58,7 +71,7 @@ class RepoResponse(BaseModel):
     id: str = Field(..., description="Repository UUID")
     name: str = Field(..., description="Repository name (owner/repo)")
     url: str = Field(..., description="GitHub URL")
-    local_path: str = Field(..., description="Local filesystem path")
+    local_path: str = Field(..., description="Local filesystem path (sanitized)")
     default_branch: str = Field(..., description="Default branch name")
     status: Literal["active", "syncing", "error"] = Field(..., description="Repository status")
     repo_type: Literal["backend", "frontend", "fullstack", "unknown"] | None = Field(
@@ -71,6 +84,12 @@ class RepoResponse(BaseModel):
     )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+
+    @field_validator("local_path", mode="before")
+    @classmethod
+    def sanitize_path(cls, v: str) -> str:
+        """Sanitize local_path to hide sensitive directories."""
+        return _sanitize_local_path(v) if v else v
 
     @field_validator("metadata", mode="before")
     @classmethod
@@ -96,7 +115,7 @@ class RepoResponse(BaseModel):
                 "id": obj.id,
                 "name": obj.name,
                 "url": obj.url,
-                "local_path": obj.local_path,
+                "local_path": obj.local_path,  # Will be sanitized by validator
                 "default_branch": obj.default_branch,
                 "status": obj.status,
                 "repo_type": obj.repo_type,
