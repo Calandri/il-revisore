@@ -240,7 +240,8 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
             api_key = get_google_api_key()
             if api_key:
                 env["GOOGLE_API_KEY"] = api_key
-                logger.info("GOOGLE_API_KEY loaded from AWS Secrets Manager")
+                env["GEMINI_API_KEY"] = api_key  # Gemini CLI uses this
+                logger.info("GOOGLE_API_KEY/GEMINI_API_KEY loaded from AWS Secrets Manager")
             else:
                 logger.warning("GOOGLE_API_KEY not found in AWS - using environment")
 

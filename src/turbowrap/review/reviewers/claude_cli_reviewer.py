@@ -206,8 +206,7 @@ class ClaudeCLIReviewer(BaseReviewer):
       "line": <line number or null>,
       "title": "<brief title>",
       "description": "<detailed description>",
-      "current_code": "<problematic code snippet>",
-      "suggested_fix": "<corrected code>"
+      "suggested_fix": "<how to fix - code or explanation>"
     }
   ],
   "checklists": {
@@ -326,9 +325,17 @@ Output the complete refined review as JSON (same schema as before).
             )
 
             # Write prompt to stdin
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
+            prompt_bytes = prompt.encode()
+            logger.info(f"Sending prompt to Claude CLI: {len(prompt_bytes)} bytes")
+            try:
+                process.stdin.write(prompt_bytes)
+                await process.stdin.drain()
+                process.stdin.close()
+            except BrokenPipeError:
+                # Claude CLI crashed before accepting input - check stderr
+                stderr = await process.stderr.read()
+                logger.error(f"Claude CLI crashed on stdin: {stderr.decode()[:500]}")
+                return None, []
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries
