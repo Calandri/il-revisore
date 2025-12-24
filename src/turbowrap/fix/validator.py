@@ -4,7 +4,6 @@ import logging
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +15,9 @@ class ValidationResult:
     is_valid: bool
     file_exists: bool
     code_matches: bool
-    file_content: Optional[str] = None
-    error: Optional[str] = None
-    warning: Optional[str] = None
+    file_content: str | None = None
+    error: str | None = None
+    warning: str | None = None
     warnings: list[str] = field(default_factory=list)  # Multiple warnings
     has_uncommitted_changes: bool = False  # File has local modifications
     is_binary: bool = False  # File is binary (can't be fixed)
@@ -29,10 +28,34 @@ class IssueValidator:
 
     # Binary file extensions that can't be fixed
     BINARY_EXTENSIONS = {
-        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
-        ".pdf", ".zip", ".tar", ".gz", ".woff", ".woff2", ".ttf",
-        ".eot", ".mp3", ".mp4", ".avi", ".mov", ".pyc", ".pyo",
-        ".so", ".dll", ".exe", ".bin", ".dat", ".db", ".sqlite",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".ico",
+        ".webp",
+        ".svg",
+        ".pdf",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".mp3",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".pyc",
+        ".pyo",
+        ".so",
+        ".dll",
+        ".exe",
+        ".bin",
+        ".dat",
+        ".db",
+        ".sqlite",
     }
 
     def __init__(self, repo_path: Path):
@@ -76,7 +99,7 @@ class IssueValidator:
         suffix = Path(file_path).suffix.lower()
         return suffix in self.BINARY_EXTENSIONS
 
-    def _check_syntax_valid(self, file_path: str, content: str) -> tuple[bool, Optional[str]]:
+    def _check_syntax_valid(self, file_path: str, content: str) -> tuple[bool, str | None]:
         """Basic syntax validation for Python files.
 
         Returns:
@@ -97,8 +120,8 @@ class IssueValidator:
     def validate_issue(
         self,
         file_path: str,
-        line: Optional[int],
-        current_code: Optional[str],
+        line: int | None,
+        current_code: str | None,
         check_git: bool = True,
     ) -> ValidationResult:
         """
@@ -145,6 +168,16 @@ class IssueValidator:
                 error=f"File not found: {file_path}",
             )
 
+        # Check 2b: Path is a file (not a directory)
+        if full_path.is_dir():
+            logger.warning(f"Path is a directory, not a file: {file_path}")
+            return ValidationResult(
+                is_valid=False,
+                file_exists=True,
+                code_matches=False,
+                error=f"Cannot fix directory-level issues automatically: {file_path}",
+            )
+
         # Check 3: Git status (uncommitted changes)
         has_uncommitted = False
         if check_git:
@@ -152,7 +185,7 @@ class IssueValidator:
             if has_changes:
                 has_uncommitted = True
                 warnings_list.append(
-                    f"File has uncommitted changes - fix may conflict with local modifications"
+                    "File has uncommitted changes - fix may conflict with local modifications"
                 )
 
         # Read file content
@@ -247,9 +280,7 @@ class IssueValidator:
         Uses simple line-by-line matching.
         """
         needle_lines = [line.strip() for line in needle.strip().split("\n") if line.strip()]
-        haystack_lines = [
-            line.strip() for line in haystack.strip().split("\n") if line.strip()
-        ]
+        haystack_lines = [line.strip() for line in haystack.strip().split("\n") if line.strip()]
 
         if not needle_lines:
             return False
@@ -260,7 +291,7 @@ class IssueValidator:
 
         return match_ratio >= threshold
 
-    def _find_code_line(self, file_content: str, code_snippet: str) -> Optional[int]:
+    def _find_code_line(self, file_content: str, code_snippet: str) -> int | None:
         """Find the line number where code snippet starts."""
         file_lines = file_content.split("\n")
         snippet_first_line = code_snippet.strip().split("\n")[0].strip()
@@ -275,8 +306,8 @@ class IssueValidator:
 def validate_issue_for_fix(
     repo_path: Path,
     file_path: str,
-    line: Optional[int],
-    current_code: Optional[str],
+    line: int | None,
+    current_code: str | None,
 ) -> ValidationResult:
     """
     Convenience function to validate an issue.

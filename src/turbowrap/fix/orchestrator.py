@@ -1,235 +1,173 @@
 """
 Fix Orchestrator for TurboWrap.
 
-Coordinates the fixing of issues found during code review.
-Uses Claude with Extended Thinking for higher quality fixes.
+Coordinates Claude CLI (fixer) and Gemini CLI (reviewer).
+Both CLIs have full access to the system - they do ALL the work.
 """
 
 import asyncio
-import json
 import logging
+import os
 import re
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Awaitable, Callable, Optional
-
-import anthropic
-import boto3
-from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
-from turbowrap.db.models import Issue, IssueStatus
-from turbowrap.fix.git_utils import (
-    GitError,
-    GitUtils,
-    generate_commit_message,
-    generate_fix_branch_name,
-)
+from turbowrap.db.models import Issue
 from turbowrap.fix.models import (
-    ClarificationAnswer,
-    ClarificationQuestion,
-    FixChallengerFeedback,
-    FixContext,
     FixEventType,
     FixProgressEvent,
     FixRequest,
     FixSessionResult,
     FixStatus,
-    IssueFixResult,
 )
-from turbowrap.fix.validator import validate_issue_for_fix
-from turbowrap.fix.fix_challenger import GeminiFixChallenger
-from turbowrap.llm import GeminiClient, load_prompt
+from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_gemini_api_key
 
 logger = logging.getLogger(__name__)
 
-# Extended thinking budget for fix generation (20k tokens)
-FIX_THINKING_BUDGET = 20000
+# Agent file paths
+AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
+FIXER_AGENT = AGENTS_DIR / "fixer.md"
+FIX_CHALLENGER_AGENT = AGENTS_DIR / "fix_challenger.md"
+DEV_BE_AGENT = AGENTS_DIR / "dev_be.md"
+DEV_FE_AGENT = AGENTS_DIR / "dev_fe.md"
+ENGINEERING_PRINCIPLES = AGENTS_DIR / "engineering_principles.md"
+
+# File extensions for frontend vs backend
+FRONTEND_EXTENSIONS = {".tsx", ".ts", ".jsx", ".js", ".css", ".scss", ".html", ".vue", ".svelte"}
+BACKEND_EXTENSIONS = {".py", ".go", ".java", ".rb", ".php", ".rs", ".c", ".cpp", ".h"}
 
 # Type for progress callback
 ProgressCallback = Callable[[FixProgressEvent], Awaitable[None]]
 
-# Type for clarification answer provider
-AnswerProvider = Callable[[ClarificationQuestion], Awaitable[ClarificationAnswer]]
+# Timeouts
+CLAUDE_CLI_TIMEOUT = 300  # 5 minutes per fix
+GEMINI_CLI_TIMEOUT = 120  # 2 minutes per review
 
 
 class FixOrchestrator:
-    """Orchestrates the fixing of code review issues."""
+    """
+    Orchestrates fixing via Claude CLI and review via Gemini CLI.
 
-    # File extensions for backend vs frontend
-    BE_EXTENSIONS = {".py", ".go", ".java", ".rs", ".rb", ".php"}
-    FE_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"}
+    Both CLIs have FULL access to the system:
+    - Claude CLI: reads files, writes files, creates files, runs commands
+    - Gemini CLI: reads git diff, evaluates changes, provides feedback
 
-    def __init__(
-        self,
-        repo_path: Path,
-        gemini_client: Optional[GeminiClient] = None,
-    ):
-        """
-        Initialize the Fix Orchestrator.
+    We just coordinate and pass messages between them.
+    """
 
-        Args:
-            repo_path: Path to the repository
-            gemini_client: Gemini client for analysis
-        """
+    def __init__(self, repo_path: Path):
+        """Initialize with repository path."""
         self.repo_path = repo_path
         self.settings = get_settings()
-        self.gemini = gemini_client or GeminiClient()
-        self.git = GitUtils(repo_path)
 
-        # Initialize Anthropic client for extended thinking
-        api_key = self.settings.agents.anthropic_api_key
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY required for fix generation")
-        self.claude_client = anthropic.Anthropic(api_key=api_key)
-        self.claude_model = self.settings.agents.claude_model
-
-        # Thinking settings
-        self.thinking_enabled = self.settings.thinking.enabled
-        self.s3_bucket = self.settings.thinking.s3_bucket
-        self.s3_region = self.settings.thinking.s3_region
-
-        # Fix challenger settings
-        fix_challenger_config = self.settings.fix_challenger
-        self.challenger_enabled = fix_challenger_config.enabled
-        self.challenger_threshold = fix_challenger_config.satisfaction_threshold
-        self.challenger_max_iterations = fix_challenger_config.max_iterations
-
-        # Initialize challenger
-        self._challenger = None
-        if self.challenger_enabled:
-            try:
-                self._challenger = GeminiFixChallenger(
-                    model=fix_challenger_config.model,
-                    thinking_budget=fix_challenger_config.thinking_budget,
-                    satisfaction_threshold=fix_challenger_config.satisfaction_threshold,
-                )
-            except Exception as e:
-                logger.warning(f"Failed to initialize fix challenger: {e}")
-                self.challenger_enabled = False
-
-        # Lazy S3 client
-        self._s3_client = None
+        # Get challenger settings from config
+        fix_config = self.settings.fix_challenger
+        self.max_iterations = fix_config.max_iterations  # default 3
+        self.satisfaction_threshold = fix_config.satisfaction_threshold  # default 80.0
 
         # Load agent prompts
-        self._load_prompts()
+        self._agent_cache: dict[str, str] = {}
 
-    @property
-    def s3_client(self):
-        """Lazy-load S3 client."""
-        if self._s3_client is None:
-            self._s3_client = boto3.client("s3", region_name=self.s3_region)
-        return self._s3_client
+    def _load_agent(self, agent_path: Path) -> str:
+        """Load agent prompt from MD file, stripping frontmatter."""
+        cache_key = str(agent_path)
+        if cache_key in self._agent_cache:
+            return self._agent_cache[cache_key]
 
-    def _load_prompts(self) -> None:
-        """Load all required agent prompts."""
-        # Base: engineering principles (always)
-        try:
-            self.engineering_prompt = load_prompt("engineering_principles")
-        except FileNotFoundError:
-            logger.warning("engineering_principles.md not found")
-            self.engineering_prompt = ""
+        if not agent_path.exists():
+            logger.warning(f"Agent file not found: {agent_path}")
+            return ""
 
-        # Backend developer prompt
-        try:
-            self.dev_be_prompt = load_prompt("dev_be")
-        except FileNotFoundError:
-            logger.warning("dev_be.md not found")
-            self.dev_be_prompt = ""
+        content = agent_path.read_text(encoding="utf-8")
 
-        # Frontend developer prompt
-        try:
-            self.dev_fe_prompt = load_prompt("dev_fe")
-        except FileNotFoundError:
-            logger.warning("dev_fe.md not found")
-            self.dev_fe_prompt = ""
+        # Strip YAML frontmatter (--- ... ---)
+        if content.startswith("---"):
+            end_match = re.search(r"\n---\n", content[3:])
+            if end_match:
+                content = content[3 + end_match.end() :]
 
-        # Fixer-specific prompt
-        try:
-            self.fixer_prompt = load_prompt("fixer")
-        except FileNotFoundError:
-            logger.warning("fixer.md not found, using default")
-            self.fixer_prompt = self._default_fixer_prompt()
+        self._agent_cache[cache_key] = content.strip()
+        return self._agent_cache[cache_key]
 
-    def _get_system_prompt_for_file(self, file_path: str) -> str:
-        """
-        Build system prompt based on file type.
+    def _is_frontend_file(self, file_path: str) -> bool:
+        """Check if file is a frontend file based on extension."""
+        ext = Path(file_path).suffix.lower()
+        return ext in FRONTEND_EXTENSIONS
 
-        Args:
-            file_path: Path to the file being fixed
+    def _is_backend_file(self, file_path: str) -> bool:
+        """Check if file is a backend file based on extension."""
+        ext = Path(file_path).suffix.lower()
+        return ext in BACKEND_EXTENSIONS
 
-        Returns:
-            Combined system prompt: engineering + (dev_be|dev_fe) + fixer
-        """
-        suffix = Path(file_path).suffix.lower()
+    def _get_fixer_prompt_be(self) -> str:
+        """Get fixer prompt for backend: fixer.md + dev_be.md."""
+        fixer = self._load_agent(FIXER_AGENT)
+        dev_be = self._load_agent(DEV_BE_AGENT)
+        principles = self._load_agent(ENGINEERING_PRINCIPLES)
 
-        # Determine if BE or FE
-        if suffix in self.BE_EXTENSIONS:
-            dev_prompt = self.dev_be_prompt
-            file_type = "Backend"
-        elif suffix in self.FE_EXTENSIONS:
-            dev_prompt = self.dev_fe_prompt
-            file_type = "Frontend"
-        else:
-            # Default to fixer only for unknown types
-            dev_prompt = ""
-            file_type = "General"
+        parts = [fixer]
+        if dev_be:
+            parts.append(f"\n\n# Backend Development Guidelines\n\n{dev_be}")
+        if principles:
+            parts.append(f"\n\n# Engineering Principles\n\n{principles}")
 
-        # Combine prompts
-        parts = []
-        if self.engineering_prompt:
-            parts.append(f"# Engineering Principles\n\n{self.engineering_prompt}")
-        if dev_prompt:
-            parts.append(f"# {file_type} Development Guidelines\n\n{dev_prompt}")
-        if self.fixer_prompt:
-            parts.append(f"# Fixer Instructions\n\n{self.fixer_prompt}")
+        return "\n".join(parts)
 
-        return "\n\n---\n\n".join(parts) if parts else self._default_fixer_prompt()
+    def _get_fixer_prompt_fe(self) -> str:
+        """Get fixer prompt for frontend: fixer.md + dev_fe.md."""
+        fixer = self._load_agent(FIXER_AGENT)
+        dev_fe = self._load_agent(DEV_FE_AGENT)
+        principles = self._load_agent(ENGINEERING_PRINCIPLES)
 
-    def _default_fixer_prompt(self) -> str:
-        """Default fixer prompt if agents/fixer.md is not found."""
-        return """You are a code fixer. Your task is to fix the issue described below.
+        parts = [fixer]
+        if dev_fe:
+            parts.append(f"\n\n# Frontend Development Guidelines\n\n{dev_fe}")
+        if principles:
+            parts.append(f"\n\n# Engineering Principles\n\n{principles}")
 
-IMPORTANT RULES:
-1. Return the COMPLETE fixed file content, not just the changed parts
-2. Maintain the existing code style (indentation, quotes, etc.)
-3. Make minimal changes - only fix the specific issue
-4. Add a brief comment explaining what you changed (at the top or inline)
+        return "\n".join(parts)
 
-Your response MUST be in this exact format:
-```
-<file_content>
-[complete file content here]
-</file_content>
+    def _classify_issues(self, issues: list[Issue]) -> tuple[list[Issue], list[Issue]]:
+        """Classify issues into backend and frontend lists."""
+        be_issues = []
+        fe_issues = []
 
-<changes_summary>
-[brief description of what you changed]
-</changes_summary>
-```
-"""
+        for issue in issues:
+            if self._is_backend_file(str(issue.file)):
+                be_issues.append(issue)
+            elif self._is_frontend_file(str(issue.file)):
+                fe_issues.append(issue)
+            else:
+                # Default to backend for unknown extensions
+                be_issues.append(issue)
+
+        return be_issues, fe_issues
+
+    def _get_challenger_prompt(self) -> str:
+        """Get fix challenger prompt."""
+        return self._load_agent(FIX_CHALLENGER_AGENT)
 
     async def fix_issues(
         self,
         request: FixRequest,
         issues: list[Issue],
-        emit: Optional[ProgressCallback] = None,
-        answer_provider: Optional[AnswerProvider] = None,
+        emit: ProgressCallback | None = None,
     ) -> FixSessionResult:
         """
-        Fix a list of issues serially.
+        Fix issues with parallel BE/FE execution.
 
-        Args:
-            request: Fix request with issue IDs
-            issues: List of Issue objects from database
-            emit: Callback for progress events
-            answer_provider: Callback to get user answers for clarifications
-
-        Returns:
-            FixSessionResult with summary of all fixes
+        Flow:
+        1. Classify issues into BE and FE
+        2. Launch Claude CLI(s) in parallel if both types exist
+        3. Gemini CLI reviews ALL changes
+        4. If score < threshold, retry with feedback (max iterations)
+        5. Commit when approved
         """
         session_id = str(uuid.uuid4())
-        branch_name = generate_fix_branch_name(request.task_id)
+        branch_name = f"fix/{request.task_id[:20]}"
 
         result = FixSessionResult(
             session_id=session_id,
@@ -242,7 +180,6 @@ Your response MUST be in this exact format:
         )
 
         async def safe_emit(event: FixProgressEvent) -> None:
-            """Safely emit progress event."""
             if emit:
                 try:
                     await emit(event)
@@ -250,808 +187,372 @@ Your response MUST be in this exact format:
                     logger.error(f"Error emitting progress: {e}")
 
         try:
-            # Create/checkout fix branch
-            original_branch = self.git.get_current_branch()
-            self.git.create_branch(branch_name)
+            # Classify issues
+            be_issues, fe_issues = self._classify_issues(issues)
+            has_be = len(be_issues) > 0
+            has_fe = len(fe_issues) > 0
 
-            await safe_emit(FixProgressEvent(
-                type=FixEventType.FIX_SESSION_STARTED,
-                session_id=session_id,
-                branch_name=branch_name,
-                total_issues=len(issues),
-                message=f"Created branch {branch_name}",
-            ))
-
-            # Process each issue SERIALLY
-            for i, issue in enumerate(issues, 1):
-                issue_result = await self._fix_single_issue(
-                    issue=issue,
+            await safe_emit(
+                FixProgressEvent(
+                    type=FixEventType.FIX_SESSION_STARTED,
                     session_id=session_id,
-                    issue_index=i,
+                    branch_name=branch_name,
                     total_issues=len(issues),
-                    emit=safe_emit,
-                    answer_provider=answer_provider,
+                    message=f"Starting fix: {len(be_issues)} BE + {len(fe_issues)} FE issues",
                 )
-
-                result.results.append(issue_result)
-
-                if issue_result.status == FixStatus.COMPLETED:
-                    result.issues_fixed += 1
-                elif issue_result.status == FixStatus.FAILED:
-                    result.issues_failed += 1
-                elif issue_result.status == FixStatus.SKIPPED:
-                    result.issues_skipped += 1
-
-            # Complete session
-            result.status = FixStatus.COMPLETED
-            result.completed_at = datetime.utcnow()
-
-            await safe_emit(FixProgressEvent(
-                type=FixEventType.FIX_SESSION_COMPLETED,
-                session_id=session_id,
-                branch_name=branch_name,
-                issues_fixed=result.issues_fixed,
-                issues_failed=result.issues_failed,
-                message=f"Fixed {result.issues_fixed}/{len(issues)} issues",
-            ))
-
-            return result
-
-        except GitError as e:
-            result.status = FixStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.utcnow()
-
-            await safe_emit(FixProgressEvent(
-                type=FixEventType.FIX_SESSION_ERROR,
-                session_id=session_id,
-                error=str(e),
-            ))
-
-            return result
-
-        except Exception as e:
-            logger.exception("Unexpected error during fix session")
-            result.status = FixStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.utcnow()
-
-            await safe_emit(FixProgressEvent(
-                type=FixEventType.FIX_SESSION_ERROR,
-                session_id=session_id,
-                error=str(e),
-            ))
-
-            return result
-
-    async def _fix_single_issue(
-        self,
-        issue: Issue,
-        session_id: str,
-        issue_index: int,
-        total_issues: int,
-        emit: ProgressCallback,
-        answer_provider: Optional[AnswerProvider] = None,
-    ) -> IssueFixResult:
-        """
-        Fix a single issue.
-
-        Flow:
-        1. Validate issue is still applicable
-        2. Analyze with Gemini (needs clarification?)
-        3. If ambiguous, ask user
-        4. Generate fix with Claude
-        5. Apply to file
-        6. Commit
-
-        Returns:
-            IssueFixResult
-        """
-        result = IssueFixResult(
-            issue_id=issue.id,
-            issue_code=issue.issue_code,
-            status=FixStatus.PENDING,
-            started_at=datetime.utcnow(),
-        )
-
-        common_fields = {
-            "session_id": session_id,
-            "issue_id": issue.id,
-            "issue_code": issue.issue_code,
-            "issue_index": issue_index,
-            "total_issues": total_issues,
-        }
-
-        try:
-            # Step 1: Validate
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_STARTED,
-                message=f"Starting fix for {issue.issue_code}",
-                **common_fields,
-            ))
-
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_VALIDATING,
-                message=f"Validating {issue.file}...",
-                **common_fields,
-            ))
-
-            validation = validate_issue_for_fix(
-                repo_path=self.repo_path,
-                file_path=issue.file,
-                line=issue.line,
-                current_code=issue.current_code,
             )
 
-            if not validation.is_valid:
-                result.status = FixStatus.SKIPPED
-                result.error = validation.error
-                result.completed_at = datetime.utcnow()
-
-                await emit(FixProgressEvent(
-                    type=FixEventType.FIX_ISSUE_SKIPPED,
-                    message=f"Skipped: {validation.error}",
-                    **common_fields,
-                ))
-
-                return result
-
-            # Build fix context
-            context = FixContext(
-                issue_id=issue.id,
-                issue_code=issue.issue_code,
-                file_path=issue.file,
-                line=issue.line,
-                end_line=issue.end_line,
-                title=issue.title,
-                description=issue.description,
-                current_code=issue.current_code,
-                suggested_fix=issue.suggested_fix,
-                category=issue.category,
-                severity=issue.severity,
-                file_content=validation.file_content,
+            # Create branch
+            await self._run_claude_cli(
+                f"Create and checkout a new git branch called '{branch_name}' if it doesn't exist. If it exists, just checkout to it.",
+                timeout=30,
             )
 
-            # Step 2: Analyze with Gemini (check if clarification needed)
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_ANALYZING,
-                message="Analyzing issue complexity...",
-                **common_fields,
-            ))
-
-            clarification = await self._analyze_for_clarification(context)
-
-            # Step 3: Get clarification if needed
-            if clarification and answer_provider:
-                await emit(FixProgressEvent(
-                    type=FixEventType.FIX_CLARIFICATION_NEEDED,
-                    clarification=clarification,
-                    message=clarification.question,
-                    **common_fields,
-                ))
-
-                answer = await answer_provider(clarification)
-                context.clarifications.append(answer)
-
-                await emit(FixProgressEvent(
-                    type=FixEventType.FIX_CLARIFICATION_RECEIVED,
-                    message=f"Received clarification: {answer.answer}",
-                    **common_fields,
-                ))
-
-            # Step 4: Generate fix with Claude (with challenger loop)
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_GENERATING,
-                message="Generating fix with Claude + Extended Thinking...",
-                **common_fields,
-            ))
-
-            fixed_content, changes_summary = await self._generate_fix(context, emit, common_fields)
-
-            if not fixed_content:
-                result.status = FixStatus.FAILED
-                result.error = "Failed to generate fix"
-                result.completed_at = datetime.utcnow()
-
-                await emit(FixProgressEvent(
-                    type=FixEventType.FIX_ISSUE_ERROR,
-                    error="Failed to generate fix",
-                    **common_fields,
-                ))
-
-                return result
-
-            # Step 4b: Challenger loop (if enabled)
-            if self.challenger_enabled and self._challenger:
-                fixed_content, changes_summary = await self._run_challenger_loop(
-                    context=context,
-                    original_content=context.file_content,
-                    fixed_content=fixed_content,
-                    changes_summary=changes_summary,
-                    emit=emit,
-                    common_fields=common_fields,
-                )
-
-                if not fixed_content:
-                    result.status = FixStatus.FAILED
-                    result.error = "Fix rejected by challenger after max iterations"
-                    result.completed_at = datetime.utcnow()
-
-                    await emit(FixProgressEvent(
-                        type=FixEventType.FIX_ISSUE_ERROR,
-                        error="Fix rejected by challenger",
-                        **common_fields,
-                    ))
-
-                    return result
-
-            # Step 5: Apply fix
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_APPLYING,
-                message=f"Applying fix to {issue.file}...",
-                **common_fields,
-            ))
-
-            file_path = self.repo_path / issue.file
-            file_path.write_text(fixed_content, encoding="utf-8")
-
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_APPLIED,
-                message="Fix applied to file",
-                **common_fields,
-            ))
-
-            # Step 6: Commit
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_COMMITTING,
-                message="Committing changes...",
-                **common_fields,
-            ))
-
-            self.git.stage_file(issue.file)
-            commit_message = generate_commit_message(issue.issue_code, issue.title)
-            commit_sha = self.git.commit(commit_message)
-
-            result.status = FixStatus.COMPLETED
-            result.commit_sha = commit_sha
-            result.commit_message = commit_message
-            result.changes_made = changes_summary
-            result.completed_at = datetime.utcnow()
-
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_COMMITTED,
-                commit_sha=commit_sha,
-                commit_message=commit_message,
-                **common_fields,
-            ))
-
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_COMPLETED,
-                message=f"Successfully fixed {issue.issue_code}",
-                commit_sha=commit_sha,
-                **common_fields,
-            ))
-
-            return result
-
-        except Exception as e:
-            logger.exception(f"Error fixing issue {issue.issue_code}")
-            result.status = FixStatus.FAILED
-            result.error = str(e)
-            result.completed_at = datetime.utcnow()
-
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_ERROR,
-                error=str(e),
-                **common_fields,
-            ))
-
-            return result
-
-    async def _analyze_for_clarification(
-        self, context: FixContext
-    ) -> Optional[ClarificationQuestion]:
-        """
-        Analyze issue to determine if clarification is needed.
-
-        Uses Gemini to quickly assess if the issue is ambiguous.
-
-        Returns:
-            ClarificationQuestion if clarification needed, None otherwise
-        """
-        prompt = f"""Analyze this code issue and determine if any clarification is needed before fixing.
-
-Issue: {context.title}
-Description: {context.description}
-Category: {context.category}
-Severity: {context.severity}
-
-File: {context.file_path}
-Line: {context.line}
-
-Current Code:
-```
-{context.current_code or "Not provided"}
-```
-
-Suggested Fix:
-```
-{context.suggested_fix or "Not provided"}
-```
-
-If the issue is clear and unambiguous, respond with:
-{{"needs_clarification": false}}
-
-If clarification is needed, respond with:
-{{"needs_clarification": true, "question": "Your question here", "options": ["Option 1", "Option 2"]}}
-
-Only ask for clarification if there are genuinely multiple valid approaches or missing information.
-Respond ONLY with valid JSON.
-"""
-
-        try:
-            response = self.gemini.generate(prompt)
-
-            # Parse JSON response
-            # Find JSON in response
-            json_match = re.search(r"\{.*\}", response, re.DOTALL)
-            if not json_match:
-                return None
-
-            data = json.loads(json_match.group())
-
-            if data.get("needs_clarification"):
-                return ClarificationQuestion(
-                    id=str(uuid.uuid4()),
-                    issue_id=context.issue_id,
-                    question=data.get("question", "How would you like to proceed?"),
-                    options=data.get("options"),
-                )
-
-            return None
-
-        except Exception as e:
-            logger.warning(f"Clarification analysis failed: {e}, proceeding without")
-            return None
-
-    async def _save_thinking_to_s3(
-        self,
-        thinking_content: str,
-        issue_id: str,
-        context: FixContext,
-    ) -> Optional[str]:
-        """
-        Save thinking content to S3.
-
-        Args:
-            thinking_content: The thinking text to save
-            issue_id: Issue identifier
-            context: Fix context for metadata
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not thinking_content:
-            return None
-
-        try:
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"thinking/{timestamp}/fix_{issue_id}.md"
-
-            content = f"""# Extended Thinking - Fix Generation
-
-**Issue ID**: {issue_id}
-**Issue Code**: {context.issue_code}
-**File**: {context.file_path}
-**Timestamp**: {datetime.utcnow().isoformat()}
-**Model**: {self.claude_model}
-
----
-
-## Thinking Process
-
-{thinking_content}
-"""
-
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"Saved fix thinking to {s3_url}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save thinking to S3: {e}")
-            return None
-
-    def _stream_with_thinking_sync(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-    ) -> tuple[str, str]:
-        """
-        Synchronous streaming with extended thinking.
-        Runs in thread pool to not block event loop.
-
-        Returns:
-            Tuple of (thinking_content, response_text)
-        """
-        thinking_content = ""
-        response_text = ""
-
-        params = {
-            "model": self.claude_model,
-            "max_tokens": 16000,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_prompt}],
-        }
-
-        # Add extended thinking with 20k budget
-        if self.thinking_enabled:
-            params["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": FIX_THINKING_BUDGET,
-            }
-
-        with self.claude_client.messages.stream(**params) as stream:
-            for event in stream:
-                if hasattr(event, "type"):
-                    if event.type == "content_block_delta":
-                        if hasattr(event, "delta"):
-                            if hasattr(event.delta, "type"):
-                                if event.delta.type == "thinking_delta":
-                                    thinking_content += event.delta.thinking
-                                elif event.delta.type == "text_delta":
-                                    response_text += event.delta.text
-
-        return thinking_content, response_text
-
-    async def _generate_fix(
-        self,
-        context: FixContext,
-        emit: ProgressCallback,
-        common_fields: dict,
-    ) -> tuple[Optional[str], Optional[str]]:
-        """
-        Generate the fix using Claude with Extended Thinking (20k tokens).
-
-        Returns:
-            Tuple of (fixed_content, changes_summary) or (None, None) on failure
-        """
-        clarifications_text = ""
-        if context.clarifications:
-            clarifications_text = "\n\nUser Clarifications:\n"
-            for c in context.clarifications:
-                clarifications_text += f"- {c.answer}\n"
-
-        prompt = f"""Fix this code issue.
-
-Issue: {context.title}
-Description: {context.description}
-Category: {context.category}
-Severity: {context.severity}
-
-File: {context.file_path}
-Line: {context.line or "Unknown"}
-
-Current Problematic Code:
-```
-{context.current_code or "See full file below"}
-```
-
-Suggested Fix (from review):
-```
-{context.suggested_fix or "Not provided - use your judgment"}
-```
-{clarifications_text}
-Full File Content:
-```
-{context.file_content}
-```
-
-IMPORTANT:
-1. Return the COMPLETE fixed file content
-2. Maintain existing code style
-3. Make minimal changes
-4. Include a brief comment about what you changed
-
-Format your response as:
-<file_content>
-[complete file content]
-</file_content>
-
-<changes_summary>
-[brief description]
-</changes_summary>
-"""
-
-        try:
-            # Build system prompt based on file type
-            system_prompt = self._get_system_prompt_for_file(context.file_path)
-
-            # Emit that we're using extended thinking
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_STREAMING,
-                content="[Extended Thinking: analyzing issue with 20k token budget...]\n\n",
-                **common_fields,
-            ))
-
-            # Stream with extended thinking (runs in thread pool)
-            thinking_content, response_text = await asyncio.to_thread(
-                self._stream_with_thinking_sync,
-                system_prompt,
-                prompt,
-            )
-
-            # Save thinking to S3 in background
-            if thinking_content:
-                asyncio.create_task(
-                    self._save_thinking_to_s3(thinking_content, context.issue_id, context)
-                )
-
-            # Stream the response content to UI
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_STREAMING,
-                content=response_text,
-                **common_fields,
-            ))
-
-            # Parse response
-            file_match = re.search(
-                r"<file_content>\s*(.*?)\s*</file_content>",
-                response_text,
-                re.DOTALL,
-            )
-            summary_match = re.search(
-                r"<changes_summary>\s*(.*?)\s*</changes_summary>",
-                response_text,
-                re.DOTALL,
-            )
-
-            if file_match:
-                fixed_content = file_match.group(1).strip()
-                changes_summary = summary_match.group(1).strip() if summary_match else None
-                return fixed_content, changes_summary
-
-            # Fallback: try to extract code block
-            code_match = re.search(r"```(?:\w+)?\s*(.*?)```", response_text, re.DOTALL)
-            if code_match:
-                return code_match.group(1).strip(), "Fix applied"
-
-            logger.error("Could not parse Claude response")
-            return None, None
-
-        except Exception as e:
-            logger.exception("Error generating fix with extended thinking")
-            return None, None
-
-    async def _run_challenger_loop(
-        self,
-        context: FixContext,
-        original_content: str,
-        fixed_content: str,
-        changes_summary: Optional[str],
-        emit: ProgressCallback,
-        common_fields: dict,
-    ) -> tuple[Optional[str], Optional[str]]:
-        """
-        Run the challenger loop to validate and improve the fix.
-
-        Args:
-            context: Fix context
-            original_content: Original file content
-            fixed_content: Current fixed content
-            changes_summary: Summary of changes
-            emit: Progress callback
-            common_fields: Common event fields
-
-        Returns:
-            Tuple of (final_fixed_content, final_changes_summary) or (None, None) if rejected
-        """
-        iteration = 0
-        current_fix = fixed_content
-        current_summary = changes_summary
-        last_feedback: Optional[FixChallengerFeedback] = None
-
-        while iteration < self.challenger_max_iterations:
-            iteration += 1
-
-            # Emit challenger evaluation event
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_CHALLENGER_EVALUATING,
-                message=f"Gemini Pro evaluating fix (iteration {iteration}/{self.challenger_max_iterations})...",
-                **common_fields,
-            ))
-
-            # Evaluate with challenger
-            feedback = await self._challenger.evaluate(
-                context=context,
-                original_content=original_content,
-                fixed_content=current_fix,
-                changes_summary=current_summary,
-                iteration=iteration,
-            )
-            last_feedback = feedback
-
-            # Emit challenger result
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_CHALLENGER_RESULT,
-                message=f"Score: {feedback.satisfaction_score:.0f}/100 ({feedback.status.value})",
-                content=f"Correctness: {feedback.quality_scores.correctness:.0f}, "
-                        f"Safety: {feedback.quality_scores.safety:.0f}, "
-                        f"Minimality: {feedback.quality_scores.minimality:.0f}, "
-                        f"Style: {feedback.quality_scores.style_consistency:.0f}",
-                **common_fields,
-            ))
-
-            # Check if approved
-            if feedback.passed:
-                await emit(FixProgressEvent(
-                    type=FixEventType.FIX_CHALLENGER_APPROVED,
-                    message=f"Fix approved! Score: {feedback.satisfaction_score:.0f}/100",
-                    **common_fields,
-                ))
-                return current_fix, current_summary
-
-            # Check if we've exhausted iterations
-            if iteration >= self.challenger_max_iterations:
-                # Accept if above forced threshold (80% of target)
-                forced_threshold = self.challenger_threshold * 0.8
-                if feedback.satisfaction_score >= forced_threshold:
-                    await emit(FixProgressEvent(
-                        type=FixEventType.FIX_CHALLENGER_APPROVED,
-                        message=f"Fix accepted (forced after {iteration} iterations, score: {feedback.satisfaction_score:.0f})",
-                        **common_fields,
-                    ))
-                    return current_fix, current_summary
-                else:
-                    await emit(FixProgressEvent(
-                        type=FixEventType.FIX_CHALLENGER_REJECTED,
-                        message=f"Fix rejected after {iteration} iterations (score: {feedback.satisfaction_score:.0f})",
-                        **common_fields,
-                    ))
-                    return None, None
-
-            # Regenerate with feedback
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_REGENERATING,
-                message=f"Regenerating fix based on challenger feedback...",
-                **common_fields,
-            ))
-
-            new_fix, new_summary = await self._regenerate_fix(
-                context=context,
-                previous_fix=current_fix,
-                feedback=feedback,
-                emit=emit,
-                common_fields=common_fields,
-            )
-
-            if not new_fix:
-                logger.warning("Failed to regenerate fix, using previous version")
-                # Continue with previous fix for next iteration or exit
-                continue
-
-            current_fix = new_fix
-            current_summary = new_summary
-
-        # Should not reach here, but handle edge case
-        return current_fix, current_summary
-
-    async def _regenerate_fix(
-        self,
-        context: FixContext,
-        previous_fix: str,
-        feedback: FixChallengerFeedback,
-        emit: ProgressCallback,
-        common_fields: dict,
-    ) -> tuple[Optional[str], Optional[str]]:
-        """
-        Regenerate fix based on challenger feedback.
-
-        Args:
-            context: Fix context
-            previous_fix: Previous fix that was rejected
-            feedback: Challenger feedback with issues found
-            emit: Progress callback
-            common_fields: Common event fields
-
-        Returns:
-            Tuple of (fixed_content, changes_summary) or (None, None) on failure
-        """
-        refinement_prompt = feedback.to_refinement_prompt()
-
-        prompt = f"""Improve your previous fix based on the feedback below.
-
-## Original Issue
-Issue: {context.title}
-Description: {context.description}
-File: {context.file_path}
-
-## Your Previous Fix (needs improvement)
-```
-{previous_fix}
-```
-
-## Challenger Feedback
-{refinement_prompt}
-
-## Instructions
-1. Address ALL issues found by the challenger
-2. Maintain what was done well
-3. Return the COMPLETE improved file content
-4. Keep changes minimal and focused
-
-Format your response as:
-<file_content>
-[complete file content]
-</file_content>
-
-<changes_summary>
-[brief description of improvements]
-</changes_summary>
-"""
-
-        try:
-            system_prompt = self._get_system_prompt_for_file(context.file_path)
-
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_STREAMING,
-                content="[Regenerating with Extended Thinking...]\n\n",
-                **common_fields,
-            ))
-
-            thinking_content, response_text = await asyncio.to_thread(
-                self._stream_with_thinking_sync,
-                system_prompt,
-                prompt,
-            )
-
-            # Save thinking to S3
-            if thinking_content:
-                asyncio.create_task(
-                    self._save_thinking_to_s3(
-                        thinking_content,
-                        f"{context.issue_id}_regen_{feedback.iteration}",
-                        context
+            feedback_be = ""
+            feedback_fe = ""
+
+            for iteration in range(1, self.max_iterations + 1):
+                # Step 1: Launch Claude CLI(s) in parallel
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_GENERATING,
+                        session_id=session_id,
+                        message=f"Fixing (iteration {iteration}/{self.max_iterations})...",
                     )
                 )
 
-            await emit(FixProgressEvent(
-                type=FixEventType.FIX_ISSUE_STREAMING,
-                content=response_text[:500] + "...",  # Truncate for UI
-                **common_fields,
-            ))
+                tasks = []
+                task_types = []
 
-            # Parse response
-            file_match = re.search(
-                r"<file_content>\s*(.*?)\s*</file_content>",
-                response_text,
-                re.DOTALL,
+                if has_be:
+                    prompt_be = self._build_fix_prompt(be_issues, "be", feedback_be, iteration)
+                    tasks.append(self._run_claude_cli(prompt_be))
+                    task_types.append("be")
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message=f"→ Claude CLI (BE): fixing {len(be_issues)} issues",
+                        )
+                    )
+
+                if has_fe:
+                    prompt_fe = self._build_fix_prompt(fe_issues, "fe", feedback_fe, iteration)
+                    tasks.append(self._run_claude_cli(prompt_fe))
+                    task_types.append("fe")
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message=f"→ Claude CLI (FE): fixing {len(fe_issues)} issues",
+                        )
+                    )
+
+                # Run in parallel
+                outputs = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Check for failures
+                for i, output in enumerate(outputs):
+                    if isinstance(output, Exception) or output is None:
+                        logger.error(f"Claude CLI ({task_types[i]}) failed: {output}")
+
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_STREAMING,
+                        session_id=session_id,
+                        message="Claude CLI(s) completed",
+                    )
+                )
+
+                # Step 2: Gemini reviews ALL changes together
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                        session_id=session_id,
+                        message=f"Gemini CLI reviewing all changes (iteration {iteration})...",
+                    )
+                )
+
+                review_prompt = self._build_review_prompt_batch(issues)
+                gemini_output = await self._run_gemini_cli(review_prompt)
+
+                if gemini_output is None:
+                    logger.warning("Gemini CLI failed, accepting fixes without review")
+                    break
+
+                score = self._parse_score(gemini_output)
+
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_CHALLENGER_RESULT,
+                        session_id=session_id,
+                        message=f"Score: {score}/100 (threshold: {self.satisfaction_threshold})",
+                        content=gemini_output[:500],
+                    )
+                )
+
+                if score >= self.satisfaction_threshold:
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_CHALLENGER_APPROVED,
+                            session_id=session_id,
+                            message=f"Fix approved with score {score}/100!",
+                        )
+                    )
+                    break
+                # Parse feedback for next iteration
+                feedback_be = gemini_output
+                feedback_fe = gemini_output
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_REGENERATING,
+                        session_id=session_id,
+                        message=f"Score {score} < {self.satisfaction_threshold}, retrying...",
+                    )
+                )
+
+            # Step 3: Commit all changes
+            await safe_emit(
+                FixProgressEvent(
+                    type=FixEventType.FIX_ISSUE_COMMITTING,
+                    session_id=session_id,
+                    message="Committing all changes...",
+                )
             )
-            summary_match = re.search(
-                r"<changes_summary>\s*(.*?)\s*</changes_summary>",
-                response_text,
-                re.DOTALL,
+
+            issue_codes = ", ".join(str(i.issue_code) for i in issues[:3])
+            if len(issues) > 3:
+                issue_codes += f" (+{len(issues) - 3} more)"
+
+            commit_prompt = f"""
+Commit all changes with this message:
+[FIX] {issue_codes}
+
+Use: git add -A && git commit -m "[FIX] {issue_codes}"
+"""
+            await self._run_claude_cli(commit_prompt, timeout=30)
+
+            result.status = FixStatus.COMPLETED
+            result.issues_fixed = len(issues)
+            result.completed_at = datetime.utcnow()
+
+            await safe_emit(
+                FixProgressEvent(
+                    type=FixEventType.FIX_SESSION_COMPLETED,
+                    session_id=session_id,
+                    branch_name=branch_name,
+                    issues_fixed=result.issues_fixed,
+                    message=f"Fixed {len(issues)} issues",
+                )
             )
 
-            if file_match:
-                fixed_content = file_match.group(1).strip()
-                changes_summary = summary_match.group(1).strip() if summary_match else "Improved based on feedback"
-                return fixed_content, changes_summary
-
-            # Fallback
-            code_match = re.search(r"```(?:\w+)?\s*(.*?)```", response_text, re.DOTALL)
-            if code_match:
-                return code_match.group(1).strip(), "Improved based on feedback"
-
-            return None, None
+            return result
 
         except Exception as e:
-            logger.exception("Error regenerating fix")
-            return None, None
+            logger.exception("Fix session failed")
+            result.status = FixStatus.FAILED
+            result.error = str(e)
+            result.completed_at = datetime.utcnow()
+
+            await safe_emit(
+                FixProgressEvent(
+                    type=FixEventType.FIX_SESSION_ERROR,
+                    session_id=session_id,
+                    error=str(e),
+                )
+            )
+
+            return result
+
+    def _build_review_prompt_batch(self, issues: list[Issue]) -> str:
+        """Build review prompt for all issues."""
+        agent_prompt = self._get_challenger_prompt()
+
+        issue_list = "\n".join(f"- {i.issue_code}: {i.title} ({i.file})" for i in issues)
+
+        task = f"""
+# Task: Review ALL Fixes
+
+## Issues Fixed
+{issue_list}
+
+## Instructions
+1. Run `git diff` to see ALL changes
+2. Evaluate if each fix correctly addresses its issue
+3. Check for bugs, security issues, or breaking changes
+4. Score from 0-100 for the OVERALL fix quality
+
+## Output Format
+Start your response with the score on its own line:
+SCORE: <number>
+
+Then provide detailed feedback for any issues found.
+"""
+
+        return f"{agent_prompt}\n\n---\n\n{task}"
+
+    def _build_fix_prompt(
+        self,
+        issues: list[Issue],
+        agent_type: str,
+        feedback: str,
+        iteration: int,
+    ) -> str:
+        """Build prompt for Claude CLI to fix issues.
+
+        Args:
+            issues: List of issues to fix (all same type: BE or FE)
+            agent_type: "be" or "fe"
+            feedback: Feedback from previous iteration
+            iteration: Current iteration number
+        """
+        # Load agent prompt based on type
+        if agent_type == "fe":
+            agent_prompt = self._get_fixer_prompt_fe()
+        else:
+            agent_prompt = self._get_fixer_prompt_be()
+
+        # Build task with all issues
+        task_parts = ["# Task: Fix Code Issues\n"]
+
+        for i, issue in enumerate(issues, 1):
+            task_parts.append(f"""
+## Issue {i}: {issue.issue_code}
+**Title**: {issue.title}
+**Severity**: {issue.severity}
+**Category**: {issue.category}
+**File**: {issue.file}
+**Line**: {issue.line or "N/A"}
+
+### Description
+{issue.description}
+
+### Current Code
+```
+{issue.current_code or "Read the file at " + issue.file}
+```
+
+### Suggested Fix
+{issue.suggested_fix or "Use your best judgment"}
+
+---
+""")
+
+        task_parts.append("""
+## Instructions
+1. Read the files to understand context
+2. Make the fixes - one by one
+3. Keep changes minimal
+4. Do NOT commit - just fix the code
+""")
+
+        if feedback and iteration > 1:
+            task_parts.append(f"""
+## Feedback from Previous Attempt (Iteration {iteration})
+The reviewer found issues with the previous fix. Address this feedback:
+
+{feedback}
+""")
+
+        task = "\n".join(task_parts)
+
+        # Combine agent prompt with task
+        return f"{agent_prompt}\n\n---\n\n{task}"
+
+    def _parse_score(self, output: str) -> float:
+        """Extract score from Gemini output."""
+        # Look for "SCORE: XX" pattern
+        match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+
+        # Fallback: look for any number followed by /100
+        match = re.search(r"(\d+)\s*/\s*100", output)
+        if match:
+            return float(match.group(1))
+
+        # Default to 70 if can't parse
+        logger.warning("Could not parse score from Gemini output, defaulting to 70")
+        return 70.0
+
+    async def _run_claude_cli(
+        self,
+        prompt: str,
+        timeout: int = CLAUDE_CLI_TIMEOUT,
+    ) -> str | None:
+        """Run Claude CLI with prompt."""
+        try:
+            # Build environment with API key from AWS Secrets Manager
+            env = os.environ.copy()
+            api_key = get_anthropic_api_key()
+            if api_key:
+                env["ANTHROPIC_API_KEY"] = api_key
+
+            process = await asyncio.create_subprocess_exec(
+                "claude",
+                "--print",
+                "--dangerously-skip-permissions",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+                env=env,
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input=prompt.encode()),
+                timeout=timeout,
+            )
+
+            if process.returncode != 0:
+                logger.error(f"Claude CLI failed: {stderr.decode()}")
+                return None
+
+            return stdout.decode()
+
+        except asyncio.TimeoutError:
+            logger.error(f"Claude CLI timed out after {timeout}s")
+            return None
+        except Exception:
+            logger.exception("Claude CLI error")
+            return None
+
+    async def _run_gemini_cli(
+        self,
+        prompt: str,
+        timeout: int = GEMINI_CLI_TIMEOUT,
+    ) -> str | None:
+        """Run Gemini CLI with prompt."""
+        try:
+            # Build environment with API key from AWS Secrets Manager
+            env = os.environ.copy()
+            api_key = get_gemini_api_key()
+            if api_key:
+                env["GEMINI_API_KEY"] = api_key
+
+            process = await asyncio.create_subprocess_exec(
+                "gemini",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+                env=env,
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input=prompt.encode()),
+                timeout=timeout,
+            )
+
+            if process.returncode != 0:
+                logger.error(f"Gemini CLI failed: {stderr.decode()}")
+                return None
+
+            return stdout.decode()
+
+        except asyncio.TimeoutError:
+            logger.error(f"Gemini CLI timed out after {timeout}s")
+            return None
+        except Exception:
+            logger.exception("Gemini CLI error")
+            return None

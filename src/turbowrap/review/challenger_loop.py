@@ -13,8 +13,8 @@ from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.models.challenger import ChallengerFeedback, ChallengerStatus
 from turbowrap.review.models.report import ConvergenceStatus, IterationHistory, ChallengerInsight
 from turbowrap.review.reviewers.base import ReviewContext
-from turbowrap.review.reviewers.claude_reviewer import ClaudeReviewer
-from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger
+from turbowrap.review.reviewers.claude_cli_reviewer import ClaudeCLIReviewer
+from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,8 @@ class ChallengerLoop:
 
     def __init__(
         self,
-        reviewer: Optional[ClaudeReviewer] = None,
-        challenger: Optional[GeminiChallenger] = None,
+        reviewer: Optional[ClaudeCLIReviewer] = None,
+        challenger: Optional[GeminiCLIChallenger] = None,
         satisfaction_threshold: Optional[float] = None,
         max_iterations: Optional[int] = None,
         min_improvement_threshold: Optional[float] = None,
@@ -64,8 +64,8 @@ class ChallengerLoop:
         Initialize the challenger loop.
 
         Args:
-            reviewer: Claude reviewer instance
-            challenger: Gemini challenger instance
+            reviewer: Claude CLI reviewer instance
+            challenger: Gemini CLI challenger instance
             satisfaction_threshold: Required satisfaction score (0-100)
             max_iterations: Maximum number of iterations (capped at 10)
             min_improvement_threshold: Minimum improvement per iteration
@@ -118,10 +118,10 @@ class ChallengerLoop:
 
         # Initialize reviewer and challenger if not provided
         if self.reviewer is None:
-            self.reviewer = ClaudeReviewer(name=reviewer_name)
+            self.reviewer = ClaudeCLIReviewer(name=reviewer_name)
 
         if self.challenger is None:
-            self.challenger = GeminiChallenger()
+            self.challenger = GeminiCLIChallenger()
 
         # Load agent prompt if available
         try:
@@ -159,23 +159,33 @@ class ChallengerLoop:
             logger.info(f"=== Challenger Loop Iteration {iteration} ===")
 
             # Step 1: Reviewer performs/refines review
+            # CLI reviewers receive file list (not contents) and explore autonomously
+            file_list = context.files
+
             if current_review is None:
                 logger.info("Performing initial review...")
-                current_review = await self.reviewer.review(context)
+                current_review = await self.reviewer.review(
+                    context, file_list, on_content_callback
+                )
             else:
                 logger.info("Refining review based on challenger feedback...")
                 current_review = await self.reviewer.refine(
                     context,
                     current_review,
                     challenger_feedback,
+                    file_list,
+                    on_content_callback,
                 )
 
             # Step 2: Challenger evaluates
+            # CLI challenger receives review + file list and can read files to verify
             logger.info("Challenger evaluating review...")
             challenger_feedback = await self.challenger.challenge(
-                context,
                 current_review,
+                file_list,
+                context.repo_path,
                 iteration,
+                on_content_callback,
             )
             challenger_feedbacks.append(challenger_feedback)
 

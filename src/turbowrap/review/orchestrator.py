@@ -660,9 +660,9 @@ class Orchestrator:
         reviewer_name: str,
     ) -> ReviewOutput:
         """Run a simple review without challenger pattern."""
-        from turbowrap.review.reviewers.claude_reviewer import ClaudeReviewer
+        from turbowrap.review.reviewers.claude_cli_reviewer import ClaudeCLIReviewer
 
-        reviewer = ClaudeReviewer(name=reviewer_name)
+        reviewer = ClaudeCLIReviewer(name=reviewer_name)
 
         try:
             context.agent_prompt = reviewer.load_agent_prompt(
@@ -671,7 +671,8 @@ class Orchestrator:
         except FileNotFoundError:
             pass
 
-        return await reviewer.review(context)
+        # CLI reviewer receives file list and explores autonomously
+        return await reviewer.review(context, context.files)
 
     def _deduplicate_issues(self, issues: list[Issue]) -> list[Issue]:
         """Deduplicate issues from multiple reviewers."""

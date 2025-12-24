@@ -9,7 +9,6 @@ import json
 import logging
 import re
 from datetime import datetime
-from typing import Optional
 
 from turbowrap.config import get_settings
 from turbowrap.fix.models import (
@@ -79,7 +78,7 @@ class GeminiFixChallenger:
         context: FixContext,
         original_content: str,
         fixed_content: str,
-        changes_summary: Optional[str] = None,
+        changes_summary: str | None = None,
         iteration: int = 1,
     ) -> FixChallengerFeedback:
         """
@@ -106,10 +105,9 @@ class GeminiFixChallenger:
         )
 
         # Parse response
-        feedback = self._parse_response(response_text, thinking_content, iteration)
-        return feedback
+        return self._parse_response(response_text, thinking_content, iteration)
 
-    def _call_gemini_with_thinking(self, prompt: str) -> tuple[str, Optional[str]]:
+    def _call_gemini_with_thinking(self, prompt: str) -> tuple[str, str | None]:
         """
         Call Gemini with thinking mode enabled.
 
@@ -119,9 +117,7 @@ class GeminiFixChallenger:
         try:
             # Configure thinking mode
             config = self._types.GenerateContentConfig(
-                thinking_config=self._types.ThinkingConfig(
-                    thinking_budget=self.thinking_budget
-                )
+                thinking_config=self._types.ThinkingConfig(thinking_budget=self.thinking_budget)
             )
 
             response = self.client.models.generate_content(
@@ -131,22 +127,24 @@ class GeminiFixChallenger:
             )
 
             # Extract thinking and response
-            thinking_content = None
+            thinking_content: str | None = None
             response_text = ""
 
             # Try to extract thinking from response parts
-            if hasattr(response, 'candidates') and response.candidates:
+            if hasattr(response, "candidates") and response.candidates:
                 candidate = response.candidates[0]
-                if hasattr(candidate, 'content') and candidate.content:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'thought') and part.thought:
-                            thinking_content = part.text if hasattr(part, 'text') else str(part)
-                        elif hasattr(part, 'text'):
-                            response_text += part.text
+                if hasattr(candidate, "content") and candidate.content:
+                    parts = candidate.content.parts
+                    if parts:
+                        for part in parts:
+                            if hasattr(part, "thought") and part.thought:
+                                thinking_content = part.text if hasattr(part, "text") else str(part)
+                            elif hasattr(part, "text"):
+                                response_text += str(part.text)
 
             # Fallback to simple text extraction
-            if not response_text and hasattr(response, 'text'):
-                response_text = response.text
+            if not response_text and hasattr(response, "text"):
+                response_text = str(response.text) if response.text else ""
 
             return response_text, thinking_content
 
@@ -157,7 +155,8 @@ class GeminiFixChallenger:
                 model=self.model,
                 contents=prompt,
             )
-            return response.text, None
+            text = response.text if hasattr(response, "text") else ""
+            return str(text) if text else "", None
 
     def _default_system_prompt(self) -> str:
         """Default system prompt if fix_challenger.md is not found."""
@@ -189,7 +188,7 @@ Output ONLY valid JSON with: satisfaction_score, status, quality_scores, issues_
         context: FixContext,
         original_content: str,
         fixed_content: str,
-        changes_summary: Optional[str] = None,
+        changes_summary: str | None = None,
     ) -> str:
         """Build the evaluation prompt with system context."""
         # Combine system prompt with fix details
@@ -273,7 +272,7 @@ Return ONLY valid JSON:
     def _parse_response(
         self,
         response_text: str,
-        thinking_content: Optional[str],
+        thinking_content: str | None,
         iteration: int,
     ) -> FixChallengerFeedback:
         """Parse Gemini's response into FixChallengerFeedback."""
@@ -301,13 +300,15 @@ Return ONLY valid JSON:
             # Parse issues found
             issues_found = []
             for issue_data in data.get("issues_found", []):
-                issues_found.append(FixIssue(
-                    type=issue_data.get("type", "unknown"),
-                    description=issue_data.get("description", ""),
-                    line=issue_data.get("line"),
-                    severity=issue_data.get("severity", "MEDIUM"),
-                    suggestion=issue_data.get("suggestion"),
-                ))
+                issues_found.append(
+                    FixIssue(
+                        type=issue_data.get("type", "unknown"),
+                        description=issue_data.get("description", ""),
+                        line=issue_data.get("line"),
+                        severity=issue_data.get("severity", "MEDIUM"),
+                        suggestion=issue_data.get("suggestion"),
+                    )
+                )
 
             # Determine status
             score = data.get("satisfaction_score", quality_scores.weighted_score)
@@ -348,16 +349,13 @@ Return ONLY valid JSON:
                     minimality=50,
                     style_consistency=50,
                 ),
-                improvements_needed=[
-                    f"Failed to parse challenger response: {response_text[:200]}"
-                ],
+                improvements_needed=[f"Failed to parse challenger response: {response_text[:200]}"],
             )
 
     def _score_to_status(self, score: float) -> FixChallengerStatus:
         """Convert satisfaction score to status."""
         if score >= self.threshold:
             return FixChallengerStatus.APPROVED
-        elif score >= 50:
+        if score >= 50:
             return FixChallengerStatus.NEEDS_IMPROVEMENT
-        else:
-            return FixChallengerStatus.REJECTED
+        return FixChallengerStatus.REJECTED

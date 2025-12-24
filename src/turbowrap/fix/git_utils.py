@@ -3,7 +3,6 @@
 import logging
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +20,17 @@ class GitUtils:
         """Initialize with repository path."""
         self.repo_path = repo_path
 
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a git command."""
         cmd = ["git", *args]
         try:
-            result = subprocess.run(
+            return subprocess.run(
                 cmd,
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
                 check=check,
             )
-            return result
         except subprocess.CalledProcessError as e:
             logger.error(f"Git command failed: {' '.join(cmd)}")
             logger.error(f"stderr: {e.stderr}")
@@ -48,7 +46,7 @@ class GitUtils:
         result = self._run_git("branch", "--list", branch_name, check=False)
         return bool(result.stdout.strip())
 
-    def create_branch(self, branch_name: str, from_branch: Optional[str] = None) -> str:
+    def create_branch(self, branch_name: str, from_branch: str | None = None) -> str:
         """
         Create and checkout a new branch.
 
@@ -108,7 +106,46 @@ class GitUtils:
         result = self._run_git(*args, check=False)
         return result.stdout
 
-    def stash_changes(self, message: Optional[str] = None) -> bool:
+    def stage_all(self) -> None:
+        """Stage all changes for commit."""
+        self._run_git("add", "-A")
+        logger.info("Staged all changes")
+
+    def get_diff(self, staged: bool = True) -> str:
+        """
+        Get diff of all changes.
+
+        Args:
+            staged: If True, get diff of staged changes. Otherwise working tree.
+
+        Returns:
+            Diff as string
+        """
+        args = ["diff"]
+        if staged:
+            args.append("--staged")
+        result = self._run_git(*args, check=False)
+        return result.stdout
+
+    def get_diff_stat(self, staged: bool = True) -> str:
+        """Get diff stats (files changed, insertions, deletions)."""
+        args = ["diff", "--stat"]
+        if staged:
+            args.append("--staged")
+        result = self._run_git(*args, check=False)
+        return result.stdout
+
+    def discard_all_changes(self) -> None:
+        """Discard all uncommitted changes."""
+        # Discard staged changes
+        self._run_git("reset", "HEAD", check=False)
+        # Discard working tree changes
+        self._run_git("checkout", "--", ".", check=False)
+        # Remove untracked files
+        self._run_git("clean", "-fd", check=False)
+        logger.info("Discarded all uncommitted changes")
+
+    def stash_changes(self, message: str | None = None) -> bool:
         """
         Stash uncommitted changes.
 
@@ -130,7 +167,7 @@ class GitUtils:
         self._run_git("stash", "pop")
         logger.info("Popped stash")
 
-    def get_remote_url(self) -> Optional[str]:
+    def get_remote_url(self) -> str | None:
         """Get the remote origin URL."""
         result = self._run_git("remote", "get-url", "origin", check=False)
         if result.returncode == 0:

@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -66,20 +65,16 @@ class FixQualityScores(BaseModel):
     """Quality scores for fix evaluation."""
 
     correctness: float = Field(
-        ..., ge=0, le=100,
-        description="Does the fix actually solve the issue?"
+        ..., ge=0, le=100, description="Does the fix actually solve the issue?"
     )
     safety: float = Field(
-        ..., ge=0, le=100,
-        description="Does the fix avoid introducing new bugs/vulnerabilities?"
+        ..., ge=0, le=100, description="Does the fix avoid introducing new bugs/vulnerabilities?"
     )
     minimality: float = Field(
-        ..., ge=0, le=100,
-        description="Is the fix minimal and focused (not over-engineered)?"
+        ..., ge=0, le=100, description="Is the fix minimal and focused (not over-engineered)?"
     )
     style_consistency: float = Field(
-        ..., ge=0, le=100,
-        description="Does the fix maintain code style consistency?"
+        ..., ge=0, le=100, description="Does the fix maintain code style consistency?"
     )
 
     @property
@@ -104,9 +99,9 @@ class FixIssue(BaseModel):
 
     type: str = Field(..., description="Issue type: bug, vulnerability, style, logic")
     description: str = Field(..., description="Description of the problem")
-    line: Optional[int] = Field(default=None, description="Line number in the fix")
+    line: int | None = Field(default=None, description="Line number in the fix")
     severity: str = Field(default="MEDIUM", description="Severity: CRITICAL, HIGH, MEDIUM, LOW")
-    suggestion: Optional[str] = Field(default=None, description="How to fix this issue")
+    suggestion: str | None = Field(default=None, description="How to fix this issue")
 
 
 class FixChallengerFeedback(BaseModel):
@@ -116,30 +111,21 @@ class FixChallengerFeedback(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     satisfaction_score: float = Field(
-        ..., ge=0, le=100,
-        description="Overall satisfaction with the fix"
+        ..., ge=0, le=100, description="Overall satisfaction with the fix"
     )
     threshold: float = Field(..., description="Required threshold to pass")
     status: FixChallengerStatus
 
     quality_scores: FixQualityScores
     issues_found: list[FixIssue] = Field(
-        default_factory=list,
-        description="Issues found in the proposed fix"
+        default_factory=list, description="Issues found in the proposed fix"
     )
-    improvements_needed: list[str] = Field(
-        default_factory=list,
-        description="Improvements needed"
-    )
-    positive_feedback: list[str] = Field(
-        default_factory=list,
-        description="What was done well"
-    )
+    improvements_needed: list[str] = Field(default_factory=list, description="Improvements needed")
+    positive_feedback: list[str] = Field(default_factory=list, description="What was done well")
 
     # Thinking output (if available)
-    thinking_content: Optional[str] = Field(
-        default=None,
-        description="Thinking process from Gemini (if thinking mode enabled)"
+    thinking_content: str | None = Field(
+        default=None, description="Thinking process from Gemini (if thinking mode enabled)"
     )
 
     @property
@@ -167,7 +153,7 @@ class FixChallengerFeedback(BaseModel):
             for improvement in self.improvements_needed:
                 sections.append(f"- {improvement}\n")
 
-        sections.append(f"\n## Scores\n")
+        sections.append("\n## Scores\n")
         sections.append(f"- Correctness: {self.quality_scores.correctness:.0f}/100\n")
         sections.append(f"- Safety: {self.quality_scores.safety:.0f}/100\n")
         sections.append(f"- Minimality: {self.quality_scores.minimality:.0f}/100\n")
@@ -190,8 +176,8 @@ class ClarificationQuestion(BaseModel):
     id: str = Field(..., description="Question ID")
     issue_id: str = Field(..., description="Related issue ID")
     question: str = Field(..., description="Question text")
-    context: Optional[str] = Field(default=None, description="Additional context")
-    options: Optional[list[str]] = Field(default=None, description="Suggested options")
+    context: str | None = Field(default=None, description="Additional context")
+    options: list[str] | None = Field(default=None, description="Suggested options")
 
 
 class ClarificationAnswer(BaseModel):
@@ -207,18 +193,18 @@ class FixContext(BaseModel):
     issue_id: str = Field(..., description="Issue ID")
     issue_code: str = Field(..., description="Issue code (e.g., BE-CRIT-001)")
     file_path: str = Field(..., description="File to fix")
-    line: Optional[int] = Field(default=None, description="Line number")
-    end_line: Optional[int] = Field(default=None, description="End line number")
+    line: int | None = Field(default=None, description="Line number")
+    end_line: int | None = Field(default=None, description="End line number")
 
     title: str = Field(..., description="Issue title")
     description: str = Field(..., description="Issue description")
-    current_code: Optional[str] = Field(default=None, description="Current problematic code")
-    suggested_fix: Optional[str] = Field(default=None, description="Suggested fix from review")
+    current_code: str | None = Field(default=None, description="Current problematic code")
+    suggested_fix: str | None = Field(default=None, description="Suggested fix from review")
     category: str = Field(..., description="Issue category")
     severity: str = Field(..., description="Issue severity")
 
     # Full file content for context
-    file_content: Optional[str] = Field(default=None, description="Full file content")
+    file_content: str | None = Field(default=None, description="Full file content")
 
     # User clarifications
     clarifications: list[ClarificationAnswer] = Field(
@@ -233,14 +219,14 @@ class IssueFixResult(BaseModel):
     issue_code: str = Field(..., description="Issue code")
     status: FixStatus = Field(..., description="Fix status")
 
-    commit_sha: Optional[str] = Field(default=None, description="Commit SHA if committed")
-    commit_message: Optional[str] = Field(default=None, description="Commit message")
+    commit_sha: str | None = Field(default=None, description="Commit SHA if committed")
+    commit_message: str | None = Field(default=None, description="Commit message")
 
-    changes_made: Optional[str] = Field(default=None, description="Description of changes")
-    error: Optional[str] = Field(default=None, description="Error message if failed")
+    changes_made: str | None = Field(default=None, description="Description of changes")
+    error: str | None = Field(default=None, description="Error message if failed")
 
-    started_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
 
 
 class FixSessionResult(BaseModel):
@@ -260,9 +246,9 @@ class FixSessionResult(BaseModel):
 
     results: list[IssueFixResult] = Field(default_factory=list)
 
-    started_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
-    error: Optional[str] = Field(default=None, description="Session-level error")
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+    error: str | None = Field(default=None, description="Session-level error")
 
 
 class FixProgressEvent(BaseModel):
@@ -272,34 +258,34 @@ class FixProgressEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     # Session info
-    session_id: Optional[str] = Field(default=None)
-    branch_name: Optional[str] = Field(default=None)
+    session_id: str | None = Field(default=None)
+    branch_name: str | None = Field(default=None)
 
     # Issue info
-    issue_id: Optional[str] = Field(default=None)
-    issue_code: Optional[str] = Field(default=None)
-    issue_index: Optional[int] = Field(default=None, description="1-based index")
-    total_issues: Optional[int] = Field(default=None)
+    issue_id: str | None = Field(default=None)
+    issue_code: str | None = Field(default=None)
+    issue_index: int | None = Field(default=None, description="1-based index")
+    total_issues: int | None = Field(default=None)
 
     # Progress info
-    message: Optional[str] = Field(default=None)
-    content: Optional[str] = Field(default=None, description="Streaming content")
+    message: str | None = Field(default=None)
+    content: str | None = Field(default=None, description="Streaming content")
 
     # Clarification
-    clarification: Optional[ClarificationQuestion] = Field(default=None)
+    clarification: ClarificationQuestion | None = Field(default=None)
 
     # Commit info
-    commit_sha: Optional[str] = Field(default=None)
-    commit_message: Optional[str] = Field(default=None)
+    commit_sha: str | None = Field(default=None)
+    commit_message: str | None = Field(default=None)
 
     # Error
-    error: Optional[str] = Field(default=None)
+    error: str | None = Field(default=None)
 
     # Summary (for completed events)
-    issues_fixed: Optional[int] = Field(default=None)
-    issues_failed: Optional[int] = Field(default=None)
+    issues_fixed: int | None = Field(default=None)
+    issues_failed: int | None = Field(default=None)
 
-    def to_sse(self) -> dict:
+    def to_sse(self) -> dict[str, str]:
         """Convert to SSE format."""
         return {
             "event": self.type.value,

@@ -84,8 +84,8 @@
 
                 <div class="divide-y dark:divide-gray-700">
                     <template x-for="file in files" :key="file.path">
-                        <button @click="loadFile(file.path)"
-                                class="w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-2"
+                        <button @click="loadFile(file.path); if(window.innerWidth < 1024) activeTab = 'editor'"
+                                class="w-full px-4 py-3 lg:py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-2"
                                 :class="currentFilePath === file.path ? 'bg-primary/10 border-l-2 border-primary' : ''">
                             <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -99,7 +99,8 @@
         </div>
 
         <!-- Editor Area -->
-        <div class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col">
+        <div class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col min-h-[60vh] lg:min-h-0"
+             :class="{ 'hidden lg:flex': activeTab !== 'editor' }">
             <!-- Editor Header -->
             <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-2">

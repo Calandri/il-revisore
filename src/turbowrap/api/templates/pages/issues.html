@@ -108,8 +108,30 @@
     <!-- Issues List -->
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
-            <h2 class="font-semibold">Lista Issues</h2>
-            <span class="text-sm text-gray-500" x-text="issues.length + ' risultati'"></span>
+            <div class="flex items-center gap-3">
+                <h2 class="font-semibold">Lista Issues</h2>
+                <span class="text-sm text-gray-500" x-text="issues.length + ' risultati'"></span>
+            </div>
+            <div class="flex items-center gap-3">
+                <button @click="selectAllCritical()"
+                        class="text-sm text-gray-600 dark:text-gray-400 hover:text-primary">
+                    Seleziona Critical/High
+                </button>
+                <button @click="clearSelection()"
+                        x-show="selectedIssues.length > 0"
+                        class="text-sm text-gray-500 hover:text-red-500">
+                    Deseleziona
+                </button>
+                <button @click="fixSelected()"
+                        :disabled="selectedIssues.length === 0 || isFixing"
+                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    Sistema Selezionate (<span x-text="selectedIssues.length"></span>)
+                </button>
+            </div>
         </div>
 
         <div x-show="loading" class="p-8 text-center">
@@ -129,9 +151,16 @@
 
         <div x-show="!loading && issues.length > 0" class="divide-y dark:divide-gray-700">
             <template x-for="issue in issues" :key="issue.id">
-                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                     :class="{'bg-green-50 dark:bg-green-900/10': issue.status === 'resolved', 'bg-primary/5': selectedIssues.includes(issue.id)}">
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex items-start gap-4 flex-1">
+                            <!-- Checkbox -->
+                            <input type="checkbox"
+                                   :value="issue.id"
+                                   x-model="selectedIssues"
+                                   :disabled="issue.status === 'resolved' || issue.status === 'ignored'"
+                                   class="w-5 h-5 mt-2 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-50 cursor-pointer">
                             <!-- Severity icon -->
                             <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                                  :class="{
@@ -192,9 +221,19 @@
 
                             <!-- Quick actions -->
                             <div class="flex gap-1" x-show="issue.status === 'open'">
+                                <button @click="fixSingle(issue)"
+                                        :disabled="isFixing"
+                                        class="px-3 py-1.5 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                        title="Sistema automaticamente">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    </svg>
+                                    Sistema
+                                </button>
                                 <button @click="resolveIssue(issue.id)"
                                         class="p-2 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                                        title="Risolvi">
+                                        title="Segna come risolto">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                     </svg>
@@ -335,6 +374,102 @@
             </div>
         </div>
     </div>
+
+    <!-- Fix Progress Modal -->
+    <div x-show="showFixModal"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="closeFixModal()">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-green-600" :class="isFixing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold">Fix Issues</h3>
+                        <p class="text-sm text-gray-500">
+                            <span x-text="fixProgress.current"></span> / <span x-text="fixProgress.total"></span> completate
+                        </p>
+                    </div>
+                </div>
+                <button @click="closeFixModal()"
+                        :disabled="isFixing"
+                        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Progress bar -->
+            <div class="px-4 py-2 bg-gray-50 dark:bg-gray-900">
+                <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-green-500 transition-all duration-300"
+                         :style="{ width: (fixProgress.total > 0 ? (fixProgress.current / fixProgress.total * 100) : 0) + '%' }"></div>
+                </div>
+                <div class="mt-2 text-sm" x-show="fixProgress.currentIssue">
+                    <span class="text-gray-500">In corso:</span>
+                    <span class="font-mono text-xs bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded ml-1" x-text="fixProgress.currentIssue?.code"></span>
+                    <span class="text-gray-600 dark:text-gray-400 ml-1" x-text="fixProgress.currentIssue?.title"></span>
+                </div>
+            </div>
+
+            <!-- Logs -->
+            <div class="p-4 overflow-y-auto max-h-[50vh] font-mono text-sm space-y-1">
+                <template x-for="(log, idx) in fixProgress.logs" :key="idx">
+                    <div class="flex items-start gap-2 py-1">
+                        <span class="shrink-0" x-text="log.icon"></span>
+                        <span class="text-gray-400 shrink-0" x-text="log.timestamp"></span>
+                        <span :class="log.color" x-text="log.message"></span>
+                    </div>
+                </template>
+                <div x-show="fixProgress.logs.length === 0" class="text-gray-400 text-center py-4">
+                    In attesa di eventi...
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t dark:border-gray-700 flex items-center justify-between">
+                <div class="text-sm">
+                    <span x-show="fixProgress.status === 'running'" class="text-blue-500 flex items-center gap-2">
+                        <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        Fix in corso...
+                    </span>
+                    <span x-show="fixProgress.status === 'completed'" class="text-green-500 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Completato!
+                    </span>
+                    <span x-show="fixProgress.status === 'error'" class="text-red-500 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        Errore durante il fix
+                    </span>
+                </div>
+                <button @click="closeFixModal()"
+                        x-show="!isFixing"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                    Chiudi
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -346,6 +481,16 @@ function issuesApp() {
         issues: [],
         summary: {},
         selectedIssue: null,
+        selectedIssues: [],
+        isFixing: false,
+        showFixModal: false,
+        fixProgress: {
+            current: 0,
+            total: 0,
+            currentIssue: null,
+            logs: [],
+            status: 'idle'
+        },
         filters: {
             repository_id: '',
             severity: '',
@@ -408,6 +553,136 @@ function issuesApp() {
 
         viewIssue(issue) {
             this.selectedIssue = issue;
+        },
+
+        selectAllCritical() {
+            this.selectedIssues = this.issues
+                .filter(i => (i.severity === 'CRITICAL' || i.severity === 'HIGH') && i.status === 'open')
+                .map(i => i.id);
+        },
+
+        clearSelection() {
+            this.selectedIssues = [];
+        },
+
+        async fixSingle(issue) {
+            this.selectedIssues = [issue.id];
+            await this.fixSelected();
+        },
+
+        async fixSelected() {
+            if (this.selectedIssues.length === 0 || this.isFixing) return;
+
+            // Get repository_id from first selected issue
+            const firstIssue = this.issues.find(i => i.id === this.selectedIssues[0]);
+            if (!firstIssue) return;
+
+            this.isFixing = true;
+            this.showFixModal = true;
+            this.fixProgress = {
+                current: 0,
+                total: this.selectedIssues.length,
+                currentIssue: null,
+                logs: [],
+                status: 'running'
+            };
+
+            try {
+                const response = await fetch('/api/fix/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: firstIssue.repository_id,
+                        task_id: firstIssue.task_id,
+                        issue_ids: this.selectedIssues,
+                    }),
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const event = JSON.parse(line.slice(6));
+                                this.handleFixEvent(event);
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+                this.fixProgress.status = 'completed';
+            } catch (error) {
+                console.error('Fix error:', error);
+                this.fixProgress.status = 'error';
+                this.fixProgress.logs.push({ type: 'error', message: error.message });
+            }
+
+            this.isFixing = false;
+            this.selectedIssues = [];
+            await this.refresh();
+        },
+
+        handleFixEvent(event) {
+            const eventType = event.type || event.event;
+
+            // Update current issue info
+            if (event.issue_code) {
+                this.fixProgress.currentIssue = {
+                    code: event.issue_code,
+                    title: event.issue_title
+                };
+            }
+
+            // Track progress
+            if (eventType === 'fix_issue_completed' || eventType === 'fix_issue_error') {
+                this.fixProgress.current++;
+            }
+
+            // Add to logs
+            const logEntry = {
+                type: eventType,
+                message: event.message || event.error || eventType,
+                timestamp: new Date().toLocaleTimeString()
+            };
+
+            // Special handling for different event types
+            if (eventType.includes('challenger')) {
+                logEntry.icon = '🧪';
+                logEntry.color = 'text-purple-500';
+            } else if (eventType.includes('generating') || eventType.includes('streaming')) {
+                logEntry.icon = '🤖';
+                logEntry.color = 'text-blue-500';
+            } else if (eventType.includes('committed')) {
+                logEntry.icon = '✅';
+                logEntry.color = 'text-green-500';
+            } else if (eventType.includes('error')) {
+                logEntry.icon = '❌';
+                logEntry.color = 'text-red-500';
+            } else {
+                logEntry.icon = '📝';
+                logEntry.color = 'text-gray-500';
+            }
+
+            this.fixProgress.logs.push(logEntry);
+
+            // Keep only last 50 logs
+            if (this.fixProgress.logs.length > 50) {
+                this.fixProgress.logs = this.fixProgress.logs.slice(-50);
+            }
+        },
+
+        closeFixModal() {
+            if (!this.isFixing) {
+                this.showFixModal = false;
+            }
         }
     }
 }
