@@ -586,44 +586,89 @@ def run_all_reviewers(
     repo_path: Path,
     be_files: list[FileInfo],
     fe_files: list[FileInfo],
-    max_workers: int = 3
+    max_workers: int = 3,
+    max_tokens_per_batch: int = 50000
 ) -> list[ReviewResult]:
-    """Run reviewer agents in parallel, 1 agent per 3 files."""
+    """Run reviewer agents in parallel, 1 triplet of agents per ~50k tokens."""
     results: list[ReviewResult] = []
 
-    # Create batches of 3 files
-    def create_batches(files: list[FileInfo], batch_size: int = 3):
-        for i in range(0, len(files), batch_size):
-            yield files[i:i + batch_size]
+    def create_token_batches(files: list[FileInfo], max_tokens: int = 50000):
+        """Create batches based on token count (~50k tokens per batch)."""
+        # First, load content and count tokens for each file
+        files_with_tokens = []
+        for f in files:
+            full_path = repo_path / f.path
+            try:
+                content = full_path.read_text(encoding="utf-8", errors="ignore")
+                tokens = count_tokens(content)
+                f.content = content
+                files_with_tokens.append((f, tokens))
+            except Exception:
+                files_with_tokens.append((f, 0))
 
-    be_batches = list(create_batches(be_files))
-    fe_batches = list(create_batches(fe_files))
+        # Create batches based on token count
+        batches = []
+        current_batch = []
+        current_tokens = 0
+
+        for file_info, tokens in files_with_tokens:
+            # If single file exceeds max, put it in its own batch
+            if tokens > max_tokens:
+                if current_batch:
+                    batches.append((current_batch, current_tokens))
+                batches.append(([file_info], tokens))
+                current_batch = []
+                current_tokens = 0
+            elif current_tokens + tokens > max_tokens:
+                # Start new batch
+                if current_batch:
+                    batches.append((current_batch, current_tokens))
+                current_batch = [file_info]
+                current_tokens = tokens
+            else:
+                current_batch.append(file_info)
+                current_tokens += tokens
+
+        # Don't forget the last batch
+        if current_batch:
+            batches.append((current_batch, current_tokens))
+
+        return batches
+
+    be_batches = create_token_batches(be_files, max_tokens_per_batch)
+    fe_batches = create_token_batches(fe_files, max_tokens_per_batch)
+
+    # Calculate total tokens
+    total_be_tokens = sum(tokens for _, tokens in be_batches)
+    total_fe_tokens = sum(tokens for _, tokens in fe_batches)
 
     total_batches = len(be_batches) + len(fe_batches)
-    print(f"\n🧠 [Claude Opus] Reviewing code - {len(be_batches)} BE batches, {len(fe_batches)} FE batches")
+    print(f"\n🧠 [Claude Opus] Reviewing code (~50k tokens per batch)")
+    print(f"   📊 BE: {len(be_batches)} batches ({total_be_tokens:,} tokens)")
+    print(f"   📊 FE: {len(fe_batches)} batches ({total_fe_tokens:,} tokens)")
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
 
         # Submit BE review tasks
-        for i, batch in enumerate(be_batches):
-            future = executor.submit(run_reviewer_agent, client, repo_path, batch, "be", i)
-            futures[future] = f"BE batch {i+1}/{len(be_batches)}"
+        for i, (batch_files, batch_tokens) in enumerate(be_batches):
+            future = executor.submit(run_reviewer_agent, client, repo_path, batch_files, "be", i)
+            futures[future] = (f"BE batch {i+1}/{len(be_batches)}", len(batch_files), batch_tokens)
 
         # Submit FE review tasks
-        for i, batch in enumerate(fe_batches):
-            future = executor.submit(run_reviewer_agent, client, repo_path, batch, "fe", i)
-            futures[future] = f"FE batch {i+1}/{len(fe_batches)}"
+        for i, (batch_files, batch_tokens) in enumerate(fe_batches):
+            future = executor.submit(run_reviewer_agent, client, repo_path, batch_files, "fe", i)
+            futures[future] = (f"FE batch {i+1}/{len(fe_batches)}", len(batch_files), batch_tokens)
 
         # Collect results
         completed = 0
         for future in as_completed(futures):
             completed += 1
-            batch_name = futures[future]
+            batch_name, file_count, token_count = futures[future]
             try:
                 result = future.result()
                 results.append(result)
-                print(f"   ✅ [{completed}/{total_batches}] {batch_name} - {len(result.files)} files")
+                print(f"   ✅ [{completed}/{total_batches}] {batch_name} - {file_count} files, {token_count:,} tokens")
             except Exception as e:
                 print(f"   ❌ [{completed}/{total_batches}] {batch_name} - Error: {e}")
 
