@@ -22,6 +22,9 @@ from ...review.models.progress import ProgressEvent, ProgressEventType
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
+# Global registry for running review tasks (for cancellation)
+_running_reviews: dict[str, asyncio.Task] = {}
+
 
 def run_task_background(task_id: str, repo_path: str, task_type: str, config: dict):
     """Run task in background thread."""
@@ -162,11 +165,11 @@ def get_task(
 
 
 @router.post("/{task_id}/cancel")
-def cancel_task(
+async def cancel_task(
     task_id: str,
     db: Session = Depends(get_db),
 ):
-    """Cancel a pending task."""
+    """Cancel a pending or running task."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -177,7 +180,7 @@ def cancel_task(
             detail=f"Cannot cancel task with status: {task.status}"
         )
 
-    # Try to remove from queue
+    # Try to remove from queue (for pending tasks)
     queue = get_task_queue()
     cancelled = queue.cancel(task_id)
 
@@ -185,11 +188,32 @@ def cancel_task(
         task.status = "cancelled"
         db.commit()
         return {"status": "cancelled", "id": task_id}
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Task is already running and cannot be cancelled"
-        )
+
+    # For running reviews, try to cancel the asyncio task
+    if task_id in _running_reviews:
+        review_task = _running_reviews[task_id]
+        if not review_task.done():
+            review_task.cancel()
+            # Wait a bit for cancellation to propagate
+            try:
+                await asyncio.wait_for(asyncio.shield(review_task), timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+
+        # Clean up
+        _running_reviews.pop(task_id, None)
+
+        task.status = "cancelled"
+        task.completed_at = datetime.utcnow()
+        db.commit()
+        return {"status": "cancelled", "id": task_id}
+
+    # If we get here, the task is running but not in our registry
+    # This could happen if it's a non-review task or was started before restart
+    task.status = "cancelled"
+    task.completed_at = datetime.utcnow()
+    db.commit()
+    return {"status": "cancelled", "id": task_id, "note": "Task marked as cancelled but may still be running in background"}
 
 
 from pydantic import BaseModel, Field
@@ -317,12 +341,27 @@ async def stream_review(
                 task.error = str(e)
                 db.commit()
 
+            except asyncio.CancelledError:
+                # Task was cancelled
+                task.status = "cancelled"
+                task.completed_at = datetime.utcnow()
+                db.commit()
+                await event_queue.put(ProgressEvent(
+                    type=ProgressEventType.REVIEW_ERROR,
+                    error="Review cancelled",
+                    message="Review cancelled by user",
+                ))
+                raise
+
             finally:
+                # Clean up from running reviews registry
+                _running_reviews.pop(task.id, None)
                 # Signal completion
                 await event_queue.put(None)
 
-        # Start review task
+        # Start review task and register it
         review_task = asyncio.create_task(run_review())
+        _running_reviews[task.id] = review_task
 
         # Emit initial event with task_id for cancellation support
         yield {
@@ -342,6 +381,7 @@ async def stream_review(
 
         except asyncio.CancelledError:
             review_task.cancel()
+            _running_reviews.pop(task.id, None)
             raise
 
     return EventSourceResponse(generate())

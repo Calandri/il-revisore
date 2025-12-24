@@ -110,7 +110,7 @@ class GeminiChallenger(BaseReviewer):
         """Build the challenge prompt for Gemini."""
         prompt = f"""# Code Review Challenge - Iteration {iteration}
 
-You are a code review challenger. Your job is to ensure the review is thorough, accurate, and actionable.
+You are an expert code review challenger. Your mission is to ensure the review is thorough, secure, accurate, and production-ready.
 
 ## Review to Evaluate
 
@@ -132,33 +132,82 @@ You are a code review challenger. Your job is to ensure the review is thorough, 
 
 """
 
-        prompt += """## Your Challenge Task
+        # Add linked repos context if available
+        if hasattr(context, 'linked_repos') and context.linked_repos:
+            prompt += """## Linked Repositories Context
+
+This repository has linked repositories. Consider cross-repo implications:
+
+"""
+            for linked in context.linked_repos:
+                prompt += f"""- **{linked.get('name', 'Unknown')}** ({linked.get('link_type', 'related')}, {linked.get('direction', 'linked')})
+  - Repo type: {linked.get('repo_type', 'unknown')}
+"""
+            prompt += """
+When evaluating, check for:
+- API contract consistency between frontend and backend
+- Shared type definitions and interfaces
+- Breaking changes that affect linked repos
+- Authentication/authorization flow consistency
+- Data format compatibility (request/response schemas)
+
+"""
+
+        prompt += """## Evaluation Dimensions
 
 Evaluate the review on these dimensions (0-100 score each):
 
-1. **Completeness** (weight: 30%)
-   - Are all files in scope reviewed?
-   - Are all categories covered (security, performance, architecture)?
-   - Are edge cases considered?
-   - Are integration points analyzed?
+### 1. **Completeness** (weight: 25%)
+- Are ALL files in scope reviewed (not just changed files)?
+- Are all categories covered: security, performance, architecture, maintainability?
+- Are edge cases and error paths considered?
+- Are integration points and external API calls analyzed?
+- Are database queries and data access patterns reviewed?
 
-2. **Accuracy** (weight: 25%)
-   - Are issues correctly identified?
-   - Are severity levels appropriate?
-   - Are there false positives?
-   - Are code suggestions syntactically correct?
+### 2. **Security** (weight: 30%) ⚠️ CRITICAL
+Apply OWASP Top 10 checklist rigorously:
+- **Injection**: SQL, NoSQL, OS command, LDAP injection vulnerabilities
+- **Broken Auth**: Weak passwords, session management, credential exposure
+- **Sensitive Data**: PII/secrets in logs, unencrypted data, insecure storage
+- **XXE/XSS**: XML external entities, cross-site scripting vectors
+- **Access Control**: Missing authorization, IDOR, privilege escalation
+- **Security Misconfig**: Debug mode, default credentials, verbose errors
+- **Insecure Deserialization**: Untrusted data deserialization
+- **Vulnerable Components**: Outdated dependencies with known CVEs
+- **Logging Failures**: Missing audit logs, sensitive data in logs
+- **SSRF**: Server-side request forgery vulnerabilities
 
-3. **Depth** (weight: 25%)
-   - Are root causes identified (not just symptoms)?
-   - Are business logic implications considered?
-   - Is cross-file impact analyzed?
-   - Are security implications explored?
+Also check:
+- Input validation on ALL user inputs
+- Rate limiting and DoS protection
+- CORS configuration
+- JWT/token handling
+- File upload security
+- Path traversal prevention
 
-4. **Actionability** (weight: 20%)
-   - Are fix suggestions clear and complete?
-   - Are code examples correct?
-   - Is priority guidance useful?
-   - Are next steps clear?
+### 3. **Code Quality** (weight: 20%)
+Evaluate technical debt and maintainability:
+- **Complexity**: Functions with high cyclomatic complexity (>10)
+- **Code Smells**: Long methods, god classes, feature envy, data clumps
+- **DRY Violations**: Duplicated code blocks (>5 lines)
+- **SOLID Violations**: Single responsibility, dependency inversion issues
+- **Error Handling**: Swallowed exceptions, generic catches, missing error types
+- **Type Safety**: Missing types, any abuse, unsafe casts
+- **Test Coverage**: Missing tests for critical paths, edge cases untested
+- **Documentation**: Missing JSDoc/docstrings for public APIs
+
+### 4. **Depth** (weight: 15%)
+- Are ROOT CAUSES identified, not just symptoms?
+- Is business logic impact analyzed?
+- Are cross-file and cross-module dependencies traced?
+- Are database schema implications considered?
+- Is performance impact quantified where possible?
+
+### 5. **Actionability** (weight: 10%)
+- Are fix suggestions COPY-PASTE ready?
+- Are code examples syntactically correct and tested?
+- Is priority/effort guidance realistic?
+- Are migration steps clear for breaking changes?
 
 ## Required Output Format
 
@@ -170,47 +219,78 @@ Output ONLY valid JSON matching this schema:
   "status": "APPROVED|NEEDS_REFINEMENT|MAJOR_ISSUES",
   "dimension_scores": {
     "completeness": <0-100>,
-    "accuracy": <0-100>,
+    "security": <0-100>,
+    "code_quality": <0-100>,
     "depth": <0-100>,
     "actionability": <0-100>
   },
+  "security_checklist": {
+    "injection_checked": <true|false>,
+    "auth_checked": <true|false>,
+    "data_exposure_checked": <true|false>,
+    "access_control_checked": <true|false>,
+    "input_validation_checked": <true|false>,
+    "critical_findings": ["<finding 1>", "<finding 2>"]
+  },
+  "code_quality_metrics": {
+    "high_complexity_functions": ["<func1>", "<func2>"],
+    "duplicated_code_blocks": <count>,
+    "missing_error_handling": ["<location1>", "<location2>"],
+    "type_safety_issues": <count>
+  },
+  "cross_repo_issues": [
+    {
+      "type": "api_mismatch|breaking_change|type_inconsistency|auth_flow",
+      "description": "<what's inconsistent>",
+      "affected_repos": ["<repo1>", "<repo2>"],
+      "suggested_fix": "<how to resolve>"
+    }
+  ],
   "missed_issues": [
     {
-      "type": "security|performance|architecture|logic|etc",
+      "type": "security|performance|architecture|logic|quality",
       "description": "<what was missed>",
       "file": "<file path>",
       "lines": "<line range or null>",
       "why_important": "<impact explanation>",
-      "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW"
+      "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "owasp_category": "<if security: A01-A10 or null>"
     }
   ],
   "challenges": [
     {
       "issue_id": "<id of challenged issue>",
-      "challenge_type": "severity|fix_incomplete|false_positive|needs_context",
+      "challenge_type": "severity|fix_incomplete|false_positive|needs_context|security_underrated",
       "challenge": "<the challenge>",
       "reasoning": "<detailed reasoning>",
       "suggested_change": "<what to change>"
     }
   ],
   "improvements_needed": [
-    "<general improvement 1>",
-    "<general improvement 2>"
+    "<specific improvement 1>",
+    "<specific improvement 2>"
   ],
   "positive_feedback": [
-    "<what was done well 1>",
-    "<what was done well 2>"
+    "<what was done well 1>"
   ]
 }
 ```
 
-## Evaluation Standards
+## Scoring Guidelines
 
-- Be rigorous but fair
-- Only flag REAL problems, not style preferences
-- Consider the full context of the codebase
-- Weight security and data integrity issues heavily
-- A score of 99+ means the review is ready for production
+- **99-100**: Production ready, all security checks pass, comprehensive coverage
+- **90-98**: Minor improvements needed, no security issues
+- **70-89**: Significant gaps, requires refinement
+- **50-69**: Major issues missed, especially security
+- **<50**: Review is inadequate, restart recommended
+
+## Critical Rules
+
+1. **SECURITY IS NON-NEGOTIABLE**: Any missed CRITICAL/HIGH security issue = automatic score cap at 70
+2. **Be rigorous but fair**: Flag real problems, not style preferences
+3. **Cross-repo consistency matters**: API contracts must match
+4. **Quantify when possible**: "3 SQL injection points" not "some injection risks"
+5. **Every missed CRITICAL issue must be documented in missed_issues**
 
 Output ONLY the JSON, no markdown blocks or explanations.
 """

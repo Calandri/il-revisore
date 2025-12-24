@@ -21,30 +21,36 @@ class DimensionScores(BaseModel):
     """Scores for each evaluation dimension."""
 
     completeness: float = Field(
-        ..., ge=0, le=100, description="All files/categories covered"
+        50, ge=0, le=100, description="All files/categories covered"
     )
-    accuracy: float = Field(
-        ..., ge=0, le=100, description="Issues correctly identified"
+    security: float = Field(
+        50, ge=0, le=100, description="Security issues identified (OWASP)"
+    )
+    code_quality: float = Field(
+        50, ge=0, le=100, description="Code quality and maintainability"
     )
     depth: float = Field(
-        ..., ge=0, le=100, description="Root causes identified"
+        50, ge=0, le=100, description="Root causes identified"
     )
     actionability: float = Field(
-        ..., ge=0, le=100, description="Clear fix suggestions"
+        50, ge=0, le=100, description="Clear fix suggestions"
     )
 
     @property
     def weighted_score(self) -> float:
         """Calculate weighted satisfaction score."""
+        # Weights match the challenger prompt
         weights = {
-            "completeness": 0.30,
-            "accuracy": 0.25,
-            "depth": 0.25,
-            "actionability": 0.20,
+            "completeness": 0.25,
+            "security": 0.30,  # Security is most important
+            "code_quality": 0.20,
+            "depth": 0.15,
+            "actionability": 0.10,
         }
         return (
             self.completeness * weights["completeness"]
-            + self.accuracy * weights["accuracy"]
+            + self.security * weights["security"]
+            + self.code_quality * weights["code_quality"]
             + self.depth * weights["depth"]
             + self.actionability * weights["actionability"]
         )
