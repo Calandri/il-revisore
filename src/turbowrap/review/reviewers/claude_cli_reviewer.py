@@ -14,6 +14,10 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
+import boto3
+from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.challenger import ChallengerFeedback
@@ -67,6 +71,76 @@ class ClaudeCLIReviewer(BaseReviewer):
         self.cli_path = cli_path
         self.timeout = timeout
 
+        # S3 configuration for thinking logs
+        self.s3_bucket = self.settings.thinking.s3_bucket
+        self.s3_region = self.settings.thinking.s3_region
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_thinking_to_s3(
+        self,
+        thinking_content: str,
+        review_id: str,
+        context: ReviewContext,
+    ) -> Optional[str]:
+        """
+        Save thinking content to S3.
+
+        Args:
+            thinking_content: The thinking text to save
+            review_id: Unique identifier for this review
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not thinking_content or not self.s3_bucket:
+            return None
+
+        try:
+            # Create S3 key with timestamp
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"thinking/{timestamp}/{review_id}_{self.name}.md"
+
+            # Create markdown content with metadata
+            model = self.settings.agents.claude_model
+            content = f"""# Extended Thinking - {self.name}
+
+**Review ID**: {review_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: {model}
+**Files Reviewed**: {len(context.files) if context.files else 0}
+
+---
+
+## Thinking Process
+
+{thinking_content}
+"""
+
+            # Upload to S3
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"Saved thinking to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save thinking to S3: {e}")
+            return None
+
     async def review(
         self,
         context: ReviewContext,
@@ -93,10 +167,15 @@ class ClaudeCLIReviewer(BaseReviewer):
         prompt = self._build_review_prompt(context, files_to_review)
 
         # Run Claude CLI with streaming
-        output, model_usage = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        output, model_usage, thinking_content = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
 
         if output is None:
             return self._create_error_output("Claude CLI failed to execute")
+
+        # Save thinking to S3 if available
+        if thinking_content:
+            review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+            await self._save_thinking_to_s3(thinking_content, review_id, context)
 
         # Parse the response
         review_output = self._parse_response(output, files_to_review)
@@ -136,10 +215,15 @@ class ClaudeCLIReviewer(BaseReviewer):
         prompt = self._build_refinement_prompt(context, previous_review, feedback, files_to_review)
 
         # Run Claude CLI with streaming
-        output, model_usage = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        output, model_usage, thinking_content = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
 
         if output is None:
             return self._create_error_output("Claude CLI refinement failed")
+
+        # Save thinking to S3 if available
+        if thinking_content:
+            review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+            await self._save_thinking_to_s3(thinking_content, review_id, context)
 
         # Parse the response
         review_output = self._parse_response(output, files_to_review)
@@ -268,7 +352,7 @@ Output the complete refined review as JSON (same schema as before).
         prompt: str,
         repo_path: Path | None,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
-    ) -> tuple[str | None, list[ModelUsageInfo]]:
+    ) -> tuple[str | None, list[ModelUsageInfo], str]:
         """
         Run Claude CLI with the prompt, streaming output.
 
@@ -278,7 +362,7 @@ Output the complete refined review as JSON (same schema as before).
             on_chunk: Optional callback for streaming chunks
 
         Returns:
-            Tuple of (CLI output or None if failed, list of model usage info)
+            Tuple of (CLI output or None if failed, list of model usage info, thinking content)
         """
         cwd = str(repo_path) if repo_path else None
 
@@ -291,6 +375,19 @@ Output the complete refined review as JSON (same schema as before).
                 logger.info("ANTHROPIC_API_KEY loaded from AWS Secrets Manager")
             else:
                 logger.warning("ANTHROPIC_API_KEY not found in AWS - using environment")
+
+            # Workaround: Remove VSCode git socket files that crash Claude CLI
+            # Claude CLI crashes when trying to watch .sock files in /var/folders
+            import glob
+            import tempfile
+            tmpdir = tempfile.gettempdir()
+            vscode_sockets = glob.glob(os.path.join(tmpdir, "vscode-git-*.sock"))
+            for sock in vscode_sockets:
+                try:
+                    os.remove(sock)
+                    logger.info(f"Removed VSCode socket: {sock}")
+                except OSError:
+                    pass  # Socket may be in use
 
             # Use model from settings
             model = self.settings.agents.claude_model
@@ -315,6 +412,12 @@ Output the complete refined review as JSON (same schema as before).
                 args.extend(["--settings", json.dumps(thinking_settings)])
                 logger.info("Extended thinking enabled for Claude CLI")
 
+            # LOG: Full command and prompt
+            logger.info(f"[CLAUDE CLI] Command: {' '.join(args)}")
+            logger.info(f"[CLAUDE CLI] CWD: {cwd}")
+            logger.info(f"[CLAUDE CLI] Prompt length: {len(prompt)} chars")
+            logger.info(f"[CLAUDE CLI] Prompt preview: {prompt[:500]}...")
+
             process = await asyncio.create_subprocess_exec(
                 *args,
                 stdin=asyncio.subprocess.PIPE,
@@ -335,7 +438,7 @@ Output the complete refined review as JSON (same schema as before).
                 # Claude CLI crashed before accepting input - check stderr
                 stderr = await process.stderr.read()
                 logger.error(f"Claude CLI crashed on stdin: {stderr.decode()[:500]}")
-                return None, []
+                return None, [], ""
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries
@@ -364,18 +467,28 @@ Output the complete refined review as JSON (same schema as before).
             except asyncio.TimeoutError:
                 logger.error(f"Claude CLI timed out after {self.timeout}s")
                 process.kill()
-                return None, []
+                return None, [], ""
 
             await process.wait()
 
+            # Always read stderr for debugging
+            stderr_bytes = await process.stderr.read()
+            stderr_text = stderr_bytes.decode() if stderr_bytes else ""
+
+            logger.info(f"[CLAUDE CLI] Exit code: {process.returncode}")
+            if stderr_text:
+                logger.warning(f"[CLAUDE CLI] STDERR: {stderr_text[:1000]}")
+
             if process.returncode != 0:
-                stderr = await process.stderr.read()
-                logger.error(f"Claude CLI failed: {stderr.decode()}")
-                return None, []
+                logger.error(f"[CLAUDE CLI] FAILED with code {process.returncode}")
+                logger.error(f"[CLAUDE CLI] Full stderr: {stderr_text}")
+                return None, [], ""
 
             raw_output = "".join(output_chunks)
+            logger.info(f"[CLAUDE CLI] Raw output collected: {len(raw_output)} chars")
             model_usage_list: list[ModelUsageInfo] = []
             output = ""
+            thinking_chunks: list[str] = []  # Collect thinking content
 
             # Log raw output for debugging
             logger.info(f"Claude CLI raw output length: {len(raw_output)}")
@@ -391,6 +504,17 @@ Output the complete refined review as JSON (same schema as before).
                     event = json.loads(line)
                     event_type = event.get("type")
                     logger.debug(f"Stream event type: {event_type}")
+
+                    # Capture thinking content from assistant messages
+                    if event_type == "assistant":
+                        message = event.get("message", {})
+                        content_blocks = message.get("content", [])
+                        for block in content_blocks:
+                            if block.get("type") == "thinking":
+                                thinking_text = block.get("thinking", "")
+                                if thinking_text:
+                                    thinking_chunks.append(thinking_text)
+                                    logger.debug(f"Captured thinking block: {len(thinking_text)} chars")
 
                     if event_type == "result":
                         # Final result with content and model usage
@@ -424,22 +548,28 @@ Output the complete refined review as JSON (same schema as before).
                     # Skip non-JSON lines
                     continue
 
+            # Combine thinking chunks
+            thinking_content = "\n\n".join(thinking_chunks)
+            if thinking_content:
+                logger.info(f"[CLAUDE CLI] Captured {len(thinking_chunks)} thinking blocks, total {len(thinking_content)} chars")
+
             # Fallback if no result found
             if not output:
                 logger.warning("No result found in stream-json output, using raw")
                 logger.warning(f"Raw output first 500 chars: {raw_output[:500]}")
                 output = raw_output
 
-            logger.info(f"Claude CLI completed, output length: {len(output)}")
-            logger.info(f"Output first 200 chars: {output[:200] if output else 'EMPTY'}")
-            return output, model_usage_list
+            logger.info(f"[CLAUDE CLI] Completed, output length: {len(output)}")
+            logger.info(f"[CLAUDE CLI] Output preview: {output[:500] if output else 'EMPTY'}")
+            logger.info(f"[CLAUDE CLI] Output end: ...{output[-500:] if output and len(output) > 500 else ''}")
+            return output, model_usage_list, thinking_content
 
         except FileNotFoundError:
-            logger.error(f"Claude CLI not found at: {self.cli_path}")
-            return None, []
+            logger.error(f"[CLAUDE CLI] NOT FOUND at: {self.cli_path}")
+            return None, [], ""
         except Exception as e:
-            logger.exception(f"Claude CLI error: {e}")
-            return None, []
+            logger.exception(f"[CLAUDE CLI] EXCEPTION: {e}")
+            return None, [], ""
 
     def _parse_response(
         self,
@@ -447,6 +577,7 @@ Output the complete refined review as JSON (same schema as before).
         file_list: list[str],
     ) -> ReviewOutput:
         """Parse Claude's response into ReviewOutput."""
+        logger.info(f"[CLAUDE PARSE] Parsing response of {len(response_text)} chars")
         try:
             # Try to extract JSON from response
             json_text = response_text.strip()
@@ -465,6 +596,7 @@ Output the complete refined review as JSON (same schema as before).
                 json_text = "\n".join(json_lines)
 
             data = json.loads(json_text)
+            logger.info(f"[CLAUDE PARSE] JSON parsed successfully, keys: {list(data.keys())}")
 
             # Build ReviewOutput from parsed data
             summary_data = data.get("summary", {})
@@ -525,7 +657,9 @@ Output the complete refined review as JSON (same schema as before).
             )
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON: {e}")
+            logger.error(f"[CLAUDE PARSE] JSON DECODE ERROR: {e}")
+            logger.error(f"[CLAUDE PARSE] Failed text preview: {response_text[:1000]}")
+            logger.error(f"[CLAUDE PARSE] Failed text end: ...{response_text[-500:] if len(response_text) > 500 else ''}")
             return self._create_error_output(
                 f"JSON parse error: {str(e)}\n\nRaw output:\n{response_text[:1000]}"
             )

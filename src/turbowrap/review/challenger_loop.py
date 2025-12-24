@@ -156,19 +156,22 @@ class ChallengerLoop:
                 )
                 break
 
-            logger.info(f"=== Challenger Loop Iteration {iteration} ===")
+            logger.info(f"[LOOP] ========== Iteration {iteration}/{self.max_iterations} ==========")
+            logger.info(f"[LOOP] Reviewer: {self.reviewer.name}")
 
             # Step 1: Reviewer performs/refines review
             # CLI reviewers receive file list (not contents) and explore autonomously
             file_list = context.files
+            logger.info(f"[LOOP] Files to review: {len(file_list)}")
 
             if current_review is None:
-                logger.info("Performing initial review...")
+                logger.info("[LOOP] >> Starting INITIAL review with Claude CLI...")
                 current_review = await self.reviewer.review(
                     context, file_list, on_content_callback
                 )
+                logger.info(f"[LOOP] << Initial review complete: {len(current_review.issues)} issues found")
             else:
-                logger.info("Refining review based on challenger feedback...")
+                logger.info("[LOOP] >> Starting REFINEMENT with Claude CLI...")
                 current_review = await self.reviewer.refine(
                     context,
                     current_review,
@@ -176,10 +179,11 @@ class ChallengerLoop:
                     file_list,
                     on_content_callback,
                 )
+                logger.info(f"[LOOP] << Refinement complete: {len(current_review.issues)} issues")
 
             # Step 2: Challenger evaluates
             # CLI challenger receives review + file list and can read files to verify
-            logger.info("Challenger evaluating review...")
+            logger.info("[LOOP] >> Starting CHALLENGE with Gemini CLI...")
             challenger_feedback = await self.challenger.challenge(
                 current_review,
                 file_list,
@@ -191,9 +195,10 @@ class ChallengerLoop:
 
             satisfaction_score = challenger_feedback.satisfaction_score
             logger.info(
-                f"Iteration {iteration}: satisfaction={satisfaction_score:.1f}% "
+                f"[LOOP] << Challenge complete: satisfaction={satisfaction_score:.1f}% "
                 f"(threshold={self.satisfaction_threshold}%)"
             )
+            logger.info(f"[LOOP] Missed issues: {len(challenger_feedback.missed_issues)}, Challenges: {len(challenger_feedback.challenges)}")
 
             # Record iteration history
             issues_added = len(challenger_feedback.missed_issues)
@@ -249,10 +254,12 @@ class ChallengerLoop:
             iteration_history,
         )
 
+        logger.info(f"[LOOP] ========== LOOP COMPLETED ==========")
         logger.info(
-            f"Challenger loop completed: iterations={iteration}, "
+            f"[LOOP] Final: iterations={iteration}, "
             f"satisfaction={satisfaction_score:.1f}%, "
-            f"convergence={final_convergence.value}"
+            f"convergence={final_convergence.value}, "
+            f"issues={len(current_review.issues) if current_review else 0}"
         )
 
         return ChallengerLoopResult(

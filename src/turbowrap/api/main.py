@@ -1,7 +1,19 @@
 """FastAPI application."""
 
+import logging
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+# Configure logging for all turbowrap modules
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stderr)],
+)
+# Set specific loggers
+logging.getLogger("turbowrap").setLevel(logging.DEBUG)
+logging.getLogger("turbowrap.review").setLevel(logging.DEBUG)
 
 from fastapi import FastAPI, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware

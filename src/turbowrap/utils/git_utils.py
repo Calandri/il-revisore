@@ -270,6 +270,143 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
         raise SyncError(f"Failed to push: {e.stderr}") from e
 
 
+async def smart_push_with_conflict_resolution(
+    repo_path: Path,
+    message: str = "Update via TurboWrap",
+    api_key: str | None = None,
+) -> dict:
+    """
+    Smart push that uses Claude CLI to resolve conflicts if needed.
+
+    Flow:
+    1. Stage and commit local changes
+    2. Pull from remote
+    3. If conflicts, launch Claude CLI to resolve them
+    4. Push to remote
+
+    Args:
+        repo_path: Path to local repository.
+        message: Commit message.
+        api_key: Anthropic API key (optional, uses env if not provided).
+
+    Returns:
+        dict with status and details.
+    """
+    import asyncio
+    import os
+
+    result = {
+        "status": "success",
+        "had_conflicts": False,
+        "claude_resolved": False,
+        "message": "",
+    }
+
+    if not repo_path.exists():
+        raise SyncError(f"Repository not found: {repo_path}")
+
+    try:
+        # 1. Stage all changes
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
+
+        # 2. Commit (may fail if nothing to commit - that's ok)
+        try:
+            subprocess.run(
+                ["git", "commit", "-m", message],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError:
+            # Nothing to commit, continue anyway
+            pass
+
+        # 3. Pull with rebase to get remote changes
+        pull_result = subprocess.run(
+            ["git", "pull", "--no-rebase"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # 4. Check for conflicts
+        if pull_result.returncode != 0 or "CONFLICT" in pull_result.stdout:
+            result["had_conflicts"] = True
+
+            # Check if there are actual conflict markers
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+
+            # UU = unmerged, both modified (conflict)
+            has_conflicts = any(
+                line.startswith("UU") or line.startswith("AA")
+                for line in status_result.stdout.split("\n")
+                if line.strip()
+            )
+
+            if has_conflicts:
+                # Launch Claude CLI to resolve conflicts
+                env = os.environ.copy()
+                if api_key:
+                    env["ANTHROPIC_API_KEY"] = api_key
+
+                resolve_prompt = """You have merge conflicts to resolve. Please:
+
+1. Read the conflicted files using git status
+2. For each conflicted file, read it and resolve the conflict markers (<<<<<<<, =======, >>>>>>>)
+3. Keep the best parts of both versions, or merge them logically
+4. After resolving, run: git add <file> for each resolved file
+5. Then commit with: git commit -m "Merge conflicts resolved"
+
+Important: Output ONLY the commands you ran and a brief summary. No explanations needed."""
+
+                process = await asyncio.create_subprocess_exec(
+                    "claude",
+                    "--print",
+                    "--dangerously-skip-permissions",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(repo_path),
+                    env=env,
+                )
+
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(input=resolve_prompt.encode()),
+                    timeout=120,  # 2 minutes max
+                )
+
+                if process.returncode == 0:
+                    result["claude_resolved"] = True
+                    result["message"] = "Conflicts resolved by Claude"
+                else:
+                    raise SyncError(f"Claude failed to resolve conflicts: {stderr.decode()}")
+
+        # 5. Push
+        push_result = subprocess.run(
+            ["git", "push"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        result["message"] = "Push successful" + (" (conflicts resolved)" if result["claude_resolved"] else "")
+        return result
+
+    except subprocess.CalledProcessError as e:
+        raise SyncError(f"Failed to push: {e.stderr}") from e
+
+
 def get_current_branch(repo_path: Path) -> str:
     """Get current branch name.
 

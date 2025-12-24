@@ -13,6 +13,10 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
+import boto3
+from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.challenger import (
@@ -61,6 +65,136 @@ class GeminiCLIChallenger(BaseReviewer):
         self.timeout = timeout
         self.threshold = self.settings.challenger.satisfaction_threshold
 
+        # S3 configuration for challenge logs
+        self.s3_bucket = self.settings.thinking.s3_bucket
+        self.s3_region = self.settings.thinking.s3_region
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_challenge_to_s3(
+        self,
+        prompt: str,
+        raw_output: str,
+        feedback: ChallengerFeedback,
+        iteration: int,
+        review_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Save challenge prompt, raw output, and parsed feedback to S3.
+
+        Args:
+            prompt: The challenge prompt sent to Gemini
+            raw_output: Raw CLI output from Gemini
+            feedback: Parsed ChallengerFeedback
+            iteration: Challenge iteration number
+            review_id: Optional review ID for grouping
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not raw_output:
+            return None
+
+        try:
+            # Create S3 key with timestamp
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            review_id = review_id or f"challenge_{int(datetime.utcnow().timestamp())}"
+            s3_key = f"challenges/{timestamp}/{review_id}_iter{iteration}.md"
+
+            # Create markdown content with all details
+            content = f"""# Gemini Challenger Log - Iteration {iteration}
+
+**Review ID**: {review_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: gemini-cli
+**Satisfaction Score**: {feedback.satisfaction_score:.1f}%
+**Status**: {feedback.status.value}
+
+---
+
+## Dimension Scores
+
+- Completeness: {feedback.dimension_scores.completeness}
+- Accuracy: {feedback.dimension_scores.accuracy}
+- Depth: {feedback.dimension_scores.depth}
+- Actionability: {feedback.dimension_scores.actionability}
+
+---
+
+## Challenge Prompt
+
+```
+{prompt}
+```
+
+---
+
+## Raw Gemini Output
+
+```
+{raw_output}
+```
+
+---
+
+## Parsed Feedback
+
+### Missed Issues ({len(feedback.missed_issues)})
+
+"""
+            for mi in feedback.missed_issues:
+                content += f"- **[{mi.suggested_severity}]** {mi.type}: {mi.description}\n"
+                content += f"  - File: {mi.file}\n"
+                content += f"  - Why important: {mi.why_important}\n\n"
+
+            content += f"""
+### Challenges ({len(feedback.challenges)})
+
+"""
+            for ch in feedback.challenges:
+                content += f"- **{ch.issue_id}** ({ch.challenge_type}): {ch.challenge}\n"
+                content += f"  - Reasoning: {ch.reasoning}\n\n"
+
+            content += f"""
+### Improvements Needed
+
+"""
+            for imp in feedback.improvements_needed:
+                content += f"- {imp}\n"
+
+            content += f"""
+### Positive Feedback
+
+"""
+            for pos in feedback.positive_feedback:
+                content += f"- {pos}\n"
+
+            # Upload to S3
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[GEMINI S3] Saved challenge log to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"[GEMINI S3] Failed to save challenge to S3: {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"[GEMINI S3] Unexpected error saving to S3: {e}")
+            return None
+
     async def review(self, context: ReviewContext) -> ReviewOutput:
         """Not used for challenger - use challenge() instead."""
         raise NotImplementedError("Use challenge() method for GeminiCLIChallenger")
@@ -81,6 +215,7 @@ class GeminiCLIChallenger(BaseReviewer):
         repo_path: Path | None,
         iteration: int = 1,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
+        review_id: Optional[str] = None,
     ) -> ChallengerFeedback:
         """
         Challenge a review produced by Claude CLI.
@@ -91,6 +226,7 @@ class GeminiCLIChallenger(BaseReviewer):
             repo_path: Repository path (used as cwd for Gemini CLI)
             iteration: Current challenger iteration
             on_chunk: Optional callback for streaming output chunks
+            review_id: Optional review ID for S3 grouping
 
         Returns:
             ChallengerFeedback with evaluation and suggestions
@@ -107,6 +243,17 @@ class GeminiCLIChallenger(BaseReviewer):
         # Parse the response
         feedback = self._parse_response(output, iteration)
         feedback.threshold = self.threshold
+
+        # Save challenge log to S3 in background
+        asyncio.create_task(
+            self._save_challenge_to_s3(
+                prompt=prompt,
+                raw_output=output,
+                feedback=feedback,
+                iteration=iteration,
+                review_id=review_id,
+            )
+        )
 
         return feedback
 
@@ -250,13 +397,24 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
 
             logger.info(f"Running Gemini CLI for challenge in {cwd} with model={model}")
 
-            process = await asyncio.create_subprocess_exec(
+            # Build CLI arguments
+            args = [
                 self.cli_path,
                 "-m",
                 model,
                 "--yolo",
                 "--output-format",
                 "json",
+            ]
+
+            # LOG: Full command and prompt
+            logger.info(f"[GEMINI CLI] Command: {' '.join(args)}")
+            logger.info(f"[GEMINI CLI] CWD: {cwd}")
+            logger.info(f"[GEMINI CLI] Prompt length: {len(prompt)} chars")
+            logger.info(f"[GEMINI CLI] Prompt preview: {prompt[:500]}...")
+
+            process = await asyncio.create_subprocess_exec(
+                *args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -300,12 +458,21 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
 
             await process.wait()
 
+            # Read stderr
+            stderr_bytes = await process.stderr.read()
+            stderr_text = stderr_bytes.decode() if stderr_bytes else ""
+
+            logger.info(f"[GEMINI CLI] Exit code: {process.returncode}")
+            if stderr_text:
+                logger.warning(f"[GEMINI CLI] STDERR: {stderr_text[:1000]}")
+
             if process.returncode != 0:
-                stderr = await process.stderr.read()
-                logger.error(f"Gemini CLI failed: {stderr.decode()}")
+                logger.error(f"[GEMINI CLI] FAILED with code {process.returncode}")
+                logger.error(f"[GEMINI CLI] Full stderr: {stderr_text}")
                 return None
 
             raw_output = "".join(output_chunks)
+            logger.info(f"[GEMINI CLI] Raw output collected: {len(raw_output)} chars")
 
             # Parse JSON output to extract result and model info
             try:
@@ -337,14 +504,16 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 output = raw_output
                 logger.warning("Gemini CLI output not valid JSON, using raw output")
 
-            logger.info(f"Gemini CLI completed, output length: {len(output)}")
+            logger.info(f"[GEMINI CLI] Completed, output length: {len(output)}")
+            logger.info(f"[GEMINI CLI] Output preview: {output[:500] if output else 'EMPTY'}")
+            logger.info(f"[GEMINI CLI] Output end: ...{output[-500:] if output and len(output) > 500 else ''}")
             return output
 
         except FileNotFoundError:
-            logger.error(f"Gemini CLI not found at: {self.cli_path}")
+            logger.error(f"[GEMINI CLI] NOT FOUND at: {self.cli_path}")
             return None
         except Exception as e:
-            logger.exception(f"Gemini CLI error: {e}")
+            logger.exception(f"[GEMINI CLI] EXCEPTION: {e}")
             return None
 
     def _parse_response(
@@ -353,6 +522,7 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
         iteration: int,
     ) -> ChallengerFeedback:
         """Parse Gemini's response into ChallengerFeedback."""
+        logger.info(f"[GEMINI PARSE] Parsing response of {len(response_text)} chars")
         try:
             # Try to extract JSON from response
             json_text = response_text.strip()
@@ -371,6 +541,7 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 json_text = "\n".join(json_lines)
 
             data = json.loads(json_text)
+            logger.info(f"[GEMINI PARSE] JSON parsed successfully, keys: {list(data.keys())}")
 
             # Parse dimension scores
             dim_data = data.get("dimension_scores", {})
@@ -433,8 +604,10 @@ Be fair but rigorous. Output ONLY the JSON, no markdown or explanations.
                 positive_feedback=data.get("positive_feedback", []),
             )
 
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse Gemini response: {response_text[:500]}")
+        except json.JSONDecodeError as e:
+            logger.error(f"[GEMINI PARSE] JSON DECODE ERROR: {e}")
+            logger.error(f"[GEMINI PARSE] Failed text preview: {response_text[:1000]}")
+            logger.error(f"[GEMINI PARSE] Failed text end: ...{response_text[-500:] if len(response_text) > 500 else ''}")
             return self._create_fallback_feedback(iteration)
 
     def _score_to_status(self, score: float) -> ChallengerStatus:

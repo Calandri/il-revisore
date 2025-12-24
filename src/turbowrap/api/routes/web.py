@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user
 from ...db.models import Repository, ChatSession, Setting
-from ...utils.git_utils import push_repo
+from ...utils.git_utils import smart_push_with_conflict_resolution
+from ...utils.aws_secrets import get_anthropic_api_key
 
 router = APIRouter(tags=["web"])
 
@@ -289,15 +290,24 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
 
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
 async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
-    """HTMX: push repository changes (commit + push) and return updated list."""
+    """HTMX: push repository changes with automatic conflict resolution via Claude CLI."""
     from pathlib import Path
 
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if repo and repo.local_path:
         try:
-            push_repo(Path(repo.local_path), message="Update via TurboWrap")
+            api_key = get_anthropic_api_key()
+            result = await smart_push_with_conflict_resolution(
+                Path(repo.local_path),
+                message="Update via TurboWrap",
+                api_key=api_key,
+            )
+            if result.get("claude_resolved"):
+                print(f"Push completed - Claude resolved conflicts for {repo.name}")
+            else:
+                print(f"Push completed for {repo.name}")
         except Exception as e:
-            print(f"Push error: {e}")
+            print(f"Push error for {repo.name}: {e}")
 
     # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
