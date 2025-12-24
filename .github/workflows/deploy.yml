@@ -43,7 +43,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com","docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","docker stop turbowrap || true","docker rm turbowrap || true","docker run -d --name turbowrap --restart always -p 8000:8000 -v /opt/turbowrap/data:/data --env-file /opt/turbowrap/.env 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest"]' \
+            --parameters 'commands=["docker image prune -af --filter until=24h","aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com","docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","docker stop turbowrap || true","docker rm turbowrap || true","docker run -d --name turbowrap --restart always -p 8000:8000 -v /opt/turbowrap/data:/data --env-file /opt/turbowrap/.env 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest"]' \
             --query 'Command.CommandId' --output text)
 
           echo "Command ID: $COMMAND_ID"
