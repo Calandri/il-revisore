@@ -1144,17 +1144,66 @@ The reviewer found issues with the previous fix. Address this feedback:
                 env=env,
             )
 
-            # Write prompt to stdin
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
-            # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
-            await process.stdin.wait_closed()
+            logger.info(f"[CLAUDE CLI FIX] Process started with PID: {process.pid}")
+
+            # Write prompt to stdin in background task
+            prompt_bytes = prompt.encode()
+            stdin_error = None
+
+            async def write_stdin():
+                nonlocal stdin_error
+                try:
+                    logger.info(f"[CLAUDE CLI FIX] Writing {len(prompt_bytes)} bytes to stdin...")
+                    process.stdin.write(prompt_bytes)
+                    await process.stdin.drain()
+                    process.stdin.close()
+                    # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
+                    await process.stdin.wait_closed()
+                    logger.info("[CLAUDE CLI FIX] Stdin closed successfully (EOF sent)")
+                except BrokenPipeError as e:
+                    stdin_error = f"BrokenPipe: {e}"
+                    logger.error(f"[CLAUDE CLI FIX] Stdin BrokenPipe: {e}")
+                except Exception as e:
+                    stdin_error = str(e)
+                    logger.error(f"[CLAUDE CLI FIX] Stdin error: {e}")
+
+            stdin_task = asyncio.create_task(write_stdin())
+
+            # Stderr streaming task - logs --verbose output in real-time AND to frontend
+            stderr_chunks = []
+
+            async def read_stderr():
+                stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                while True:
+                    chunk = await process.stderr.read(1024)
+                    if not chunk:
+                        final = stderr_decoder.decode(b"", final=True)
+                        if final:
+                            stderr_chunks.append(final)
+                            print(f"[CLAUDE FIX STDERR] {final}", flush=True)
+                            # Also emit to frontend
+                            if on_chunk:
+                                await on_chunk(f"[stderr] {final}\n")
+                        break
+                    decoded = stderr_decoder.decode(chunk)
+                    if decoded:
+                        stderr_chunks.append(decoded)
+                        for line in decoded.split("\n"):
+                            if line.strip():
+                                print(f"[CLAUDE FIX STDERR] {line}", flush=True)
+                                # Emit each line to frontend for real-time visibility
+                                if on_chunk:
+                                    await on_chunk(f"[stderr] {line}\n")
+
+            stderr_task = asyncio.create_task(read_stderr())
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries
             output_chunks: list[str] = []
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            chunks_received = 0
+            total_bytes = 0
+
             try:
                 async with asyncio.timeout(timeout):
                     while True:
@@ -1166,7 +1215,15 @@ The reviewer found issues with the previous fix. Address this feedback:
                                 output_chunks.append(decoded)
                                 if on_chunk:
                                     await on_chunk(decoded)
+                            logger.info(f"[CLAUDE CLI FIX] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
                             break
+
+                        chunks_received += 1
+                        total_bytes += len(chunk)
+
+                        if chunks_received == 1:
+                            logger.info(f"[CLAUDE CLI FIX] First chunk received! ({len(chunk)} bytes)")
+
                         # Incremental decode - handles partial multi-byte chars
                         decoded = decoder.decode(chunk)
                         if decoded:
@@ -1176,20 +1233,32 @@ The reviewer found issues with the previous fix. Address this feedback:
                                 await on_chunk(decoded)
 
             except asyncio.TimeoutError:
-                logger.error(f"Claude CLI timed out after {timeout}s")
+                logger.error(f"[CLAUDE CLI FIX] TIMEOUT after {timeout}s! Received {chunks_received} chunks, {total_bytes} bytes")
+                stdin_task.cancel()
+                stderr_task.cancel()
                 process.kill()
                 return None
 
+            # Wait for stdin and stderr tasks
+            await stdin_task
+            await stderr_task
+            if stdin_error:
+                logger.error(f"[CLAUDE CLI FIX] Stdin failed: {stdin_error}")
+
+            logger.info(f"[CLAUDE CLI FIX] Waiting for process to exit...")
             await process.wait()
+            logger.info(f"[CLAUDE CLI FIX] Process exited with code {process.returncode}")
+
+            stderr_text = "".join(stderr_chunks)
+            if stderr_text:
+                logger.info(f"[CLAUDE CLI FIX] STDERR total: {len(stderr_text)} chars")
 
             if process.returncode != 0:
-                stderr = await process.stderr.read()
-                logger.error(f"Claude CLI failed with return code {process.returncode}")
-                logger.error(f"Claude CLI stderr: {stderr.decode()[:2000]}")
-                # Also log what we got from stdout
+                logger.error(f"[CLAUDE CLI FIX] FAILED with code {process.returncode}")
+                logger.error(f"[CLAUDE CLI FIX] Full stderr: {stderr_text[:2000]}")
                 raw = "".join(output_chunks)
                 if raw:
-                    logger.error(f"Claude CLI stdout (first 1000 chars): {raw[:1000]}")
+                    logger.error(f"[CLAUDE CLI FIX] stdout (first 1000 chars): {raw[:1000]}")
                 return None
 
             # Parse stream-json output (NDJSON)
