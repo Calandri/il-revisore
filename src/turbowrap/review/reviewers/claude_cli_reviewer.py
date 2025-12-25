@@ -878,21 +878,17 @@ After writing, confirm with: "Review saved to {output_file}"
             )
 
     def _create_error_output(self, error_message: str) -> ReviewOutput:
-        """Create an error ReviewOutput."""
+        """Create an error ReviewOutput without fake issues.
+
+        The error will be reported through normal error handling (REVIEWER_ERROR event)
+        without polluting the issues list with meta-errors.
+        """
+        logger.error(f"[{self.name}] Review failed: {error_message}")
         return ReviewOutput(
             reviewer=self.name,
             summary=ReviewSummary(
                 files_reviewed=0,
                 score=0.0,
             ),
-            issues=[
-                Issue(
-                    id=f"{self.name.upper()}-ERROR",
-                    severity=IssueSeverity.HIGH,
-                    category=IssueCategory.DOCUMENTATION,
-                    file="review_output",
-                    title="Review failed",
-                    description=error_message,
-                )
-            ],
+            issues=[],  # No fake error issues - let the error be handled properly
         )

@@ -3,8 +3,8 @@ name: analyst_func
 description: Use this agent to perform functional analysis of code changes. It verifies that implementations match requirements, validates business logic correctness, identifies edge cases, and ensures user flows work as expected. Run this in parallel with technical code reviewers.
 model: claude-opus-4-5-20251101
 color: purple
-version: "2025-12-23 1766579491"
-tokens: 4154
+version: "2025-12-25 JSON-output-fix"
+tokens: 4200
 ---
 
 # Functional Analyst - TurboWrap
@@ -21,55 +21,47 @@ Unlike code reviewers who focus on HOW code is written, you focus on WHAT the co
 
 ## Analysis Output Format
 
-Structure your analysis as follows:
+You MUST output your analysis as **valid JSON** matching this exact schema.
+This is critical for automated processing - do NOT output markdown or any text outside the JSON.
 
-```markdown
-# Functional Analysis Report
-
-## Summary
-- **Feature/Change**: [brief description]
-- **Requirements Coverage**: [percentage or status]
-- **Edge Cases Identified**: [count]
-- **Business Logic Issues**: [count]
-- **UX Concerns**: [count]
-- **Recommendation**: [APPROVE | APPROVE WITH NOTES | NEEDS REVISION]
-
-## Requirements Verification
-### [REQ-001] Requirement Title
-- **Status**: [IMPLEMENTED | PARTIAL | MISSING | INCORRECT]
-- **Evidence**: [file:line or description]
-- **Notes**: [any concerns]
-
-## Business Logic Analysis
-### [LOGIC-001] Issue Title
-- **Severity**: [CRITICAL | HIGH | MEDIUM | LOW]
-- **Location**: `file:line`
-- **Issue**: Description of the logic problem
-- **Expected**: What should happen
-- **Actual**: What the code does
-- **Recommendation**: How to fix
-
-## Edge Cases
-### [EDGE-001] Edge Case Title
-- **Scenario**: Description
-- **Handled**: [YES | NO | PARTIAL]
-- **Risk**: What could go wrong
-- **Recommendation**: How to handle
-
-## User Experience Analysis
-### [UX-001] Issue Title
-- **Impact**: [User-facing issue description]
-- **Recommendation**: How to improve
-
-## Data Flow Verification
-[Diagram or description of data flow if relevant]
-
-## Integration Points
-[List of integration points and their validation status]
-
-## Checklist Results
-- [ ] or [x] for each check
+```json
+{
+  "summary": {
+    "files_reviewed": <int>,
+    "critical_issues": <int>,
+    "high_issues": <int>,
+    "medium_issues": <int>,
+    "low_issues": <int>,
+    "score": <float 0-10>,
+    "recommendation": "APPROVE | APPROVE_WITH_NOTES | NEEDS_REVISION"
+  },
+  "issues": [
+    {
+      "id": "FUNC-SEVERITY-NNN",
+      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "category": "logic|ux|testing|documentation",
+      "file": "<file path>",
+      "line": <line number or null>,
+      "title": "<brief title>",
+      "description": "<detailed description of the functional issue>",
+      "expected_behavior": "<what should happen>",
+      "actual_behavior": "<what the code does>",
+      "suggested_fix": "<how to fix>"
+    }
+  ],
+  "checklists": {
+    "requirements": { "passed": <int>, "failed": <int>, "skipped": <int> },
+    "edge_cases": { "passed": <int>, "failed": <int>, "skipped": <int> },
+    "user_experience": { "passed": <int>, "failed": <int>, "skipped": <int> }
+  }
+}
 ```
+
+**Issue Categories for Functional Analysis:**
+- `logic` - Business logic errors, incorrect calculations, wrong state transitions
+- `ux` - User experience issues, confusing flows, missing feedback
+- `testing` - Missing test coverage for edge cases
+- `documentation` - Missing or incorrect documentation for behavior
 
 ---
 

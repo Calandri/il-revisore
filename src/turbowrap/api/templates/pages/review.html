@@ -335,6 +335,21 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
                             </svg>
                         </button>
+
+                        <!-- Restart button (show on error or stuck) -->
+                        <button x-show="taskId && (agent.status === 'error' || agent.status === 'completed')"
+                                @click.stop="restartReviewer(name)"
+                                :disabled="restartingReviewers[name]"
+                                class="p-1.5 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition-colors group disabled:opacity-50"
+                                title="Rilancia Reviewer">
+                            <svg x-show="!restartingReviewers[name]" class="w-4 h-4 text-orange-500 group-hover:text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            <svg x-show="restartingReviewers[name]" class="w-4 h-4 text-orange-500 animate-spin" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                        </button>
                     </div>
 
                     <!-- Iteration badge -->
@@ -924,6 +939,7 @@ function reviewApp() {
         expandedAgent: null,
         eventSource: null,
         abortController: null,
+        restartingReviewers: {},  // Track which reviewers are being restarted
 
         // Thinking modal
         showThinkingModal: false,
@@ -969,18 +985,115 @@ function reviewApp() {
             // Check URL for existing task_id (to restore after refresh)
             const urlParams = new URLSearchParams(window.location.search);
             const savedTaskId = urlParams.get('task_id');
+            const savedRepoId = urlParams.get('repo_id');
+
             if (savedTaskId) {
                 this.taskId = savedTaskId;
+                if (savedRepoId) {
+                    this.selectedRepo = savedRepoId;
+                }
                 this.reviewStatus = 'completed';
                 this.statusMessage = 'Review caricata';
                 this.loadIssues();
                 this.loadEvaluation();
             }
+
+            // Watch for repository changes to load latest review
+            this.$watch('selectedRepo', async (repoId, oldRepoId) => {
+                // Clean state when changing repo
+                if (oldRepoId && oldRepoId !== repoId) {
+                    this.taskId = null;
+                    this.reviewStatus = '';
+                    this.statusMessage = '';
+                    this.issues = [];
+                    this.evaluation = null;
+                    this.agents = {};
+                }
+
+                if (repoId && !this.isRunning) {
+                    await this.loadLatestReview(repoId);
+                }
+            });
+        },
+
+        async loadLatestReview(repoId) {
+            // Clean state first
+            this.agents = {};
+            this.issues = [];
+            this.evaluation = null;
+
+            // Fetch latest completed review task for this repository
+            try {
+                const response = await fetch(`/api/tasks?repository_id=${repoId}&status=completed&task_type=review&limit=1`);
+                if (!response.ok) return;
+
+                const tasks = await response.json();
+                if (tasks.length === 0) {
+                    // No previous review
+                    this.taskId = null;
+                    this.reviewStatus = '';
+                    this.statusMessage = '';
+                    return;
+                }
+
+                const latestTask = tasks[0];
+                this.taskId = latestTask.id;
+                this.reviewStatus = 'completed';
+                this.statusMessage = `Ultima review: ${new Date(latestTask.completed_at).toLocaleString('it-IT')}`;
+
+                // Update URL
+                const url = new URL(window.location);
+                url.searchParams.set('task_id', latestTask.id);
+                url.searchParams.set('repo_id', repoId);
+                window.history.replaceState({}, '', url);
+
+                // Load issues and evaluation
+                await this.loadIssues();
+                await this.loadEvaluation();
+
+                // Try to restore agent states from task result
+                if (latestTask.result && latestTask.result.reviewers) {
+                    for (const reviewer of latestTask.result.reviewers) {
+                        // Map reviewer names (e.g. reviewer_be_architecture -> reviewer_be)
+                        let agentName = reviewer.name;
+
+                        this.agents[agentName] = {
+                            displayName: this.formatAgentName(reviewer.name),
+                            status: reviewer.status === 'completed' ? 'completed' : 'error',
+                            iteration: reviewer.iterations || 0,
+                            maxIterations: 5,
+                            satisfaction: reviewer.final_satisfaction || 0,
+                            issuesFound: reviewer.issues_found || 0,
+                            content: reviewer.status === 'error' ? `Error: ${reviewer.error || 'Unknown error'}` : '',
+                            modelUsage: [],
+                        };
+                    }
+                }
+
+            } catch (e) {
+                console.error('Failed to load latest review:', e);
+            }
+        },
+
+        formatAgentName(name) {
+            // Format agent name for display
+            const names = {
+                'reviewer_be': 'Backend Reviewer',
+                'reviewer_be_architecture': 'BE Architecture',
+                'reviewer_be_quality': 'BE Quality',
+                'reviewer_fe': 'Frontend Reviewer',
+                'reviewer_fe_architecture': 'FE Architecture',
+                'reviewer_fe_quality': 'FE Quality',
+                'analyst_func': 'Functional Analyst',
+            };
+            return names[name] || name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         },
 
         isClaudeReviewer(name) {
-            // Claude reviewers are: reviewer_be, reviewer_fe, analyst_func
-            return ['reviewer_be', 'reviewer_fe', 'analyst_func'].includes(name);
+            // Claude reviewers - match any reviewer_be*, reviewer_fe*, or analyst_func
+            return name.startsWith('reviewer_be') ||
+                   name.startsWith('reviewer_fe') ||
+                   name === 'analyst_func';
         },
 
         async openThinkingModal(agentName) {
@@ -1017,6 +1130,67 @@ function reviewApp() {
             this.thinkingAgent = null;
             this.thinkingContent = '';
             this.thinkingError = '';
+        },
+
+        async restartReviewer(reviewerName) {
+            if (!this.taskId || this.restartingReviewers[reviewerName]) return;
+
+            this.restartingReviewers[reviewerName] = true;
+
+            // Reset agent state
+            if (this.agents[reviewerName]) {
+                this.agents[reviewerName].status = 'running';
+                this.agents[reviewerName].content = '';
+                this.agents[reviewerName].iteration = 0;
+                this.agents[reviewerName].satisfaction = 0;
+                this.agents[reviewerName].issuesFound = 0;
+            }
+
+            try {
+                const response = await fetch(`/api/tasks/${this.taskId}/review/restart/${reviewerName}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        challenger_enabled: this.challengerEnabled,
+                    }),
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            this.currentEvent = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            try {
+                                const data = JSON.parse(line.slice(5));
+                                this.handleEvent(this.currentEvent, data);
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+                // Reload issues after restart
+                this.loadIssues();
+
+            } catch (error) {
+                console.error('Restart error:', error);
+                if (this.agents[reviewerName]) {
+                    this.agents[reviewerName].status = 'error';
+                    this.agents[reviewerName].content = `Restart failed: ${error.message}`;
+                }
+            } finally {
+                this.restartingReviewers[reviewerName] = false;
+            }
         },
 
         async startReview() {
@@ -1082,9 +1256,10 @@ function reviewApp() {
             switch (eventType) {
                 case 'task_started':
                     this.taskId = data.task_id;
-                    // Save task_id to URL for refresh persistence
+                    // Save task_id and repo_id to URL for refresh persistence
                     const url = new URL(window.location);
                     url.searchParams.set('task_id', data.task_id);
+                    url.searchParams.set('repo_id', this.selectedRepo);
                     window.history.replaceState({}, '', url);
                     break;
 

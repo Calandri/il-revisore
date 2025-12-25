@@ -516,3 +516,243 @@ async def stream_review(
             session.unsubscribe(queue)
 
     return EventSourceResponse(generate())
+
+
+class RestartReviewerRequest(BaseModel):
+    """Request body for restarting a single reviewer."""
+    challenger_enabled: bool = Field(
+        default=True,
+        description="Enable challenger validation loop"
+    )
+
+
+@router.post("/{task_id}/review/restart/{reviewer_name}")
+async def restart_reviewer(
+    task_id: str,
+    reviewer_name: str,
+    request_body: RestartReviewerRequest = RestartReviewerRequest(),
+    db: Session = Depends(get_db),
+):
+    """
+    Restart a single reviewer for an existing review task.
+
+    This endpoint allows restarting a stuck or failed reviewer without
+    re-running the entire review. It will:
+    1. Delete existing issues from this reviewer
+    2. Re-run the reviewer with challenger loop
+    3. Save new issues to the database
+    4. Stream progress via SSE
+
+    Args:
+        task_id: The existing review task ID
+        reviewer_name: The reviewer to restart (reviewer_be, reviewer_fe, analyst_func)
+
+    Returns server-sent events with progress updates.
+    """
+    from ..review_manager import get_review_manager
+    from ...review.orchestrator import Orchestrator
+    from ...review.challenger_loop import ChallengerLoop
+    from ...review.reviewers.base import ReviewContext
+    from ...review.models.review import ReviewRequest, ReviewRequestSource, ReviewOptions, ReviewMode
+    from ...review.models.progress import ProgressEvent, ProgressEventType, get_reviewer_display_name
+
+    # Validate reviewer name (support both old and new naming conventions)
+    valid_reviewers = [
+        "reviewer_be", "reviewer_be_architecture", "reviewer_be_quality",
+        "reviewer_fe", "reviewer_fe_architecture", "reviewer_fe_quality",
+        "analyst_func"
+    ]
+    if reviewer_name not in valid_reviewers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid reviewer: {reviewer_name}. Must be one of: {valid_reviewers}"
+        )
+
+    # Get task
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Get repository
+    repo = db.query(Repository).filter(Repository.id == task.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    manager = get_review_manager()
+    display_name = get_reviewer_display_name(reviewer_name)
+
+    # Create the restart coroutine
+    async def run_reviewer_restart(session):
+        """Run single reviewer restart in background."""
+        from ...db.session import get_session_local
+        SessionLocal = get_session_local()
+        restart_db = SessionLocal()
+
+        try:
+            # Emit started event
+            session.add_event(ProgressEvent(
+                type=ProgressEventType.REVIEWER_STARTED,
+                reviewer_name=reviewer_name,
+                reviewer_display_name=display_name,
+                message=f"Restarting {display_name}...",
+            ))
+
+            # Build review context
+            local_path = repo.local_path
+            review_mode = task.config.get("mode", "initial") if task.config else "initial"
+            challenger_enabled = request_body.challenger_enabled
+
+            request = ReviewRequest(
+                type="directory",
+                source=ReviewRequestSource(directory=local_path),
+                options=ReviewOptions(
+                    mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
+                    challenger_enabled=challenger_enabled,
+                ),
+            )
+
+            # Prepare context (similar to orchestrator._prepare_context)
+            context = ReviewContext(request=request)
+            context.repo_path = Path(local_path)
+
+            # Load STRUCTURE.md files
+            structure_files = list(context.repo_path.rglob("STRUCTURE.md"))
+            exclude_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv"}
+            for structure_file in structure_files:
+                rel_path = structure_file.relative_to(context.repo_path)
+                if any(part in exclude_dirs for part in rel_path.parts):
+                    continue
+                try:
+                    content = structure_file.read_text(encoding="utf-8")
+                    context.structure_docs[str(rel_path)] = content
+                except Exception:
+                    pass
+
+            # Create progress callbacks
+            async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
+                session.add_event(ProgressEvent(
+                    type=ProgressEventType.REVIEWER_ITERATION,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    iteration=iteration,
+                    max_iterations=5,
+                    satisfaction_score=satisfaction,
+                    issues_found=issues_count,
+                    message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
+                ))
+
+            async def on_content(content: str):
+                session.add_event(ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STREAMING,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    content=content,
+                ))
+
+            # Run challenger loop
+            loop = ChallengerLoop()
+            result = await loop.run(
+                context,
+                reviewer_name,
+                on_iteration_callback=on_iteration,
+                on_content_callback=on_content,
+            )
+
+            # Delete old issues from this reviewer
+            old_issues = (
+                restart_db.query(Issue)
+                .filter(
+                    Issue.task_id == task_id,
+                    Issue.flagged_by.contains([reviewer_name])
+                )
+                .all()
+            )
+            for old_issue in old_issues:
+                restart_db.delete(old_issue)
+
+            # Save new issues
+            for issue in result.final_review.issues:
+                db_issue = Issue(
+                    task_id=task_id,
+                    repository_id=task.repository_id,
+                    issue_code=issue.id,
+                    severity=issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity),
+                    category=issue.category.value if hasattr(issue.category, 'value') else str(issue.category),
+                    rule=issue.rule,
+                    file=issue.file,
+                    line=issue.line,
+                    title=issue.title,
+                    description=issue.description,
+                    current_code=issue.current_code,
+                    suggested_fix=issue.suggested_fix,
+                    references=issue.references if issue.references else None,
+                    flagged_by=issue.flagged_by if issue.flagged_by else [reviewer_name],
+                )
+                restart_db.add(db_issue)
+
+            restart_db.commit()
+
+            # Emit completed
+            session.add_event(ProgressEvent(
+                type=ProgressEventType.REVIEWER_COMPLETED,
+                reviewer_name=reviewer_name,
+                reviewer_display_name=display_name,
+                iteration=result.iterations,
+                satisfaction_score=result.final_satisfaction,
+                issues_found=len(result.final_review.issues),
+                message=f"{display_name} restarted successfully with {len(result.final_review.issues)} issues",
+                model_usage=[m.model_dump() for m in result.final_review.model_usage],
+            ))
+
+        except Exception as e:
+            session.add_event(ProgressEvent(
+                type=ProgressEventType.REVIEWER_ERROR,
+                reviewer_name=reviewer_name,
+                reviewer_display_name=display_name,
+                error=str(e),
+                message=f"{display_name} restart failed: {str(e)[:100]}",
+            ))
+
+        finally:
+            restart_db.close()
+
+    # Use a new session ID for this restart
+    restart_session_id = f"{task_id}_restart_{reviewer_name}_{datetime.utcnow().strftime('%H%M%S')}"
+
+    # Start background reviewer restart
+    session = await manager.start_review(
+        task_id=restart_session_id,
+        repository_id=task.repository_id,
+        review_coro=lambda: run_reviewer_restart(manager.get_session(restart_session_id)),
+    )
+
+    # Generator for SSE streaming
+    async def generate() -> AsyncIterator[dict]:
+        """Generate SSE events from reviewer restart progress."""
+        queue = session.subscribe()
+
+        try:
+            yield {
+                "event": "restart_started",
+                "data": f'{{"task_id": "{task_id}", "reviewer": "{reviewer_name}"}}',
+            }
+
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+
+                    if event is None:
+                        break
+
+                    yield event.to_sse()
+
+                except asyncio.TimeoutError:
+                    yield {"event": "ping", "data": "{}"}
+
+        except asyncio.CancelledError:
+            pass
+
+        finally:
+            session.unsubscribe(queue)
+
+    return EventSourceResponse(generate())
