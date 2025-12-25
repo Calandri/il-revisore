@@ -36,6 +36,13 @@ S3_BUCKET = "turbowrap-thinking"
 
 logger = logging.getLogger(__name__)
 
+
+class BillingError(Exception):
+    """Raised when Claude CLI returns a billing/credit error."""
+
+    pass
+
+
 # Agent file paths
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 FIXER_AGENT = AGENTS_DIR / "fixer.md"
@@ -264,198 +271,95 @@ class FixOrchestrator:
             claude_prompts: list[dict] = []  # [{type: "be"|"fe", batch: N, prompt: str}]
             gemini_prompt: str | None = None
 
-            for iteration in range(1, self.max_iterations + 1):
-                # Pre-calculate batches to show plan
-                def get_issue_workload(issue: Issue) -> int:
-                    """Calculate workload points for an issue based on estimates."""
-                    effort = issue.estimated_effort or DEFAULT_EFFORT
-                    files = issue.estimated_files_count or DEFAULT_FILES
-                    return effort * files
+            # Helper functions for batch processing
+            def get_issue_workload(issue: Issue) -> int:
+                """Calculate workload points for an issue based on estimates."""
+                effort = issue.estimated_effort or DEFAULT_EFFORT
+                files = issue.estimated_files_count or DEFAULT_FILES
+                return effort * files
 
-                def batch_issues_by_workload(issues: list[Issue]) -> list[list[Issue]]:
-                    """Split issues into batches based on workload estimates."""
-                    batches: list[list[Issue]] = []
-                    current_batch: list[Issue] = []
-                    current_workload = 0
+            def batch_issues_by_workload(issues_to_batch: list[Issue]) -> list[list[Issue]]:
+                """Split issues into batches based on workload estimates."""
+                batches: list[list[Issue]] = []
+                current_batch: list[Issue] = []
+                current_workload = 0
 
-                    for issue in issues:
-                        workload = get_issue_workload(issue)
-                        if current_batch and (
-                            current_workload + workload > MAX_WORKLOAD_POINTS_PER_BATCH
-                            or len(current_batch) >= MAX_ISSUES_PER_CLI_CALL
-                        ):
-                            batches.append(current_batch)
-                            current_batch = []
-                            current_workload = 0
-                        current_batch.append(issue)
-                        current_workload += workload
-
-                    if current_batch:
+                for issue in issues_to_batch:
+                    workload = get_issue_workload(issue)
+                    if current_batch and (
+                        current_workload + workload > MAX_WORKLOAD_POINTS_PER_BATCH
+                        or len(current_batch) >= MAX_ISSUES_PER_CLI_CALL
+                    ):
                         batches.append(current_batch)
-                    return batches
+                        current_batch = []
+                        current_workload = 0
+                    current_batch.append(issue)
+                    current_workload += workload
 
-                # Calculate batches upfront
-                be_batches = batch_issues_by_workload(be_issues) if has_be else []
-                fe_batches = batch_issues_by_workload(fe_issues) if has_fe else []
-                total_batches = len(be_batches) + len(fe_batches)
+                if current_batch:
+                    batches.append(current_batch)
+                return batches
 
-                # Show batching plan
+            # Calculate ALL batches upfront (once, before iterations)
+            all_be_batches = batch_issues_by_workload(be_issues) if has_be else []
+            all_fe_batches = batch_issues_by_workload(fe_issues) if has_fe else []
+            total_batches = len(all_be_batches) + len(all_fe_batches)
+
+            # Track batch results across iterations
+            # Key: "BE-1", "FE-2", etc. Value: {"passed": bool, "score": float, "failed_issues": list}
+            batch_results: dict[str, dict] = {}
+            for idx in range(len(all_be_batches)):
+                batch_results[f"BE-{idx+1}"] = {"passed": False, "score": 0.0, "failed_issues": [], "issues": all_be_batches[idx]}
+            for idx in range(len(all_fe_batches)):
+                batch_results[f"FE-{idx+1}"] = {"passed": False, "score": 0.0, "failed_issues": [], "issues": all_fe_batches[idx]}
+
+            # Track all issues that have been successfully fixed
+            successful_issues: list[Issue] = []
+            failed_issues: list[Issue] = []
+
+            for iteration in range(1, self.max_iterations + 1):
+                # Determine which batches to process this iteration
+                if iteration == 1:
+                    # First iteration: process ALL batches
+                    batches_to_process = list(batch_results.keys())
+                else:
+                    # Subsequent iterations: only retry FAILED batches
+                    batches_to_process = [
+                        batch_id for batch_id, result in batch_results.items()
+                        if not result["passed"]
+                    ]
+
+                if not batches_to_process:
+                    logger.info("All batches passed, no more retries needed")
+                    break
+
+                # Show iteration plan
+                be_retry = [b for b in batches_to_process if b.startswith("BE")]
+                fe_retry = [b for b in batches_to_process if b.startswith("FE")]
                 plan_parts = []
-                if be_batches:
-                    plan_parts.append(f"{len(be_batches)} BE batch{'es' if len(be_batches) > 1 else ''}")
-                if fe_batches:
-                    plan_parts.append(f"{len(fe_batches)} FE batch{'es' if len(fe_batches) > 1 else ''}")
+                if be_retry:
+                    plan_parts.append(f"{len(be_retry)} BE batch{'es' if len(be_retry) > 1 else ''}")
+                if fe_retry:
+                    plan_parts.append(f"{len(fe_retry)} FE batch{'es' if len(fe_retry) > 1 else ''}")
                 plan_msg = " + ".join(plan_parts) if plan_parts else "No batches"
 
-                await safe_emit(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_ISSUE_GENERATING,
-                        session_id=session_id,
-                        message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n📋 Plan: {plan_msg} ({total_batches} total)",
-                    )
-                )
-
-                # Create streaming callbacks for BE and FE
-                async def on_chunk_be(chunk: str) -> None:
+                if iteration > 1:
+                    failed_batch_ids = ", ".join(batches_to_process)
                     await safe_emit(
                         FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            type=FixEventType.FIX_ISSUE_GENERATING,
                             session_id=session_id,
-                            content=f"[BE] {chunk}",
+                            message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n📋 Retrying FAILED batches: {failed_batch_ids}",
                         )
                     )
-
-                async def on_chunk_fe(chunk: str) -> None:
+                else:
                     await safe_emit(
                         FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            type=FixEventType.FIX_ISSUE_GENERATING,
                             session_id=session_id,
-                            content=f"[FE] {chunk}",
+                            message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n📋 Plan: {plan_msg} ({len(batches_to_process)} total, 1 Gemini review per batch)",
                         )
                     )
-
-                # SEQUENTIAL EXECUTION with BATCHING
-                # First all BE batches, then all FE batches
-                successful_issues: list[Issue] = []
-                failed_issues: list[Issue] = []
-                completed_batches = 0
-
-                # Step 1a: Run BE issues in batches (if any)
-                if has_be:
-                    for batch_idx, batch in enumerate(be_batches, 1):
-                        completed_batches += 1
-                        batch_workload = sum(get_issue_workload(i) for i in batch)
-                        issue_codes = ", ".join(str(i.issue_code) for i in batch)
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_ISSUE_STREAMING,
-                                session_id=session_id,
-                                message=f"🔧 BE batch {batch_idx}/{len(be_batches)} [{completed_batches}/{total_batches}] | {len(batch)} issues, workload={batch_workload}\n   Issues: {issue_codes}",
-                            )
-                        )
-                        prompt_be = self._build_fix_prompt(batch, "be", feedback_be, iteration)
-                        # Save prompt for S3 logging (only first iteration to avoid bloat)
-                        if iteration == 1:
-                            claude_prompts.append({
-                                "type": "be",
-                                "batch": batch_idx,
-                                "issues": [i.issue_code for i in batch],
-                                "prompt": prompt_be,
-                            })
-                        try:
-                            output_be = await self._run_claude_cli(prompt_be, on_chunk=on_chunk_be)
-                            if output_be is None:
-                                logger.error(f"Claude CLI (BE batch {batch_idx}) failed: returned None")
-                                failed_issues.extend(batch)
-                            else:
-                                successful_issues.extend(batch)
-                                await safe_emit(
-                                    FixProgressEvent(
-                                        type=FixEventType.FIX_ISSUE_STREAMING,
-                                        session_id=session_id,
-                                        message=f"   ✅ BE batch {batch_idx} completed ({len(batch)} issues fixed)",
-                                    )
-                                )
-                        except Exception as e:
-                            logger.error(f"Claude CLI (BE batch {batch_idx}) failed with exception: {e}")
-                            failed_issues.extend(batch)
-                            await safe_emit(
-                                FixProgressEvent(
-                                    type=FixEventType.FIX_ISSUE_STREAMING,
-                                    session_id=session_id,
-                                    message=f"   ❌ BE batch {batch_idx} FAILED: {str(e)[:100]}",
-                                )
-                            )
-
-                # Step 1b: Run FE issues in batches (if any)
-                if has_fe:
-                    for batch_idx, batch in enumerate(fe_batches, 1):
-                        completed_batches += 1
-                        batch_workload = sum(get_issue_workload(i) for i in batch)
-                        issue_codes = ", ".join(str(i.issue_code) for i in batch)
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_ISSUE_STREAMING,
-                                session_id=session_id,
-                                message=f"🔧 FE batch {batch_idx}/{len(fe_batches)} [{completed_batches}/{total_batches}] | {len(batch)} issues, workload={batch_workload}\n   Issues: {issue_codes}",
-                            )
-                        )
-                        prompt_fe = self._build_fix_prompt(batch, "fe", feedback_fe, iteration)
-                        # Save prompt for S3 logging (only first iteration to avoid bloat)
-                        if iteration == 1:
-                            claude_prompts.append({
-                                "type": "fe",
-                                "batch": batch_idx,
-                                "issues": [i.issue_code for i in batch],
-                                "prompt": prompt_fe,
-                            })
-                        try:
-                            output_fe = await self._run_claude_cli(prompt_fe, on_chunk=on_chunk_fe)
-                            if output_fe is None:
-                                logger.error(f"Claude CLI (FE batch {batch_idx}) failed: returned None")
-                                failed_issues.extend(batch)
-                            else:
-                                successful_issues.extend(batch)
-                                await safe_emit(
-                                    FixProgressEvent(
-                                        type=FixEventType.FIX_ISSUE_STREAMING,
-                                        session_id=session_id,
-                                        message=f"   ✅ FE batch {batch_idx} completed ({len(batch)} issues fixed)",
-                                    )
-                                )
-                        except Exception as e:
-                            logger.error(f"Claude CLI (FE batch {batch_idx}) failed with exception: {e}")
-                            failed_issues.extend(batch)
-                            await safe_emit(
-                                FixProgressEvent(
-                                    type=FixEventType.FIX_ISSUE_STREAMING,
-                                    session_id=session_id,
-                                    message=f"   ❌ FE batch {batch_idx} FAILED: {str(e)[:100]}",
-                                )
-                            )
-
-                # Summary after all batches
-                await safe_emit(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_ISSUE_STREAMING,
-                        session_id=session_id,
-                        message=f"══════ Batches Complete ══════\n📊 {len(successful_issues)} issues processed, {len(failed_issues)} CLI failures",
-                    )
-                )
-
-                # If ALL CLIs failed, abort early
-                if len(successful_issues) == 0:
-                    logger.error("All Claude CLI processes failed, aborting fix session")
-                    raise Exception("All Claude CLI processes failed")
-
-                # Step 2: Gemini reviews ALL changes together
-                await safe_emit(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_CHALLENGER_EVALUATING,
-                        session_id=session_id,
-                        message=f"Gemini CLI reviewing all changes (iteration {iteration})...",
-                    )
-                )
 
                 # Streaming callback for Gemini review
                 async def on_chunk_gemini(chunk: str) -> None:
@@ -467,47 +371,196 @@ class FixOrchestrator:
                         )
                     )
 
-                review_prompt = self._build_review_prompt_batch(issues)
-                # Save Gemini prompt for S3 logging (only first iteration)
-                if iteration == 1:
-                    gemini_prompt = review_prompt
-                gemini_output = await self._run_gemini_cli(review_prompt, on_chunk=on_chunk_gemini)
-                last_gemini_output = gemini_output  # Store for fix explanation
+                completed_batches = 0
+                all_passed_this_iteration = True
 
-                if gemini_output is None:
-                    logger.warning("Gemini CLI failed, accepting fixes without review")
-                    break
+                # Process each batch: Claude fix -> Gemini review (per batch)
+                for batch_id in batches_to_process:
+                    batch_type = "BE" if batch_id.startswith("BE") else "FE"
+                    batch_idx = int(batch_id.split("-")[1])
+                    batch = batch_results[batch_id]["issues"]
+                    completed_batches += 1
 
-                score = self._parse_score(gemini_output)
+                    # Get feedback for this batch from previous iteration
+                    feedback = feedback_be if batch_type == "BE" else feedback_fe
+
+                    # Create streaming callback for this batch
+                    async def on_chunk_claude(chunk: str, bt=batch_type) -> None:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_ISSUE_STREAMING,
+                                session_id=session_id,
+                                content=f"[{bt}] {chunk}",
+                            )
+                        )
+
+                    batch_workload = sum(get_issue_workload(i) for i in batch)
+                    issue_codes = ", ".join(str(i.issue_code) for i in batch)
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message=f"🔧 {batch_id} [{completed_batches}/{len(batches_to_process)}] | {len(batch)} issues, workload={batch_workload}\n   Issues: {issue_codes}",
+                        )
+                    )
+
+                    # Step 1: Run Claude CLI for this batch
+                    prompt = self._build_fix_prompt(batch, batch_type.lower(), feedback, iteration)
+                    if iteration == 1:
+                        claude_prompts.append({
+                            "type": batch_type.lower(),
+                            "batch": batch_idx,
+                            "issues": [i.issue_code for i in batch],
+                            "prompt": prompt,
+                        })
+
+                    try:
+                        output = await self._run_claude_cli(prompt, on_chunk=on_chunk_claude)
+                        if output is None:
+                            logger.error(f"Claude CLI ({batch_id}) failed: returned None")
+                            # Mark batch as failed
+                            batch_results[batch_id]["passed"] = False
+                            batch_results[batch_id]["score"] = 0.0
+                            all_passed_this_iteration = False
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_ISSUE_STREAMING,
+                                    session_id=session_id,
+                                    message=f"   ❌ {batch_id} Claude CLI FAILED",
+                                )
+                            )
+                            continue
+                    except BillingError as e:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_BILLING_ERROR,
+                                session_id=session_id,
+                                error=str(e),
+                                message=f"💳 BILLING ERROR: {e}\n\nRicarica il credito su console.anthropic.com",
+                            )
+                        )
+                        raise
+                    except Exception as e:
+                        logger.error(f"Claude CLI ({batch_id}) failed with exception: {e}")
+                        batch_results[batch_id]["passed"] = False
+                        all_passed_this_iteration = False
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_ISSUE_STREAMING,
+                                session_id=session_id,
+                                message=f"   ❌ {batch_id} Claude CLI FAILED: {str(e)[:100]}",
+                            )
+                        )
+                        continue
+
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message=f"   ✅ {batch_id} Claude fix complete, running Gemini review...",
+                        )
+                    )
+
+                    # Step 2: Run Gemini review for THIS BATCH immediately
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                            session_id=session_id,
+                            message=f"🔍 Gemini reviewing {batch_id}...",
+                        )
+                    )
+
+                    review_prompt = self._build_review_prompt_per_batch(batch, batch_type, batch_idx)
+                    if iteration == 1 and completed_batches == 1:
+                        gemini_prompt = review_prompt  # Save first for S3 logging
+
+                    gemini_output = await self._run_gemini_cli(review_prompt, on_chunk=on_chunk_gemini)
+                    last_gemini_output = gemini_output
+
+                    if gemini_output is None:
+                        logger.warning(f"Gemini CLI failed for {batch_id}, accepting fix without review")
+                        batch_results[batch_id]["passed"] = True
+                        batch_results[batch_id]["score"] = 100.0
+                        successful_issues.extend(batch)
+                        continue
+
+                    # Parse per-batch review
+                    score, failed_issue_codes, per_issue_scores = self._parse_batch_review(gemini_output, batch)
+                    batch_results[batch_id]["score"] = score
+                    batch_results[batch_id]["failed_issues"] = failed_issue_codes
+
+                    # Show per-issue scores
+                    if per_issue_scores:
+                        scores_summary = " | ".join([f"{code}: {int(s)}" for code, s in per_issue_scores.items()])
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_RESULT,
+                                session_id=session_id,
+                                message=f"   📊 {batch_id} score: {score}/100 | Per-issue: {scores_summary}",
+                            )
+                        )
+                    else:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_RESULT,
+                                session_id=session_id,
+                                message=f"   📊 {batch_id} score: {score}/100",
+                            )
+                        )
+
+                    if score >= self.satisfaction_threshold:
+                        batch_results[batch_id]["passed"] = True
+                        successful_issues.extend(batch)
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_APPROVED,
+                                session_id=session_id,
+                                message=f"   ✅ {batch_id} PASSED ({score}/100)",
+                            )
+                        )
+                    else:
+                        batch_results[batch_id]["passed"] = False
+                        all_passed_this_iteration = False
+                        # Store feedback for retry
+                        if batch_type == "BE":
+                            feedback_be = gemini_output
+                        else:
+                            feedback_fe = gemini_output
+                        failed_msg = f", failed issues: {', '.join(failed_issue_codes)}" if failed_issue_codes else ""
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_REGENERATING,
+                                session_id=session_id,
+                                message=f"   ⚠️ {batch_id} NEEDS RETRY ({score} < {self.satisfaction_threshold}){failed_msg}",
+                            )
+                        )
+
+                # End of iteration summary
+                passed_batches = [b for b, r in batch_results.items() if r["passed"]]
+                failed_batches = [b for b, r in batch_results.items() if not r["passed"]]
 
                 await safe_emit(
                     FixProgressEvent(
-                        type=FixEventType.FIX_CHALLENGER_RESULT,
+                        type=FixEventType.FIX_ISSUE_STREAMING,
                         session_id=session_id,
-                        message=f"Score: {score}/100 (threshold: {self.satisfaction_threshold})",
-                        content=gemini_output[:500],
+                        message=f"══════ Iteration {iteration} Complete ══════\n✅ Passed: {len(passed_batches)} batches | ⚠️ Failed: {len(failed_batches)} batches",
                     )
                 )
 
-                if score >= self.satisfaction_threshold:
+                if all_passed_this_iteration:
                     await safe_emit(
                         FixProgressEvent(
                             type=FixEventType.FIX_CHALLENGER_APPROVED,
                             session_id=session_id,
-                            message=f"Fix approved with score {score}/100!",
+                            message=f"🎉 All batches passed! No more retries needed.",
                         )
                     )
                     break
-                # Parse feedback for next iteration
-                feedback_be = gemini_output
-                feedback_fe = gemini_output
-                await safe_emit(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_REGENERATING,
-                        session_id=session_id,
-                        message=f"Score {score} < {self.satisfaction_threshold}, retrying...",
-                    )
-                )
+
+            # After all iterations, collect failed issues from batches that never passed
+            for batch_id, result in batch_results.items():
+                if not result["passed"]:
+                    failed_issues.extend(result["issues"])
 
             # Step 3: Commit all changes
             await safe_emit(
@@ -628,13 +681,24 @@ class FixOrchestrator:
 
             return result
 
-    def _build_review_prompt_batch(self, issues: list[Issue]) -> str:
-        """Build review prompt for all issues with full context."""
+    def _build_review_prompt_per_batch(self, issues: list[Issue], batch_type: str, batch_idx: int) -> str:
+        """Build review prompt for a single batch with per-issue scoring.
+
+        Args:
+            issues: Issues in this batch
+            batch_type: "BE" or "FE"
+            batch_idx: Batch number (1-indexed)
+
+        Returns:
+            Prompt asking Gemini to score EACH issue individually
+        """
         agent_prompt = self._get_challenger_prompt()
 
         # Build detailed issue context
         issue_details = []
+        issue_codes = []
         for issue in issues:
+            issue_codes.append(issue.issue_code)
             detail = f"""### {issue.issue_code}: {issue.title}
 - **File**: {issue.file}
 - **Severity**: {issue.severity}
@@ -647,28 +711,96 @@ class FixOrchestrator:
             issue_details.append(detail)
 
         issues_section = "\n\n".join(issue_details)
+        issue_codes_list = ", ".join(issue_codes)
 
         task = f"""
-# Task: Review ALL Fixes
+# Task: Review Batch {batch_type}-{batch_idx} Fixes
 
-## Issues That Were Fixed
+## Issues in This Batch
 
 {issues_section}
 
 ## Instructions
-1. Run `git diff` to see ALL changes made
-2. For each issue, verify the fix correctly addresses the problem
+1. Run `git diff` to see the changes made for these {len(issues)} issues
+2. For EACH issue, evaluate if the fix correctly addresses the problem
 3. Check for bugs, security issues, or breaking changes
-4. Score from 0-100 for the OVERALL fix quality
+4. Give a score (0-100) for EACH issue
 
-## Output Format
-Start your response with the score on its own line:
-SCORE: <number>
+## Output Format (CRITICAL - follow exactly!)
 
-Then provide brief feedback.
+Start with the OVERALL batch score:
+BATCH_SCORE: <number>
+
+Then list EACH issue with its individual score:
+ISSUE_SCORES:
+- {issue_codes_list.split(', ')[0] if issue_codes else 'ISSUE-XXX'}: <score> | <brief reason>
+{chr(10).join(f'- {code}: <score> | <brief reason>' for code in issue_codes[1:]) if len(issue_codes) > 1 else ''}
+
+Issues with score < 95 need to be re-fixed in the next iteration.
+List which specific issues FAILED (score < 95):
+FAILED_ISSUES: <comma-separated issue codes, or "none">
 """
 
         return f"{agent_prompt}\n\n---\n\n{task}"
+
+    def _parse_batch_review(self, output: str, issues: list[Issue]) -> tuple[float, list[str], dict[str, float]]:
+        """Parse Gemini's per-batch review output.
+
+        Args:
+            output: Gemini's response
+            issues: Issues in this batch
+
+        Returns:
+            Tuple of (batch_score, failed_issue_codes, per_issue_scores)
+        """
+        batch_score = 70.0  # default
+        failed_issues: list[str] = []
+        per_issue_scores: dict[str, float] = {}
+
+        # Parse BATCH_SCORE
+        match = re.search(r"BATCH_SCORE:\s*(\d+)", output, re.IGNORECASE)
+        if match:
+            batch_score = float(match.group(1))
+            logger.info(f"Parsed BATCH_SCORE: {batch_score}")
+        else:
+            # Fallback to old SCORE pattern
+            match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
+            if match:
+                batch_score = float(match.group(1))
+                logger.info(f"Parsed SCORE (fallback): {batch_score}")
+
+        # Parse per-issue scores
+        for issue in issues:
+            code = issue.issue_code
+            # Look for pattern: - ISSUE-123: 95 | reason
+            pattern = rf"-\s*{re.escape(code)}:\s*(\d+)"
+            match = re.search(pattern, output, re.IGNORECASE)
+            if match:
+                per_issue_scores[code] = float(match.group(1))
+                logger.debug(f"Issue {code}: score {per_issue_scores[code]}")
+
+        # Parse FAILED_ISSUES
+        match = re.search(r"FAILED_ISSUES:\s*(.+?)(?:\n|$)", output, re.IGNORECASE)
+        if match:
+            failed_text = match.group(1).strip().lower()
+            if failed_text != "none" and failed_text:
+                # Extract issue codes (format: ISSUE-123, ISSUE-456)
+                failed_issues = [
+                    code.strip().upper()
+                    for code in re.findall(r"[A-Z]+-\d+", match.group(1), re.IGNORECASE)
+                ]
+                logger.info(f"Parsed FAILED_ISSUES: {failed_issues}")
+
+        # If no explicit FAILED_ISSUES, derive from per_issue_scores
+        if not failed_issues and per_issue_scores:
+            failed_issues = [
+                code for code, score in per_issue_scores.items()
+                if score < self.satisfaction_threshold
+            ]
+            if failed_issues:
+                logger.info(f"Derived FAILED_ISSUES from scores: {failed_issues}")
+
+        return batch_score, failed_issues, per_issue_scores
 
     def _build_fix_prompt(
         self,
@@ -863,6 +995,25 @@ The reviewer found issues with the previous fix. Address this feedback:
                 try:
                     event = json.loads(line)
                     if event.get("type") == "result":
+                        # Check for billing/API errors
+                        if event.get("is_error"):
+                            error_msg = event.get("result", "Unknown error")
+                            # Detect billing-related errors
+                            billing_keywords = [
+                                "credit balance",
+                                "billing",
+                                "payment",
+                                "insufficient funds",
+                                "quota exceeded",
+                                "rate limit",
+                            ]
+                            if any(kw in error_msg.lower() for kw in billing_keywords):
+                                logger.error(f"Claude CLI billing error: {error_msg}")
+                                raise BillingError(error_msg)
+                            # Other API errors
+                            logger.error(f"Claude CLI API error: {error_msg}")
+                            return None
+
                         # Log model usage
                         model_usage = event.get("modelUsage", {})
                         if model_usage:

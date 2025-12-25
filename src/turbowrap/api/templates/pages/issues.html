@@ -664,6 +664,29 @@
                 </div>
             </div>
 
+            <!-- BILLING ERROR BANNER - Very prominent! -->
+            <div x-show="fixProgress.billingError"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 transform -translate-y-2"
+                 x-transition:enter-end="opacity-100 transform translate-y-0"
+                 class="mx-4 mt-4 p-4 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg shadow-lg">
+                <div class="flex items-start gap-3">
+                    <div class="text-white text-3xl">💳</div>
+                    <div class="flex-1">
+                        <h4 class="text-white font-bold text-lg mb-1">Credito Anthropic Esaurito!</h4>
+                        <p class="text-white/90 text-sm mb-3" x-text="fixProgress.billingError"></p>
+                        <a href="https://console.anthropic.com/settings/billing"
+                           target="_blank"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                            Ricarica Credito
+                        </a>
+                    </div>
+                </div>
+            </div>
+
             <!-- Activity Log -->
             <div class="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50">
                 <div class="space-y-1.5">
@@ -951,7 +974,8 @@ function issuesApp() {
             fixingIssueIds: [],  // Preserved issue IDs for chip display
             streamingContent: '',
             showStreamingDetails: false,
-            lastScore: null
+            lastScore: null,
+            billingError: null  // Billing error message if any
         },
         filters: {
             repository_id: '',
@@ -1192,7 +1216,8 @@ function issuesApp() {
                 fixingIssueIds: [...this.selectedIssues],  // Preserve IDs before they get cleared
                 streamingContent: '',
                 showStreamingDetails: false,
-                lastScore: null
+                lastScore: null,
+                billingError: null  // Reset billing error
             };
 
             try {
@@ -1343,6 +1368,18 @@ function issuesApp() {
                 });
             }
 
+            // 5b. Handle billing error - show prominently
+            if (eventType === 'fix_billing_error') {
+                this.fixProgress.billingError = event.error || event.message || 'Credit balance is too low';
+                // Also mark all in_progress issues as failed
+                Object.keys(this.fixProgress.issueStates).forEach(id => {
+                    const state = this.fixProgress.issueStates[id];
+                    if (state.status === 'in_progress' || state.status === 'pending') {
+                        state.status = 'failed';
+                    }
+                });
+            }
+
             // 6. STREAMING CONTENT -> goes to collapsible area
             if (event.content && (eventType === 'fix_issue_streaming' || eventType === 'fix_challenger_evaluating')) {
                 this.fixProgress.streamingContent += event.content;
@@ -1387,12 +1424,14 @@ function issuesApp() {
                 'fix_regenerating': '🔄',
                 'fix_issue_committing': '💾',
                 'fix_session_completed': '🎉',
-                'fix_session_error': '❌'
+                'fix_session_error': '❌',
+                'fix_billing_error': '💳'
             };
             return icons[type] || '📝';
         },
 
         getEventColor(type) {
+            if (type === 'fix_billing_error') return 'text-orange-500';  // Billing errors get orange
             if (type.includes('error') || type.includes('failed')) return 'text-red-500';
             if (type.includes('approved') || type.includes('completed')) return 'text-green-500';
             if (type.includes('challenger')) return 'text-purple-500';

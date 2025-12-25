@@ -52,6 +52,9 @@ class FixEventType(str, Enum):
     FIX_CHALLENGER_REJECTED = "fix_challenger_rejected"
     FIX_REGENERATING = "fix_regenerating"
 
+    # Billing/API errors
+    FIX_BILLING_ERROR = "fix_billing_error"
+
 
 class FixChallengerStatus(str, Enum):
     """Status from fix challenger evaluation."""
