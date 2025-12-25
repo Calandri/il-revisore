@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -17,18 +17,8 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 
 from turbowrap.api.deps import get_db
-from turbowrap.db.models import Issue, IssueStatus, Repository, Task, LinearIssue, Setting
-from turbowrap.linear import LinearStateManager
-from turbowrap.review.integrations.linear import LinearClient
-from turbowrap.fix import (
-    ClarificationAnswer,
-    ClarificationQuestion,
-    FixEventType,
-    FixOrchestrator,
-    FixProgressEvent,
-    FixRequest,
-    ScopeValidationError,
-)
+from turbowrap.db.models import Issue, IssueStatus, Repository, Task
+from turbowrap.fix import ClarificationAnswer, ClarificationQuestion
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
 logger = logging.getLogger(__name__)
@@ -360,266 +350,44 @@ async def start_fix(
     - Use X-Idempotency-Key header to track specific requests
     - Idempotency keys expire after 1 hour
     """
-    import uuid
-
-    # Generate idempotency key
-    idempotency_key = _idempotency_store.generate_key(
-        repository_id=request.repository_id,
-        task_id=request.task_id,
-        issue_ids=request.issue_ids,
-        client_key=x_idempotency_key,
+    from ..services.fix_session_service import (
+        DuplicateSessionError,
+        get_fix_session_service,
     )
 
-    # Generate session ID early for idempotency tracking
-    session_id = str(uuid.uuid4())
+    service = get_fix_session_service(db)
 
-    # Check for duplicate request
-    is_duplicate, existing = _idempotency_store.check_and_register(
-        key=idempotency_key,
-        session_id=session_id,
-    )
+    try:
+        session_info, duplicate_response = service.validate_and_prepare(
+            repository_id=request.repository_id,
+            task_id=request.task_id,
+            issue_ids=request.issue_ids,
+            use_existing_branch=request.use_existing_branch,
+            existing_branch_name=request.existing_branch_name,
+            client_idempotency_key=x_idempotency_key,
+            force=request.force,
+        )
 
-    if is_duplicate and existing:
-        if existing.status == "in_progress":
-            if request.force:
-                # Force restart: remove old entry and continue
-                logger.warning(
-                    f"Force restart requested, removing stuck session: {existing.session_id}"
-                )
-                _idempotency_store.remove(idempotency_key)
-                # Re-register with new session
-                _idempotency_store.check_and_register(
-                    key=idempotency_key,
-                    session_id=session_id,
-                )
-            else:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": "Fix session already in progress for these issues",
-                        "session_id": existing.session_id,
-                        "status": existing.status,
-                        "started_at": existing.created_at.isoformat(),
-                        "hint": "Use force=true to restart if the session is stuck",
-                    },
-                )
-        else:
-            # Return previous result
-            return {
-                "status": "duplicate",
-                "message": "Request already processed",
-                "previous_session_id": existing.session_id,
-                "previous_status": existing.status,
-                "completed_at": existing.completed_at.isoformat() if existing.completed_at else None,
-            }
+        # Handle duplicate request (already processed)
+        if duplicate_response:
+            return duplicate_response
 
-    # Verify repository
-    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
-    if not repo:
-        _idempotency_store.remove(idempotency_key)
-        raise HTTPException(status_code=404, detail="Repository not found")
+        # Execute fixes and stream progress
+        return EventSourceResponse(service.execute_fixes(session_info))
 
-    # Verify task
-    task = db.query(Task).filter(Task.id == request.task_id).first()
-    if not task:
-        _idempotency_store.remove(idempotency_key)
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Load issues
-    issues = (
-        db.query(Issue)
-        .filter(Issue.id.in_(request.issue_ids))
-        .filter(Issue.repository_id == request.repository_id)
-        .all()
-    )
-
-    if not issues:
-        _idempotency_store.remove(idempotency_key)
-        raise HTTPException(status_code=404, detail="No valid issues found")
-
-    # Order issues by the requested order
-    issue_order = {id: i for i, id in enumerate(request.issue_ids)}
-    issues = sorted(issues, key=lambda x: issue_order.get(x.id, 999))
-
-    # Set issues to in_progress immediately
-    for issue in issues:
-        issue.status = IssueStatus.IN_PROGRESS.value
-    db.commit()
-
-    # Capture for closure
-    repo_path = Path(repo.local_path)
-    fix_request = FixRequest(
-        repository_id=request.repository_id,
-        task_id=request.task_id,
-        issue_ids=[i.id for i in issues],
-        use_existing_branch=request.use_existing_branch,
-        existing_branch_name=request.existing_branch_name,
-        workspace_path=repo.workspace_path,  # Monorepo: restrict fixes to this folder
-    )
-
-    async def generate() -> AsyncIterator[dict]:
-        """Generate SSE events from fix progress."""
-        event_queue: asyncio.Queue[FixProgressEvent] = asyncio.Queue()
-        session_id = None
-
-        async def progress_callback(event: FixProgressEvent):
-            """Enqueue progress events."""
-            nonlocal session_id
-            if event.session_id:
-                session_id = event.session_id
-            await event_queue.put(event)
-
-        async def run_fix():
-            """Run fix in background."""
-            try:
-                orchestrator = FixOrchestrator(repo_path=repo_path)
-                result = await orchestrator.fix_issues(
-                    request=fix_request,
-                    issues=issues,
-                    emit=progress_callback,
-                )
-
-                # Update issue statuses in database
-                completed_count = 0
-                failed_count = 0
-                for issue_result in result.results:
-                    db_issue = db.query(Issue).filter(Issue.id == issue_result.issue_id).first()
-                    if db_issue:
-                        if issue_result.status.value == "completed":
-                            db_issue.status = IssueStatus.RESOLVED.value
-                            db_issue.resolved_at = datetime.utcnow()
-                            db_issue.resolution_note = (
-                                f"Fixed in commit {issue_result.commit_sha}"
-                                if issue_result.commit_sha
-                                else "Fixed"
-                            )
-                            # Save fix result fields
-                            db_issue.fix_code = issue_result.fix_code
-                            db_issue.fix_explanation = issue_result.fix_explanation
-                            db_issue.fix_files_modified = issue_result.fix_files_modified
-                            db_issue.fix_commit_sha = issue_result.commit_sha
-                            db_issue.fix_branch = result.branch_name
-                            db_issue.fix_session_id = result.session_id  # For S3 log retrieval
-                            db_issue.fixed_at = datetime.utcnow()
-                            db_issue.fixed_by = "fixer_claude"
-                            completed_count += 1
-                        elif issue_result.status.value == "failed":
-                            db_issue.status = IssueStatus.OPEN.value  # Reset to open on failure
-                            db_issue.resolution_note = f"Fix failed: {issue_result.error}"
-                            failed_count += 1
-                db.commit()
-
-                # Auto-transition Linear issues to in_review after successful commit
-                # Get commit_sha from first successful result (FixSessionResult doesn't have commit_sha)
-                commit_sha = next((r.commit_sha for r in result.results if r.commit_sha), None)
-                if commit_sha and result.branch_name:
-                    try:
-                        # Get task to check for linked Linear issues
-                        task = db.query(Task).filter(Task.id == request.task_id).first()
-                        if task:
-                            # Check if task has linked Linear issues (via relationship)
-                            linear_issues = db.query(LinearIssue).filter(
-                                LinearIssue.task_id == task.id,
-                                LinearIssue.is_active == True
-                            ).all()
-
-                            if linear_issues:
-                                # Get Linear client
-                                linear_api_key = db.query(Setting).filter(
-                                    Setting.key == "linear_api_key"
-                                ).first()
-
-                                if linear_api_key and linear_api_key.value:
-                                    linear_client = LinearClient(api_key=linear_api_key.value)
-                                    state_manager = LinearStateManager(linear_client)
-
-                                    for linear_issue in linear_issues:
-                                        try:
-                                            success = await state_manager.auto_transition_after_commit(
-                                                linear_issue,
-                                                commit_sha,  # Use extracted commit_sha, not result.commit_sha
-                                                result.branch_name
-                                            )
-                                            if success:
-                                                logger.info(
-                                                    f"Auto-transitioned Linear issue {linear_issue.linear_identifier} to in_review"
-                                                )
-                                        except Exception as e:
-                                            logger.error(
-                                                f"Failed to auto-transition Linear issue {linear_issue.linear_identifier}: {e}"
-                                            )
-
-                                    # Commit Linear issue updates
-                                    db.commit()
-                    except Exception as e:
-                        logger.error(f"Error during Linear auto-transition: {e}")
-                        # Don't fail the entire fix if Linear transition fails
-
-                # Mark idempotency entry as completed
-                _idempotency_store.update_status(
-                    idempotency_key,
-                    "completed",
-                    {
-                        "completed": completed_count,
-                        "failed": failed_count,
-                        "total": len(result.results),
-                    },
-                )
-
-            except ScopeValidationError as e:
-                # Workspace scope violation - files modified outside allowed workspace
-                logger.error(f"Workspace scope violation: {e}")
-                # Reset all issues to open
-                for issue in issues:
-                    db_issue = db.query(Issue).filter(Issue.id == issue.id).first()
-                    if db_issue and db_issue.status == IssueStatus.IN_PROGRESS.value:
-                        db_issue.status = IssueStatus.OPEN.value
-                        db_issue.resolution_note = f"Blocked: files outside workspace '{e.workspace_path}'"
-                db.commit()
-                # Mark idempotency entry as failed
-                _idempotency_store.update_status(idempotency_key, "failed")
-                await event_queue.put(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_SESSION_ERROR,
-                        error=f"🚫 WORKSPACE SCOPE VIOLATION",
-                        message=f"Modified files outside '{e.workspace_path}': {', '.join(e.files_outside_scope[:3])}",
-                    )
-                )
-            except Exception as e:
-                logger.exception("Fix session error")
-                # Reset all issues to open on error
-                for issue in issues:
-                    db_issue = db.query(Issue).filter(Issue.id == issue.id).first()
-                    if db_issue and db_issue.status == IssueStatus.IN_PROGRESS.value:
-                        db_issue.status = IssueStatus.OPEN.value
-                db.commit()
-                # Mark idempotency entry as failed
-                _idempotency_store.update_status(idempotency_key, "failed")
-                await event_queue.put(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_SESSION_ERROR,
-                        error=str(e),
-                        message=f"Fix failed: {str(e)[:100]}",
-                    )
-                )
-            finally:
-                await event_queue.put(None)
-
-        # Start fix task
-        fix_task = asyncio.create_task(run_fix())
-
-        try:
-            # Stream events
-            while True:
-                event = await event_queue.get()
-                if event is None:
-                    break
-                yield event.to_sse()
-        except asyncio.CancelledError:
-            fix_task.cancel()
-            raise
-
-    return EventSourceResponse(generate())
+    except DuplicateSessionError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Fix session already in progress for these issues",
+                "session_id": e.session_id,
+                "status": e.status,
+                "started_at": e.created_at.isoformat(),
+                "hint": "Use force=true to restart if the session is stuck",
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/clarification/answer")
