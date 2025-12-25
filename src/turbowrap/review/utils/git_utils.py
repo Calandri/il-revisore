@@ -6,7 +6,6 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -34,7 +33,7 @@ class CommitInfo:
 class GitUtils:
     """Git utility functions."""
 
-    def __init__(self, repo_path: Optional[str | Path] = None):
+    def __init__(self, repo_path: str | Path | None = None):
         """
         Initialize GitUtils.
 
@@ -57,7 +56,7 @@ class GitUtils:
 
     def get_changed_files(
         self,
-        base_ref: Optional[str] = None,
+        base_ref: str | None = None,
         head_ref: str = "HEAD",
     ) -> list[str]:
         """
@@ -86,9 +85,9 @@ class GitUtils:
 
     def get_diff(
         self,
-        base_ref: Optional[str] = None,
+        base_ref: str | None = None,
         head_ref: str = "HEAD",
-        files: Optional[list[str]] = None,
+        files: list[str] | None = None,
     ) -> str:
         """
         Get diff between refs.
@@ -158,7 +157,7 @@ class GitUtils:
             return False
 
     @staticmethod
-    def parse_pr_url(url: str) -> Optional[PRInfo]:
+    def parse_pr_url(url: str) -> PRInfo | None:
         """
         Parse a GitHub PR URL.
 

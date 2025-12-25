@@ -1,13 +1,13 @@
 """Web routes for HTML pages."""
 
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from ..deps import get_db, get_current_user
-from ...db.models import Repository, ChatSession, Setting, Task
-from ...utils.git_utils import smart_push_with_conflict_resolution
+from ...db.models import ChatSession, Repository, Setting, Task
 from ...utils.aws_secrets import get_anthropic_api_key
+from ...utils.git_utils import smart_push_with_conflict_resolution
+from ..deps import get_current_user, get_db
 
 router = APIRouter(tags=["web"])
 
@@ -256,6 +256,7 @@ async def users_page(request: Request):
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
     """HTMX partial: repository list with last evaluation."""
     import json
+
     from sqlalchemy import func
 
     repos = db.query(Repository).filter(Repository.status != "deleted").all()

@@ -7,9 +7,9 @@ from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
-from ..deps import require_admin
-from ..auth import get_cognito_client
 from ...config import get_settings
+from ..auth import get_cognito_client
+from ..deps import require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
@@ -119,11 +119,10 @@ async def invite_user(
 
         if error_code == "UsernameExistsException":
             raise HTTPException(status_code=409, detail="Utente gia esistente")
-        elif error_code == "InvalidParameterException":
+        if error_code == "InvalidParameterException":
             raise HTTPException(status_code=400, detail=f"Parametro non valido: {error_msg}")
-        else:
-            logger.error(f"Error creating user: {error_code} - {error_msg}")
-            raise HTTPException(status_code=500, detail="Errore nella creazione utente")
+        logger.error(f"Error creating user: {error_code} - {error_msg}")
+        raise HTTPException(status_code=500, detail="Errore nella creazione utente")
 
 
 @router.delete("/{username}", response_model=UserDeleteResponse)
@@ -159,6 +158,5 @@ async def delete_user(
 
         if error_code == "UserNotFoundException":
             raise HTTPException(status_code=404, detail="Utente non trovato")
-        else:
-            logger.error(f"Error deleting user: {e}")
-            raise HTTPException(status_code=500, detail="Errore nell'eliminazione utente")
+        logger.error(f"Error deleting user: {e}")
+        raise HTTPException(status_code=500, detail="Errore nell'eliminazione utente")

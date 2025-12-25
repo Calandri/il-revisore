@@ -168,7 +168,7 @@ class ClaudeEvaluator:
         # Issue details (limit to first 30 to avoid token explosion)
         if issues:
             sections.append("\n### Issue Details\n")
-            for i, issue in enumerate(issues[:30]):
+            for _i, issue in enumerate(issues[:30]):
                 severity = issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity)
                 category = issue.category.value if hasattr(issue.category, 'value') else str(issue.category)
                 sections.append(

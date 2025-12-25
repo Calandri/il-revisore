@@ -4,7 +4,6 @@ File utilities for TurboWrap.
 
 import hashlib
 from pathlib import Path
-from typing import Optional
 
 
 class FileUtils:
@@ -28,7 +27,7 @@ class FileUtils:
     def read_lines(
         path: str | Path,
         start_line: int = 1,
-        end_line: Optional[int] = None,
+        end_line: int | None = None,
     ) -> list[str]:
         """
         Read specific lines from a file.
@@ -146,10 +145,7 @@ class FileUtils:
 
         # Check for files without extension
         name = Path(path).name.lower()
-        if name in {"dockerfile", "makefile", "jenkinsfile", "vagrantfile"}:
-            return True
-
-        return False
+        return name in {"dockerfile", "makefile", "jenkinsfile", "vagrantfile"}
 
     @staticmethod
     def get_language(path: str | Path) -> str:

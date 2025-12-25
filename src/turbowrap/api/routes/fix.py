@@ -9,15 +9,14 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
 
 from turbowrap.api.deps import get_db
-from turbowrap.db.models import Issue, IssueStatus, Repository, Task
+from turbowrap.db.models import Issue, IssueStatus, Repository
 from turbowrap.fix import ClarificationAnswer, ClarificationQuestion
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
@@ -61,8 +60,8 @@ class IdempotencyEntry:
     session_id: str
     status: str  # "in_progress", "completed", "failed"
     created_at: datetime = field(default_factory=datetime.utcnow)
-    completed_at: Optional[datetime] = None
-    result: Optional[dict] = None
+    completed_at: datetime | None = None
+    result: dict | None = None
 
 
 class IdempotencyStore:
@@ -81,7 +80,7 @@ class IdempotencyStore:
         repository_id: str,
         task_id: str,
         issue_ids: list[str],
-        client_key: Optional[str] = None,
+        client_key: str | None = None,
     ) -> str:
         """Generate idempotency key.
 
@@ -106,7 +105,7 @@ class IdempotencyStore:
         self,
         key: str,
         session_id: str,
-    ) -> tuple[bool, Optional[IdempotencyEntry]]:
+    ) -> tuple[bool, IdempotencyEntry | None]:
         """Check if request is duplicate and register if not.
 
         Args:
@@ -136,7 +135,7 @@ class IdempotencyStore:
                 if existing.status == "in_progress":
                     logger.info(f"Duplicate fix request blocked (in progress): {key}")
                     return True, existing
-                elif existing.created_at > cutoff:
+                if existing.created_at > cutoff:
                     logger.info(f"Duplicate fix request detected (recent): {key}")
                     return True, existing
 
@@ -151,7 +150,7 @@ class IdempotencyStore:
         self,
         key: str,
         status: str,
-        result: Optional[dict] = None,
+        result: dict | None = None,
     ) -> None:
         """Update entry status.
 
@@ -187,7 +186,7 @@ class FixStartRequest(BaseModel):
     use_existing_branch: bool = Field(
         default=False, description="If True, use existing branch instead of creating new one from main"
     )
-    existing_branch_name: Optional[str] = Field(
+    existing_branch_name: str | None = Field(
         default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
     )
 
@@ -214,35 +213,35 @@ class IssueListResponse(BaseModel):
     severity: str
     category: str
     file: str
-    line: Optional[int]
+    line: int | None
     title: str
     description: str
     status: str
     created_at: datetime
 
     # Fix result fields (populated when resolved)
-    fix_code: Optional[str] = None
-    fix_explanation: Optional[str] = None
-    fix_files_modified: Optional[list[str]] = None
-    fix_commit_sha: Optional[str] = None
-    fix_branch: Optional[str] = None
-    fixed_at: Optional[datetime] = None
-    fixed_by: Optional[str] = None
+    fix_code: str | None = None
+    fix_explanation: str | None = None
+    fix_files_modified: list[str] | None = None
+    fix_commit_sha: str | None = None
+    fix_branch: str | None = None
+    fixed_at: datetime | None = None
+    fixed_by: str | None = None
 
 
 class IssueUpdateRequest(BaseModel):
     """Request to update issue status."""
 
     status: str = Field(..., description="New status")
-    resolution_note: Optional[str] = Field(default=None, description="Resolution note")
+    resolution_note: str | None = Field(default=None, description="Resolution note")
 
 
 @router.get("/issues/{repository_id}", response_model=list[IssueListResponse])
 def list_issues(
     repository_id: str,
-    status: Optional[str] = None,
-    severity: Optional[str] = None,
-    task_id: Optional[str] = None,
+    status: str | None = None,
+    severity: str | None = None,
+    task_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -330,7 +329,7 @@ def update_issue(
 async def start_fix(
     request: FixStartRequest,
     db: Session = Depends(get_db),
-    x_idempotency_key: Optional[str] = Header(
+    x_idempotency_key: str | None = Header(
         default=None,
         description="Optional client-provided idempotency key. "
         "If not provided, a key is generated from issue IDs."
@@ -450,7 +449,7 @@ def list_active_sessions():
 
     sessions = []
     with _idempotency_store._lock:
-        for key, entry in _idempotency_store._store.items():
+        for _key, entry in _idempotency_store._store.items():
             if entry.status == "in_progress":
                 sessions.append(ActiveSessionInfo(
                     session_id=entry.session_id,
@@ -594,7 +593,7 @@ class MergeRequest(BaseModel):
 
     repository_id: str = Field(..., description="Repository ID")
     branch_name: str = Field(..., description="Branch name to merge (e.g., fix/<task_id>)")
-    task_id: Optional[str] = Field(default=None, description="Task ID to update issues to merged")
+    task_id: str | None = Field(default=None, description="Task ID to update issues to merged")
 
 
 @router.post("/merge")
@@ -716,7 +715,7 @@ class OpenPRRequest(BaseModel):
 
     repository_id: str = Field(..., description="Repository ID")
     branch_name: str = Field(..., description="Branch name to create PR from")
-    task_id: Optional[str] = Field(default=None, description="Task ID to get fixed issues")
+    task_id: str | None = Field(default=None, description="Task ID to get fixed issues")
 
 
 @router.post("/open-pr")

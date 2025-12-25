@@ -25,7 +25,7 @@ from turbowrap.review.integrations.linear import LinearClient
 async def test_create_issue(team_id: str, title: str):
     """Test Linear issue creation."""
 
-    print(f"🔧 Creating Linear issue...")
+    print("🔧 Creating Linear issue...")
     print(f"   Team ID: {team_id}")
     print(f"   Title: {title}\n")
 
@@ -108,7 +108,7 @@ async def test_get_workflow_states(team_id: str):
         for state in states:
             print(f"  {state['name']:20} | ID: {state['id']} | Type: {state['type']}")
         print("-" * 60)
-        print(f"\n💡 Use these state IDs when creating issues with custom states")
+        print("\n💡 Use these state IDs when creating issues with custom states")
 
     except Exception as e:
         print(f"❌ Failed to fetch states: {e}")

@@ -7,18 +7,17 @@ import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
 from sse_starlette.sse import EventSourceResponse
 
-from ..deps import get_db
 from ...db.models import LinearIssue, LinearIssueRepositoryLink, Repository, Setting
-from ...review.integrations.linear import LinearClient
 from ...linear.analyzer import LinearIssueAnalyzer
+from ...review.integrations.linear import LinearClient
+from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/linear", tags=["linear"])
@@ -35,21 +34,21 @@ class LinearIssueResponse(BaseModel):
     linear_identifier: str
     linear_url: str
     linear_team_id: str
-    linear_team_name: Optional[str] = None
+    linear_team_name: str | None = None
     title: str
-    description: Optional[str] = None
-    improved_description: Optional[str] = None
-    assignee_name: Optional[str] = None
+    description: str | None = None
+    improved_description: str | None = None
+    assignee_name: str | None = None
     priority: int
-    labels: Optional[list] = None
+    labels: list | None = None
     turbowrap_state: str
-    linear_state_name: Optional[str] = None
+    linear_state_name: str | None = None
     is_active: bool
-    analysis_summary: Optional[str] = None
-    analyzed_at: Optional[datetime] = None
-    user_answers: Optional[dict] = None
-    fix_commit_sha: Optional[str] = None
-    fix_branch: Optional[str] = None
+    analysis_summary: str | None = None
+    analyzed_at: datetime | None = None
+    user_answers: dict | None = None
+    fix_commit_sha: str | None = None
+    fix_branch: str | None = None
     repository_ids: list[str] = Field(default_factory=list)
     repository_names: list[str] = Field(default_factory=list)
     created_at: datetime
@@ -58,7 +57,7 @@ class LinearIssueResponse(BaseModel):
 
 class LinearSyncRequest(BaseModel):
     """Request to sync issues from Linear."""
-    team_id: Optional[str] = Field(None, description="Team ID (uses settings if not provided)")
+    team_id: str | None = Field(None, description="Team ID (uses settings if not provided)")
     limit: int = Field(100, ge=1, le=500)
 
 
@@ -84,15 +83,15 @@ class FinalizeIssueRequest(BaseModel):
     """Request to finalize issue creation."""
     title: str
     description: str
-    figma_link: Optional[str] = None
-    website_link: Optional[str] = None
+    figma_link: str | None = None
+    website_link: str | None = None
     gemini_insights: str
     user_answers: dict[int, str] = Field(..., description="User answers keyed by question ID")
     temp_session_id: str
     team_id: str
     priority: int = Field(default=0, ge=0, le=4)
-    assignee_id: Optional[str] = None
-    due_date: Optional[str] = None  # ISO format date
+    assignee_id: str | None = None
+    due_date: str | None = None  # ISO format date
 
 
 # --- Helper Functions ---
@@ -105,7 +104,7 @@ def _get_linear_client(db: Session) -> LinearClient:
     return LinearClient(api_key=setting.value)
 
 
-def _get_team_id(db: Session, provided: Optional[str] = None) -> str:
+def _get_team_id(db: Session, provided: str | None = None) -> str:
     """Get team ID from settings or param."""
     if provided:
         team_id = provided
@@ -163,8 +162,8 @@ def _map_linear_state_to_turbowrap(state_name: str) -> str:
 
 @router.get("/issues", response_model=list[LinearIssueResponse])
 def list_linear_issues(
-    state: Optional[str] = Query(None, description="Filter by TurboWrap state"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    state: str | None = Query(None, description="Filter by TurboWrap state"),
+    is_active: bool | None = Query(None, description="Filter by active status"),
     limit: int = Query(100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -256,7 +255,7 @@ async def sync_linear_issues(
             # Extract labels
             labels_data = linear_issue.get("labels") or {}
             label_nodes = labels_data.get("nodes", [])
-            labels = [{"name": l["name"], "color": l["color"]} for l in label_nodes]
+            labels = [{"name": label["name"], "color": label["color"]} for label in label_nodes]
             repo_label_names = _parse_repo_labels(label_nodes)
 
             if existing:
@@ -579,7 +578,7 @@ async def start_development(
     # Check if another issue is active
     active_issue = db.query(LinearIssue).filter(
         and_(
-            LinearIssue.is_active == True,
+            LinearIssue.is_active,
             LinearIssue.id != issue_id,
         )
     ).first()
@@ -634,7 +633,7 @@ async def get_linear_teams(
 
 @router.get("/users")
 async def get_linear_users(
-    team_id: Optional[str] = None,
+    team_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Get all users from Linear workspace."""
@@ -882,7 +881,7 @@ Genera descrizione markdown con:
 
             try:
                 # Get available repositories
-                repos = db.query(Repository).filter(Repository.is_deleted == False).all()
+                repos = db.query(Repository).filter(not Repository.is_deleted).all()
                 repo_names = [r.name for r in repos]
 
                 if repo_names:
@@ -987,7 +986,7 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                     try:
                         repo = db.query(Repository).filter(
                             Repository.name == detected_repo_name,
-                            Repository.is_deleted == False
+                            not Repository.is_deleted
                         ).first()
 
                         if repo:

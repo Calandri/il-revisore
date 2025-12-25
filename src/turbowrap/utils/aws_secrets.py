@@ -4,8 +4,6 @@ AWS Secrets Manager utility for fetching API keys.
 
 import json
 import logging
-from functools import lru_cache
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +12,7 @@ AWS_REGION = "eu-west-3"
 SECRET_NAME = "agent-zero/global/api-keys"
 
 # Cache for secrets
-_secrets_cache: Optional[dict] = None
+_secrets_cache: dict | None = None
 
 
 def get_secrets() -> dict:
@@ -56,19 +54,19 @@ def get_secrets() -> dict:
         return {}
 
 
-def get_anthropic_api_key() -> Optional[str]:
+def get_anthropic_api_key() -> str | None:
     """Get ANTHROPIC_API_KEY from AWS Secrets Manager."""
     secrets = get_secrets()
     return secrets.get("ANTHROPIC_API_KEY")
 
 
-def get_gemini_api_key() -> Optional[str]:
+def get_gemini_api_key() -> str | None:
     """Get GEMINI_API_KEY from AWS Secrets Manager."""
     secrets = get_secrets()
     return secrets.get("GEMINI_API_KEY")
 
 
-def get_google_api_key() -> Optional[str]:
+def get_google_api_key() -> str | None:
     """Get GOOGLE_API_KEY from AWS Secrets Manager."""
     secrets = get_secrets()
     return secrets.get("GOOGLE_API_KEY")

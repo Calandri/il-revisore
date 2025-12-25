@@ -6,10 +6,9 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
-from turbowrap.review.models.review import ReviewOutput, ReviewRequest
 from turbowrap.review.models.challenger import ChallengerFeedback
+from turbowrap.review.models.review import ReviewOutput, ReviewRequest
 
 
 @dataclass
@@ -24,24 +23,24 @@ class ReviewContext:
     file_contents: dict[str, str] = field(default_factory=dict)
 
     # Git info
-    diff: Optional[str] = None
-    base_branch: Optional[str] = None
-    current_branch: Optional[str] = None
-    commit_sha: Optional[str] = None
+    diff: str | None = None
+    base_branch: str | None = None
+    current_branch: str | None = None
+    commit_sha: str | None = None
 
     # Repository info
-    repo_path: Optional[Path] = None
-    repo_name: Optional[str] = None
+    repo_path: Path | None = None
+    repo_name: str | None = None
 
     # Agent system prompt (from markdown files)
-    agent_prompt: Optional[str] = None
+    agent_prompt: str | None = None
 
     # Structure documentation (STRUCTURE.md files found in repo)
     structure_docs: dict[str, str] = field(default_factory=dict)
 
     # Previous review (for refinement)
-    previous_review: Optional[ReviewOutput] = None
-    challenger_feedback: Optional[ChallengerFeedback] = None
+    previous_review: ReviewOutput | None = None
+    challenger_feedback: ChallengerFeedback | None = None
 
     # Metadata (e.g., review_id for S3 logging)
     metadata: dict = field(default_factory=dict)

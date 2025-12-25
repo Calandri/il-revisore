@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,33 +42,33 @@ class ProgressEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     # Review-level info
-    review_id: Optional[str] = Field(default=None, description="Review ID")
+    review_id: str | None = Field(default=None, description="Review ID")
 
     # Reviewer-level info
-    reviewer_name: Optional[str] = Field(default=None, description="Reviewer name")
-    reviewer_display_name: Optional[str] = Field(default=None, description="Human-readable name")
-    model: Optional[str] = Field(default=None, description="Model used (e.g., claude-opus-4-5, gemini-flash)")
+    reviewer_name: str | None = Field(default=None, description="Reviewer name")
+    reviewer_display_name: str | None = Field(default=None, description="Human-readable name")
+    model: str | None = Field(default=None, description="Model used (e.g., claude-opus-4-5, gemini-flash)")
 
     # Iteration info
-    iteration: Optional[int] = Field(default=None, description="Current iteration")
-    max_iterations: Optional[int] = Field(default=None, description="Max iterations")
-    satisfaction_score: Optional[float] = Field(default=None, description="Current satisfaction %")
+    iteration: int | None = Field(default=None, description="Current iteration")
+    max_iterations: int | None = Field(default=None, description="Max iterations")
+    satisfaction_score: float | None = Field(default=None, description="Current satisfaction %")
 
     # Streaming content
-    content: Optional[str] = Field(default=None, description="Streaming content chunk")
+    content: str | None = Field(default=None, description="Streaming content chunk")
 
     # Status info
-    message: Optional[str] = Field(default=None, description="Human-readable status message")
-    issues_found: Optional[int] = Field(default=None, description="Issues found so far")
+    message: str | None = Field(default=None, description="Human-readable status message")
+    issues_found: int | None = Field(default=None, description="Issues found so far")
 
     # Error info
-    error: Optional[str] = Field(default=None, description="Error message if failed")
+    error: str | None = Field(default=None, description="Error message if failed")
 
     # Log level (for REVIEW_LOG events)
-    log_level: Optional[str] = Field(default=None, description="Log level: INFO, WARNING, ERROR")
+    log_level: str | None = Field(default=None, description="Log level: INFO, WARNING, ERROR")
 
     # Model usage info (from CLI)
-    model_usage: Optional[list[dict[str, Any]]] = Field(
+    model_usage: list[dict[str, Any]] | None = Field(
         default=None, description="Models used and their token/cost info"
     )
 
@@ -94,9 +94,9 @@ class ReviewerState(BaseModel):
     issues_found: int = Field(default=0)
     current_content: str = Field(default="", description="Current streaming content")
 
-    started_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
-    error: Optional[str] = Field(default=None)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
+    error: str | None = Field(default=None)
 
 
 class ReviewProgress(BaseModel):
@@ -107,8 +107,8 @@ class ReviewProgress(BaseModel):
 
     reviewers: dict[str, ReviewerState] = Field(default_factory=dict)
 
-    started_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
+    started_at: datetime | None = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
 
     total_issues: int = Field(default=0)
 

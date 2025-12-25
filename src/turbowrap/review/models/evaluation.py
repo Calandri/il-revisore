@@ -3,7 +3,6 @@ Models for repository evaluation scoring.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -108,7 +107,7 @@ class RepositoryEvaluation(BaseModel):
         """Get color class for a score."""
         if score < 50:
             return "red"
-        elif score < 75:
+        if score < 75:
             return "yellow"
         return "green"
 

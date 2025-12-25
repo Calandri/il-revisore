@@ -4,7 +4,6 @@ Models for challenger feedback and evaluation.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,10 +54,10 @@ class MissedIssue(BaseModel):
 
     type: str = Field(..., description="Issue type (security, performance, etc.)")
     description: str = Field(..., description="Description of the missed issue")
-    file: Optional[str] = Field(None, description="File where issue exists")
-    lines: Optional[str] = Field(None, description="Line range (e.g., '45-62')")
+    file: str | None = Field(None, description="File where issue exists")
+    lines: str | None = Field(None, description="Line range (e.g., '45-62')")
     why_important: str = Field(..., description="Why this issue matters")
-    suggested_severity: Optional[str] = Field(
+    suggested_severity: str | None = Field(
         None, description="Suggested severity level"
     )
 
@@ -73,7 +72,7 @@ class Challenge(BaseModel):
     )
     challenge: str = Field(..., description="The challenge statement")
     reasoning: str = Field(..., description="Detailed reasoning for the challenge")
-    suggested_change: Optional[str] = Field(
+    suggested_change: str | None = Field(
         None, description="What the reviewer should change"
     )
 

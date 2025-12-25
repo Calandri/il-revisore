@@ -2,20 +2,17 @@
 Challenger loop implementation for the dual-reviewer system.
 """
 
-import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional, Callable, Awaitable
 
 from turbowrap.config import get_settings
+from turbowrap.review.models.challenger import ChallengerFeedback
+from turbowrap.review.models.report import ChallengerInsight, ConvergenceStatus, IterationHistory
 from turbowrap.review.models.review import ReviewOutput
-from turbowrap.review.models.challenger import ChallengerFeedback, ChallengerStatus
-from turbowrap.review.models.report import ConvergenceStatus, IterationHistory, ChallengerInsight
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_cli_reviewer import ClaudeCLIReviewer
 from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
-
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +49,13 @@ class ChallengerLoop:
 
     def __init__(
         self,
-        reviewer: Optional[ClaudeCLIReviewer] = None,
-        challenger: Optional[GeminiCLIChallenger] = None,
-        satisfaction_threshold: Optional[float] = None,
-        max_iterations: Optional[int] = None,
-        min_improvement_threshold: Optional[float] = None,
-        stagnation_window: Optional[int] = None,
-        forced_acceptance_threshold: Optional[float] = None,
+        reviewer: ClaudeCLIReviewer | None = None,
+        challenger: GeminiCLIChallenger | None = None,
+        satisfaction_threshold: float | None = None,
+        max_iterations: int | None = None,
+        min_improvement_threshold: float | None = None,
+        stagnation_window: int | None = None,
+        forced_acceptance_threshold: float | None = None,
     ):
         """
         Initialize the challenger loop.
@@ -99,8 +96,8 @@ class ChallengerLoop:
         self,
         context: ReviewContext,
         reviewer_name: str = "reviewer_be",
-        on_iteration_callback: Optional[IterationCallback] = None,
-        on_content_callback: Optional[ContentCallback] = None,
+        on_iteration_callback: IterationCallback | None = None,
+        on_content_callback: ContentCallback | None = None,
     ) -> ChallengerLoopResult:
         """
         Run the challenger loop.
@@ -132,8 +129,8 @@ class ChallengerLoop:
             logger.warning(f"Agent file not found for {reviewer_name}")
 
         iteration = 0
-        current_review: Optional[ReviewOutput] = None
-        challenger_feedback: Optional[ChallengerFeedback] = None
+        current_review: ReviewOutput | None = None
+        challenger_feedback: ChallengerFeedback | None = None
         satisfaction_score = 0.0
 
         iteration_history: list[IterationHistory] = []
@@ -254,7 +251,7 @@ class ChallengerLoop:
             iteration_history,
         )
 
-        logger.info(f"[LOOP] ========== LOOP COMPLETED ==========")
+        logger.info("[LOOP] ========== LOOP COMPLETED ==========")
         logger.info(
             f"[LOOP] Final: iterations={iteration}, "
             f"satisfaction={satisfaction_score:.1f}%, "
@@ -326,8 +323,8 @@ class ChallengerLoop:
 async def run_challenger_loop(
     context: ReviewContext,
     reviewer_name: str = "reviewer_be",
-    satisfaction_threshold: Optional[float] = None,
-    max_iterations: Optional[int] = None,
+    satisfaction_threshold: float | None = None,
+    max_iterations: int | None = None,
 ) -> ChallengerLoopResult:
     """
     Convenience function to run the challenger loop.

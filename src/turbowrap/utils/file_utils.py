@@ -181,8 +181,8 @@ def detect_repo_type(be_count: int, fe_count: int) -> str:
     """
     if be_count > 0 and fe_count > 0:
         return "fullstack"
-    elif be_count > 0:
+    if be_count > 0:
         return "backend"
-    elif fe_count > 0:
+    if fe_count > 0:
         return "frontend"
     return "unknown"

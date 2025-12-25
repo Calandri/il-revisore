@@ -116,13 +116,13 @@ Examples:
 
     # Import here to avoid slow startup for --help
     try:
-        from turbowrap.review.orchestrator import Orchestrator
         from turbowrap.review.models.review import (
+            ReviewMode,
+            ReviewOptions,
             ReviewRequest,
             ReviewRequestSource,
-            ReviewOptions,
-            ReviewMode,
         )
+        from turbowrap.review.orchestrator import Orchestrator
         from turbowrap.review.report_generator import ReportGenerator
     except ImportError as e:
         print(f"Error: Failed to import turbowrap package: {e}")
@@ -163,16 +163,12 @@ Examples:
 
     try:
         # Handle format option
-        if args.format == "both":
-            formats = ["markdown", "json"]
-        else:
-            formats = [args.format]
+        formats = ["markdown", "json"] if args.format == "both" else [args.format]
         files_dict = ReportGenerator.save_report(report, output_dir, formats=formats)
         files = list(files_dict.values())
     except Exception as e:
         print(f"\nError generating report: {e}")
         # Fallback: save raw JSON
-        import json
         fallback_path = output_dir / "report_raw.json"
         fallback_path.write_text(report.model_dump_json(indent=2))
         print(f"   Saved fallback: {fallback_path}")

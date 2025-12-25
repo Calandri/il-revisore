@@ -1,7 +1,6 @@
 """Linear state manager for handling state transitions."""
 
 import logging
-from typing import Optional
 
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
@@ -73,13 +72,12 @@ class LinearStateManager:
         current_state = issue.turbowrap_state
 
         # Validate transition
-        if not force:
-            if new_state not in self.ALLOWED_TRANSITIONS.get(current_state, []):
-                allowed = self.ALLOWED_TRANSITIONS.get(current_state, [])
-                raise ValueError(
-                    f"Invalid transition from '{current_state}' to '{new_state}'. "
-                    f"Allowed: {allowed}"
-                )
+        if not force and new_state not in self.ALLOWED_TRANSITIONS.get(current_state, []):
+            allowed = self.ALLOWED_TRANSITIONS.get(current_state, [])
+            raise ValueError(
+                f"Invalid transition from '{current_state}' to '{new_state}'. "
+                f"Allowed: {allowed}"
+            )
 
         # Additional validation based on target state
         if not force:
@@ -148,7 +146,7 @@ class LinearStateManager:
 
     def _get_linear_state_id(
         self, issue: LinearIssue, state_name: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get Linear state ID from cached fields.
 
         Args:

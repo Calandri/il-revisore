@@ -121,6 +121,8 @@ include = [
 [tool.ruff]
 target-version = "py310"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
@@ -138,10 +140,24 @@ ignore = [
     "S101",   # use of assert
     "S603",   # subprocess call
     "S607",   # start process with partial path
+    "B008",   # Depends() in argument defaults (standard FastAPI pattern)
+    "B904",   # raise from in except (intentional for HTTPException - don't chain to avoid leaking internals)
+    "S104",   # binding to all interfaces (intentional for server default 0.0.0.0)
+    "S105",   # possible hardcoded password (false positive for SECRET_NAME constant)
+    "S106",   # possible hardcoded password in argument (false positive for is_secret param)
+    "S107",   # possible hardcoded password in default (false positive for is_secret param)
+    "S108",   # /tmp usage (intentional for macOS workaround)
+    "S110",   # try-except-pass (intentional for file reading)
+    "S112",   # try-except-continue (intentional for file iteration)
+    "SIM102", # nested if (sometimes more readable than combined conditions)
+    "SIM105", # contextlib.suppress (preserving explicit try-except for clarity)
+    "SIM108", # ternary operator (if-else can be more readable for complex conditions)
+    "SIM113", # enumerate() for index (sometimes manual counter is clearer with futures)
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+"src/turbowrap/api/services/fix_session_service.py" = ["E402"]  # imports after Protocol to avoid circular imports
 
 [tool.black]
 line-length = 100

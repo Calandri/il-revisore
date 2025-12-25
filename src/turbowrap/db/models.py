@@ -3,10 +3,21 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Literal
 
-from sqlalchemy import Column, String, Text, Integer, Float, DateTime, JSON, ForeignKey, Index, Boolean, UniqueConstraint
-from sqlalchemy.orm import relationship, declared_attr
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import declared_attr, relationship
 
 from .base import Base
 

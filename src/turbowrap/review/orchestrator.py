@@ -3,47 +3,47 @@ Main orchestrator for TurboWrap code review system.
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Awaitable
 
 from turbowrap.config import get_settings
-from turbowrap.review.models.review import (
-    ReviewRequest,
-    ReviewOutput,
-    ReviewMode,
-    Issue,
-    IssueSeverity,
-)
-from turbowrap.review.models.report import (
-    FinalReport,
-    RepoType,
-    Recommendation,
-    ReviewerResult,
-    RepositoryInfo,
-    ReportSummary,
-    SeveritySummary,
-    ChallengerMetadata,
-    NextStep,
-)
+from turbowrap.llm import GeminiClient
+from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
+from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.progress import (
     ProgressEvent,
     ProgressEventType,
     get_reviewer_display_name,
 )
+from turbowrap.review.models.report import (
+    ChallengerMetadata,
+    FinalReport,
+    NextStep,
+    Recommendation,
+    ReportSummary,
+    RepositoryInfo,
+    RepoType,
+    ReviewerResult,
+    SeveritySummary,
+)
+from turbowrap.review.models.review import (
+    Issue,
+    IssueSeverity,
+    ReviewMode,
+    ReviewOutput,
+    ReviewRequest,
+)
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
-from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
-from turbowrap.review.models.evaluation import RepositoryEvaluation
-from turbowrap.review.utils.repo_detector import RepoDetector, detect_repo_type
-from turbowrap.review.utils.git_utils import GitUtils
 from turbowrap.review.utils.file_utils import FileUtils
+from turbowrap.review.utils.git_utils import GitUtils
+from turbowrap.review.utils.repo_detector import RepoDetector
 from turbowrap.tools.structure_generator import StructureGenerator
-from turbowrap.llm import GeminiClient
-
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class Orchestrator:
     async def review(
         self,
         request: ReviewRequest,
-        progress_callback: Optional[ProgressCallback] = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> FinalReport:
         """
         Perform a complete code review.
@@ -84,7 +84,7 @@ class Orchestrator:
         Returns:
             FinalReport with all findings
         """
-        start_time = datetime.utcnow()
+        datetime.utcnow()
         report_id = f"rev_{uuid.uuid4().hex[:12]}"
 
         logger.info(f"Starting review {report_id}")
@@ -356,8 +356,8 @@ class Orchestrator:
     async def _prepare_context(
         self,
         request: ReviewRequest,
-        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
-        report_id: Optional[str] = None,
+        emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
+        report_id: str | None = None,
     ) -> ReviewContext:
         """Prepare the review context from the request.
 
@@ -529,7 +529,7 @@ class Orchestrator:
     async def _auto_generate_structure(
         self,
         context: ReviewContext,
-        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+        emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
     ) -> None:
         """
         Auto-generate STRUCTURE.md files using Gemini Flash.
@@ -628,7 +628,7 @@ class Orchestrator:
         # In INITIAL mode, try to extract from STRUCTURE.md
         if structure_docs:
             # Look for root STRUCTURE.md (the one with Metadata section)
-            for path, content in structure_docs.items():
+            for _path, content in structure_docs.items():
                 if "## Metadata" in content and "Repository Type" in content:
                     # Parse repo type from: **Repository Type**: `BACKEND`
                     import re
@@ -642,9 +642,9 @@ class Orchestrator:
                         logger.info(f"Detected repo type from STRUCTURE.md: {type_str}")
                         if type_str == "backend":
                             return RepoType.BACKEND
-                        elif type_str == "frontend":
+                        if type_str == "frontend":
                             return RepoType.FRONTEND
-                        elif type_str == "fullstack":
+                        if type_str == "fullstack":
                             return RepoType.FULLSTACK
 
             logger.warning(
@@ -737,12 +737,10 @@ class Orchestrator:
 
         reviewer = ClaudeCLIReviewer(name=reviewer_name)
 
-        try:
+        with contextlib.suppress(FileNotFoundError):
             context.agent_prompt = reviewer.load_agent_prompt(
                 self.settings.agents_dir
             )
-        except FileNotFoundError:
-            pass
 
         # CLI reviewer receives file list and explores autonomously
         return await reviewer.review(context, context.files)
@@ -812,8 +810,8 @@ class Orchestrator:
         issues: list[Issue],
         reviewer_results: list[ReviewerResult],
         repo_info: RepositoryInfo,
-        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
-    ) -> Optional[RepositoryEvaluation]:
+        emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
+    ) -> RepositoryEvaluation | None:
         """
         Run the final repository evaluator.
 
@@ -871,7 +869,7 @@ class Orchestrator:
         reviewer_results: list[ReviewerResult],
         issues: list[Issue],
         loop_results: list[ChallengerLoopResult],
-        evaluation: Optional[RepositoryEvaluation] = None,
+        evaluation: RepositoryEvaluation | None = None,
     ) -> FinalReport:
         """Build the final report."""
         # Count by severity
@@ -973,7 +971,6 @@ class Orchestrator:
             all_insights.extend(result.insights)
 
         # Use worst convergence status
-        from turbowrap.review.models.report import ConvergenceStatus
         convergence = loop_results[0].convergence
         for result in loop_results[1:]:
             if result.convergence.value != "THRESHOLD_MET":
@@ -1022,7 +1019,7 @@ class Orchestrator:
     async def _refresh_stale_structures(
         self,
         context: ReviewContext,
-        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+        emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
     ) -> None:
         """
         Check and regenerate stale STRUCTURE.md files.
@@ -1153,8 +1150,8 @@ class Orchestrator:
 
         This ensures no partial writes if the process fails mid-save.
         """
-        import tempfile
         import shutil
+        import tempfile
 
         output_dir = repo_path / ".reviews"
         temp_files: list[tuple[Path, Path]] = []  # (temp_path, final_path)

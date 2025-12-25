@@ -1,8 +1,8 @@
 """API schemas."""
 
+from .chat import ChatMessageCreate, ChatMessageResponse, ChatSessionCreate, ChatSessionResponse
 from .repos import RepoCreate, RepoResponse, RepoStatus
-from .tasks import TaskCreate, TaskResponse, TaskQueueStatus
-from .chat import ChatSessionCreate, ChatSessionResponse, ChatMessageCreate, ChatMessageResponse
+from .tasks import TaskCreate, TaskQueueStatus, TaskResponse
 
 __all__ = [
     "RepoCreate",

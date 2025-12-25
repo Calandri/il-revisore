@@ -24,7 +24,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -156,7 +155,7 @@ async def test_linear_create_issue():
         )
 
         print_success("Linear issue created successfully")
-        print(f"\nIssue Details:")
+        print("\nIssue Details:")
         print("-" * 60)
         print(f"ID:          {issue['id']}")
         print(f"Identifier:  {issue['identifier']}")
@@ -304,12 +303,11 @@ Risposte utente:
             print(output[:600] + "..." if len(output) > 600 else output)
             print("-" * 60)
             return True
-        else:
-            missing = [s for s in required_sections if s not in output]
-            print_error(f"Missing sections: {missing}")
-            print("Output was:")
-            print(output[:500])
-            return False
+        missing = [s for s in required_sections if s not in output]
+        print_error(f"Missing sections: {missing}")
+        print("Output was:")
+        print(output[:500])
+        return False
 
     except subprocess.TimeoutExpired:
         print_error("Claude CLI timed out after 180s")
@@ -463,9 +461,8 @@ async def main():
     if passed == total:
         print("\n🎉 All tests passed! Linear Issue Creator is ready for production.")
         return 0
-    else:
-        print(f"\n⚠️  {total - passed} test(s) failed. Review errors above.")
-        return 1
+    print(f"\n⚠️  {total - passed} test(s) failed. Review errors above.")
+    return 1
 
 
 if __name__ == "__main__":

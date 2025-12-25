@@ -125,11 +125,10 @@ Risposte utente:
             for section in required_sections:
                 print(f"   ✓ {section}")
             return True
-        else:
-            print("\n❌ Missing required sections")
-            missing = [s for s in required_sections if s not in output]
-            print(f"   Missing: {missing}")
-            return False
+        print("\n❌ Missing required sections")
+        missing = [s for s in required_sections if s not in output]
+        print(f"   Missing: {missing}")
+        return False
 
     except subprocess.TimeoutExpired:
         print("\n❌ Test timed out after 120s")

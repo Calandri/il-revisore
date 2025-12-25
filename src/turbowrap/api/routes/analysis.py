@@ -6,18 +6,18 @@ import logging
 import os
 import re
 import uuid
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
 
-from ..deps import get_db
 from ...db.models import Issue, IssueStatus, Repository, Task
 from ...utils.aws_secrets import get_anthropic_api_key
+from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class LintRequest(BaseModel):
     """Request to run linting analysis."""
 
     repository_id: str = Field(..., description="Repository ID")
-    task_id: Optional[str] = Field(default=None, description="Task ID to associate issues with")
+    task_id: str | None = Field(default=None, description="Task ID to associate issues with")
 
 
 class LintIssue(BaseModel):
@@ -58,14 +58,14 @@ class LintIssue(BaseModel):
     issue_code: str
     severity: str
     category: str
-    rule: Optional[str] = None
+    rule: str | None = None
     file: str
-    line: Optional[int] = None
+    line: int | None = None
     title: str
     description: str
-    current_code: Optional[str] = None
-    suggested_fix: Optional[str] = None
-    flagged_by: Optional[list[str]] = None
+    current_code: str | None = None
+    suggested_fix: str | None = None
+    flagged_by: list[str] | None = None
 
 
 class LintResult(BaseModel):

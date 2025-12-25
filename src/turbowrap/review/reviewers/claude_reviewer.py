@@ -4,27 +4,26 @@ Claude Opus 4.5 reviewer implementation.
 
 import asyncio
 import json
-import time
 import logging
+import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Optional, Callable, Awaitable
-from io import BytesIO
 
 import anthropic
 import boto3
 from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
+from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.models.review import (
+    ChecklistResult,
+    Issue,
+    IssueCategory,
+    IssueSeverity,
+    ReviewMetrics,
     ReviewOutput,
     ReviewSummary,
-    Issue,
-    IssueSeverity,
-    IssueCategory,
-    ChecklistResult,
-    ReviewMetrics,
 )
-from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ class ClaudeReviewer(BaseReviewer):
         self,
         name: str = "reviewer_be",
         model: str = "claude-opus-4-5-20251101",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         """
         Initialize Claude reviewer.
@@ -87,7 +86,7 @@ class ClaudeReviewer(BaseReviewer):
         thinking_content: str,
         review_id: str,
         context: ReviewContext,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Save thinking content to S3.
 
@@ -142,8 +141,8 @@ class ClaudeReviewer(BaseReviewer):
     async def review(
         self,
         context: ReviewContext,
-        thinking_callback: Optional[ThinkingCallback] = None,
-        review_id: Optional[str] = None,
+        thinking_callback: ThinkingCallback | None = None,
+        review_id: str | None = None,
     ) -> ReviewOutput:
         """
         Perform code review using Claude with extended thinking.
@@ -189,7 +188,7 @@ class ClaudeReviewer(BaseReviewer):
         self,
         system_prompt: str,
         user_prompt: str,
-        thinking_callback: Optional[ThinkingCallback] = None,
+        thinking_callback: ThinkingCallback | None = None,
     ) -> tuple[str, str]:
         """
         Synchronous version of streaming with extended thinking.
@@ -216,16 +215,14 @@ class ClaudeReviewer(BaseReviewer):
         # Use streaming
         with self.client.messages.stream(**params) as stream:
             for event in stream:
-                if hasattr(event, "type"):
-                    if event.type == "content_block_delta":
-                        if hasattr(event, "delta"):
-                            if hasattr(event.delta, "type"):
-                                if event.delta.type == "thinking_delta":
-                                    chunk = event.delta.thinking
-                                    thinking_content += chunk
-                                    # Note: callback handled separately
-                                elif event.delta.type == "text_delta":
-                                    response_text += event.delta.text
+                if hasattr(event, "type") and event.type == "content_block_delta":
+                    if hasattr(event, "delta") and hasattr(event.delta, "type"):
+                        if event.delta.type == "thinking_delta":
+                            chunk = event.delta.thinking
+                            thinking_content += chunk
+                            # Note: callback handled separately
+                        elif event.delta.type == "text_delta":
+                            response_text += event.delta.text
 
         return thinking_content, response_text
 
@@ -234,8 +231,8 @@ class ClaudeReviewer(BaseReviewer):
         context: ReviewContext,
         previous_review: ReviewOutput,
         feedback: ChallengerFeedback,
-        thinking_callback: Optional[ThinkingCallback] = None,
-        review_id: Optional[str] = None,
+        thinking_callback: ThinkingCallback | None = None,
+        review_id: str | None = None,
     ) -> ReviewOutput:
         """
         Refine review based on challenger feedback with extended thinking.

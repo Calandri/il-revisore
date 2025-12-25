@@ -3,17 +3,16 @@
 import json
 import logging
 from datetime import datetime
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import case
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
 
+from ...db.models import Issue, IssueStatus
 from ..deps import get_db
-from ...db.models import Issue, IssueStatus, Repository
 
 logger = logging.getLogger(__name__)
 
@@ -32,30 +31,30 @@ class IssueResponse(BaseModel):
     issue_code: str
     severity: str
     category: str
-    rule: Optional[str] = None
+    rule: str | None = None
     file: str
-    line: Optional[int] = None
+    line: int | None = None
     title: str
     description: str
-    current_code: Optional[str] = None
-    suggested_fix: Optional[str] = None
-    references: Optional[list] = None
-    flagged_by: Optional[list] = None
+    current_code: str | None = None
+    suggested_fix: str | None = None
+    references: list | None = None
+    flagged_by: list | None = None
     status: str
-    resolution_note: Optional[str] = None
-    resolved_at: Optional[datetime] = None
+    resolution_note: str | None = None
+    resolved_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
     # Fix result fields (populated when resolved by fixer)
-    fix_code: Optional[str] = None
-    fix_explanation: Optional[str] = None
-    fix_files_modified: Optional[list[str]] = None
-    fix_commit_sha: Optional[str] = None
-    fix_branch: Optional[str] = None
-    fix_session_id: Optional[str] = None  # For S3 log retrieval
-    fixed_at: Optional[datetime] = None
-    fixed_by: Optional[str] = None
+    fix_code: str | None = None
+    fix_explanation: str | None = None
+    fix_files_modified: list[str] | None = None
+    fix_commit_sha: str | None = None
+    fix_branch: str | None = None
+    fix_session_id: str | None = None  # For S3 log retrieval
+    fixed_at: datetime | None = None
+    fixed_by: str | None = None
 
     class Config:
         from_attributes = True
@@ -64,11 +63,11 @@ class IssueResponse(BaseModel):
 class IssueUpdateRequest(BaseModel):
     """Request to update an issue."""
 
-    status: Optional[str] = Field(
+    status: str | None = Field(
         None,
         description="New status: open, in_progress, resolved, ignored, duplicate"
     )
-    resolution_note: Optional[str] = Field(
+    resolution_note: str | None = Field(
         None,
         description="Note explaining why issue was resolved/ignored"
     )
@@ -85,14 +84,14 @@ class IssueSummary(BaseModel):
 
 @router.get("", response_model=list[IssueResponse])
 def list_issues(
-    repository_id: Optional[str] = None,
-    task_id: Optional[str] = None,
-    severity: Optional[str] = None,
-    status: Optional[str] = Query(default=None, description="Filter by status"),
-    category: Optional[str] = None,
-    file: Optional[str] = None,
-    search: Optional[str] = Query(default=None, description="Search in title, description, file, issue_code"),
-    order_by: Optional[str] = Query(default="severity", description="Order by: severity, updated_at, created_at"),
+    repository_id: str | None = None,
+    task_id: str | None = None,
+    severity: str | None = None,
+    status: str | None = Query(default=None, description="Filter by status"),
+    category: str | None = None,
+    file: str | None = None,
+    search: str | None = Query(default=None, description="Search in title, description, file, issue_code"),
+    order_by: str | None = Query(default="severity", description="Order by: severity, updated_at, created_at"),
     limit: int = Query(default=100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -148,14 +147,13 @@ def list_issues(
         )
         query = query.order_by(severity_order, Issue.created_at.desc())
 
-    issues = query.offset(offset).limit(limit).all()
-    return issues
+    return query.offset(offset).limit(limit).all()
 
 
 @router.get("/summary", response_model=IssueSummary)
 def get_issues_summary(
-    repository_id: Optional[str] = None,
-    status: Optional[str] = Query(default="open", description="Filter by status (default: open)"),
+    repository_id: str | None = None,
+    status: str | None = Query(default="open", description="Filter by status (default: open)"),
     db: Session = Depends(get_db),
 ):
     """Get summary statistics for issues."""
@@ -314,12 +312,12 @@ class FixLogResponse(BaseModel):
     session_id: str
     timestamp: str
     status: str
-    branch_name: Optional[str] = None
+    branch_name: str | None = None
     issues_requested: int
     issues_fixed: int
     claude_prompts: list[dict] = []  # [{type, batch, issues, prompt}]
-    gemini_prompt: Optional[str] = None
-    gemini_review: Optional[str] = None
+    gemini_prompt: str | None = None
+    gemini_review: str | None = None
 
 
 @router.get("/{issue_id}/fix-log", response_model=FixLogResponse)

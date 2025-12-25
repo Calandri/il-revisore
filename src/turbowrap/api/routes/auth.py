@@ -1,12 +1,12 @@
 """Authentication routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, Form
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
 
-from ..deps import get_current_user
-from ..auth import cognito_login, get_user_info
 from ...config import get_settings
+from ..auth import cognito_login
+from ..deps import get_current_user
 
 router = APIRouter(tags=["auth"])
 
@@ -27,7 +27,7 @@ class UserInfo(BaseModel):
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str | None = None, next: str | None = None):
     """Render login page."""
-    settings = get_settings()
+    get_settings()
 
     # If already authenticated, redirect to home
     current_user = get_current_user(request)

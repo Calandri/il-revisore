@@ -2,10 +2,9 @@
 
 import time
 from datetime import datetime
-from pathlib import Path
 
-from ..llm import GeminiClient, ClaudeClient, load_prompt
-from ..db.models import Task, AgentRun
+from ..db.models import AgentRun, Task
+from ..llm import ClaudeClient, GeminiClient, load_prompt
 from .base import BaseTask, TaskContext, TaskResult
 
 

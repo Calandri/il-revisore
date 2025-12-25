@@ -18,9 +18,9 @@ import argparse
 import os
 import sys
 import time
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 import tiktoken
@@ -643,7 +643,7 @@ def run_all_reviewers(
     total_fe_tokens = sum(tokens for _, tokens in fe_batches)
 
     total_batches = len(be_batches) + len(fe_batches)
-    print(f"\n🧠 [Claude Opus] Reviewing code (~50k tokens per batch)")
+    print("\n🧠 [Claude Opus] Reviewing code (~50k tokens per batch)")
     print(f"   📊 BE: {len(be_batches)} batches ({total_be_tokens:,} tokens)")
     print(f"   📊 FE: {len(fe_batches)} batches ({total_fe_tokens:,} tokens)")
 
@@ -695,8 +695,8 @@ def generate_todo_list(results: list[ReviewResult], output_dir: Path) -> Path:
         "",
         "## 📊 Summary",
         "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Total batches reviewed | {len(results)} |",
         f"| Total files analyzed | {sum(len(r.files) for r in results)} |",
         "",
@@ -1195,7 +1195,7 @@ Examples:
 
     # Discover files
     be_files, fe_files = discover_files(repo_path)
-    print(f"\n📂 Discovered Files:")
+    print("\n📂 Discovered Files:")
     print(f"   🐍 Python (BE): {len(be_files)} files")
     print(f"   ⚛️  React/TS (FE): {len(fe_files)} files")
 
@@ -1237,10 +1237,10 @@ Examples:
     print(f"✨ Done! Check {output_dir} for results:")
     if tree_generated:
         print(f"   🌳 Level 1: {len(tree_generated)} STRUCTURE.md files (Gemini Flash)")
-        print(f"   📄 Level 2: REPO_DESCRIPTION.md (Gemini Pro synthesis)")
+        print("   📄 Level 2: REPO_DESCRIPTION.md (Gemini Pro synthesis)")
     else:
-        print(f"   📄 REPO_DESCRIPTION.md - Repository overview")
-    print(f"   📋 REVIEW_TODO.md - Issues and action items (Claude Opus)")
+        print("   📄 REPO_DESCRIPTION.md - Repository overview")
+    print("   📋 REVIEW_TODO.md - Issues and action items (Claude Opus)")
     print("=" * 60)
 
 if __name__ == "__main__":

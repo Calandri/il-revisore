@@ -7,7 +7,6 @@ without requiring runtime dependencies.
 """
 
 import ast
-import json
 import re
 import sys
 from pathlib import Path
@@ -23,7 +22,7 @@ def print_header(title: str):
 def test_python_syntax(file_path: Path) -> bool:
     """Test Python file syntax."""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             code = f.read()
         ast.parse(code)
         print(f"✅ {file_path.name}: Valid Python syntax")
@@ -39,7 +38,7 @@ def test_python_syntax(file_path: Path) -> bool:
 def test_agent_structure(file_path: Path) -> bool:
     """Test Claude agent markdown structure."""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             content = f.read()
 
         # Check frontmatter
@@ -82,7 +81,7 @@ def test_agent_structure(file_path: Path) -> bool:
 def test_html_template(file_path: Path) -> bool:
     """Test HTML template structure."""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             content = f.read()
 
         # Check for required elements
@@ -122,7 +121,7 @@ def test_html_template(file_path: Path) -> bool:
 def test_api_routes(file_path: Path) -> bool:
     """Test API routes structure."""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path) as f:
             content = f.read()
 
         # Check for required imports
@@ -221,9 +220,8 @@ def main():
         print("\n✅ All syntax and structure tests passed!")
         print("ℹ️  Implementation is complete and ready for runtime testing")
         return 0
-    else:
-        print(f"\n❌ {total - passed} test(s) failed")
-        return 1
+    print(f"\n❌ {total - passed} test(s) failed")
+    return 1
 
 
 if __name__ == "__main__":

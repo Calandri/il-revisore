@@ -7,6 +7,7 @@ explore the codebase via its own file reading capabilities.
 
 import asyncio
 import codecs
+import contextlib
 import json
 import logging
 import os
@@ -14,7 +15,6 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -88,7 +88,7 @@ class ClaudeCLIReviewer(BaseReviewer):
         thinking_content: str,
         review_id: str,
         context: ReviewContext,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Save thinking content to S3.
 
@@ -133,8 +133,7 @@ class ClaudeCLIReviewer(BaseReviewer):
                 ContentType="text/markdown",
             )
 
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            return s3_url
+            return f"s3://{self.s3_bucket}/{s3_key}"
 
         except ClientError as e:
             logger.warning(f"Failed to save thinking to S3: {e}")
@@ -145,7 +144,7 @@ class ClaudeCLIReviewer(BaseReviewer):
         review_json: str,
         review_id: str,
         context: ReviewContext,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Save review JSON to S3 for checkpointing/resumability.
 
@@ -209,10 +208,8 @@ class ClaudeCLIReviewer(BaseReviewer):
 
         # Delete old output file if exists
         if output_file.exists():
-            try:
+            with contextlib.suppress(Exception):
                 output_file.unlink()
-            except Exception:
-                pass
 
         # Run Claude CLI with streaming
         cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
@@ -243,10 +240,8 @@ class ClaudeCLIReviewer(BaseReviewer):
                 logger.warning(f"[CLAUDE CLI] Failed to read output file: {e}")
             finally:
                 # Clean up output file
-                try:
+                with contextlib.suppress(Exception):
                     output_file.unlink()
-                except Exception:
-                    pass
 
         # Strategy 2: Fallback to extracting from stdout
         if output is None and cli_result and "{" in cli_result:
@@ -675,7 +670,7 @@ After writing, confirm with: "Review saved to {output_file}"
                 logger.error(f"[CLAUDE CLI] Stdin failed: {stdin_error}")
                 # Don't return error if we got output anyway
 
-            logger.info(f"[CLAUDE CLI] Waiting for process to exit...")
+            logger.info("[CLAUDE CLI] Waiting for process to exit...")
             await process.wait()
             logger.info(f"[CLAUDE CLI] Process exited with code {process.returncode}")
 
@@ -770,8 +765,7 @@ After writing, confirm with: "Review saved to {output_file}"
                 start += 7  # Length of ```json
                 end = text.find("```", start)
                 if end != -1:
-                    json_text = text[start:end].strip()
-                    return json_text
+                    return text[start:end].strip()
 
         # Strategy 2: Look for code blocks without language specifier
         if "```" in text:
@@ -783,8 +777,7 @@ After writing, confirm with: "Review saved to {output_file}"
                     if in_block:
                         # End of block - check if we collected valid JSON
                         if json_lines and json_lines[0].strip().startswith("{"):
-                            json_text = "\n".join(json_lines)
-                            return json_text
+                            return "\n".join(json_lines)
                         json_lines = []
                     in_block = not in_block
                     continue
@@ -796,8 +789,7 @@ After writing, confirm with: "Review saved to {output_file}"
         if first_brace != -1:
             last_brace = text.rfind("}")
             if last_brace != -1 and last_brace > first_brace:
-                json_text = text[first_brace:last_brace + 1]
-                return json_text
+                return text[first_brace:last_brace + 1]
 
         # Fallback: return original text and let JSON parser fail with proper error
         logger.warning("[CLAUDE PARSE] Could not extract JSON, returning raw text")

@@ -3,17 +3,17 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
-from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
 
+from ...db.models import ChatMessage, ChatSession
 from ..deps import get_db
 from ..schemas.chat import (
-    ChatSessionCreate,
-    ChatSessionResponse,
     ChatMessageCreate,
     ChatMessageResponse,
+    ChatSessionCreate,
+    ChatSessionResponse,
 )
-from ...db.models import ChatSession, ChatMessage
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -31,8 +31,7 @@ def list_sessions(
     if repository_id:
         query = query.filter(ChatSession.repository_id == repository_id)
 
-    sessions = query.order_by(ChatSession.updated_at.desc()).limit(limit).all()
-    return sessions
+    return query.order_by(ChatSession.updated_at.desc()).limit(limit).all()
 
 
 @router.post("/sessions", response_model=ChatSessionResponse)
@@ -76,14 +75,13 @@ def get_messages(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    messages = (
+    return (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
         .order_by(ChatMessage.created_at.asc())
         .limit(limit)
         .all()
     )
-    return messages
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatMessageResponse)

@@ -6,14 +6,13 @@ Extracted from the fat controller in tasks.py to follow Single Responsibility Pr
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import AsyncIterator, Optional
 
 from sqlalchemy.orm import Session
 
-from ...db.models import Task, Repository, Issue
+from ...db.models import Issue, Repository, Task
 from ...db.session import get_session_local
 from ...review.models.progress import ProgressEvent, ProgressEventType
 from ...review.models.review import (
@@ -52,7 +51,7 @@ class ReviewStreamService:
         self.db = db
         self.manager = review_manager
 
-    def find_existing_session(self, repository_id: str) -> Optional[ReviewSession]:
+    def find_existing_session(self, repository_id: str) -> ReviewSession | None:
         """Find an existing running review session for the repository."""
         for session in self.manager.get_active_sessions():
             if session.repository_id == repository_id:

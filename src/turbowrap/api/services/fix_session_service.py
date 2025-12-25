@@ -7,15 +7,16 @@ Extracted from the fat controller in fix.py to follow Single Responsibility Prin
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
-    from ..routes.fix import IdempotencyStore
+    pass
 
 
 class IdempotencyStoreProtocol(Protocol):
@@ -26,7 +27,7 @@ class IdempotencyStoreProtocol(Protocol):
         repository_id: str,
         task_id: str,
         issue_ids: list[str],
-        client_key: Optional[str] = None,
+        client_key: str | None = None,
     ) -> str: ...
 
     def check_and_register(
@@ -39,7 +40,7 @@ class IdempotencyStoreProtocol(Protocol):
         self,
         key: str,
         status: str,
-        result: Optional[dict] = None,
+        result: dict | None = None,
     ) -> None: ...
 
     def remove(self, key: str) -> None: ...
@@ -101,10 +102,10 @@ class FixSessionService:
         task_id: str,
         issue_ids: list[str],
         use_existing_branch: bool = False,
-        existing_branch_name: Optional[str] = None,
-        client_idempotency_key: Optional[str] = None,
+        existing_branch_name: str | None = None,
+        client_idempotency_key: str | None = None,
         force: bool = False,
-    ) -> tuple[FixSessionInfo, Optional[dict]]:
+    ) -> tuple[FixSessionInfo, dict | None]:
         """
         Validate request and prepare fix session.
 
@@ -299,7 +300,7 @@ class FixSessionService:
                 db.query(LinearIssue)
                 .filter(
                     LinearIssue.task_id == task.id,
-                    LinearIssue.is_active == True,
+                    LinearIssue.is_active,
                 )
                 .all()
             )
@@ -343,7 +344,7 @@ class FixSessionService:
         self,
         db: Session,
         issues: list[Issue],
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         """
         Reset issues to open status on error.

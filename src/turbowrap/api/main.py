@@ -5,18 +5,34 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, Depends
+from fastapi import Depends, FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .deps import get_db
-from .routes import repos_router, tasks_router, chat_router, status_router, web_router, settings_router, issues_router, fix_router, auth_router, users_router, thinking_router, relationships_router, analysis_router, linear_router, git_router
-from .middleware.auth import AuthMiddleware
-from .websocket import ChatWebSocketHandler
 from ..config import get_settings
 from ..db.session import init_db
+from .deps import get_db
+from .middleware.auth import AuthMiddleware
+from .routes import (
+    analysis_router,
+    auth_router,
+    chat_router,
+    fix_router,
+    git_router,
+    issues_router,
+    linear_router,
+    relationships_router,
+    repos_router,
+    settings_router,
+    status_router,
+    tasks_router,
+    thinking_router,
+    users_router,
+    web_router,
+)
+from .websocket import ChatWebSocketHandler
 
 # Template and static directories
 TEMPLATE_DIR = Path(__file__).parent / "templates"

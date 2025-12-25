@@ -5,10 +5,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..config import get_settings
-from ..exceptions import CloneError, SyncError, RepositoryError
+from ..exceptions import CloneError, RepositoryError, SyncError
 
 
 class GitStatus(BaseModel):
@@ -392,7 +392,7 @@ Important: Output ONLY the commands you ran and a brief summary. No explanations
                     raise SyncError(f"Claude failed to resolve conflicts: {stderr.decode()}")
 
         # 5. Push (with -u to set upstream if needed)
-        push_result = subprocess.run(
+        subprocess.run(
             ["git", "push", "-u", "origin", "HEAD"],
             cwd=repo_path,
             check=True,

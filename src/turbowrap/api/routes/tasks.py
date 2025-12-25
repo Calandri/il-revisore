@@ -1,27 +1,28 @@
 """Task routes."""
 
 import asyncio
+import contextlib
 import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from threading import Thread
-from typing import AsyncIterator
+from typing import Literal
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
+
+from ...core.repo_manager import RepoManager
+from ...core.task_queue import QueuedTask, get_task_queue
+from ...db.models import Issue, Repository, Task
+from ...review.models.progress import ProgressEvent, ProgressEventType
+from ...tasks import TaskContext, get_task_registry
+from ..deps import get_db
+from ..schemas.tasks import TaskCreate, TaskQueueStatus, TaskResponse
 
 logger = logging.getLogger(__name__)
-
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sse_starlette.sse import EventSourceResponse
-from sqlalchemy.orm import Session
-
-from ..deps import get_db
-from ..schemas.tasks import TaskCreate, TaskResponse, TaskQueueStatus
-from ...core.repo_manager import RepoManager
-from ...core.task_queue import get_task_queue, QueuedTask
-from ...db.models import Task, Repository, Issue
-from ...tasks import get_task_registry, TaskContext
-from ...exceptions import TaskError
-from ...review.models.progress import ProgressEvent, ProgressEventType
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -82,8 +83,7 @@ def list_tasks(
     if task_type:
         query = query.filter(Task.type == task_type)
 
-    tasks = query.order_by(Task.created_at.desc()).limit(limit).all()
-    return tasks
+    return query.order_by(Task.created_at.desc()).limit(limit).all()
 
 
 @router.post("", response_model=TaskResponse)
@@ -287,10 +287,8 @@ async def cancel_task(
         review_task = _running_reviews[task_id]
         if not review_task.done():
             review_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
                 await asyncio.wait_for(asyncio.shield(review_task), timeout=2.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
         _running_reviews.pop(task_id, None)
 
         task.status = "cancelled"
@@ -303,10 +301,6 @@ async def cancel_task(
     task.completed_at = datetime.utcnow()
     db.commit()
     return {"status": "cancelled", "id": task_id, "note": "Task marked as cancelled"}
-
-
-from pydantic import BaseModel, Field
-from typing import Literal
 
 
 class ReviewStreamRequest(BaseModel):
@@ -394,12 +388,16 @@ async def restart_reviewer(
 
     Returns server-sent events with progress updates.
     """
-    from ..review_manager import get_review_manager
-    from ...review.orchestrator import Orchestrator
     from ...review.challenger_loop import ChallengerLoop
+    from ...review.models.progress import get_reviewer_display_name
+    from ...review.models.review import (
+        ReviewMode,
+        ReviewOptions,
+        ReviewRequest,
+        ReviewRequestSource,
+    )
     from ...review.reviewers.base import ReviewContext
-    from ...review.models.review import ReviewRequest, ReviewRequestSource, ReviewOptions, ReviewMode
-    from ...review.models.progress import ProgressEvent, ProgressEventType, get_reviewer_display_name
+    from ..review_manager import get_review_manager
 
     # Validate reviewer name (support both old and new naming conventions)
     valid_reviewers = [

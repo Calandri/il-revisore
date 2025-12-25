@@ -5,8 +5,8 @@ import json
 import logging
 import os
 import re
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator, Optional
 
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
@@ -28,8 +28,8 @@ class LinearIssueAnalyzer:
             linear_client: Linear API client for posting comments
         """
         self.linear_client = linear_client
-        self.last_improved_description: Optional[str] = None
-        self.last_analysis_summary: Optional[str] = None
+        self.last_improved_description: str | None = None
+        self.last_analysis_summary: str | None = None
         self.last_repository_recommendations: list[str] = []
 
     async def analyze_phase1_questions(self, issue: LinearIssue) -> list[dict]:
@@ -127,7 +127,7 @@ class LinearIssueAnalyzer:
 {issue.description or "No description provided"}
 
 **Priority**: {self._format_priority(issue.priority)}
-**Labels**: {', '.join([l.get('name', '') for l in (issue.labels or [])])}
+**Labels**: {', '.join([label.get('name', '') for label in (issue.labels or [])])}
 **Assignee**: {issue.assignee_name or "Unassigned"}
 **State**: {issue.linear_state_name or "Unknown"}
 
@@ -170,7 +170,7 @@ class LinearIssueAnalyzer:
 {issue.description or "No description provided"}
 
 **Priority**: {self._format_priority(issue.priority)}
-**Labels**: {', '.join([l.get('name', '') for l in (issue.labels or [])])}
+**Labels**: {', '.join([label.get('name', '') for label in (issue.labels or [])])}
 **Assignee**: {issue.assignee_name or "Unassigned"}
 **State**: {issue.linear_state_name or "Unknown"}
 

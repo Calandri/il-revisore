@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from ...db.models import ChatSession, ChatMessage
+from ...db.models import ChatMessage, ChatSession
 from ...llm import ClaudeClient
 
 
@@ -121,7 +121,7 @@ class ChatWebSocketHandler:
             )
             self.db.add(user_message)
             self.db.commit()
-        except Exception as e:
+        except Exception:
             self.db.rollback()
             # Check if session was deleted (foreign key constraint)
             self._validate_session()  # Will raise if session gone
@@ -181,7 +181,7 @@ Respond helpfully as an AI assistant for code development."""
                 )
                 self.db.add(assistant_message)
                 self.db.commit()
-            except Exception as e:
+            except Exception:
                 self.db.rollback()
                 # Check if session was deleted
                 self._validate_session()

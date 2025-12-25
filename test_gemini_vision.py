@@ -52,7 +52,7 @@ def test_screenshot_analysis(image_paths: list[str]):
         print("=" * 80)
         print(insights)
         print("=" * 80)
-        print(f"\n✅ Analysis completed successfully!")
+        print("\n✅ Analysis completed successfully!")
         print(f"📏 Response length: {len(insights)} characters")
 
     except Exception as e:

@@ -6,15 +6,14 @@ from datetime import datetime
 from pathlib import Path
 
 from ..db.models import Task
-from ..review.orchestrator import Orchestrator
+from ..review.models.report import FinalReport
 from ..review.models.review import (
+    ReviewOptions,
     ReviewRequest,
     ReviewRequestSource,
-    ReviewOptions,
 )
-from ..review.models.report import FinalReport
-from ..review.report_generator import ReportGenerator
-from .base import BaseTask, TaskContext, TaskResult, ReviewTaskConfig
+from ..review.orchestrator import Orchestrator
+from .base import BaseTask, ReviewTaskConfig, TaskContext, TaskResult
 
 
 class ReviewTask(BaseTask):
@@ -259,8 +258,8 @@ class ReviewTask(BaseTask):
             "",
             "### Issue Summary",
             "",
-            f"| Severity | Count |",
-            f"|----------|-------|",
+            "| Severity | Count |",
+            "|----------|-------|",
             f"| Critical | {data.get('critical_issues', 0)} |",
             f"| High | {data.get('high_issues', 0)} |",
             f"| Medium | {data.get('medium_issues', 0)} |",

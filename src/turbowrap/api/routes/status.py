@@ -1,7 +1,7 @@
 """Status and health routes."""
 
-import time
 import platform
+import time
 from datetime import datetime
 from typing import Literal
 
@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..deps import get_db
 from ...config import get_settings
 from ...core.task_queue import get_task_queue
-from ...db.models import Repository, Task, ChatSession, Issue, LinearIssue
+from ...db.models import ChatSession, Issue, LinearIssue, Repository, Task
+from ..deps import get_db
 
 router = APIRouter(prefix="/status", tags=["status"])
 
@@ -454,7 +454,7 @@ def get_active_development(db: Session = Depends(get_db)):
 
     # Get active Linear issues
     linear_issues = db.query(LinearIssue).filter(
-        LinearIssue.is_active == True,
+        LinearIssue.is_active,
         LinearIssue.deleted_at.is_(None)
     ).all()
 
@@ -479,7 +479,7 @@ def get_active_development(db: Session = Depends(get_db)):
 
     # Get active GitHub issues
     github_issues = db.query(Issue).filter(
-        Issue.is_active == True,
+        Issue.is_active,
         Issue.deleted_at.is_(None)
     ).all()
 

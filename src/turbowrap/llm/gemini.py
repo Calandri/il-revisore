@@ -4,7 +4,7 @@ from typing import Literal
 
 from turbowrap.config import get_settings
 from turbowrap.exceptions import GeminiError
-from turbowrap.llm.base import BaseAgent, AgentResponse
+from turbowrap.llm.base import AgentResponse, BaseAgent
 
 
 class GeminiClient(BaseAgent):

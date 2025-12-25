@@ -9,10 +9,11 @@ Reviews run independently of client SSE connections, allowing:
 
 import asyncio
 import logging
+from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Callable, Awaitable
-from collections import deque
+from typing import Optional
 
 from turbowrap.review.models.progress import ProgressEvent, ProgressEventType
 
@@ -29,11 +30,11 @@ class ReviewSession:
     task_id: str
     repository_id: str
     started_at: datetime = field(default_factory=datetime.utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     status: str = "running"  # running, completed, failed, cancelled
 
     # The asyncio task running the review
-    task: Optional[asyncio.Task] = None
+    task: asyncio.Task | None = None
 
     # Buffer of progress events (for reconnection)
     events: deque = field(default_factory=lambda: deque(maxlen=MAX_EVENT_BUFFER))
@@ -92,7 +93,7 @@ class ReviewManager:
         self._initialized = True
         logger.info("ReviewManager initialized")
 
-    def get_session(self, task_id: str) -> Optional[ReviewSession]:
+    def get_session(self, task_id: str) -> ReviewSession | None:
         """Get a review session by task ID."""
         return self._sessions.get(task_id)
 

@@ -2,14 +2,12 @@
 Report generator for TurboWrap.
 """
 
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from turbowrap.review.models.report import (
+    ConvergenceStatus,
     FinalReport,
     Recommendation,
-    ConvergenceStatus,
 )
 from turbowrap.review.models.review import Issue, IssueSeverity
 

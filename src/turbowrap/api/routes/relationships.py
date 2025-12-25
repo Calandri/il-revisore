@@ -3,17 +3,16 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..deps import get_db, require_auth
 from ...core.repo_manager import RepoManager
-from ...db.models import Repository, RepositoryLink, LinkType
+from ...db.models import LinkType, Repository, RepositoryLink
 from ...llm import GeminiClient
+from ..deps import get_db, require_auth
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
 

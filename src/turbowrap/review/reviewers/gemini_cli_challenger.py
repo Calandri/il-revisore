@@ -13,7 +13,6 @@ import os
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -83,8 +82,8 @@ class GeminiCLIChallenger(BaseReviewer):
         raw_output: str,
         feedback: ChallengerFeedback,
         iteration: int,
-        review_id: Optional[str] = None,
-    ) -> Optional[str]:
+        review_id: str | None = None,
+    ) -> str | None:
         """
         Save challenge prompt, raw output, and parsed feedback to S3.
 
@@ -161,14 +160,14 @@ class GeminiCLIChallenger(BaseReviewer):
                 content += f"- **{ch.issue_id}** ({ch.challenge_type}): {ch.challenge}\n"
                 content += f"  - Reasoning: {ch.reasoning}\n\n"
 
-            content += f"""
+            content += """
 ### Improvements Needed
 
 """
             for imp in feedback.improvements_needed:
                 content += f"- {imp}\n"
 
-            content += f"""
+            content += """
 ### Positive Feedback
 
 """
@@ -184,8 +183,7 @@ class GeminiCLIChallenger(BaseReviewer):
                 ContentType="text/markdown",
             )
 
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            return s3_url
+            return f"s3://{self.s3_bucket}/{s3_key}"
 
         except ClientError as e:
             logger.warning(f"[GEMINI S3] Failed to save challenge to S3: {e}")
@@ -214,7 +212,7 @@ class GeminiCLIChallenger(BaseReviewer):
         repo_path: Path | None,
         iteration: int = 1,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
-        review_id: Optional[str] = None,
+        review_id: str | None = None,
     ) -> ChallengerFeedback:
         """
         Challenge a review produced by Claude CLI.

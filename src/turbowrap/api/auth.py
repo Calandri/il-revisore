@@ -1,14 +1,13 @@
 """Authentication module for AWS Cognito integration."""
 
-import json
 import logging
 import time
 from typing import Any
 
 import boto3
 import httpx
-from jose import jwt, JWTError
 from botocore.exceptions import ClientError
+from jose import JWTError, jwt
 
 from ..config import get_settings
 
@@ -96,15 +95,14 @@ def cognito_login(email: str, password: str) -> dict[str, str] | None:
         if error_code in ("NotAuthorizedException", "UserNotFoundException"):
             logger.warning(f"Login failed for {email}: {error_code}")
             return None
-        elif error_code == "UserNotConfirmedException":
+        if error_code == "UserNotConfirmedException":
             logger.warning(f"User {email} not confirmed")
             return None
-        elif error_code == "PasswordResetRequiredException":
+        if error_code == "PasswordResetRequiredException":
             logger.warning(f"Password reset required for {email}")
             return None
-        else:
-            logger.error(f"Cognito error: {error_code} - {error_msg}")
-            raise
+        logger.error(f"Cognito error: {error_code} - {error_msg}")
+        raise
 
 
 def verify_token(token: str) -> dict[str, Any] | None:
@@ -139,7 +137,7 @@ def verify_token(token: str) -> dict[str, Any] | None:
             return None
 
         # Verify token
-        claims = jwt.decode(
+        return jwt.decode(
             token,
             rsa_key,
             algorithms=["RS256"],
@@ -147,7 +145,6 @@ def verify_token(token: str) -> dict[str, Any] | None:
             issuer=f"https://cognito-idp.{settings.auth.cognito_region}.amazonaws.com/{settings.auth.cognito_user_pool_id}",
         )
 
-        return claims
 
     except JWTError as e:
         logger.warning(f"Token verification failed: {e}")

@@ -2,17 +2,14 @@
 
 import logging
 import subprocess
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..deps import get_db
 from ...db.models import Repository
-from ...config import get_settings
+from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +180,7 @@ def get_commit_diff(repo_id: str, sha: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Repository path not found")
 
     # Get the diff for this commit
-    diff = run_git_command(
+    run_git_command(
         repo_path,
         ['show', '--pretty=format:', '--stat', sha]
     )

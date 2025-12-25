@@ -3,8 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ChatRole = Literal["user", "assistant", "system"]
 SessionStatus = Literal["active", "archived"]

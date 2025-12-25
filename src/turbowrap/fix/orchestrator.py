@@ -206,7 +206,7 @@ class FixOrchestrator:
             if not file_path.exists():
                 return f"[File not found: {issue.file}]"
 
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(file_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
             start_line = max(1, issue.line - context_lines)
@@ -355,7 +355,7 @@ class FixOrchestrator:
             # Calculate ALL batches upfront (once, before iterations)
             all_be_batches = batch_issues_by_workload(be_issues) if has_be else []
             all_fe_batches = batch_issues_by_workload(fe_issues) if has_fe else []
-            total_batches = len(all_be_batches) + len(all_fe_batches)
+            len(all_be_batches) + len(all_fe_batches)
 
             # Track batch results across iterations
             # Key: "BE-1", "FE-2", etc. Value: {"passed": bool, "score": float, "failed_issues": list}
@@ -635,13 +635,13 @@ class FixOrchestrator:
                         FixProgressEvent(
                             type=FixEventType.FIX_CHALLENGER_APPROVED,
                             session_id=session_id,
-                            message=f"🎉 All batches passed! No more retries needed.",
+                            message="🎉 All batches passed! No more retries needed.",
                         )
                     )
                     break
 
             # After all iterations, collect failed issues from batches that never passed
-            for batch_id, batch_data in batch_results.items():
+            for _batch_id, batch_data in batch_results.items():
                 if not batch_data["passed"]:
                     failed_issues.extend(batch_data["issues"])
 
@@ -674,7 +674,7 @@ class FixOrchestrator:
                         FixProgressEvent(
                             type=FixEventType.FIX_SESSION_ERROR,
                             session_id=session_id,
-                            error=f"🚫 BLOCKED: Modified files outside workspace scope",
+                            error="🚫 BLOCKED: Modified files outside workspace scope",
                             message=f"Violations: {', '.join(violations[:5])}{'...' if len(violations) > 5 else ''}",
                         )
                     )
@@ -1264,7 +1264,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             if stdin_error:
                 logger.error(f"[CLAUDE CLI FIX] Stdin failed: {stdin_error}")
 
-            logger.info(f"[CLAUDE CLI FIX] Waiting for process to exit...")
+            logger.info("[CLAUDE CLI FIX] Waiting for process to exit...")
             await process.wait()
             logger.info(f"[CLAUDE CLI FIX] Process exited with code {process.returncode}")
 
@@ -1466,7 +1466,7 @@ The reviewer found issues with the previous fix. Address this feedback:
         """
         try:
             proc = await asyncio.create_subprocess_exec(
-                "git", "show", "--format=", f"HEAD", "--", file_path,
+                "git", "show", "--format=", "HEAD", "--", file_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),

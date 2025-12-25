@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import tiktoken
 
@@ -143,7 +143,7 @@ class StructureGenerator:
         repo_path: Path,
         max_depth: int = MAX_TREE_DEPTH,
         max_workers: int = 5,
-        gemini_client: Optional[object] = None,
+        gemini_client: object | None = None,
     ):
         """
         Initialize structure generator.
@@ -200,12 +200,11 @@ class StructureGenerator:
 
         if be_count > 0 and fe_count > 0:
             return RepoType.FULLSTACK
-        elif be_count > 0:
+        if be_count > 0:
             return RepoType.BACKEND
-        elif fe_count > 0:
+        if fe_count > 0:
             return RepoType.FRONTEND
-        else:
-            return RepoType.UNKNOWN
+        return RepoType.UNKNOWN
 
     def extract_metadata(self) -> RepoMetadata:
         """
@@ -239,7 +238,7 @@ class StructureGenerator:
 
             # Project info
             project = data.get("project", {})
-            tool = data.get("tool", {})
+            data.get("tool", {})
 
             # Python version
             requires_python = project.get("requires-python", "")
@@ -448,7 +447,7 @@ models: Data models and schemas
         """
         directories: list[DirectoryStructure] = []
 
-        def scan_dir(current_path: Path, depth: int) -> Optional[DirectoryStructure]:
+        def scan_dir(current_path: Path, depth: int) -> DirectoryStructure | None:
             # Note: We continue scanning beyond max_depth to find nested files
             # (they'll be inlined in parent STRUCTURE.md, not get their own file)
 
@@ -922,7 +921,7 @@ Be concise. Only list the most important elements (max 10).
 
         generated_files: list[Path] = []
 
-        for i, dir_struct in enumerate(dirs_to_generate):
+        for _i, dir_struct in enumerate(dirs_to_generate):
             try:
                 is_root = (str(dir_struct.path) == ".")
                 output_path = self._generate_structure_md(

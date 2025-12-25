@@ -1,23 +1,22 @@
 """Repository routes."""
 
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ...core.repo_manager import RepoManager
+from ...exceptions import RepositoryError
 from ..deps import get_db
 from ..schemas.repos import (
+    LinkCreate,
+    LinkedRepoSummary,
+    LinkResponse,
     RepoCreate,
     RepoResponse,
     RepoStatus,
-    LinkCreate,
-    LinkResponse,
-    LinkedRepoSummary,
 )
-from ...core.repo_manager import RepoManager
-from ...exceptions import RepositoryError
 
 router = APIRouter(prefix="/repos", tags=["repositories"])
 
@@ -29,8 +28,8 @@ class FileInfo(BaseModel):
     name: str
     path: str
     type: str  # 'file' or 'directory'
-    size: Optional[int] = None
-    extension: Optional[str] = None
+    size: int | None = None
+    extension: str | None = None
 
 
 class FileContent(BaseModel):
@@ -44,7 +43,7 @@ class FileContent(BaseModel):
 class FileWriteRequest(BaseModel):
     """Request to write file content."""
     content: str
-    commit_message: Optional[str] = None
+    commit_message: str | None = None
 
 
 @router.get("", response_model=list[RepoResponse])
@@ -55,15 +54,15 @@ def list_repos(
 ):
     """List all repositories, optionally filtered by status or project."""
     manager = RepoManager(db)
-    repos = manager.list(status=status, project_name=project)
-    return repos
+    return manager.list(status=status, project_name=project)
 
 
 @router.get("/projects")
 def list_projects(db: Session = Depends(get_db)):
     """List all unique project names with their repository counts."""
-    from ...db.models import Repository
     from sqlalchemy import func
+
+    from ...db.models import Repository
 
     results = (
         db.query(
@@ -110,13 +109,12 @@ def clone_repo(
     """
     manager = RepoManager(db)
     try:
-        repo = manager.clone(
+        return manager.clone(
             data.url,
             data.branch,
             data.token,
             workspace_path=data.workspace_path,
         )
-        return repo
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -171,8 +169,7 @@ def sync_repo(
     """Sync (pull) repository."""
     manager = RepoManager(db)
     try:
-        repo = manager.sync(repo_id)
-        return repo
+        return manager.sync(repo_id)
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -185,8 +182,7 @@ def get_repo_status(
     """Get detailed repository status."""
     manager = RepoManager(db)
     try:
-        status = manager.get_status(repo_id)
-        return status
+        return manager.get_status(repo_id)
     except RepositoryError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -254,12 +250,11 @@ def list_linked_repos(
     """
     manager = RepoManager(db)
     try:
-        linked = manager.get_linked_repos(
+        return manager.get_linked_repos(
             repo_id=repo_id,
             link_type=link_type,
             direction=direction,
         )
-        return linked
     except RepositoryError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -575,7 +570,7 @@ def write_file(
                 capture_output=True,
             )
             committed = True
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError:
             # File written but commit failed
             pass
 

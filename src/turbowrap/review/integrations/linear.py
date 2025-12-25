@@ -3,7 +3,6 @@ Linear integration for TurboWrap.
 """
 
 import re
-from typing import Optional
 
 import httpx
 
@@ -20,7 +19,7 @@ class LinearClient:
 
     API_URL = "https://api.linear.app/graphql"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         """
         Initialize Linear client.
 
@@ -97,7 +96,7 @@ class LinearClient:
 
         return data["data"]["commentCreate"]["comment"]["id"]
 
-    async def get_issue_id(self, identifier: str) -> Optional[str]:
+    async def get_issue_id(self, identifier: str) -> str | None:
         """
         Get issue UUID from identifier (e.g., "TEAM-123").
 
@@ -135,7 +134,7 @@ class LinearClient:
 
         return None
 
-    def _extract_issue_id(self, ticket_url: str) -> Optional[str]:
+    def _extract_issue_id(self, ticket_url: str) -> str | None:
         """Extract issue ID from URL or identifier."""
         # Try direct identifier (e.g., "TEAM-123")
         if re.match(r"^[A-Z]+-\d+$", ticket_url):
@@ -260,7 +259,7 @@ class LinearClient:
 
         return data.get("data", {}).get("issueUpdate", {}).get("success", False)
 
-    async def _get_state_id(self, state_name: str) -> Optional[str]:
+    async def _get_state_id(self, state_name: str) -> str | None:
         """Get workflow state ID by name."""
         query = """
         query GetStates {
@@ -294,8 +293,8 @@ class LinearClient:
         self,
         team_id: str,
         limit: int = 100,
-        after: Optional[str] = None,
-    ) -> tuple[list[dict], Optional[str]]:
+        after: str | None = None,
+    ) -> tuple[list[dict], str | None]:
         """
         Fetch issues from a Linear team with pagination.
 
@@ -489,10 +488,10 @@ class LinearClient:
         title: str,
         description: str,
         priority: int = 0,
-        state_id: Optional[str] = None,
-        assignee_id: Optional[str] = None,
-        label_ids: Optional[list[str]] = None,
-        due_date: Optional[str] = None,
+        state_id: str | None = None,
+        assignee_id: str | None = None,
+        label_ids: list[str] | None = None,
+        due_date: str | None = None,
     ) -> dict:
         """
         Create a new issue on Linear.
@@ -624,7 +623,7 @@ class LinearClient:
 
         return data["data"]["teams"]["nodes"]
 
-    async def get_users(self, team_id: Optional[str] = None) -> list[dict]:
+    async def get_users(self, team_id: str | None = None) -> list[dict]:
         """
         Get all users in the workspace or optionally filtered by team.
 
@@ -663,9 +662,8 @@ class LinearClient:
         users = data["data"]["users"]["nodes"]
 
         # Filter to active users only
-        active_users = [u for u in users if u.get("active", True)]
+        return [u for u in users if u.get("active", True)]
 
-        return active_users
 
     async def get_workflow_states(self, team_id: str) -> list[dict]:
         """

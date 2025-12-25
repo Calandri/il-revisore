@@ -85,8 +85,9 @@ def run_structure_generator(args):
     gemini_client = None
     if not args.no_gemini:
         try:
-            from google import genai
             import os
+
+            from google import genai
 
             api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
             if api_key:

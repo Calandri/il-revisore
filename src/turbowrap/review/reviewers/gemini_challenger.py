@@ -9,17 +9,16 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from turbowrap.config import get_settings
-from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.models.challenger import (
+    Challenge,
     ChallengerFeedback,
     ChallengerStatus,
     DimensionScores,
     MissedIssue,
-    Challenge,
 )
+from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
 
 
@@ -35,7 +34,7 @@ class GeminiChallenger(BaseReviewer):
         self,
         name: str = "challenger",
         model: str = "gemini-3-flash-preview",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         cli_path: str = "gemini",
     ):
         """
@@ -88,7 +87,7 @@ class GeminiChallenger(BaseReviewer):
         Returns:
             ChallengerFeedback with evaluation and suggestions
         """
-        start_time = time.time()
+        time.time()
 
         # Build the challenger prompt
         prompt = self._build_challenge_prompt(context, review, iteration)
@@ -109,7 +108,7 @@ class GeminiChallenger(BaseReviewer):
         iteration: int,
     ) -> str:
         """Build the challenge prompt for Gemini."""
-        prompt = f"""# Review Quality Evaluation - Iteration {iteration}
+        return f"""# Review Quality Evaluation - Iteration {iteration}
 
 You are evaluating the QUALITY of a code review, not the code itself.
 Your job is to determine if the reviewer did a good job.
@@ -196,7 +195,6 @@ Return ONLY valid JSON:
 Be fair but rigorous. Only flag REAL problems with the review.
 Output ONLY the JSON, no markdown or explanations.
 """
-        return prompt
 
     async def _call_gemini_cli(self, prompt: str, context: ReviewContext) -> str:
         """
@@ -388,10 +386,9 @@ Output ONLY the JSON, no markdown or explanations.
         """Convert satisfaction score to status."""
         if score >= self.threshold:
             return ChallengerStatus.APPROVED
-        elif score >= 70:
+        if score >= 70:
             return ChallengerStatus.NEEDS_REFINEMENT
-        else:
-            return ChallengerStatus.MAJOR_ISSUES
+        return ChallengerStatus.MAJOR_ISSUES
 
     def _get_fallback_response(self) -> str:
         """Get fallback response when API is unavailable."""

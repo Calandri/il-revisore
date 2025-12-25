@@ -7,8 +7,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
-from ..auth import verify_token
 from ...config import get_settings
+from ..auth import verify_token
 
 logger = logging.getLogger(__name__)
 

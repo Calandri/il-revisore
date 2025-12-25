@@ -1,14 +1,13 @@
 """TurboWrap CLI with Typer."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from .config import get_settings
-from .db.session import init_db, get_session_local
+from .db.session import get_session_local, init_db
 
 app = typer.Typer(
     name="turbowrap",
@@ -87,7 +86,7 @@ def repo_clone(
 
 @repo_app.command("list")
 def repo_list(
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
 ):
     """List all repositories."""
     from .core.repo_manager import RepoManager
@@ -156,7 +155,7 @@ def repo_sync(
         console.print(f"[bold blue]Syncing[/] {repo.name}...")
 
         manager.sync(repo.id)
-        console.print(f"[bold green]✓[/] Synced successfully")
+        console.print("[bold green]✓[/] Synced successfully")
     except Exception as e:
         console.print(f"[bold red]✗[/] Error: {e}")
         raise typer.Exit(1)
@@ -205,7 +204,7 @@ def repo_remove(
 @app.command("review")
 def run_review(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
     max_workers: int = typer.Option(3, "--max-workers", "-w", help="Max parallel workers"),
 ):
     """Run code review on a repository."""
@@ -274,7 +273,7 @@ def run_review(
 def run_develop(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
     instruction: str = typer.Option(..., "--instruction", "-i", help="Development instruction"),
-    files: Optional[list[str]] = typer.Option(None, "--file", "-f", help="Target files"),
+    files: list[str] | None = typer.Option(None, "--file", "-f", help="Target files"),
 ):
     """Run AI-assisted development on a repository."""
     from .core.repo_manager import RepoManager
@@ -386,17 +385,17 @@ def status():
     gemini_ok = "✓" if settings.agents.effective_google_key else "✗"
     claude_ok = "✓" if settings.agents.anthropic_api_key else "✗"
 
-    console.print(f"\n[bold]Agents:[/]")
+    console.print("\n[bold]Agents:[/]")
     console.print(f"  [{gemini_ok}] Gemini Flash ({settings.agents.gemini_model})")
     console.print(f"  [{claude_ok}] Claude Opus ({settings.agents.claude_model})")
 
     # Show paths
-    console.print(f"\n[bold]Paths:[/]")
+    console.print("\n[bold]Paths:[/]")
     console.print(f"  Repos: {settings.repos_dir}")
     console.print(f"  Agents: {settings.agents_dir}")
 
     # Show DB
-    console.print(f"\n[bold]Database:[/]")
+    console.print("\n[bold]Database:[/]")
     console.print(f"  {settings.database.url}")
 
 
@@ -412,7 +411,7 @@ def check():
         try:
             from .llm import GeminiClient
             client = GeminiClient()
-            result = client.generate("Say 'ok' if you can hear me.")
+            client.generate("Say 'ok' if you can hear me.")
             console.print(f"[bold green]✓[/] Gemini: Connected ({settings.agents.gemini_model})")
         except Exception as e:
             console.print(f"[bold red]✗[/] Gemini: {e}")
@@ -424,7 +423,7 @@ def check():
         try:
             from .llm import ClaudeClient
             client = ClaudeClient()
-            result = client.generate("Say 'ok' if you can hear me.")
+            client.generate("Say 'ok' if you can hear me.")
             console.print(f"[bold green]✓[/] Claude: Connected ({settings.agents.claude_model})")
         except Exception as e:
             console.print(f"[bold red]✗[/] Claude: {e}")

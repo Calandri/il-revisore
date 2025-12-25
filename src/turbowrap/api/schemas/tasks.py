@@ -3,8 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 TaskType = Literal["review", "develop"]
 TaskStatusType = Literal["pending", "running", "completed", "failed", "cancelled"]

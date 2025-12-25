@@ -4,10 +4,8 @@ Repository type detection utility.
 
 import fnmatch
 from pathlib import Path
-from typing import Optional
 
 from turbowrap.review.models.report import RepoType
-
 
 # Default indicators
 DEFAULT_BACKEND_INDICATORS = [
@@ -51,8 +49,8 @@ class RepoDetector:
 
     def __init__(
         self,
-        backend_indicators: Optional[list[str]] = None,
-        frontend_indicators: Optional[list[str]] = None,
+        backend_indicators: list[str] | None = None,
+        frontend_indicators: list[str] | None = None,
     ):
         """
         Initialize detector with custom or default indicators.
@@ -79,12 +77,11 @@ class RepoDetector:
 
         if has_backend and has_frontend:
             return RepoType.FULLSTACK
-        elif has_backend:
+        if has_backend:
             return RepoType.BACKEND
-        elif has_frontend:
+        if has_frontend:
             return RepoType.FRONTEND
-        else:
-            return RepoType.UNKNOWN
+        return RepoType.UNKNOWN
 
     def detect_from_directory(self, directory: str | Path) -> RepoType:
         """
@@ -112,9 +109,7 @@ class RepoDetector:
                     # Extension pattern
                     if file_name.endswith(indicator[1:]):
                         return True
-                elif fnmatch.fnmatch(file_name, indicator):
-                    return True
-                elif file_name == indicator:
+                elif fnmatch.fnmatch(file_name, indicator) or file_name == indicator:
                     return True
         return False
 
@@ -122,7 +117,7 @@ class RepoDetector:
         self,
         directory: Path,
         max_depth: int = 3,
-        exclude_dirs: Optional[set[str]] = None,
+        exclude_dirs: set[str] | None = None,
     ) -> list[str]:
         """
         Collect file paths from directory up to max depth.
@@ -229,8 +224,8 @@ class RepoDetector:
 
 
 def detect_repo_type(
-    files: Optional[list[str]] = None,
-    directory: Optional[str | Path] = None,
+    files: list[str] | None = None,
+    directory: str | Path | None = None,
 ) -> RepoType:
     """
     Convenience function to detect repository type.
@@ -246,8 +241,7 @@ def detect_repo_type(
 
     if files is not None:
         return detector.detect(files)
-    elif directory is not None:
+    if directory is not None:
         return detector.detect_from_directory(directory)
-    else:
-        # Default to current directory
-        return detector.detect_from_directory(Path.cwd())
+    # Default to current directory
+    return detector.detect_from_directory(Path.cwd())

@@ -8,20 +8,19 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..db.models import Repository, RepositoryLink, LinkType, Setting
-from ..utils.git_utils import (
-    clone_repo,
-    pull_repo,
-    get_repo_status,
-    parse_github_url,
-    get_local_path,
-)
+from ..db.models import LinkType, Repository, RepositoryLink, Setting
+from ..exceptions import RepositoryError
 from ..utils.file_utils import (
-    discover_files,
     detect_repo_type,
+    discover_files,
     load_file_content,
 )
-from ..exceptions import RepositoryError
+from ..utils.git_utils import (
+    clone_repo,
+    get_repo_status,
+    parse_github_url,
+    pull_repo,
+)
 
 
 def _calculate_token_totals(repo_path: Path, files: list) -> dict:

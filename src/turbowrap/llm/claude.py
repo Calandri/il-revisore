@@ -1,12 +1,13 @@
 """Claude Opus client for deep analysis."""
 
-from typing import Iterator, AsyncIterator, Literal
+from collections.abc import AsyncIterator, Iterator
+from typing import Literal
 
 import httpx
 
 from turbowrap.config import get_settings
 from turbowrap.exceptions import ClaudeError
-from turbowrap.llm.base import BaseAgent, AgentResponse
+from turbowrap.llm.base import AgentResponse, BaseAgent
 
 # Default system prompt for code review
 DEFAULT_SYSTEM_PROMPT = "You are a senior code reviewer with expertise in software architecture, security, and best practices."
@@ -169,8 +170,7 @@ class ClaudeClient(BaseAgent):
                 system=system_prompt or DEFAULT_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
-                for text in stream.text_stream:
-                    yield text
+                yield from stream.text_stream
         except httpx.TimeoutException as e:
             raise ClaudeError(
                 f"Claude streaming timeout after {self._timeout}s."

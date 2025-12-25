@@ -1,18 +1,18 @@
 """Settings routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from ...config import get_settings as get_config
+from ...db.models import Setting
 from ..deps import get_db
 from ..schemas.settings import (
-    SettingsResponse,
     GitHubTokenUpdate,
     LinearAPIKeyUpdate,
     LinearTeamIDUpdate,
     ModelUpdate,
+    SettingsResponse,
 )
-from ...db.models import Setting
-from ...config import get_settings as get_config
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 

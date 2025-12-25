@@ -4,12 +4,11 @@ Models for final report generation.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from turbowrap.review.models.review import Issue, ReviewMetrics, ChecklistResult
 from turbowrap.review.models.evaluation import RepositoryEvaluation
+from turbowrap.review.models.review import ChecklistResult, Issue, ReviewMetrics
 
 
 class RepoType(str, Enum):
@@ -48,11 +47,11 @@ class ReviewerResult(BaseModel):
     issues_found: int = Field(0, description="Number of issues found")
     duration_seconds: float = Field(0.0)
     iterations: int = Field(1, description="Challenger iterations needed")
-    final_satisfaction: Optional[float] = Field(
+    final_satisfaction: float | None = Field(
         None, description="Final challenger satisfaction score"
     )
-    error: Optional[str] = Field(None, description="Error message if failed")
-    reason: Optional[str] = Field(None, description="Reason if skipped")
+    error: str | None = Field(None, description="Error message if failed")
+    reason: str | None = Field(None, description="Reason if skipped")
 
 
 class IterationHistory(BaseModel):
@@ -121,11 +120,11 @@ class RepositoryInfo(BaseModel):
     """Information about the reviewed repository."""
 
     type: RepoType
-    name: Optional[str] = None
-    branch: Optional[str] = None
-    commit_sha: Optional[str] = None
-    pr_number: Optional[int] = None
-    pr_url: Optional[str] = None
+    name: str | None = None
+    branch: str | None = None
+    commit_sha: str | None = None
+    pr_number: int | None = None
+    pr_url: str | None = None
 
 
 class FinalReport(BaseModel):
@@ -163,7 +162,7 @@ class FinalReport(BaseModel):
         default_factory=list, description="Prioritized action items"
     )
 
-    evaluation: Optional[RepositoryEvaluation] = Field(
+    evaluation: RepositoryEvaluation | None = Field(
         None, description="Final repository evaluation scores (0-100)"
     )
 

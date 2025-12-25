@@ -1,13 +1,14 @@
 """API dependencies."""
 
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from ..db.session import get_db as _get_db
 from ..config import get_settings
-from .auth import verify_token, get_user_info
+from ..db.session import get_db as _get_db
+from .auth import verify_token
 
 
 def get_db() -> Generator[Session, None, None]:

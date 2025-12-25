@@ -5,8 +5,9 @@ GitHub integration for TurboWrap.
 import logging
 import re
 import time
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, Optional, TypeVar
+from typing import TypeVar
 
 from github import Github, GithubException, RateLimitExceededException
 
@@ -113,7 +114,7 @@ class GitHubClient:
     Fetches PR information and posts review comments.
     """
 
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: str | None = None):
         """
         Initialize GitHub client.
 
@@ -188,7 +189,7 @@ class GitHubClient:
         if response.status_code == 403:
             remaining = response.headers.get("X-RateLimit-Remaining", "")
             if remaining == "0":
-                reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                int(response.headers.get("X-RateLimit-Reset", 0))
                 raise RateLimitExceededException(
                     response.status_code,
                     {"message": "Rate limit exceeded"},
@@ -353,7 +354,7 @@ class GitHubClient:
             context="TurboWrap / AI Code Review",
         )
 
-    def _parse_pr_url(self, pr_url: str) -> tuple[Optional[str], Optional[str], Optional[int]]:
+    def _parse_pr_url(self, pr_url: str) -> tuple[str | None, str | None, int | None]:
         """Parse PR URL into owner, repo, and PR number."""
         # Match patterns like:
         # https://github.com/owner/repo/pull/123
@@ -452,7 +453,7 @@ class GitHubClient:
             "html_url": pr.html_url,
         }
 
-    def _parse_repo_url(self, repo_url: str) -> tuple[Optional[str], Optional[str]]:
+    def _parse_repo_url(self, repo_url: str) -> tuple[str | None, str | None]:
         """Parse repo URL into owner and repo name."""
         match = re.match(
             r"(?:https?://)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$",

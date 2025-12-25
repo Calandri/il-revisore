@@ -1,12 +1,10 @@
 """Thinking logs routes - fetch extended thinking from S3."""
 
 import asyncio
-from datetime import datetime
-from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from turbowrap.config import get_settings
 
