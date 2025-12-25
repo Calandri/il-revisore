@@ -21,6 +21,7 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/api/health",
+    "/api/status",  # ALB health check
 }
 
 # Path prefixes that don't require authentication

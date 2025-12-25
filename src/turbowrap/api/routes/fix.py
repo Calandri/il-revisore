@@ -642,6 +642,7 @@ async def merge_and_push(
         process = await asyncio.create_subprocess_exec(
             cli_path,
             "--print",
+            "--verbose",
             "--dangerously-skip-permissions",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

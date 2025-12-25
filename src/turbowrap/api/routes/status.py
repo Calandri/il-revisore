@@ -43,7 +43,7 @@ def health_check():
     return {
         "status": "ok",
         "service": "turbowrap",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "uptime_seconds": (datetime.now() - SERVER_START_TIME).total_seconds(),
     }
 
@@ -345,7 +345,7 @@ def full_status(db: Session = Depends(get_db)):
     uptime = (datetime.now() - SERVER_START_TIME).total_seconds()
     server = {
         "status": "ok",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "uptime_seconds": uptime,
         "uptime_human": format_uptime(uptime),
         "host": settings.server.host,
