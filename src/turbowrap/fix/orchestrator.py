@@ -511,7 +511,7 @@ class FixOrchestrator:
                         )
                     )
 
-                    review_prompt = self._build_review_prompt_per_batch(batch, batch_type, batch_idx)
+                    review_prompt = self._build_review_prompt_per_batch(batch, batch_type, batch_idx, request.workspace_path)
                     if iteration == 1 and completed_batches == 1:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
@@ -907,6 +907,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         agent_type: str,
         feedback: str,
         iteration: int,
+        workspace_path: str | None = None,
     ) -> str:
         """Build prompt for Claude CLI to fix issues.
 
@@ -915,6 +916,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             agent_type: "be" or "fe"
             feedback: Feedback from previous iteration
             iteration: Current iteration number
+            workspace_path: Monorepo workspace restriction (e.g., "packages/frontend")
         """
         # Load agent prompt based on type
         if agent_type == "fe":
@@ -924,6 +926,24 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         # Build task with all issues
         task_parts = ["# Task: Fix Code Issues\n"]
+
+        # Add workspace scope restriction if set
+        if workspace_path:
+            task_parts.append(f"""
+## ⚠️ WORKSPACE SCOPE RESTRICTION
+
+**CRITICAL**: This is a MONOREPO. You are ONLY allowed to modify files within:
+```
+{workspace_path}/
+```
+
+DO NOT modify any files outside this folder. If a fix requires changes outside this scope:
+1. STOP and explain what additional changes would be needed
+2. Do NOT attempt to modify files outside the workspace
+3. The system will BLOCK and REVERT any changes outside the workspace
+
+---
+""")
 
         for i, issue in enumerate(issues, 1):
             # Get code snippet with context (marks problematic lines with >>>)
