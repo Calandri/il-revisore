@@ -747,10 +747,31 @@
             <div class="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50">
                 <div class="space-y-1.5">
                     <template x-for="(log, idx) in fixProgress.logs" :key="idx">
-                        <div class="flex items-start gap-2 py-1.5 px-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
-                            <span class="shrink-0 text-sm" x-text="log.icon"></span>
-                            <span class="text-xs text-gray-400 shrink-0 font-mono" x-text="log.timestamp"></span>
-                            <span class="text-sm flex-1" :class="log.color" x-text="log.message"></span>
+                        <div class="py-1.5 px-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+                            <div class="flex items-start gap-2">
+                                <span class="shrink-0 text-sm" x-text="log.icon"></span>
+                                <span class="text-xs text-gray-400 shrink-0 font-mono" x-text="log.timestamp"></span>
+                                <span class="text-sm flex-1" :class="log.color" x-text="log.message"></span>
+                            </div>
+                            <!-- Quality Scores with icons -->
+                            <div x-show="log.quality_scores" class="mt-1.5 ml-6 flex flex-wrap gap-2 text-xs">
+                                <template x-if="log.quality_scores">
+                                    <template x-for="(score, key) in log.quality_scores" :key="key">
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+                                              :class="score >= 80 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                      score >= 60 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                                      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'">
+                                            <span x-text="key === 'correctness' ? '✓' :
+                                                          key === 'safety' ? '🛡️' :
+                                                          key === 'dependency_safety' ? '📦' :
+                                                          key === 'efficiency' ? '⚡' :
+                                                          key === 'style_consistency' ? '🎨' : '📊'"></span>
+                                            <span class="capitalize" x-text="key.replace(/_/g, ' ')"></span>
+                                            <span class="font-semibold" x-text="score"></span>
+                                        </span>
+                                    </template>
+                                </template>
+                            </div>
                         </div>
                     </template>
                     <div x-show="fixProgress.logs.length === 0" class="text-gray-400 text-center py-8">
@@ -1523,7 +1544,9 @@ function issuesApp() {
                     message: event.message,
                     timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
                     icon: this.getEventIcon(eventType),
-                    color: this.getEventColor(eventType)
+                    color: this.getEventColor(eventType),
+                    // Include quality_scores for challenger results
+                    quality_scores: event.quality_scores || null
                 };
 
                 this.fixProgress.logs.push(logEntry);

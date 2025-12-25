@@ -336,6 +336,9 @@ class FixProgressEvent(BaseModel):
     issues_fixed: int | None = Field(default=None)
     issues_failed: int | None = Field(default=None)
 
+    # Quality scores from Gemini review (for FIX_CHALLENGER_RESULT)
+    quality_scores: dict[str, int] | None = Field(default=None, description="Quality dimension scores")
+
     def to_sse(self) -> dict[str, str]:
         """Convert to SSE format."""
         return {

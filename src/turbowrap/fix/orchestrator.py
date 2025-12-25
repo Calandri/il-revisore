@@ -551,11 +551,11 @@ class FixOrchestrator:
                         continue
 
                     # Parse per-batch review
-                    score, failed_issue_codes, per_issue_scores = self._parse_batch_review(gemini_output, batch)
+                    score, failed_issue_codes, per_issue_scores, quality_scores = self._parse_batch_review(gemini_output, batch)
                     batch_results[batch_id]["score"] = score
                     batch_results[batch_id]["failed_issues"] = failed_issue_codes
 
-                    # Show per-issue scores
+                    # Show per-issue scores and quality scores
                     if per_issue_scores:
                         scores_summary = " | ".join([f"{code}: {int(s)}" for code, s in per_issue_scores.items()])
                         await safe_emit(
@@ -563,6 +563,7 @@ class FixOrchestrator:
                                 type=FixEventType.FIX_CHALLENGER_RESULT,
                                 session_id=session_id,
                                 message=f"   📊 {batch_id} score: {score}/100 | Per-issue: {scores_summary}",
+                                quality_scores=quality_scores if quality_scores else None,
                             )
                         )
                     else:
@@ -571,6 +572,7 @@ class FixOrchestrator:
                                 type=FixEventType.FIX_CHALLENGER_RESULT,
                                 session_id=session_id,
                                 message=f"   📊 {batch_id} score: {score}/100",
+                                quality_scores=quality_scores if quality_scores else None,
                             )
                         )
 
@@ -898,7 +900,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         return f"{agent_prompt}\n\n---\n\n{task}"
 
-    def _parse_batch_review(self, output: str, issues: list[Issue]) -> tuple[float, list[str], dict[str, float]]:
+    def _parse_batch_review(self, output: str, issues: list[Issue]) -> tuple[float, list[str], dict[str, float], dict[str, int]]:
         """Parse Gemini's per-batch review output.
 
         Args:
@@ -906,18 +908,35 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             issues: Issues in this batch
 
         Returns:
-            Tuple of (batch_score, failed_issue_codes, per_issue_scores)
+            Tuple of (batch_score, failed_issue_codes, per_issue_scores, quality_scores)
         """
         batch_score = 70.0  # default
         failed_issues: list[str] = []
         per_issue_scores: dict[str, float] = {}
+        quality_scores: dict[str, int] = {}
 
-        # Parse BATCH_SCORE
+        # Try to parse JSON block from output
+        json_match = re.search(r"```json\s*([\s\S]*?)```", output)
+        if json_match:
+            try:
+                review_data = json.loads(json_match.group(1))
+                # Extract quality_scores from JSON
+                if "quality_scores" in review_data:
+                    quality_scores = review_data["quality_scores"]
+                    logger.info(f"Parsed quality_scores: {quality_scores}")
+                # Also try to get satisfaction_score from JSON
+                if "satisfaction_score" in review_data:
+                    batch_score = float(review_data["satisfaction_score"])
+                    logger.info(f"Parsed satisfaction_score from JSON: {batch_score}")
+            except json.JSONDecodeError as e:
+                logger.debug(f"Failed to parse JSON block: {e}")
+
+        # Parse BATCH_SCORE (fallback or override)
         match = re.search(r"BATCH_SCORE:\s*(\d+)", output, re.IGNORECASE)
         if match:
             batch_score = float(match.group(1))
             logger.info(f"Parsed BATCH_SCORE: {batch_score}")
-        else:
+        elif not quality_scores:  # Only use old fallback if no JSON parsed
             # Fallback to old SCORE pattern
             match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
             if match:
@@ -955,7 +974,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             if failed_issues:
                 logger.info(f"Derived FAILED_ISSUES from scores: {failed_issues}")
 
-        return batch_score, failed_issues, per_issue_scores
+        return batch_score, failed_issues, per_issue_scores, quality_scores
 
     def _build_fix_prompt(
         self,
