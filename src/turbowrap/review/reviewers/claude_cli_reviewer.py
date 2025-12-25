@@ -140,6 +140,48 @@ class ClaudeCLIReviewer(BaseReviewer):
             logger.warning(f"Failed to save thinking to S3: {e}")
             return None
 
+    async def _save_review_to_s3(
+        self,
+        review_json: str,
+        review_id: str,
+        context: ReviewContext,
+    ) -> Optional[str]:
+        """
+        Save review JSON to S3 for checkpointing/resumability.
+
+        Args:
+            review_json: The review output JSON string
+            review_id: Unique identifier for this review
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not review_json or not self.s3_bucket:
+            return None
+
+        try:
+            # Create S3 key with timestamp
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"reviews/{timestamp}/{review_id}_{self.name}.json"
+
+            # Upload to S3
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=review_json.encode("utf-8"),
+                ContentType="application/json",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[CLAUDE CLI] Review saved to S3: {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save review to S3: {e}")
+            return None
+
     async def _run_cli_and_read_output(
         self,
         prompt: str,
@@ -147,9 +189,12 @@ class ClaudeCLIReviewer(BaseReviewer):
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[str | None, list[ModelUsageInfo], str | None]:
         """
-        Run Claude CLI and read output from file.
+        Run Claude CLI and read output from file (with stdout fallback).
 
-        Claude CLI writes JSON to a file instead of stdout to avoid truncation.
+        Strategy:
+        1. Ask Claude to write JSON to file (most reliable)
+        2. If file doesn't exist or is invalid, fallback to extracting from stdout
+        3. Save result to S3 for checkpointing
 
         Args:
             prompt: The prompt to send to Claude CLI
@@ -159,12 +204,15 @@ class ClaudeCLIReviewer(BaseReviewer):
         Returns:
             Tuple of (output content or None, model usage list, error message or None)
         """
-        # Output file path (Claude will write here)
+        # Output file path (Claude should write here)
         output_file = context.repo_path / f".turbowrap_review_{self.name}.json" if context.repo_path else Path(f".turbowrap_review_{self.name}.json")
 
         # Delete old output file if exists
         if output_file.exists():
-            output_file.unlink()
+            try:
+                output_file.unlink()
+            except Exception:
+                pass
 
         # Run Claude CLI with streaming
         cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
@@ -180,23 +228,42 @@ class ClaudeCLIReviewer(BaseReviewer):
         if thinking_content:
             await self._save_thinking_to_s3(thinking_content, review_id, context)
 
-        # Read output from file (Claude saved it there)
-        if not output_file.exists():
-            logger.error(f"Output file not found: {output_file}")
-            return None, model_usage, f"Claude CLI did not create output file: {output_file}"
-
-        try:
-            output = output_file.read_text(encoding="utf-8")
-            return output, model_usage, None
-        except Exception as e:
-            logger.error(f"Failed to read output file: {e}")
-            return None, model_usage, f"Failed to read output file: {e}"
-        finally:
-            # Clean up output file
+        # Strategy 1: Read from file (Claude should have written it)
+        output = None
+        if output_file.exists():
             try:
-                output_file.unlink()
-            except Exception:
-                pass
+                file_content = output_file.read_text(encoding="utf-8").strip()
+                # Validate it looks like JSON object
+                if file_content.startswith("{") and file_content.endswith("}"):
+                    output = file_content
+                    logger.info(f"[CLAUDE CLI] Read JSON from file: {len(output)} chars")
+                else:
+                    logger.warning(f"[CLAUDE CLI] File content is not valid JSON: {file_content[:100]}")
+            except Exception as e:
+                logger.warning(f"[CLAUDE CLI] Failed to read output file: {e}")
+            finally:
+                # Clean up output file
+                try:
+                    output_file.unlink()
+                except Exception:
+                    pass
+
+        # Strategy 2: Fallback to extracting from stdout
+        if output is None and cli_result and "{" in cli_result:
+            first_brace = cli_result.find("{")
+            last_brace = cli_result.rfind("}")
+            if first_brace != -1 and last_brace > first_brace:
+                output = cli_result[first_brace:last_brace + 1]
+                logger.info(f"[CLAUDE CLI] Fallback: extracted JSON from stdout: {len(output)} chars")
+
+        if output is None:
+            logger.error(f"[CLAUDE CLI] No valid JSON found. CLI result: {cli_result[:300]}")
+            return None, model_usage, f"Claude CLI did not produce valid JSON. Output: {cli_result[:300]}"
+
+        # Save to S3 for checkpointing (regardless of source)
+        await self._save_review_to_s3(output, review_id, context)
+
+        return output, model_usage, None
 
     async def review(
         self,
@@ -308,7 +375,7 @@ class ClaudeCLIReviewer(BaseReviewer):
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        # Output file name unique per reviewer
+        # Output file for this reviewer
         output_file = f".turbowrap_review_{self.name}.json"
 
         sections.append(f"""
@@ -318,7 +385,9 @@ class ClaudeCLIReviewer(BaseReviewer):
 2. **Explore freely** - you can read other files (imports, dependencies, tests) if needed
 3. **Apply your expertise** from the system prompt above
 
-## Output Schema
+## Output Format
+
+Output valid JSON with this schema:
 
 {{
   "summary": {{
@@ -348,16 +417,11 @@ class ClaudeCLIReviewer(BaseReviewer):
   }}
 }}
 
-## CRITICAL: SAVE OUTPUT TO FILE
+## IMPORTANT: Save output to file
 
-**DO NOT print the JSON to stdout.**
+WRITE the complete JSON to this file: `{output_file}`
 
-Instead, **WRITE the JSON to this file**: `{output_file}`
-
-Use your file writing capability to save the complete JSON to that file.
-After writing, just say "Review saved to {output_file}"
-
-This avoids output truncation issues.
+After writing, confirm with: "Review saved to {output_file}"
 """)
 
         return "".join(sections)
@@ -389,7 +453,7 @@ This avoids output truncation issues.
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        # Output file name unique per reviewer
+        # Output file for this reviewer
         output_file = f".turbowrap_review_{self.name}.json"
 
         sections.append(f"""
@@ -401,14 +465,11 @@ This avoids output truncation issues.
 4. Incorporate suggested improvements
 5. Maintain valid issues from the previous review
 
-## CRITICAL: SAVE OUTPUT TO FILE
+## IMPORTANT: Save output to file
 
-**DO NOT print the JSON to stdout.**
+WRITE the complete refined JSON to this file: `{output_file}`
 
-Instead, **WRITE the refined JSON to this file**: `{output_file}`
-
-Use your file writing capability to save the complete JSON to that file.
-After writing, just say "Review saved to {output_file}"
+After writing, confirm with: "Review saved to {output_file}"
 """)
 
         return "".join(sections)
@@ -726,15 +787,34 @@ After writing, just say "Review saved to {output_file}"
                     # Both attempts failed, re-raise original error
                     raise first_error
 
+            # Validate that data is a dict, not a string
+            # (json.loads can return a string if input is a JSON string literal)
+            if not isinstance(data, dict):
+                logger.error(f"[CLAUDE PARSE] Expected dict, got {type(data).__name__}: {str(data)[:200]}")
+                raise json.JSONDecodeError(
+                    f"Expected JSON object, got {type(data).__name__}",
+                    json_text,
+                    0
+                )
+
             # Build ReviewOutput from parsed data
             summary_data = data.get("summary", {})
+
+            # Normalize score: Claude sometimes returns 0-100 instead of 0-10
+            raw_score = summary_data.get("score", 10.0)
+            if raw_score > 10:
+                logger.warning(f"[CLAUDE PARSE] Score {raw_score} > 10, normalizing to 0-10 scale")
+                raw_score = raw_score / 10.0
+            # Clamp to valid range
+            normalized_score = max(0.0, min(10.0, raw_score))
+
             summary = ReviewSummary(
                 files_reviewed=summary_data.get("files_reviewed", len(file_list)),
                 critical_issues=summary_data.get("critical_issues", 0),
                 high_issues=summary_data.get("high_issues", 0),
                 medium_issues=summary_data.get("medium_issues", 0),
                 low_issues=summary_data.get("low_issues", 0),
-                score=summary_data.get("score", 10.0),
+                score=normalized_score,
             )
 
             # Parse issues

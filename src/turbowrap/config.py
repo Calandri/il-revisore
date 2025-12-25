@@ -184,12 +184,12 @@ class ThinkingSettings(BaseSettings):
 
     enabled: bool = Field(default=True, description="Enable extended thinking")
     budget_tokens: int = Field(
-        default=10000, ge=1000, le=50000,
-        description="Token budget for thinking (1k-50k)"
+        default=8000, ge=1000, le=50000,
+        description="Base token budget for thinking (1k-50k). Orchestrator increases for heavy issues."
     )
     s3_bucket: str = Field(
         default="turbowrap-thinking",
-        description="S3 bucket for storing thinking logs"
+        description="S3 bucket for storing thinking logs and review checkpoints (10-day retention)"
     )
     s3_region: str = Field(
         default="eu-west-3",
