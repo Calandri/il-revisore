@@ -259,6 +259,17 @@ class FixOrchestrator:
                 except Exception as e:
                     logger.error(f"Error emitting progress: {e}")
 
+        async def emit_log(level: str, message: str) -> None:
+            """Emit a log event for UI toast notifications."""
+            await safe_emit(
+                FixProgressEvent(
+                    type=FixEventType.FIX_LOG,
+                    session_id=session_id,
+                    message=message,
+                    log_level=level,
+                )
+            )
+
         try:
             # Classify issues
             be_issues, fe_issues = self._classify_issues(issues)
@@ -463,11 +474,13 @@ class FixOrchestrator:
                         base_budget = self.settings.thinking.budget_tokens
                         thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
                         logger.info(f"Heavy batch (workload={batch_workload}), thinking budget: {thinking_budget}")
+                        await emit_log("INFO", f"Heavy batch: thinking budget {thinking_budget} tokens")
 
                     try:
                         output = await self._run_claude_cli(prompt, on_chunk=on_chunk_claude, thinking_budget=thinking_budget)
                         if output is None:
                             logger.error(f"Claude CLI ({batch_id}) failed: returned None")
+                            await emit_log("ERROR", f"Claude CLI failed for {batch_id}")
                             # Mark batch as failed
                             batch_results[batch_id]["passed"] = False
                             batch_results[batch_id]["score"] = 0.0
@@ -481,6 +494,7 @@ class FixOrchestrator:
                             )
                             continue
                     except BillingError as e:
+                        await emit_log("ERROR", f"Billing error: {str(e)[:100]}")
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_BILLING_ERROR,
@@ -492,6 +506,7 @@ class FixOrchestrator:
                         raise
                     except Exception as e:
                         logger.error(f"Claude CLI ({batch_id}) failed with exception: {e}")
+                        await emit_log("ERROR", f"Claude CLI exception: {str(e)[:100]}")
                         batch_results[batch_id]["passed"] = False
                         all_passed_this_iteration = False
                         await safe_emit(
@@ -529,6 +544,7 @@ class FixOrchestrator:
 
                     if gemini_output is None:
                         logger.warning(f"Gemini CLI failed for {batch_id}, accepting fix without review")
+                        await emit_log("WARNING", f"Gemini review failed for {batch_id}, accepting fix")
                         batch_results[batch_id]["passed"] = True
                         batch_results[batch_id]["score"] = 100.0
                         successful_issues.extend(batch)
@@ -561,6 +577,7 @@ class FixOrchestrator:
                     if score >= self.satisfaction_threshold:
                         batch_results[batch_id]["passed"] = True
                         successful_issues.extend(batch)
+                        await emit_log("INFO", f"{batch_id} passed with score {score}/100")
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_CHALLENGER_APPROVED,
@@ -574,6 +591,7 @@ class FixOrchestrator:
                     else:
                         batch_results[batch_id]["passed"] = False
                         all_passed_this_iteration = False
+                        await emit_log("WARNING", f"{batch_id} needs retry (score {score} < {self.satisfaction_threshold})")
                         # Store feedback for retry
                         if batch_type == "BE":
                             feedback_be = gemini_output
@@ -1110,10 +1128,10 @@ The reviewer found issues with the previous fix. Address this feedback:
                 "stream-json",
             ]
 
-            # Add extended thinking settings if enabled
-            if self.settings.thinking.enabled:
-                thinking_settings = {"alwaysThinkingEnabled": True}
-                args.extend(["--settings", json.dumps(thinking_settings)])
+            # NOTE: DO NOT use --settings {"alwaysThinkingEnabled": true} here!
+            # It's BUGGY in Claude CLI v2.0.64+ and causes the process to hang indefinitely.
+            # Extended thinking is enabled via MAX_THINKING_TOKENS env var (set above).
+            # See: docs/BUG_NOTI/claude-cli-extended-thinking.md
 
             process = await asyncio.create_subprocess_exec(
                 *args,

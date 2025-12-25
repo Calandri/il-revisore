@@ -206,6 +206,8 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
 
     # Get settings from DB
     github_token = db.query(Setting).filter(Setting.key == "github_token").first()
+    linear_api_key = db.query(Setting).filter(Setting.key == "linear_api_key").first()
+    linear_team_id = db.query(Setting).filter(Setting.key == "linear_team_id").first()
     claude_model = db.query(Setting).filter(Setting.key == "claude_model").first()
     gemini_model = db.query(Setting).filter(Setting.key == "gemini_model").first()
     gemini_pro_model = db.query(Setting).filter(Setting.key == "gemini_pro_model").first()
@@ -217,6 +219,9 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
             "request": request,
             "active_page": "settings",
             "github_token_set": bool(github_token and github_token.value),
+            # Linear Integration
+            "linear_api_key_set": bool(linear_api_key and linear_api_key.value),
+            "linear_team_id": linear_team_id.value if linear_team_id else "",
             # Models: DB value or config default
             "claude_model": claude_model.value if claude_model else config.agents.claude_model,
             "gemini_model": gemini_model.value if gemini_model else config.agents.gemini_model,

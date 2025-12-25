@@ -437,6 +437,9 @@ async def stream_review(
                             suggested_fix=issue.suggested_fix,
                             references=issue.references if issue.references else None,
                             flagged_by=issue.flagged_by if issue.flagged_by else None,
+                            # Effort estimation for fix batching
+                            estimated_effort=issue.estimated_effort,
+                            estimated_files_count=issue.estimated_files_count,
                         )
                         review_db.add(db_issue)
 
@@ -644,6 +647,17 @@ async def restart_reviewer(
             context.files = files[:100]  # Limit to 100 files
             logger.info(f"[RESTART] Found {len(context.files)} files to review")
 
+            # Check and regenerate stale STRUCTURE.md files
+            from ...tools.structure_generator import StructureGenerator
+
+            generator = StructureGenerator(context.repo_path)
+            stale_dirs = generator.check_stale_structures()
+
+            if stale_dirs:
+                logger.info(f"[RESTART] Found {len(stale_dirs)} stale STRUCTURE.md files, regenerating...")
+                regenerated = generator.regenerate_stale(verbose=False)
+                logger.info(f"[RESTART] Regenerated {len(regenerated)} STRUCTURE.md files")
+
             # Load STRUCTURE.md files
             structure_files = list(context.repo_path.rglob("STRUCTURE.md"))
             for structure_file in structure_files:
@@ -715,6 +729,9 @@ async def restart_reviewer(
                     suggested_fix=issue.suggested_fix,
                     references=issue.references if issue.references else None,
                     flagged_by=issue.flagged_by if issue.flagged_by else [reviewer_name],
+                    # Effort estimation for fix batching
+                    estimated_effort=issue.estimated_effort,
+                    estimated_files_count=issue.estimated_files_count,
                 )
                 restart_db.add(db_issue)
 

@@ -46,7 +46,9 @@ This is critical for automated processing - do NOT output markdown or any text o
       "description": "<detailed description of the functional issue>",
       "expected_behavior": "<what should happen>",
       "actual_behavior": "<what the code does>",
-      "suggested_fix": "<how to fix>"
+      "suggested_fix": "<how to fix>",
+      "estimated_effort": <int 1-5>,
+      "estimated_files_count": <int>
     }
   ],
   "checklists": {
@@ -62,6 +64,15 @@ This is critical for automated processing - do NOT output markdown or any text o
 - `ux` - User experience issues, confusing flows, missing feedback
 - `testing` - Missing test coverage for edge cases
 - `documentation` - Missing or incorrect documentation for behavior
+
+**MANDATORY Effort Estimation Fields (for EVERY issue):**
+- `estimated_effort` - Fix complexity on a 1-5 scale:
+  - 1 = Trivial (typo, simple rename, one-line fix)
+  - 2 = Simple (small change in one file, < 10 lines)
+  - 3 = Moderate (changes in 1-2 files, needs some thought)
+  - 4 = Complex (multiple files, refactoring, new patterns)
+  - 5 = Major refactor (architectural change, many files)
+- `estimated_files_count` - Number of files that need to be modified to fix this issue
 
 ---
 

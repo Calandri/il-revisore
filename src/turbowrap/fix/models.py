@@ -73,6 +73,9 @@ class FixEventType(str, Enum):
     # Billing/API errors
     FIX_BILLING_ERROR = "fix_billing_error"
 
+    # Log events (for UI toast notifications)
+    FIX_LOG = "fix_log"
+
 
 class FixChallengerStatus(str, Enum):
     """Status from fix challenger evaluation."""
@@ -325,6 +328,9 @@ class FixProgressEvent(BaseModel):
 
     # Error
     error: str | None = Field(default=None)
+
+    # Log level (for FIX_LOG events)
+    log_level: str | None = Field(default=None, description="Log level: INFO, WARNING, ERROR")
 
     # Summary (for completed events)
     issues_fixed: int | None = Field(default=None)

@@ -2,6 +2,24 @@
 
 {% block title %}Issues - TurboWrap{% endblock %}
 
+{% block head %}
+<style>
+@keyframes slide-in {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+.animate-slide-in {
+    animation: slide-in 0.3s ease-out;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6" x-data="issuesApp()">
     <!-- Header -->
@@ -32,6 +50,44 @@
                 Aggiorna
             </button>
         </div>
+    </div>
+
+    <!-- Toast Notifications (fixed top-right) -->
+    <div class="fixed top-4 right-4 z-50 space-y-2" x-show="toasts.length > 0">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in"
+                 :class="{
+                     'bg-blue-500 text-white': toast.level === 'INFO',
+                     'bg-yellow-500 text-white': toast.level === 'WARNING',
+                     'bg-red-500 text-white': toast.level === 'ERROR'
+                 }">
+                <!-- Icon -->
+                <div class="flex-shrink-0">
+                    <template x-if="toast.level === 'INFO'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </template>
+                    <template x-if="toast.level === 'WARNING'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </template>
+                    <template x-if="toast.level === 'ERROR'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </template>
+                </div>
+                <!-- Content -->
+                <div class="flex-1">
+                    <div class="font-semibold text-sm" x-text="toast.level"></div>
+                    <div class="text-sm opacity-90" x-text="toast.message"></div>
+                </div>
+                <!-- Timestamp -->
+                <div class="text-xs opacity-75" x-text="toast.timestamp"></div>
+            </div>
+        </template>
     </div>
 
     <!-- Summary Cards -->
@@ -972,6 +1028,7 @@ function issuesApp() {
         loadingFixLog: false,
         fixLog: null,
         mergeResult: null,
+        toasts: [],  // Log notifications: {id, level, message, timestamp}
         showFixModal: false,
         showLintModal: false,
         showPendingBranchModal: false,
@@ -1432,6 +1489,26 @@ function issuesApp() {
                     this.fixProgress.streamingContent = this.fixProgress.streamingContent.slice(-2000);
                 }
                 return; // Don't add to main logs
+            }
+
+            // 6b. LOG EVENTS -> Toast notifications
+            if (eventType === 'fix_log' && event.message) {
+                const toastId = Date.now();
+                this.toasts.push({
+                    id: toastId,
+                    level: event.log_level || 'INFO',
+                    message: event.message,
+                    timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'})
+                });
+                // Auto-dismiss after 3 seconds
+                setTimeout(() => {
+                    this.toasts = this.toasts.filter(t => t.id !== toastId);
+                }, 3000);
+                // Keep max 5 toasts
+                if (this.toasts.length > 5) {
+                    this.toasts = this.toasts.slice(-5);
+                }
+                return;
             }
 
             // 7. STRUCTURED MESSAGES -> main logs

@@ -95,6 +95,15 @@ class Orchestrator:
                 event.review_id = report_id
                 await progress_callback(event)
 
+        # Helper to emit toast log notifications
+        async def emit_log(level: str, message: str):
+            """Emit a log event for UI toast notifications."""
+            await emit(ProgressEvent(
+                type=ProgressEventType.REVIEW_LOG,
+                message=message,
+                log_level=level,
+            ))
+
         # Emit review started
         await emit(ProgressEvent(
             type=ProgressEventType.REVIEW_STARTED,
@@ -149,6 +158,12 @@ class Orchestrator:
                         model_usage=[m.model_dump() for m in result.final_review.model_usage],
                     ))
 
+                    # Toast notification for completed reviewer
+                    await emit_log(
+                        "INFO",
+                        f"✓ {display_name}: {result.final_satisfaction:.0f}% ({result.iterations} iter, {len(result.final_review.issues)} issues)"
+                    )
+
                     return (reviewer_name, "success", result)
 
                 except Exception as e:
@@ -161,6 +176,9 @@ class Orchestrator:
                         error=str(e),
                         message=f"{display_name} failed: {str(e)[:50]}",
                     ))
+
+                    # Toast notification for failed reviewer
+                    await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
 
                     return (reviewer_name, "error", str(e))
 
@@ -287,6 +305,7 @@ class Orchestrator:
                 reviewer_display_name="Repository Evaluator",
                 message=f"Evaluation complete: {evaluation.overall_score}/100",
             ))
+            await emit_log("INFO", f"✓ Evaluation: {evaluation.overall_score}/100")
         else:
             await emit(ProgressEvent(
                 type=ProgressEventType.REVIEWER_ERROR,
@@ -294,6 +313,7 @@ class Orchestrator:
                 reviewer_display_name="Repository Evaluator",
                 error="Evaluation failed",
             ))
+            await emit_log("WARNING", "⚠ Evaluation skipped")
 
         # Step 6: Build final report
         report = self._build_report(
@@ -321,6 +341,12 @@ class Orchestrator:
             issues_found=report.summary.total_issues,
             message=f"Review completed with {report.summary.total_issues} issues (score: {report.summary.overall_score:.1f})",
         ))
+
+        # Final toast notification
+        await emit_log(
+            "INFO",
+            f"🎉 Review completata: {report.summary.total_issues} issues, score {report.summary.overall_score:.1f}/10"
+        )
 
         # Save report to output directory
         await self._save_report(report, context.repo_path)

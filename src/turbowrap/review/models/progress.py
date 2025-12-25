@@ -31,6 +31,9 @@ class ProgressEventType(str, Enum):
     CHALLENGER_STARTED = "challenger_started"
     CHALLENGER_COMPLETED = "challenger_completed"
 
+    # Log events (for UI toast notifications)
+    REVIEW_LOG = "review_log"
+
 
 class ProgressEvent(BaseModel):
     """Progress event for streaming updates."""
@@ -60,6 +63,9 @@ class ProgressEvent(BaseModel):
 
     # Error info
     error: Optional[str] = Field(default=None, description="Error message if failed")
+
+    # Log level (for REVIEW_LOG events)
+    log_level: Optional[str] = Field(default=None, description="Log level: INFO, WARNING, ERROR")
 
     # Model usage info (from CLI)
     model_usage: Optional[list[dict[str, Any]]] = Field(

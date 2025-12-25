@@ -391,6 +391,7 @@ IMPORTANT: Output ONLY the JSON. No markdown code blocks, no explanations before
         """Build the prompt for review refinement."""
         sections = ["# Review Refinement Request\n"]
 
+        # Include previous review (complete with all issues)
         sections.append("## Previous Review\n")
         sections.append(f"```json\n{previous_review.model_dump_json(indent=2)}\n```\n")
 

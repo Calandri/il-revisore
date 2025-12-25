@@ -568,7 +568,7 @@ Extract ONLY these types: {elements_to_find}
 For EACH element found, provide:
 - Type (exactly one of: {elements_to_find})
 - Name (the identifier/function/class name)
-- Description (max 10 words, in English)
+- Description (max 5 words, in English)
 
 Format your response as a simple list:
 TYPE: Name - Description
@@ -623,7 +623,7 @@ Be concise. Only list the most important elements (max 10).
                     if "-" in rest:
                         name_part, desc_part = rest.split("-", 1)
                         name = name_part.strip().strip("`").strip("*")
-                        description = desc_part.strip()[:80]
+                        description = desc_part.strip()[:40]  # Reduced from 80 to save tokens
 
                         if name:  # Only if has valid name
                             elements.append(FileElement(
@@ -748,19 +748,15 @@ Be concise. Only list the most important elements (max 10).
 
             lines.append("")
 
-            for file_struct in sorted(dir_struct.files, key=lambda f: f.path.name):
+            # Only show per-file sections for files WITH elements (reduces redundancy)
+            files_with_elements = [f for f in dir_struct.files if f.elements]
+            for file_struct in sorted(files_with_elements, key=lambda f: f.path.name):
                 lines.append(f"### {file_struct.path.name}")
-                lines.append(f"*{file_struct.lines:,} lines, {file_struct.tokens:,} tokens*")
                 lines.append("")
-
-                if file_struct.elements:
-                    for elem in file_struct.elements:
-                        lines.append(
-                            f"- **{elem.type}**: `{elem.name}` - {elem.description}"
-                        )
-                else:
-                    lines.append("- *No exported elements detected*")
-
+                for elem in file_struct.elements:
+                    lines.append(
+                        f"- **{elem.type}**: `{elem.name}` - {elem.description}"
+                    )
                 lines.append("")
 
         # Subdirectories section

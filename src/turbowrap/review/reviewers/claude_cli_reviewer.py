@@ -407,7 +407,9 @@ Output valid JSON with this schema:
       "line": <line number or null>,
       "title": "<brief title>",
       "description": "<detailed description>",
-      "suggested_fix": "<suggested fix>"
+      "suggested_fix": "<suggested fix>",
+      "estimated_effort": <int 1-5>,
+      "estimated_files_count": <int>
     }}
   ],
   "checklists": {{
@@ -416,6 +418,17 @@ Output valid JSON with this schema:
     "architecture": {{ "passed": <int>, "failed": <int>, "skipped": <int> }}
   }}
 }}
+
+## MANDATORY: Effort Estimation for EVERY Issue
+
+For each issue, you MUST provide effort estimation:
+- `estimated_effort` (1-5): Fix complexity
+  - 1 = Trivial (typo, simple rename, one-line fix)
+  - 2 = Simple (small change in one file, < 10 lines)
+  - 3 = Moderate (changes in 1-2 files, needs some thought)
+  - 4 = Complex (multiple files, refactoring, new patterns)
+  - 5 = Major refactor (architectural change, many files)
+- `estimated_files_count`: Number of files that need modification
 
 ## IMPORTANT: Save output to file
 
@@ -443,6 +456,7 @@ After writing, confirm with: "Review saved to {output_file}"
 
         sections.append("# Review Refinement Request\n")
 
+        # Include previous review (complete with all issues)
         sections.append("## Previous Review\n")
         sections.append(f"```json\n{previous_review.model_dump_json(indent=2)}\n```\n")
 
@@ -522,9 +536,11 @@ After writing, confirm with: "Review saved to {output_file}"
             model = self.settings.agents.claude_model
 
             # Build CLI arguments with stream-json for real-time streaming
+            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
             args = [
                 self.cli_path,
                 "--print",
+                "--verbose",
                 "--dangerously-skip-permissions",
                 "--model",
                 model,
@@ -532,10 +548,16 @@ After writing, confirm with: "Review saved to {output_file}"
                 "stream-json",
             ]
 
-            # Add extended thinking settings if enabled
+            # Extended thinking via MAX_THINKING_TOKENS env var
+            # NOTE: --settings {"alwaysThinkingEnabled": true} is BUGGY in Claude CLI v2.0.64+
+            # and causes the process to hang indefinitely. Use env var instead.
             if self.settings.thinking.enabled:
-                thinking_settings = {"alwaysThinkingEnabled": True}
-                args.extend(["--settings", json.dumps(thinking_settings)])
+                env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
+                logger.info(f"[CLAUDE CLI] Extended thinking enabled: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}")
+
+            logger.info(f"[CLAUDE CLI] Starting subprocess: {' '.join(args)}")
+            logger.info(f"[CLAUDE CLI] Working directory: {cwd}")
+            logger.info(f"[CLAUDE CLI] Prompt length: {len(prompt)} chars")
 
             process = await asyncio.create_subprocess_exec(
                 *args,
@@ -546,22 +568,65 @@ After writing, confirm with: "Review saved to {output_file}"
                 env=env,
             )
 
-            # Write prompt to stdin
+            logger.info(f"[CLAUDE CLI] Process started with PID: {process.pid}")
+
+            # Write prompt to stdin in background task (avoids blocking on large prompts)
+            # The pipe buffer is ~64KB, so large prompts would block drain() if we don't
+            # read stdout concurrently
             prompt_bytes = prompt.encode()
-            try:
-                process.stdin.write(prompt_bytes)
-                await process.stdin.drain()
-                process.stdin.close()
-            except BrokenPipeError:
-                # Claude CLI crashed before accepting input - check stderr
-                stderr = await process.stderr.read()
-                logger.error(f"Claude CLI crashed on stdin: {stderr.decode()[:500]}")
-                return None, [], "", ""
+            stdin_error = None
+
+            async def write_stdin():
+                nonlocal stdin_error
+                try:
+                    logger.info(f"[CLAUDE CLI] Writing {len(prompt_bytes)} bytes to stdin...")
+                    process.stdin.write(prompt_bytes)
+                    await process.stdin.drain()
+                    process.stdin.close()
+                    # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
+                    # Without this, Claude CLI hangs waiting for more input!
+                    await process.stdin.wait_closed()
+                    logger.info("[CLAUDE CLI] Stdin closed successfully (EOF sent)")
+                except BrokenPipeError as e:
+                    stdin_error = f"BrokenPipe: {e}"
+                    logger.error(f"[CLAUDE CLI] Stdin BrokenPipe: {e}")
+                except Exception as e:
+                    stdin_error = str(e)
+                    logger.error(f"[CLAUDE CLI] Stdin error: {e}")
+
+            # Start stdin writer as background task
+            stdin_task = asyncio.create_task(write_stdin())
+
+            # Stderr streaming task - logs --verbose output in real-time
+            stderr_chunks = []
+
+            async def read_stderr():
+                stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                while True:
+                    chunk = await process.stderr.read(1024)
+                    if not chunk:
+                        final = stderr_decoder.decode(b"", final=True)
+                        if final:
+                            stderr_chunks.append(final)
+                            print(f"[CLAUDE STDERR] {final}", flush=True)
+                        break
+                    decoded = stderr_decoder.decode(chunk)
+                    if decoded:
+                        stderr_chunks.append(decoded)
+                        # Print each line separately for better visibility
+                        for line in decoded.split("\n"):
+                            if line.strip():
+                                print(f"[CLAUDE STDERR] {line}", flush=True)
+
+            stderr_task = asyncio.create_task(read_stderr())
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries
             output_chunks = []
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            chunks_received = 0
+            total_bytes = 0
+            last_log_time = time.time()
             try:
                 async with asyncio.timeout(self.timeout):
                     while True:
@@ -573,7 +638,22 @@ After writing, confirm with: "Review saved to {output_file}"
                                 output_chunks.append(decoded)
                                 if on_chunk:
                                     await on_chunk(decoded)
+                            logger.info(f"[CLAUDE CLI] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
                             break
+
+                        chunks_received += 1
+                        total_bytes += len(chunk)
+
+                        # Log progress every 30 seconds
+                        now = time.time()
+                        if now - last_log_time > 30:
+                            logger.info(f"[CLAUDE CLI] Streaming... {chunks_received} chunks, {total_bytes} bytes received")
+                            last_log_time = now
+
+                        # Log first chunk
+                        if chunks_received == 1:
+                            logger.info(f"[CLAUDE CLI] First chunk received! ({len(chunk)} bytes)")
+
                         # Incremental decode - handles partial multi-byte chars
                         decoded = decoder.decode(chunk)
                         if decoded:
@@ -582,22 +662,32 @@ After writing, confirm with: "Review saved to {output_file}"
                             if on_chunk:
                                 await on_chunk(decoded)
             except asyncio.TimeoutError:
-                logger.error(f"Claude CLI timed out after {self.timeout}s")
+                logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes before timeout")
+                stdin_task.cancel()
+                stderr_task.cancel()
                 process.kill()
                 return None, [], "", ""
 
-            await process.wait()
+            # Wait for stdin and stderr tasks to complete
+            await stdin_task
+            await stderr_task
+            if stdin_error:
+                logger.error(f"[CLAUDE CLI] Stdin failed: {stdin_error}")
+                # Don't return error if we got output anyway
 
-            # Always read stderr for debugging
-            stderr_bytes = await process.stderr.read()
-            stderr_text = stderr_bytes.decode() if stderr_bytes else ""
+            logger.info(f"[CLAUDE CLI] Waiting for process to exit...")
+            await process.wait()
+            logger.info(f"[CLAUDE CLI] Process exited with code {process.returncode}")
+
+            # Get collected stderr from streaming task
+            stderr_text = "".join(stderr_chunks)
 
             if stderr_text:
-                logger.warning(f"[CLAUDE CLI] STDERR: {stderr_text[:1000]}")
+                logger.warning(f"[CLAUDE CLI] STDERR total: {len(stderr_text)} chars")
 
             if process.returncode != 0:
                 logger.error(f"[CLAUDE CLI] FAILED with code {process.returncode}")
-                logger.error(f"[CLAUDE CLI] Full stderr: {stderr_text}")
+                logger.error(f"[CLAUDE CLI] Full stderr: {stderr_text[:2000]}")
                 return None, [], "", ""
 
             raw_output = "".join(output_chunks)
@@ -856,6 +946,9 @@ After writing, confirm with: "Review saved to {output_file}"
                         suggested_fix=issue_data.get("suggested_fix"),
                         references=issue_data.get("references", []),
                         flagged_by=[self.name],
+                        # Effort estimation for fix batching
+                        estimated_effort=issue_data.get("estimated_effort"),
+                        estimated_files_count=issue_data.get("estimated_files_count"),
                     )
                     issues.append(issue)
                 except Exception as e:
