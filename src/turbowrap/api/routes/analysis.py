@@ -117,7 +117,7 @@ async def run_lint_analysis(
             repository_id=request.repository_id,
             type="lint_analysis",
             status="running",
-            parameters={"analysis_type": "lint"},
+            config={"analysis_type": "lint"},
             created_at=datetime.utcnow(),
         )
         db.add(task)
