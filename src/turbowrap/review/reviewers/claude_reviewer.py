@@ -434,13 +434,20 @@ IMPORTANT: Output ONLY the JSON. No markdown code blocks, no explanations before
 
             # Build ReviewOutput from parsed data
             summary_data = data.get("summary", {})
+
+            # Normalize score: Claude sometimes returns 0-100 instead of 0-10
+            raw_score = summary_data.get("score", 10.0)
+            if raw_score > 10:
+                raw_score = raw_score / 10.0
+            normalized_score = max(0.0, min(10.0, raw_score))
+
             summary = ReviewSummary(
                 files_reviewed=summary_data.get("files_reviewed", len(context.files)),
                 critical_issues=summary_data.get("critical_issues", 0),
                 high_issues=summary_data.get("high_issues", 0),
                 medium_issues=summary_data.get("medium_issues", 0),
                 low_issues=summary_data.get("low_issues", 0),
-                score=summary_data.get("score", 10.0),
+                score=normalized_score,
             )
 
             # Parse issues

@@ -407,3 +407,57 @@ class GitHubClient:
             ])
 
         return "\n".join(lines)
+
+    @with_rate_limit_retry
+    def create_pull_request(
+        self,
+        repo_url: str,
+        branch_name: str,
+        title: str,
+        body: str,
+        base_branch: str = "main",
+    ) -> dict:
+        """
+        Create a pull request on GitHub.
+
+        Args:
+            repo_url: Repository URL (https://github.com/owner/repo)
+            branch_name: The branch to merge (head)
+            title: PR title
+            body: PR description/body
+            base_branch: Target branch (default: main)
+
+        Returns:
+            Dict with PR info: {url, number, html_url}
+
+        Raises:
+            GitHubRateLimitError: If rate limit is exceeded after retries.
+        """
+        owner, repo = self._parse_repo_url(repo_url)
+        if not owner or not repo:
+            raise ValueError(f"Invalid repo URL: {repo_url}")
+
+        repository = self.github.get_repo(f"{owner}/{repo}")
+
+        pr = repository.create_pull(
+            title=title,
+            body=body,
+            head=branch_name,
+            base=base_branch,
+        )
+
+        return {
+            "number": pr.number,
+            "url": pr.html_url,
+            "html_url": pr.html_url,
+        }
+
+    def _parse_repo_url(self, repo_url: str) -> tuple[Optional[str], Optional[str]]:
+        """Parse repo URL into owner and repo name."""
+        match = re.match(
+            r"(?:https?://)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$",
+            repo_url,
+        )
+        if match:
+            return match.group(1), match.group(2)
+        return None, None

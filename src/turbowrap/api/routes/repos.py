@@ -104,10 +104,18 @@ def clone_repo(
     For private repos, provide a GitHub token via:
     - `token` field in request body, OR
     - `GITHUB_TOKEN` environment variable
+
+    For monorepos, provide `workspace_path` to scope operations to a subfolder.
+    The same repo URL can be cloned multiple times with different workspace paths.
     """
     manager = RepoManager(db)
     try:
-        repo = manager.clone(data.url, data.branch, data.token)
+        repo = manager.clone(
+            data.url,
+            data.branch,
+            data.token,
+            workspace_path=data.workspace_path,
+        )
         return repo
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))

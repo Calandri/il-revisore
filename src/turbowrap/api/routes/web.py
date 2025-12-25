@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user
-from ...db.models import Repository, ChatSession, Setting
+from ...db.models import Repository, ChatSession, Setting, Task
 from ...utils.git_utils import smart_push_with_conflict_resolution
 from ...utils.aws_secrets import get_anthropic_api_key
 
@@ -249,12 +249,53 @@ async def users_page(request: Request):
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
-    """HTMX partial: repository list."""
+    """HTMX partial: repository list with last evaluation."""
+    import json
+    from sqlalchemy import func
+
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
+
+    # Get last completed review task with evaluation for each repo
+    # Subquery to get max completed_at per repo
+    subq = (
+        db.query(
+            Task.repository_id,
+            func.max(Task.completed_at).label("last_completed")
+        )
+        .filter(Task.type == "review", Task.status == "completed")
+        .group_by(Task.repository_id)
+        .subquery()
+    )
+
+    # Join to get the actual task records
+    last_tasks = (
+        db.query(Task)
+        .join(subq, (Task.repository_id == subq.c.repository_id) &
+                    (Task.completed_at == subq.c.last_completed))
+        .filter(Task.type == "review", Task.status == "completed")
+        .all()
+    )
+
+    # Build repo_id -> evaluation dict
+    evaluations = {}
+    for task in last_tasks:
+        if task.result:
+            try:
+                result = task.result if isinstance(task.result, dict) else json.loads(task.result)
+                eval_data = result.get("evaluation")
+                if eval_data:
+                    evaluations[task.repository_id] = {
+                        "evaluation": eval_data,
+                        "task_id": task.id,
+                        "completed_at": task.completed_at,
+                    }
+            except (json.JSONDecodeError, TypeError):
+                pass
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "components/repo_list.html",
-        {"request": request, "repos": repos}
+        {"request": request, "repos": repos, "evaluations": evaluations}
     )
 
 
@@ -263,14 +304,20 @@ async def htmx_add_repo(
     request: Request,
     url: str = Form(...),
     branch: str = Form("main"),
+    workspace_path: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    """HTMX: add a new repository and return updated list."""
+    """HTMX: add a new repository and return updated list.
+
+    For monorepos, workspace_path limits operations to a subfolder.
+    """
     from ...core.repo_manager import RepoManager
 
     manager = RepoManager(db)
     try:
-        manager.clone(url, branch)
+        # Normalize empty string to None
+        ws_path = workspace_path.strip() if workspace_path else None
+        manager.clone(url, branch, workspace_path=ws_path)
     except Exception as e:
         print(f"Clone error: {e}")
 

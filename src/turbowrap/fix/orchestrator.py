@@ -455,8 +455,17 @@ class FixOrchestrator:
                             "prompt": prompt,
                         })
 
+                    # Calculate thinking budget based on workload
+                    # Heavy batches (workload > 10) get more thinking budget for complex reasoning
+                    thinking_budget = None
+                    if batch_workload > 10:
+                        # Scale: base 8k + 1k per workload point above 10, max 16k
+                        base_budget = self.settings.thinking.budget_tokens
+                        thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
+                        logger.info(f"Heavy batch (workload={batch_workload}), thinking budget: {thinking_budget}")
+
                     try:
-                        output = await self._run_claude_cli(prompt, on_chunk=on_chunk_claude)
+                        output = await self._run_claude_cli(prompt, on_chunk=on_chunk_claude, thinking_budget=thinking_budget)
                         if output is None:
                             logger.error(f"Claude CLI ({batch_id}) failed: returned None")
                             # Mark batch as failed
@@ -591,6 +600,16 @@ class FixOrchestrator:
                     )
                 )
 
+                # ========== INCREMENTAL S3 SAVE ==========
+                # Save logs after each iteration so we have partial data if session crashes
+                await self._save_fix_log_to_s3(
+                    session_id, result, issues, last_gemini_output,
+                    claude_prompts=claude_prompts, gemini_prompt=gemini_prompt,
+                    batch_results=batch_results,
+                    current_iteration=iteration,
+                    is_partial=True,  # Still in progress
+                )
+
                 if all_passed_this_iteration:
                     await safe_emit(
                         FixProgressEvent(
@@ -685,57 +704,51 @@ class FixOrchestrator:
             commit_sha, modified_files, _ = await self._get_git_info()
             fix_explanation = self._build_fix_explanation(successful_issues, last_gemini_output)
 
-            # CRITICAL: Only mark issues as COMPLETED if their file was actually committed
-            # The commit is sacred - no commit = no completion
-            actually_fixed_count = 0
+            # Count issues based on batch_results (Gemini approval is the source of truth)
+            # If Gemini approved a batch (score >= threshold), those issues are COMPLETED
+            # This is more reliable than file-path matching which can fail with path format differences
+            actually_fixed_count = len(successful_issues)
+            failed_count = len(failed_issues)
 
-            # Create IssueFixResult for SUCCESSFUL issues (only if file in commit)
+            logger.info(f"Fix results: {actually_fixed_count} successful, {failed_count} failed (based on batch_results)")
+            logger.info(f"Modified files in commit: {modified_files}")
+
+            # Create IssueFixResult for SUCCESSFUL issues (from passed batches)
             for issue in successful_issues:
-                # Check if this issue's file was actually modified in the commit
                 issue_file = str(issue.file)
-                file_in_commit = any(
-                    issue_file.endswith(mod_file) or mod_file.endswith(issue_file)
-                    for mod_file in modified_files
-                )
+                # Get diff for display (best effort, doesn't affect status)
+                fix_code = await self._get_diff_for_file(issue_file)
 
-                if file_in_commit and commit_sha:
-                    # File was committed - mark as COMPLETED
-                    fix_code = await self._get_diff_for_file(issue_file)
-                    issue_result = IssueFixResult(
-                        issue_id=issue.id,
-                        issue_code=str(issue.issue_code),
-                        status=FixStatus.COMPLETED,
-                        commit_sha=commit_sha,
-                        commit_message=f"[FIX] {issue_codes}",
-                        changes_made=f"Fixed {issue.title}",
-                        fix_code=fix_code,
-                        fix_explanation=fix_explanation,
-                        fix_files_modified=modified_files,
-                        started_at=result.started_at,
-                        completed_at=datetime.utcnow(),
-                    )
-                    actually_fixed_count += 1
-                else:
-                    # File NOT in commit - mark as FAILED (CLI crashed before commit)
-                    logger.warning(f"Issue {issue.issue_code} file not in commit, marking as FAILED")
-                    issue_result = IssueFixResult(
-                        issue_id=issue.id,
-                        issue_code=str(issue.issue_code),
-                        status=FixStatus.FAILED,
-                        error=f"File {issue_file} not found in commit (CLI may have crashed before git add)",
-                        started_at=result.started_at,
-                        completed_at=datetime.utcnow(),
-                    )
+                issue_result = IssueFixResult(
+                    issue_id=issue.id,
+                    issue_code=str(issue.issue_code),
+                    status=FixStatus.COMPLETED,
+                    commit_sha=commit_sha,
+                    commit_message=f"[FIX] {issue_codes}",
+                    changes_made=f"Fixed {issue.title}",
+                    fix_code=fix_code,
+                    fix_explanation=fix_explanation,
+                    fix_files_modified=modified_files,
+                    started_at=result.started_at,
+                    completed_at=datetime.utcnow(),
+                )
                 result.results.append(issue_result)
 
-            # Create FAILED results for issues where CLI crashed
+            # Create FAILED results for issues from batches that didn't pass Gemini review
             for issue in failed_issues:
-                logger.warning(f"Issue {issue.issue_code} CLI failed, marking as FAILED")
+                # Find which batch this issue was in and get the score
+                batch_info = ""
+                for batch_id, data in batch_results.items():
+                    if issue in data.get("issues", []):
+                        batch_info = f" (batch {batch_id}, score: {data.get('score', 'N/A')})"
+                        break
+
+                logger.warning(f"Issue {issue.issue_code} batch failed Gemini review{batch_info}")
                 issue_result = IssueFixResult(
                     issue_id=issue.id,
                     issue_code=str(issue.issue_code),
                     status=FixStatus.FAILED,
-                    error="Claude CLI process failed (possible macOS file watcher limit - EOPNOTSUPP)",
+                    error=f"Batch did not pass Gemini review (score < {self.satisfaction_threshold}){batch_info}",
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                 )
@@ -743,23 +756,28 @@ class FixOrchestrator:
 
             result.status = FixStatus.COMPLETED if actually_fixed_count > 0 else FixStatus.FAILED
             result.issues_fixed = actually_fixed_count
+            result.issues_failed = failed_count
             result.completed_at = datetime.utcnow()
 
-            failed_count = len(issues) - actually_fixed_count
             await safe_emit(
                 FixProgressEvent(
                     type=FixEventType.FIX_SESSION_COMPLETED,
                     session_id=session_id,
                     branch_name=branch_name,
                     issues_fixed=result.issues_fixed,
-                    message=f"Fixed {actually_fixed_count}/{len(issues)} issues ({failed_count} failed - not in commit)",
+                    issues_failed=result.issues_failed,
+                    message=f"Fixed {actually_fixed_count}/{len(issues)} issues" + (f" ({failed_count} failed Gemini review)" if failed_count > 0 else ""),
                 )
             )
 
             # Save fix log to S3 for debugging (10 day retention)
+            # Final save with is_partial=False (session completed)
             await self._save_fix_log_to_s3(
                 session_id, result, issues, last_gemini_output,
-                claude_prompts=claude_prompts, gemini_prompt=gemini_prompt
+                claude_prompts=claude_prompts, gemini_prompt=gemini_prompt,
+                batch_results=batch_results,
+                current_iteration=None,  # Completed
+                is_partial=False,  # Session complete
             )
 
             return result
@@ -780,13 +798,20 @@ class FixOrchestrator:
 
             return result
 
-    def _build_review_prompt_per_batch(self, issues: list[Issue], batch_type: str, batch_idx: int) -> str:
+    def _build_review_prompt_per_batch(
+        self,
+        issues: list[Issue],
+        batch_type: str,
+        batch_idx: int,
+        workspace_path: str | None = None,
+    ) -> str:
         """Build review prompt for a single batch with per-issue scoring.
 
         Args:
             issues: Issues in this batch
             batch_type: "BE" or "FE"
             batch_idx: Batch number (1-indexed)
+            workspace_path: Monorepo workspace restriction (e.g., "packages/frontend")
 
         Returns:
             Prompt asking Gemini to score EACH issue individually
@@ -812,9 +837,22 @@ class FixOrchestrator:
         issues_section = "\n\n".join(issue_details)
         issue_codes_list = ", ".join(issue_codes)
 
+        # Add workspace scope check if set
+        workspace_check = ""
+        if workspace_path:
+            workspace_check = f"""
+## ⚠️ WORKSPACE SCOPE CHECK
+
+This is a MONOREPO with restricted workspace: `{workspace_path}/`
+
+**CRITICAL**: When reviewing `git diff`, verify that ALL modified files are within the workspace scope.
+If any files outside `{workspace_path}/` were modified, this is a CRITICAL failure - score 0.
+
+"""
+
         task = f"""
 # Task: Review Batch {batch_type}-{batch_idx} Fixes
-
+{workspace_check}
 ## Issues in This Batch
 
 {issues_section}
@@ -1032,14 +1070,29 @@ The reviewer found issues with the previous fix. Address this feedback:
         prompt: str,
         timeout: int = CLAUDE_CLI_TIMEOUT,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
+        thinking_budget: int | None = None,
     ) -> str | None:
-        """Run Claude CLI with prompt and optional streaming callback."""
+        """Run Claude CLI with prompt and optional streaming callback.
+
+        Args:
+            prompt: The prompt to send to Claude
+            timeout: Timeout in seconds
+            on_chunk: Callback for streaming chunks
+            thinking_budget: Override thinking budget (None = use default from config)
+        """
         try:
             # Build environment with API key from AWS Secrets Manager
             env = os.environ.copy()
             api_key = get_anthropic_api_key()
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
+
+            # Set thinking budget via environment variable
+            # This controls how many tokens Claude can use for internal reasoning
+            if self.settings.thinking.enabled:
+                budget = thinking_budget or self.settings.thinking.budget_tokens
+                env["MAX_THINKING_TOKENS"] = str(budget)
+                logger.info(f"Extended thinking enabled with budget: {budget} tokens")
 
             # Use Opus model from settings
             model = self.settings.agents.claude_model
@@ -1053,14 +1106,12 @@ The reviewer found issues with the previous fix. Address this feedback:
                 model,
                 "--output-format",
                 "stream-json",
-                "--verbose",
             ]
 
             # Add extended thinking settings if enabled
             if self.settings.thinking.enabled:
                 thinking_settings = {"alwaysThinkingEnabled": True}
                 args.extend(["--settings", json.dumps(thinking_settings)])
-                logger.info("Extended thinking enabled for Claude CLI")
 
             process = await asyncio.create_subprocess_exec(
                 *args,
@@ -1500,12 +1551,27 @@ The reviewer found issues with the previous fix. Address this feedback:
         gemini_output: str | None,
         claude_prompts: list[dict] | None = None,
         gemini_prompt: str | None = None,
+        # Incremental save params
+        batch_results: dict[str, dict] | None = None,
+        current_iteration: int | None = None,
+        is_partial: bool = False,
     ) -> str | None:
         """
         Save fix session log to S3 for debugging.
 
         Path: s3://turbowrap-thinking/fix-logs/{date}/{session_id}.json
         Retention: 10 days (configured via S3 lifecycle)
+
+        Args:
+            session_id: Fix session ID
+            result: Current FixSessionResult (may be partial)
+            issues: All issues being fixed
+            gemini_output: Last Gemini review output
+            claude_prompts: Claude prompts sent (for debugging)
+            gemini_prompt: Gemini prompt template
+            batch_results: Current batch results state (for incremental saves)
+            current_iteration: Current iteration number (for incremental saves)
+            is_partial: True if this is an incremental save (session still in progress)
 
         Returns:
             S3 URL if saved, None if failed
@@ -1525,6 +1591,9 @@ The reviewer found issues with the previous fix. Address this feedback:
                 "repo_path": str(self.repo_path),
                 "max_iterations": self.max_iterations,
                 "satisfaction_threshold": self.satisfaction_threshold,
+                # Incremental save metadata
+                "is_partial": is_partial,
+                "current_iteration": current_iteration,
                 "issues": [
                     {
                         "id": issue.id,
@@ -1551,6 +1620,16 @@ The reviewer found issues with the previous fix. Address this feedback:
                 # Prompts sent to CLIs (for debugging)
                 "claude_prompts": claude_prompts or [],
                 "gemini_prompt": gemini_prompt,
+                # Batch results for incremental saves (shows per-batch status)
+                "batch_results": {
+                    batch_id: {
+                        "passed": data["passed"],
+                        "score": data["score"],
+                        "failed_issues": data.get("failed_issues", []),
+                        "issue_codes": [i.issue_code for i in data.get("issues", [])],
+                    }
+                    for batch_id, data in (batch_results or {}).items()
+                } if batch_results else None,
             }
 
             # Upload to S3

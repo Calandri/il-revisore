@@ -27,6 +27,7 @@ from turbowrap.fix import (
     FixOrchestrator,
     FixProgressEvent,
     FixRequest,
+    ScopeValidationError,
 )
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
@@ -565,6 +566,25 @@ async def start_fix(
                     },
                 )
 
+            except ScopeValidationError as e:
+                # Workspace scope violation - files modified outside allowed workspace
+                logger.error(f"Workspace scope violation: {e}")
+                # Reset all issues to open
+                for issue in issues:
+                    db_issue = db.query(Issue).filter(Issue.id == issue.id).first()
+                    if db_issue and db_issue.status == IssueStatus.IN_PROGRESS.value:
+                        db_issue.status = IssueStatus.OPEN.value
+                        db_issue.resolution_note = f"Blocked: files outside workspace '{e.workspace_path}'"
+                db.commit()
+                # Mark idempotency entry as failed
+                _idempotency_store.update_status(idempotency_key, "failed")
+                await event_queue.put(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_SESSION_ERROR,
+                        error=f"🚫 WORKSPACE SCOPE VIOLATION",
+                        message=f"Modified files outside '{e.workspace_path}': {', '.join(e.files_outside_scope[:3])}",
+                    )
+                )
             except Exception as e:
                 logger.exception("Fix session error")
                 # Reset all issues to open on error
@@ -917,4 +937,79 @@ async def merge_and_push(
         raise HTTPException(status_code=504, detail="Merge operation timed out")
     except Exception as e:
         logger.exception("Merge failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class OpenPRRequest(BaseModel):
+    """Request to open a PR for review."""
+
+    repository_id: str = Field(..., description="Repository ID")
+    branch_name: str = Field(..., description="Branch name to create PR from")
+    task_id: Optional[str] = Field(default=None, description="Task ID to get fixed issues")
+
+
+@router.post("/open-pr")
+async def open_pull_request(
+    request: OpenPRRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Open a PR on GitHub for the fix branch.
+
+    Creates a PR with:
+    - Title: "TurboWrap Fixes: <branch_name>"
+    - Body: List of fixed issues from the task
+    """
+    from turbowrap.review.integrations.github import GitHubClient
+
+    # Verify repository
+    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    if not repo.url:
+        raise HTTPException(status_code=400, detail="Repository URL not configured")
+
+    # Get fixed issues for PR body
+    fixed_issues = []
+    if request.task_id:
+        issues = (
+            db.query(Issue)
+            .filter(
+                Issue.task_id == request.task_id,
+                Issue.status == IssueStatus.RESOLVED.value,
+            )
+            .all()
+        )
+        fixed_issues = [f"- [{i.issue_code}] {i.title}" for i in issues]
+
+    # Build PR title and body
+    pr_title = f"TurboWrap Fixes: {request.branch_name}"
+    pr_body = "## Fixed Issues\n\n"
+    if fixed_issues:
+        pr_body += "\n".join(fixed_issues)
+    else:
+        pr_body += "_No issues tracked_"
+    pr_body += "\n\n---\n_Created by TurboWrap_"
+
+    try:
+        github = GitHubClient()
+        result = github.create_pull_request(
+            repo_url=repo.url,
+            branch_name=request.branch_name,
+            title=pr_title,
+            body=pr_body,
+        )
+
+        logger.info(f"PR created: {result['url']}")
+
+        return {
+            "success": True,
+            "pr_url": result["url"],
+            "pr_number": result["number"],
+            "message": f"PR #{result['number']} created successfully!",
+        }
+
+    except Exception as e:
+        logger.exception("Failed to create PR")
         raise HTTPException(status_code=500, detail=str(e))

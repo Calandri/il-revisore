@@ -39,6 +39,12 @@ class RepoCreate(BaseModel):
         min_length=1,
         description="GitHub token for private repositories (overrides env GITHUB_TOKEN)",
     )
+    workspace_path: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Monorepo workspace path (e.g., 'packages/frontend'). "
+        "If set, fix/lint operations are scoped to this folder.",
+    )
 
     @field_validator("url")
     @classmethod
@@ -79,6 +85,9 @@ class RepoResponse(BaseModel):
     )
     project_name: str | None = Field(
         default=None, description="Project name to group related repositories"
+    )
+    workspace_path: str | None = Field(
+        default=None, description="Monorepo workspace path (e.g., 'packages/frontend')"
     )
     last_synced_at: datetime | None = Field(default=None, description="Last sync timestamp")
     metadata: dict[str, Any] | None = Field(
@@ -123,6 +132,7 @@ class RepoResponse(BaseModel):
                 "status": obj.status,
                 "repo_type": obj.repo_type,
                 "project_name": getattr(obj, "project_name", None),
+                "workspace_path": getattr(obj, "workspace_path", None),
                 "last_synced_at": obj.last_synced_at,
                 "metadata": obj.metadata_,  # Map metadata_ to metadata
                 "created_at": obj.created_at,

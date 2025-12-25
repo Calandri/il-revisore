@@ -221,7 +221,6 @@ class ClaudeEvaluator:
                 model,
                 "--output-format",
                 "stream-json",
-                "--verbose",
             ]
 
             # Add extended thinking if enabled

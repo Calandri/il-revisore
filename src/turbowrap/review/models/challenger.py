@@ -55,7 +55,7 @@ class MissedIssue(BaseModel):
 
     type: str = Field(..., description="Issue type (security, performance, etc.)")
     description: str = Field(..., description="Description of the missed issue")
-    file: str = Field(..., description="File where issue exists")
+    file: Optional[str] = Field(None, description="File where issue exists")
     lines: Optional[str] = Field(None, description="Line range (e.g., '45-62')")
     why_important: str = Field(..., description="Why this issue matters")
     suggested_severity: Optional[str] = Field(
@@ -116,8 +116,9 @@ class ChallengerFeedback(BaseModel):
         if self.missed_issues:
             sections.append("## Missed Issues to Address\n")
             for i, missed in enumerate(self.missed_issues, 1):
+                file_info = f" in `{missed.file}`" if missed.file else ""
                 sections.append(
-                    f"{i}. **{missed.type.upper()}** in `{missed.file}`"
+                    f"{i}. **{missed.type.upper()}**{file_info}"
                     f"{f' (lines {missed.lines})' if missed.lines else ''}\n"
                     f"   - {missed.description}\n"
                     f"   - Why important: {missed.why_important}\n"

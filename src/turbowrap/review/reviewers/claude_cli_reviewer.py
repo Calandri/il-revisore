@@ -526,7 +526,6 @@ After writing, confirm with: "Review saved to {output_file}"
                 model,
                 "--output-format",
                 "stream-json",
-                "--verbose",  # Required for stream-json
             ]
 
             # Add extended thinking settings if enabled
@@ -799,6 +798,10 @@ After writing, confirm with: "Review saved to {output_file}"
 
             # Build ReviewOutput from parsed data
             summary_data = data.get("summary", {})
+            # Validate summary is a dict
+            if not isinstance(summary_data, dict):
+                logger.warning(f"[CLAUDE PARSE] Invalid summary type: {type(summary_data).__name__}, using defaults")
+                summary_data = {}
 
             # Normalize score: Claude sometimes returns 0-100 instead of 0-10
             raw_score = summary_data.get("score", 10.0)
@@ -842,6 +845,10 @@ After writing, confirm with: "Review saved to {output_file}"
             # Parse checklists
             checklists = {}
             for category, checks in data.get("checklists", {}).items():
+                # Validate checks is a dict (Claude sometimes returns malformed data)
+                if not isinstance(checks, dict):
+                    logger.warning(f"[CLAUDE PARSE] Skipping invalid checklist '{category}': expected dict, got {type(checks).__name__}")
+                    continue
                 checklists[category] = ChecklistResult(
                     passed=checks.get("passed", 0),
                     failed=checks.get("failed", 0),

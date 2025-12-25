@@ -89,5 +89,13 @@ sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN fix_session_id VARCHAR(36);" 2
     echo "  - Added fix_session_id to issues" || \
     echo "  - issues.fix_session_id already exists"
 
+# Migration 006: Add workspace_path for monorepo support
+echo ""
+echo "Migration 006: Adding workspace_path for monorepo support..."
+
+sqlite3 "$DB_PATH" "ALTER TABLE repositories ADD COLUMN workspace_path VARCHAR(512);" 2>/dev/null && \
+    echo "  - Added workspace_path to repositories" || \
+    echo "  - repositories.workspace_path already exists"
+
 echo ""
 echo "Migrations complete!"

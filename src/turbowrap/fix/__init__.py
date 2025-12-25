@@ -12,6 +12,7 @@ from turbowrap.fix.models import (
     FixSessionResult,
     FixStatus,
     IssueFixResult,
+    ScopeValidationError,
 )
 from turbowrap.fix.orchestrator import FixOrchestrator
 
@@ -25,4 +26,5 @@ __all__ = [
     "FixProgressEvent",
     "FixSessionResult",
     "IssueFixResult",
+    "ScopeValidationError",
 ]

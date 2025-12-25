@@ -31,6 +31,35 @@
 
             <!-- Actions -->
             <div class="flex items-center gap-2">
+                <!-- Workspace badge (monorepo) -->
+                {% if repo.workspace_path %}
+                <span class="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
+                      title="Workspace: {{ repo.workspace_path }}">
+                    <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    {{ repo.workspace_path }}
+                </span>
+                {% endif %}
+
+                <!-- Evaluation score badge (clickable) -->
+                {% if evaluations and repo.id in evaluations %}
+                {% set eval = evaluations[repo.id].evaluation %}
+                {% set score = eval.overall_score %}
+                <button @click="$dispatch('show-evaluation', { repoId: '{{ repo.id }}', repoName: '{{ repo.name }}', taskId: '{{ evaluations[repo.id].task_id }}' })"
+                        class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full cursor-pointer transition-all hover:scale-105
+                        {% if score >= 75 %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50
+                        {% elif score >= 50 %}bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 hover:bg-yellow-200 dark:hover:bg-yellow-900/50
+                        {% else %}bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50{% endif %}"
+                        title="Clicca per vedere l'analisi completa">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                    {{ score }}/100
+                </button>
+                {% endif %}
+
                 <!-- Status badge -->
                 <span class="px-2 py-1 text-xs rounded-full
                     {% if repo.status == 'active' %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400

@@ -144,13 +144,21 @@ class RepoManager:
         # 3. Fall back to environment variable
         return self._settings.agents.github_token
 
-    def clone(self, url: str, branch: str = "main", token: str | None = None) -> Repository:
+    def clone(
+        self,
+        url: str,
+        branch: str = "main",
+        token: str | None = None,
+        workspace_path: str | None = None,
+    ) -> Repository:
         """Clone a new repository.
 
         Args:
             url: GitHub repository URL.
             branch: Branch to clone.
             token: Optional GitHub token for private repos.
+            workspace_path: Monorepo workspace path (e.g., 'packages/frontend').
+                           Allows same URL to be cloned multiple times with different workspaces.
 
         Returns:
             Created Repository record.
@@ -158,10 +166,15 @@ class RepoManager:
         # Parse URL
         repo_info = parse_github_url(url)
 
-        # Check if already exists
-        existing = self.db.query(Repository).filter(
-            Repository.url == repo_info.url
-        ).first()
+        # Check if already exists with same URL AND workspace_path
+        # This allows multiple clones of same repo with different workspaces
+        query = self.db.query(Repository).filter(Repository.url == repo_info.url)
+        if workspace_path:
+            query = query.filter(Repository.workspace_path == workspace_path)
+        else:
+            query = query.filter(Repository.workspace_path.is_(None))
+
+        existing = query.first()
 
         if existing:
             return self.sync(existing.id, token)
@@ -181,13 +194,19 @@ class RepoManager:
         fe_stats = _calculate_token_totals(local_path, fe_files)
 
         # Create DB record with detailed stats
+        # If workspace_path is set, append it to the name for display
+        display_name = repo_info.full_name
+        if workspace_path:
+            display_name = f"{repo_info.full_name} [{workspace_path}]"
+
         repo = Repository(
-            name=repo_info.full_name,
+            name=display_name,
             url=repo_info.url,
             local_path=str(local_path),
             default_branch=branch,
             status="active",
             repo_type=repo_type,
+            workspace_path=workspace_path,
             last_synced_at=datetime.utcnow(),
             metadata_={
                 "be_files": be_stats,
