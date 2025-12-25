@@ -10,15 +10,24 @@
             <h1 class="text-3xl font-bold">Linear Issues</h1>
             <p class="text-gray-500 dark:text-gray-400 mt-1">Gestione issue Linear con analisi AI</p>
         </div>
-        <button @click="syncFromLinear()"
-                :disabled="isSyncing"
-                class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50">
-            <svg class="w-5 h-5" :class="isSyncing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-            </svg>
-            Sync from Linear
-        </button>
+        <div class="flex items-center gap-2">
+            <button @click="openCreateModal()"
+                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Create Issue
+            </button>
+            <button @click="syncFromLinear()"
+                    :disabled="isSyncing"
+                    class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50">
+                <svg class="w-5 h-5" :class="isSyncing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Sync from Linear
+            </button>
+        </div>
     </div>
 
     <!-- State Tabs -->
@@ -319,6 +328,316 @@
         </div>
     </div>
 
+    <!-- Create Issue Modal (3-Step Wizard) -->
+    <div x-show="createModal.show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="closeCreateModal()">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <!-- Header with Progress -->
+            <div class="p-6 border-b dark:border-gray-700 shrink-0">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold">Create New Linear Issue</h2>
+                    <button @click="closeCreateModal()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Progress Indicator -->
+                <div class="flex items-center gap-2">
+                    <div class="flex items-center">
+                        <div :class="createModal.step >= 1 ? 'bg-indigo-500' : 'bg-gray-300'"
+                             class="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold">1</div>
+                        <span class="ml-2 text-sm" :class="createModal.step === 1 ? 'text-indigo-500 font-semibold' : 'text-gray-500'">Details</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-gray-300 mx-2"></div>
+                    <div class="flex items-center">
+                        <div :class="createModal.step >= 2 ? 'bg-indigo-500' : 'bg-gray-300'"
+                             class="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold">2</div>
+                        <span class="ml-2 text-sm" :class="createModal.step === 2 ? 'text-indigo-500 font-semibold' : 'text-gray-500'">AI Analysis</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-gray-300 mx-2"></div>
+                    <div class="flex items-center">
+                        <div :class="createModal.step >= 3 ? 'bg-indigo-500' : 'bg-gray-300'"
+                             class="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold">3</div>
+                        <span class="ml-2 text-sm" :class="createModal.step === 3 ? 'text-indigo-500 font-semibold' : 'text-gray-500'">Creating</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto p-6">
+                <!-- Step 1: Form -->
+                <div x-show="createModal.step === 1" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Title *</label>
+                        <input type="text"
+                               x-model="createModal.title"
+                               placeholder="Fix login button UI"
+                               class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Description</label>
+                        <textarea x-model="createModal.description"
+                                  rows="4"
+                                  placeholder="Il bottone di login non risponde al click su mobile..."
+                                  class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Figma Link</label>
+                            <input type="url"
+                                   x-model="createModal.figmaLink"
+                                   placeholder="https://figma.com/file/..."
+                                   class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Website Link</label>
+                            <input type="url"
+                                   x-model="createModal.websiteLink"
+                                   placeholder="https://app.example.com/..."
+                                   class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <!-- Assignee, Priority, Due Date -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Assignee</label>
+                            <select x-model="createModal.assigneeId"
+                                    class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                <option value="">Unassigned</option>
+                                <template x-for="user in linearUsers" :key="user.id">
+                                    <option :value="user.id" x-text="user.name"></option>
+                                </template>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Priority</label>
+                            <select x-model="createModal.priority"
+                                    class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                <option value="0">No priority</option>
+                                <option value="1">🔴 Urgent</option>
+                                <option value="2">🟠 High</option>
+                                <option value="3">🟡 Normal</option>
+                                <option value="4">⚪ Low</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Due Date</label>
+                            <input type="date"
+                                   x-model="createModal.dueDate"
+                                   class="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Screenshots (Optional)</label>
+
+                        <!-- Drag & Drop Zone -->
+                        <div @click="$refs.screenshotInput.click()"
+                             @drop.prevent="handleScreenshotDrop($event)"
+                             @dragover.prevent="createModal.isDragging = true"
+                             @dragleave.prevent="createModal.isDragging = false"
+                             @dragend.prevent="createModal.isDragging = false"
+                             :class="createModal.isDragging ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400'"
+                             class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all">
+
+                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                <span class="font-semibold text-indigo-600 dark:text-indigo-400">Click to upload</span>,
+                                drag and drop, or <kbd class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">Ctrl+V</kbd> to paste
+                            </p>
+                            <p class="text-xs text-gray-500 mt-1">PNG, JPG, WEBP up to 10MB</p>
+
+                            <!-- Hidden file input -->
+                            <input type="file"
+                                   x-ref="screenshotInput"
+                                   multiple
+                                   accept="image/*"
+                                   @change="handleScreenshotUpload($event)"
+                                   class="hidden">
+                        </div>
+
+                        <!-- Screenshot Previews -->
+                        <div x-show="createModal.screenshots.length > 0" class="mt-4 grid grid-cols-3 gap-3">
+                            <template x-for="(screenshot, index) in createModal.screenshots" :key="index">
+                                <div class="relative group">
+                                    <img :src="screenshot.preview"
+                                         :alt="'Screenshot ' + (index + 1)"
+                                         class="w-full h-28 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-700">
+
+                                    <!-- Filename badge -->
+                                    <div class="absolute bottom-1 left-1 right-1 bg-black/60 text-white text-xs px-2 py-1 rounded truncate">
+                                        <span x-text="screenshot.file.name"></span>
+                                    </div>
+
+                                    <!-- Remove button -->
+                                    <button @click="removeScreenshot(index)"
+                                            class="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- Screenshots count -->
+                        <p x-show="createModal.screenshots.length > 0"
+                           class="mt-2 text-sm text-gray-500">
+                            <span x-text="createModal.screenshots.length"></span> screenshot<span x-show="createModal.screenshots.length > 1">s</span> uploaded
+                        </p>
+                    </div>
+
+                    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <p class="text-sm text-blue-800 dark:text-blue-300">
+                            💡 <strong>Tip:</strong> Upload screenshots for AI-powered visual analysis with Gemini Vision.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Step 2: AI Analysis + Questions -->
+                <div x-show="createModal.step === 2" class="space-y-6">
+                    <!-- Auto-analyzing info -->
+                    <div x-show="createModal.analyzing" class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p class="text-sm font-medium text-indigo-700 dark:text-indigo-300">Analisi AI in corso...</p>
+                        </div>
+                    </div>
+
+                    <!-- Debug Logs -->
+                    <div x-show="createModal.debugLogs.length > 0" class="bg-gray-900 dark:bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-64">
+                        <template x-for="(log, index) in createModal.debugLogs" :key="index">
+                            <div class="text-gray-300 dark:text-gray-400 mb-1" x-text="log"></div>
+                        </template>
+                    </div>
+
+                    <!-- Gemini Insights -->
+                    <div x-show="createModal.geminiInsights" class="space-y-2">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <svg class="w-5 h-5 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                            </svg>
+                            Gemini Vision Analysis
+                        </h3>
+                        <div class="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                            <div class="text-sm prose prose-sm dark:prose-invert max-w-none" x-html="renderMarkdown(createModal.geminiInsights)"></div>
+                        </div>
+                    </div>
+
+                    <!-- Claude Questions -->
+                    <div x-show="createModal.questions.length > 0" class="space-y-4">
+                        <h3 class="font-semibold flex items-center gap-2">
+                            <svg class="w-5 h-5 text-indigo-500" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                            </svg>
+                            Clarifying Questions (<span x-text="createModal.questions.length"></span>)
+                        </h3>
+
+                        <template x-for="(q, index) in createModal.questions" :key="q.id">
+                            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <label class="block font-medium mb-1">
+                                    <span x-text="q.id"></span>. <span x-text="q.question"></span>
+                                </label>
+                                <p class="text-xs text-gray-500 mb-2" x-text="'Why: ' + q.why"></p>
+                                <textarea x-model="createModal.answers[q.id]"
+                                          rows="2"
+                                          placeholder="Your answer..."
+                                          class="w-full px-3 py-2 bg-white dark:bg-gray-800 rounded-lg focus:ring-2 focus:ring-indigo-500"></textarea>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Step 3: Creating (SSE Progress) -->
+                <div x-show="createModal.step === 3" class="space-y-4">
+                    <div x-show="createModal.creating" class="space-y-3">
+                        <template x-for="(msg, index) in createModal.progressMsgs" :key="index">
+                            <div class="flex items-start gap-3">
+                                <div class="mt-1">
+                                    <svg class="w-5 h-5 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </div>
+                                <p class="text-sm" x-text="msg"></p>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div x-show="createModal.done" class="text-center space-y-4">
+                        <div class="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto">
+                            <svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-semibold">Issue Created Successfully!</h3>
+                        <p class="text-gray-600 dark:text-gray-400">
+                            Issue <span class="font-mono font-bold text-indigo-500" x-text="createModal.createdId"></span> has been created.
+                        </p>
+                        <a :href="createModal.createdUrl"
+                           target="_blank"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600">
+                            View on Linear
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Buttons -->
+            <div class="p-4 border-t dark:border-gray-700 flex justify-between gap-2 shrink-0">
+                <button x-show="createModal.step > 1 && !createModal.creating && !createModal.done"
+                        @click="createModal.step--"
+                        class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">
+                    ← Back
+                </button>
+                <div class="flex gap-2 ml-auto">
+                    <button @click="closeCreateModal()"
+                            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">
+                        <span x-show="!createModal.done">Cancel</span>
+                        <span x-show="createModal.done">Close</span>
+                    </button>
+                    <button x-show="createModal.step === 1"
+                            @click="goToStep2()"
+                            :disabled="!createModal.title"
+                            class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                            Next: AI Analysis →
+                    </button>
+                    <button x-show="createModal.step === 2 && createModal.analyzed"
+                            @click="goToStep3()"
+                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                            Create Issue →
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Link Repository Modal -->
     <div x-show="linkRepoModal.show"
          x-transition:enter="transition ease-out duration-300"
@@ -471,11 +790,43 @@ function linearIssuesApp() {
             issue: null,
             selectedRepo: ''
         },
+        createModal: {
+            show: false,
+            step: 1,
+            title: '',
+            description: '',
+            figmaLink: '',
+            websiteLink: '',
+            screenshots: [],
+            isDragging: false,
+            geminiInsights: '',
+            questions: [],
+            answers: {},
+            tempSessionId: null,
+            analyzing: false,
+            analyzed: false,
+            creating: false,
+            done: false,
+            progressMsgs: [],
+            debugLogs: [],  // Debug logs for analysis
+            createdId: null,
+            createdUrl: null,
+            // Metadata fields
+            assigneeId: '',
+            priority: 0,
+            dueDate: '',
+            detectedRepo: null,  // Auto-detected repository
+        },
+        linearUsers: [],  // Linear users for assignee dropdown
 
         async init() {
             await this.loadIssues();
+            await this.loadLinearUsers();
             // Poll every 15s to update
             setInterval(() => this.loadIssues(), 15000);
+
+            // CTRL+V listener for screenshot paste
+            document.addEventListener('paste', (e) => this.handlePaste(e));
         },
 
         get filteredIssues() {
@@ -507,6 +858,51 @@ function linearIssuesApp() {
             }
         },
 
+        async loadLinearUsers() {
+            try {
+                const res = await fetch('/api/linear/users');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.linearUsers = data.users || [];
+                }
+            } catch (error) {
+                console.error('Error loading Linear users:', error);
+            }
+        },
+
+        renderMarkdown(text) {
+            if (!text) return '';
+
+            // Escape HTML
+            let html = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            // Headers (### , ## , #)
+            html = html.replace(/^### (.+)$/gm, '<h3 class="text-base font-bold mt-3 mb-2">$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-4 mb-2">$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-4 mb-3">$1</h1>');
+
+            // Bold (**text**)
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+
+            // Italic (*text*)
+            html = html.replace(/\*(.+?)\*/g, '<em class="italic">$1</em>');
+
+            // Code inline (`code`)
+            html = html.replace(/`(.+?)`/g, '<code class="bg-purple-100 dark:bg-purple-900/40 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
+
+            // Lists (unordered)
+            html = html.replace(/^\* (.+)$/gm, '<li class="ml-4">• $1</li>');
+            html = html.replace(/(<li class="ml-4">• .+<\/li>\n?)+/g, '<ul class="space-y-1 my-2">$&</ul>');
+
+            // Newlines to <br> for remaining lines
+            html = html.replace(/\n/g, '<br>');
+
+            return html;
+        },
+
         async syncFromLinear() {
             this.isSyncing = true;
             try {
@@ -515,12 +911,26 @@ function linearIssuesApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ limit: 100 })
                 });
+
                 const result = await res.json();
-                alert(`Synced ${result.synced} new, updated ${result.updated}`);
+
+                if (!res.ok) {
+                    // Handle HTTP error responses
+                    throw new Error(result.detail || result.message || 'Sync failed');
+                }
+
+                // Show detailed success message
+                const msg = `✅ Sync completato!\n\n` +
+                            `• ${result.synced} nuove issue importate\n` +
+                            `• ${result.updated} issue aggiornate\n` +
+                            `• ${result.converted_to_triage || 0} convertite a Triage\n` +
+                            `• ${result.total} issue totali trovate su Linear`;
+                alert(msg);
+
                 await this.loadIssues();
             } catch (error) {
                 console.error('Sync error:', error);
-                alert('Sync failed: ' + error.message);
+                alert('❌ Sync fallito:\n\n' + error.message);
             }
             this.isSyncing = false;
         },
@@ -695,6 +1105,336 @@ function linearIssuesApp() {
 
         viewIssue(issue) {
             this.selectedIssue = issue;
+        },
+
+        // === Create Issue Modal Functions ===
+
+        openCreateModal() {
+            this.createModal = {
+                show: true,
+                step: 1,
+                title: '',
+                description: '',
+                figmaLink: '',
+                websiteLink: '',
+                screenshots: [],
+                isDragging: false,
+                geminiInsights: '',
+                questions: [],
+                answers: {},
+                tempSessionId: null,
+                analyzing: false,
+                analyzed: false,
+                creating: false,
+                done: false,
+                progressMsgs: [],
+                debugLogs: [],
+                createdId: null,
+                createdUrl: null,
+                // Metadata fields
+                assigneeId: '',
+                priority: 0,
+                dueDate: '',
+                detectedRepo: null,
+            };
+        },
+
+        closeCreateModal() {
+            this.createModal.show = false;
+            if (this.createModal.done) {
+                this.loadIssues();
+            }
+        },
+
+        handleScreenshotUpload(event) {
+            const files = event.target.files;
+            this.processScreenshotFiles(files);
+            // Clear the input to allow re-uploading the same file
+            event.target.value = '';
+        },
+
+        handleScreenshotDrop(event) {
+            this.createModal.isDragging = false;
+            const files = event.dataTransfer.files;
+            this.processScreenshotFiles(files);
+        },
+
+        processScreenshotFiles(files) {
+            // Filter only image files
+            const imageFiles = Array.from(files).filter(file =>
+                file.type.startsWith('image/')
+            );
+
+            if (imageFiles.length === 0) {
+                alert('Please drop only image files (PNG, JPG, WEBP, etc.)');
+                return;
+            }
+
+            // Process each image file
+            for (let i = 0; i < imageFiles.length; i++) {
+                const file = imageFiles[i];
+
+                // Check file size (max 10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                    alert(`File "${file.name}" is too large. Maximum size is 10MB.`);
+                    continue;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    this.createModal.screenshots.push({
+                        file: file,
+                        preview: e.target.result
+                    });
+                };
+                reader.readAsDataURL(file);
+            }
+        },
+
+        removeScreenshot(index) {
+            this.createModal.screenshots.splice(index, 1);
+        },
+
+        handlePaste(event) {
+            // Only handle paste when create modal is open and on step 1
+            if (!this.createModal.show || this.createModal.step !== 1) return;
+
+            const items = event.clipboardData?.items;
+            if (!items) return;
+
+            // Look for image items
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith('image/')) {
+                    const file = items[i].getAsFile();
+                    if (file) {
+                        this.addDebugLog(`📋 Screenshot incollato: ${file.name || 'clipboard-image.png'}`);
+
+                        // Check file size (max 10MB)
+                        if (file.size > 10 * 1024 * 1024) {
+                            alert('Screenshot too large. Maximum size is 10MB.');
+                            continue;
+                        }
+
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            this.createModal.screenshots.push({
+                                file: file,
+                                preview: e.target.result
+                            });
+                        };
+                        reader.readAsDataURL(file);
+
+                        event.preventDefault();
+                    }
+                }
+            }
+        },
+
+        addDebugLog(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            this.createModal.debugLogs.push(`[${timestamp}] ${message}`);
+        },
+
+        goToStep2() {
+            if (!this.createModal.title) {
+                alert('Please enter a title');
+                return;
+            }
+            this.createModal.step = 2;
+
+            // Auto-analyze when reaching step 2
+            setTimeout(() => this.analyzeWithAI(), 100);
+        },
+
+        async analyzeWithAI() {
+            this.createModal.analyzing = true;
+            this.createModal.analyzed = false;
+            this.createModal.debugLogs = [];  // Reset debug logs
+
+            this.addDebugLog('🚀 Avvio analisi AI...');
+
+            try {
+                const formData = new FormData();
+                formData.append('title', this.createModal.title);
+                formData.append('description', this.createModal.description || '');
+                formData.append('figma_link', this.createModal.figmaLink || '');
+                formData.append('website_link', this.createModal.websiteLink || '');
+
+                // Append screenshots
+                this.createModal.screenshots.forEach(screenshot => {
+                    formData.append('screenshots', screenshot.file);
+                });
+
+                this.addDebugLog(`📸 ${this.createModal.screenshots.length} screenshot allegati`);
+                if (this.createModal.figmaLink) {
+                    this.addDebugLog(`🎨 Link Figma: ${this.createModal.figmaLink}`);
+                }
+                if (this.createModal.websiteLink) {
+                    this.addDebugLog(`🌐 Link sito: ${this.createModal.websiteLink}`);
+                }
+
+                this.addDebugLog('📡 Invio richiesta al backend...');
+
+                const res = await fetch('/api/linear/create/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    throw new Error('Analysis request failed');
+                }
+
+                // SSE event stream
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+
+                        if (line.startsWith('event: ') || line.startsWith('data: ')) {
+                            // Parse SSE format
+                            const eventMatch = line.match(/^event:\s*(.+)$/);
+                            const dataMatch = line.match(/^data:\s*(.+)$/);
+
+                            if (dataMatch) {
+                                try {
+                                    const data = JSON.parse(dataMatch[1]);
+
+                                    // Handle log events
+                                    if (data.message) {
+                                        this.addDebugLog(data.message);
+                                    }
+
+                                    // Handle complete event
+                                    if (data.gemini_insights !== undefined) {
+                                        this.createModal.geminiInsights = data.gemini_insights || '';
+                                        this.createModal.questions = data.questions || [];
+                                        this.createModal.tempSessionId = data.temp_session_id;
+                                        this.createModal.analyzed = true;
+
+                                        // Initialize answers object
+                                        this.createModal.answers = {};
+                                        this.createModal.questions.forEach(q => {
+                                            this.createModal.answers[q.id] = '';
+                                        });
+                                    }
+
+                                    // Handle error event
+                                    if (data.error) {
+                                        throw new Error(data.error);
+                                    }
+                                } catch (e) {
+                                    if (e.message !== 'Unexpected end of JSON input') {
+                                        throw e;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            } catch (error) {
+                console.error('Analysis error:', error);
+                this.addDebugLog(`❌ Errore: ${error.message}`);
+                alert('Analysis failed: ' + error.message);
+            } finally {
+                this.createModal.analyzing = false;
+            }
+        },
+
+        goToStep3() {
+            // Validate that all questions have answers
+            const unanswered = this.createModal.questions.filter(q => !this.createModal.answers[q.id]?.trim());
+            if (unanswered.length > 0) {
+                alert(`Please answer all ${unanswered.length} remaining question(s)`);
+                return;
+            }
+
+            this.createModal.step = 3;
+            this.finalizeIssueCreation();
+        },
+
+        async finalizeIssueCreation() {
+            this.createModal.creating = true;
+            this.createModal.progressMsgs = [];
+
+            try {
+                // Get team_id from settings or first team
+                const settingsRes = await fetch('/api/settings');
+                const settings = await settingsRes.json();
+                const teamId = settings.linear_team_id || '';
+
+                if (!teamId) {
+                    throw new Error('Linear team ID not configured. Please configure it in settings.');
+                }
+
+                const requestBody = {
+                    title: this.createModal.title,
+                    description: this.createModal.description || '',
+                    figma_link: this.createModal.figmaLink || null,
+                    website_link: this.createModal.websiteLink || null,
+                    gemini_insights: this.createModal.geminiInsights,
+                    user_answers: this.createModal.answers,
+                    temp_session_id: this.createModal.tempSessionId,
+                    team_id: teamId,
+                    priority: parseInt(this.createModal.priority) || 0,
+                    assignee_id: this.createModal.assigneeId || null,
+                    due_date: this.createModal.dueDate || null
+                };
+
+                const res = await fetch('/api/linear/create/finalize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!res.ok) {
+                    throw new Error('Failed to create issue');
+                }
+
+                // SSE event stream
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.substring(6));
+
+                            if (line.includes('event: progress')) {
+                                this.createModal.progressMsgs.push(data.message);
+                            } else if (line.includes('event: complete')) {
+                                this.createModal.creating = false;
+                                this.createModal.done = true;
+                                this.createModal.createdId = data.identifier;
+                                this.createModal.createdUrl = data.url;
+                                break;
+                            } else if (line.includes('event: error')) {
+                                throw new Error(data.error || 'Unknown error');
+                            }
+                        }
+                    }
+                }
+
+            } catch (error) {
+                console.error('Finalize error:', error);
+                this.createModal.creating = false;
+                this.createModal.progressMsgs.push('❌ Error: ' + error.message);
+                alert('Failed to create issue: ' + error.message);
+            }
         }
     }
 }

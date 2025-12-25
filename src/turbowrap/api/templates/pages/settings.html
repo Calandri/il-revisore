@@ -109,6 +109,162 @@
         </div>
     </div>
 
+    <!-- Linear Integration Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-6 border-b dark:border-gray-700">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-semibold">Linear Integration</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Per gestire issue e sincronizzazione</p>
+                </div>
+                <div class="ml-auto">
+                    <span x-show="linearApiKeySet" class="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium">
+                        Configurato
+                    </span>
+                    <span x-show="!linearApiKeySet" class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-sm font-medium">
+                        Non configurato
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <!-- Info box -->
+            <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div class="flex gap-3">
+                    <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-sm text-blue-700 dark:text-blue-300">
+                        <p class="font-medium mb-1">Come ottenere API key e Team ID:</p>
+                        <ol class="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400">
+                            <li>Vai su Linear Settings > API > Personal API keys</li>
+                            <li>Crea una nuova API key con permessi <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">read</code> e <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">write</code></li>
+                            <li>Copia la API key (lin_api_...)</li>
+                            <li>Trova il Team ID nell'URL della tua team (ultima parte UUID)</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Key form -->
+            <form @submit.prevent="saveLinearApiKey()" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Linear API Key</label>
+                    <div class="relative">
+                        <input :type="showLinearApiKey ? 'text' : 'password'"
+                               x-model="linearApiKey"
+                               placeholder="lin_api_xxxxxxxxxxxxxxxxxxxxxxxx"
+                               class="w-full px-4 py-3 pr-12 border dark:border-gray-600 rounded-lg
+                                      bg-white dark:bg-gray-700
+                                      focus:ring-2 focus:ring-primary focus:border-transparent
+                                      placeholder-gray-400 font-mono">
+                        <button type="button"
+                                @click="showLinearApiKey = !showLinearApiKey"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <svg x-show="!showLinearApiKey" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <svg x-show="showLinearApiKey" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button type="submit"
+                            :disabled="savingLinear || !linearApiKey"
+                            class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                        <svg x-show="savingLinear" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span x-text="savingLinear ? 'Salvataggio...' : 'Salva API Key'"></span>
+                    </button>
+
+                    <button type="button"
+                            x-show="linearApiKeySet"
+                            @click="deleteLinearApiKey()"
+                            :disabled="deletingLinear"
+                            class="px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50">
+                        <span x-text="deletingLinear ? 'Eliminazione...' : 'Elimina API Key'"></span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Team ID form -->
+            <form @submit.prevent="saveLinearTeamId()" class="space-y-4 pt-4 border-t dark:border-gray-700">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Team</label>
+
+                    <!-- Loading teams spinner -->
+                    <div x-show="loadingTeams" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 py-3">
+                        <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        Caricamento team...
+                    </div>
+
+                    <!-- Team dropdown (when teams available) -->
+                    <select x-show="!loadingTeams && availableTeams.length > 0"
+                            x-model="linearTeamId"
+                            class="w-full px-4 py-3 border dark:border-gray-600 rounded-lg
+                                   bg-white dark:bg-gray-700
+                                   focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="">Seleziona un team...</option>
+                        <template x-for="team in availableTeams" :key="team.id">
+                            <option :value="team.id" x-text="`${team.name} (${team.key})`"></option>
+                        </template>
+                    </select>
+
+                    <!-- Manual UUID input (fallback) -->
+                    <div x-show="!loadingTeams && availableTeams.length === 0">
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                            💡 <strong>Come trovare il Team ID:</strong><br>
+                            1. Vai su <a href="https://linear.app" target="_blank" class="text-primary hover:underline">Linear</a><br>
+                            2. Clicca sul nome del tuo team in alto a sinistra<br>
+                            3. Vai su "Settings" → "General"<br>
+                            4. Copia il "Team ID" (formato UUID lungo)
+                        </p>
+                        <input type="text"
+                               x-model="linearTeamId"
+                               placeholder="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                               class="w-full px-4 py-3 border dark:border-gray-600 rounded-lg
+                                      bg-white dark:bg-gray-700
+                                      focus:ring-2 focus:ring-primary focus:border-transparent
+                                      placeholder-gray-400 font-mono text-sm">
+                    </div>
+                </div>
+
+                <button type="submit"
+                        :disabled="savingTeamId || !linearTeamId || loadingTeams"
+                        class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                    <svg x-show="savingTeamId" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <span x-text="savingTeamId ? 'Salvataggio...' : 'Salva Team'"></span>
+                </button>
+            </form>
+
+            <!-- Success/Error message -->
+            <div x-show="linearMessage"
+                 x-transition
+                 class="p-3 rounded-lg"
+                 :class="linearMessageType === 'success' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'">
+                <span x-text="linearMessage"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- AI Models Section -->
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div class="p-6 border-b dark:border-gray-700">
@@ -247,6 +403,26 @@ function settingsApp() {
         message: '',
         messageType: 'success',
 
+        // Linear Integration
+        linearApiKey: '',
+        linearApiKeySet: {{ 'true' if linear_api_key_set else 'false' }},
+        linearTeamId: '{{ linear_team_id or "" }}',
+        availableTeams: [],
+        loadingTeams: false,
+        showLinearApiKey: false,
+        savingLinear: false,
+        deletingLinear: false,
+        savingTeamId: false,
+        linearMessage: '',
+        linearMessageType: 'success',
+
+        async init() {
+            // Load teams if API key is already configured
+            if (this.linearApiKeySet) {
+                await this.loadLinearTeams();
+            }
+        },
+
         // AI Models
         claudeModel: '{{ claude_model or "" }}',
         geminiModel: '{{ gemini_model or "" }}',
@@ -337,6 +513,121 @@ function settingsApp() {
             } finally {
                 this.deleting = false;
                 setTimeout(() => this.message = '', 5000);
+            }
+        },
+
+        // Linear Integration functions
+        async saveLinearApiKey() {
+            if (!this.linearApiKey) return;
+
+            this.savingLinear = true;
+            this.linearMessage = '';
+
+            try {
+                const response = await fetch('/api/settings/linear-api-key', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: this.linearApiKey })
+                });
+
+                if (response.ok) {
+                    this.linearApiKeySet = true;
+                    this.linearApiKey = '';
+                    this.linearMessage = 'Linear API key salvata con successo!';
+                    this.linearMessageType = 'success';
+
+                    // Load available teams after saving API key
+                    await this.loadLinearTeams();
+                } else {
+                    const data = await response.json();
+                    this.linearMessage = data.detail || 'Errore nel salvataggio';
+                    this.linearMessageType = 'error';
+                }
+            } catch (error) {
+                this.linearMessage = 'Errore di connessione';
+                this.linearMessageType = 'error';
+            } finally {
+                this.savingLinear = false;
+                setTimeout(() => this.linearMessage = '', 5000);
+            }
+        },
+
+        async loadLinearTeams() {
+            if (!this.linearApiKeySet) return;
+
+            this.loadingTeams = true;
+            try {
+                const response = await fetch('/api/linear/teams');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.availableTeams = data.teams || [];
+                } else {
+                    console.error('Failed to load teams');
+                    this.availableTeams = [];
+                }
+            } catch (error) {
+                console.error('Error loading teams:', error);
+                this.availableTeams = [];
+            } finally {
+                this.loadingTeams = false;
+            }
+        },
+
+        async deleteLinearApiKey() {
+            if (!confirm('Sei sicuro di voler eliminare la Linear API key?')) return;
+
+            this.deletingLinear = true;
+            this.linearMessage = '';
+
+            try {
+                const response = await fetch('/api/settings/linear-api-key', {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    this.linearApiKeySet = false;
+                    this.linearMessage = 'Linear API key eliminata';
+                    this.linearMessageType = 'success';
+                } else {
+                    this.linearMessage = 'Errore nell\'eliminazione';
+                    this.linearMessageType = 'error';
+                }
+            } catch (error) {
+                this.linearMessage = 'Errore di connessione';
+                this.linearMessageType = 'error';
+            } finally {
+                this.deletingLinear = false;
+                setTimeout(() => this.linearMessage = '', 5000);
+            }
+        },
+
+        async saveLinearTeamId() {
+            if (!this.linearTeamId) return;
+
+            this.savingTeamId = true;
+            this.linearMessage = '';
+
+            try {
+                const response = await fetch('/api/settings/linear-team-id', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ team_id: this.linearTeamId })
+                });
+
+                if (response.ok) {
+                    this.linearMessage = 'Linear Team ID salvato con successo!';
+                    this.linearMessageType = 'success';
+                } else {
+                    const data = await response.json();
+                    this.linearMessage = data.detail || 'Errore nel salvataggio';
+                    this.linearMessageType = 'error';
+                }
+            } catch (error) {
+                this.linearMessage = 'Errore di connessione';
+                this.linearMessageType = 'error';
+            } finally {
+                this.savingTeamId = false;
+                setTimeout(() => this.linearMessage = '', 5000);
             }
         }
     }

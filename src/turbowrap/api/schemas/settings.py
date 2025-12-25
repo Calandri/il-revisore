@@ -27,6 +27,11 @@ class SettingsResponse(BaseModel):
     github_token: str | None = Field(default=None, description="GitHub token (masked)")
     github_token_set: bool = Field(default=False, description="Whether GitHub token is configured")
 
+    # Linear Integration
+    linear_api_key: str | None = Field(default=None, description="Linear API key (masked)")
+    linear_api_key_set: bool = Field(default=False, description="Whether Linear API key is configured")
+    linear_team_id: str | None = Field(default=None, description="Linear team ID")
+
     # AI Models
     claude_model: str | None = Field(default=None, description="Claude model name")
     gemini_model: str | None = Field(default=None, description="Gemini Flash model name")
@@ -37,6 +42,18 @@ class GitHubTokenUpdate(BaseModel):
     """Request to update GitHub token."""
 
     token: str = Field(..., min_length=1, description="GitHub personal access token")
+
+
+class LinearAPIKeyUpdate(BaseModel):
+    """Request to update Linear API key."""
+
+    api_key: str = Field(..., min_length=1, description="Linear API key")
+
+
+class LinearTeamIDUpdate(BaseModel):
+    """Request to update Linear team ID."""
+
+    team_id: str = Field(..., min_length=1, description="Linear team ID (UUID)")
 
 
 class ModelUpdate(BaseModel):

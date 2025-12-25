@@ -492,6 +492,7 @@ class LinearClient:
         state_id: Optional[str] = None,
         assignee_id: Optional[str] = None,
         label_ids: Optional[list[str]] = None,
+        due_date: Optional[str] = None,
     ) -> dict:
         """
         Create a new issue on Linear.
@@ -504,6 +505,7 @@ class LinearClient:
             state_id: Optional workflow state UUID (defaults to team's default state)
             assignee_id: Optional assignee user UUID
             label_ids: Optional list of label UUIDs
+            due_date: Optional due date in ISO format (YYYY-MM-DD)
 
         Returns:
             Created issue data dict with keys: id, identifier, url, title, state, team
@@ -559,6 +561,8 @@ class LinearClient:
             input_vars["assigneeId"] = assignee_id
         if label_ids:
             input_vars["labelIds"] = label_ids
+        if due_date:
+            input_vars["dueDate"] = due_date
 
         variables = {"input": input_vars}
 
@@ -584,6 +588,84 @@ class LinearClient:
             raise RuntimeError("Issue creation failed (success=false)")
 
         return data["data"]["issueCreate"]["issue"]
+
+    async def get_teams(self) -> list[dict]:
+        """
+        Get all teams accessible with current API key.
+
+        Returns:
+            List of team dictionaries with id, name, key
+        """
+        query = """
+        query Teams {
+            teams {
+                nodes {
+                    id
+                    name
+                    key
+                    description
+                }
+            }
+        }
+        """
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={"query": query},
+            )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"Linear API error: {data['errors']}")
+
+        return data["data"]["teams"]["nodes"]
+
+    async def get_users(self, team_id: Optional[str] = None) -> list[dict]:
+        """
+        Get all users in the workspace or optionally filtered by team.
+
+        Args:
+            team_id: Optional team UUID to filter users by team membership
+
+        Returns:
+            List of user dictionaries with id, name, email
+        """
+        query = """
+        query Users {
+            users {
+                nodes {
+                    id
+                    name
+                    email
+                    active
+                }
+            }
+        }
+        """
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={"query": query},
+            )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"Linear API error: {data['errors']}")
+
+        users = data["data"]["users"]["nodes"]
+
+        # Filter to active users only
+        active_users = [u for u in users if u.get("active", True)]
+
+        return active_users
 
     async def get_workflow_states(self, team_id: str) -> list[dict]:
         """
