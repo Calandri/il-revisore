@@ -165,6 +165,22 @@ async def issues_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/linear", response_class=HTMLResponse)
+async def linear_page(request: Request, db: Session = Depends(get_db)):
+    """Linear issues page."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/linear_issues.html",
+        {
+            "request": request,
+            "repos": repos,
+            "active_page": "linear",
+            "current_user": get_current_user(request),
+        }
+    )
+
+
 @router.get("/files", response_class=HTMLResponse)
 async def files_page(request: Request, db: Session = Depends(get_db)):
     """File editor page."""

@@ -17,7 +17,9 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 
 from turbowrap.api.deps import get_db
-from turbowrap.db.models import Issue, IssueStatus, Repository, Task
+from turbowrap.db.models import Issue, IssueStatus, Repository, Task, LinearIssue, Setting
+from turbowrap.linear import LinearStateManager
+from turbowrap.review.integrations.linear import LinearClient
 from turbowrap.fix import (
     ClarificationAnswer,
     ClarificationQuestion,
@@ -474,6 +476,52 @@ async def start_fix(
                             db_issue.resolution_note = f"Fix failed: {issue_result.error}"
                             failed_count += 1
                 db.commit()
+
+                # Auto-transition Linear issues to in_review after successful commit
+                # Get commit_sha from first successful result (FixSessionResult doesn't have commit_sha)
+                commit_sha = next((r.commit_sha for r in result.results if r.commit_sha), None)
+                if commit_sha and result.branch_name:
+                    try:
+                        # Get task to check for linked Linear issues
+                        task = db.query(Task).filter(Task.id == request.task_id).first()
+                        if task:
+                            # Check if task has linked Linear issues (via relationship)
+                            linear_issues = db.query(LinearIssue).filter(
+                                LinearIssue.task_id == task.id,
+                                LinearIssue.is_active == True
+                            ).all()
+
+                            if linear_issues:
+                                # Get Linear client
+                                linear_api_key = db.query(Setting).filter(
+                                    Setting.key == "linear_api_key"
+                                ).first()
+
+                                if linear_api_key and linear_api_key.value:
+                                    linear_client = LinearClient(api_key=linear_api_key.value)
+                                    state_manager = LinearStateManager(linear_client)
+
+                                    for linear_issue in linear_issues:
+                                        try:
+                                            success = await state_manager.auto_transition_after_commit(
+                                                linear_issue,
+                                                commit_sha,  # Use extracted commit_sha, not result.commit_sha
+                                                result.branch_name
+                                            )
+                                            if success:
+                                                logger.info(
+                                                    f"Auto-transitioned Linear issue {linear_issue.linear_identifier} to in_review"
+                                                )
+                                        except Exception as e:
+                                            logger.error(
+                                                f"Failed to auto-transition Linear issue {linear_issue.linear_identifier}: {e}"
+                                            )
+
+                                    # Commit Linear issue updates
+                                    db.commit()
+                    except Exception as e:
+                        logger.error(f"Error during Linear auto-transition: {e}")
+                        # Don't fail the entire fix if Linear transition fails
 
                 # Mark idempotency entry as completed
                 _idempotency_store.update_status(

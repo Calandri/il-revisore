@@ -289,3 +289,237 @@ class LinearClient:
                 return state["id"]
 
         return None
+
+    async def get_team_issues(
+        self,
+        team_id: str,
+        limit: int = 100,
+        after: Optional[str] = None,
+    ) -> tuple[list[dict], Optional[str]]:
+        """
+        Fetch issues from a Linear team with pagination.
+
+        Args:
+            team_id: Linear team UUID
+            limit: Max issues to fetch (default 100)
+            after: Pagination cursor
+
+        Returns:
+            Tuple of (issues, next_cursor)
+        """
+        query = """
+        query TeamIssues($teamId: String!, $first: Int!, $after: String) {
+            team(id: $teamId) {
+                issues(first: $first, after: $after) {
+                    nodes {
+                        id
+                        identifier
+                        title
+                        description
+                        priority
+                        url
+                        createdAt
+                        updatedAt
+                        assignee {
+                            id
+                            name
+                            email
+                        }
+                        state {
+                            id
+                            name
+                            type
+                        }
+                        labels {
+                            nodes {
+                                id
+                                name
+                                color
+                            }
+                        }
+                        team {
+                            id
+                            name
+                            key
+                        }
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+        }
+        """
+
+        variables = {
+            "teamId": team_id,
+            "first": limit,
+            "after": after,
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={"query": query, "variables": variables},
+            )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"Linear API error: {data['errors']}")
+
+        issues = data["data"]["team"]["issues"]["nodes"]
+        page_info = data["data"]["team"]["issues"]["pageInfo"]
+        next_cursor = page_info["endCursor"] if page_info["hasNextPage"] else None
+
+        return issues, next_cursor
+
+    async def get_issue_by_id(self, issue_id: str) -> dict:
+        """
+        Fetch a single issue by Linear UUID.
+
+        Args:
+            issue_id: Linear issue UUID
+
+        Returns:
+            Issue data dictionary
+        """
+        query = """
+        query GetIssue($id: String!) {
+            issue(id: $id) {
+                id
+                identifier
+                title
+                description
+                priority
+                url
+                createdAt
+                updatedAt
+                assignee {
+                    id
+                    name
+                    email
+                }
+                state {
+                    id
+                    name
+                    type
+                }
+                labels {
+                    nodes {
+                        id
+                        name
+                        color
+                    }
+                }
+                team {
+                    id
+                    name
+                    key
+                }
+            }
+        }
+        """
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={"query": query, "variables": {"id": issue_id}},
+            )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"Linear API error: {data['errors']}")
+
+        return data["data"]["issue"]
+
+    async def create_comment(
+        self,
+        issue_id: str,
+        body: str,
+    ) -> str:
+        """
+        Create a comment on a Linear issue.
+
+        Args:
+            issue_id: Linear issue UUID
+            body: Comment body in markdown
+
+        Returns:
+            Created comment UUID
+        """
+        mutation = """
+        mutation CreateComment($issueId: String!, $body: String!) {
+            commentCreate(input: { issueId: $issueId, body: $body }) {
+                success
+                comment {
+                    id
+                }
+            }
+        }
+        """
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={
+                    "query": mutation,
+                    "variables": {"issueId": issue_id, "body": body},
+                },
+            )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"Linear API error: {data['errors']}")
+
+        return data["data"]["commentCreate"]["comment"]["id"]
+
+    async def get_workflow_states(self, team_id: str) -> list[dict]:
+        """
+        Get all workflow states for a team.
+
+        Args:
+            team_id: Linear team UUID
+
+        Returns:
+            List of workflow state dictionaries
+        """
+        query = """
+        query TeamStates($teamId: String!) {
+            team(id: $teamId) {
+                states {
+                    nodes {
+                        id
+                        name
+                        type
+                        color
+                        position
+                    }
+                }
+            }
+        }
+        """
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={"query": query, "variables": {"teamId": team_id}},
+            )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"Linear API error: {data['errors']}")
+
+        return data["data"]["team"]["states"]["nodes"]

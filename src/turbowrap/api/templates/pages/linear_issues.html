@@ -1,0 +1,702 @@
+{% extends "base.html" %}
+
+{% block title %}Linear Issues - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="linearIssuesApp()">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold">Linear Issues</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Gestione issue Linear con analisi AI</p>
+        </div>
+        <button @click="syncFromLinear()"
+                :disabled="isSyncing"
+                class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50">
+            <svg class="w-5 h-5" :class="isSyncing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Sync from Linear
+        </button>
+    </div>
+
+    <!-- State Tabs -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+        <div class="flex border-b dark:border-gray-700 overflow-x-auto">
+            <button @click="currentState = 'analysis'"
+                    class="px-6 py-3 font-medium transition-colors relative"
+                    :class="currentState === 'analysis' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                Analysis
+                <span x-show="stateCounts.analysis > 0"
+                      class="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-200 dark:bg-gray-700"
+                      x-text="stateCounts.analysis"></span>
+                <div x-show="currentState === 'analysis'"
+                     class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+            </button>
+            <button @click="currentState = 'repo_link'"
+                    class="px-6 py-3 font-medium transition-colors relative"
+                    :class="currentState === 'repo_link' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                Repo Link
+                <span x-show="stateCounts.repo_link > 0"
+                      class="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-200 dark:bg-gray-700"
+                      x-text="stateCounts.repo_link"></span>
+                <div x-show="currentState === 'repo_link'"
+                     class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+            </button>
+            <button @click="currentState = 'in_progress'"
+                    class="px-6 py-3 font-medium transition-colors relative"
+                    :class="currentState === 'in_progress' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                In Progress
+                <span x-show="stateCounts.in_progress > 0"
+                      class="ml-2 px-2 py-0.5 text-xs rounded-full bg-blue-500 text-white"
+                      x-text="stateCounts.in_progress"></span>
+                <div x-show="currentState === 'in_progress'"
+                     class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+            </button>
+            <button @click="currentState = 'in_review'"
+                    class="px-6 py-3 font-medium transition-colors relative"
+                    :class="currentState === 'in_review' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                In Review
+                <span x-show="stateCounts.in_review > 0"
+                      class="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-500 text-white"
+                      x-text="stateCounts.in_review"></span>
+                <div x-show="currentState === 'in_review'"
+                     class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+            </button>
+            <button @click="currentState = 'merged'"
+                    class="px-6 py-3 font-medium transition-colors relative"
+                    :class="currentState === 'merged' ? 'text-primary' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                Merged
+                <span x-show="stateCounts.merged > 0"
+                      class="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-500 text-white"
+                      x-text="stateCounts.merged"></span>
+                <div x-show="currentState === 'merged'"
+                     class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Issues List -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-4 border-b dark:border-gray-700">
+            <h2 class="font-semibold">Issues</h2>
+        </div>
+
+        <div x-show="loading" class="p-8 text-center">
+            <svg class="animate-spin w-8 h-8 mx-auto text-primary" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+        </div>
+
+        <div x-show="!loading && filteredIssues.length === 0" class="p-8 text-center text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p>Nessuna issue in questo stato</p>
+        </div>
+
+        <div x-show="!loading && filteredIssues.length > 0" class="divide-y dark:divide-gray-700">
+            <template x-for="issue in filteredIssues" :key="issue.id">
+                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                     :class="{'bg-blue-50 dark:bg-blue-900/10': issue.is_active}">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex-1">
+                            <!-- Header badges -->
+                            <div class="flex items-center gap-2 flex-wrap mb-2">
+                                <a :href="issue.linear_url" target="_blank"
+                                   class="font-mono text-sm px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300">
+                                    <span x-text="issue.linear_identifier"></span>
+                                </a>
+                                <span x-show="issue.is_active"
+                                      class="px-2 py-0.5 text-xs rounded-full bg-blue-500 text-white font-semibold">
+                                    ACTIVE
+                                </span>
+                                <span x-show="issue.priority === 1"
+                                      class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                    🔴 URGENT
+                                </span>
+                                <span x-show="issue.priority === 2"
+                                      class="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    🟠 HIGH
+                                </span>
+                            </div>
+
+                            <!-- Title -->
+                            <h3 class="font-medium mb-1" x-text="issue.title"></h3>
+
+                            <!-- Description preview -->
+                            <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mb-2"
+                               x-text="issue.description || 'No description'"></p>
+
+                            <!-- Metadata -->
+                            <div class="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
+                                <span x-show="issue.assignee_name">
+                                    <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                                    </svg>
+                                    <span x-text="issue.assignee_name"></span>
+                                </span>
+                                <span x-show="issue.repository_names && issue.repository_names.length > 0">
+                                    <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                                    </svg>
+                                    <span x-text="issue.repository_names.join(', ')"></span>
+                                </span>
+                                <span x-show="issue.labels && issue.labels.length > 0">
+                                    <template x-for="label in issue.labels.slice(0, 3)" :key="label.name">
+                                        <span class="inline-block px-2 py-0.5 rounded text-xs mr-1"
+                                              :style="`background-color: ${label.color}20; color: ${label.color}`"
+                                              x-text="label.name"></span>
+                                    </template>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex items-center gap-2 shrink-0">
+                            <!-- Analysis state actions -->
+                            <button x-show="issue.turbowrap_state === 'analysis'"
+                                    @click="improveIssue(issue)"
+                                    class="px-3 py-1.5 bg-indigo-500 text-white text-sm rounded hover:bg-indigo-600 flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                                </svg>
+                                Improve Issue
+                            </button>
+
+                            <!-- Repo link state actions -->
+                            <button x-show="issue.turbowrap_state === 'repo_link' && issue.repository_names.length === 0"
+                                    @click="showLinkRepoModal(issue)"
+                                    class="px-3 py-1.5 bg-gray-500 text-white text-sm rounded hover:bg-gray-600">
+                                Link Repository
+                            </button>
+                            <button x-show="issue.turbowrap_state === 'repo_link' && issue.repository_names.length > 0"
+                                    @click="startDevelopment(issue)"
+                                    :disabled="isStarting"
+                                    class="px-3 py-1.5 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:opacity-50">
+                                Start Dev
+                            </button>
+
+                            <!-- In progress state indicator -->
+                            <span x-show="issue.turbowrap_state === 'in_progress'"
+                                  class="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                                Active Development
+                            </span>
+
+                            <!-- In review state actions -->
+                            <button x-show="issue.turbowrap_state === 'in_review' && issue.fix_branch"
+                                    @click="mergeToMain(issue)"
+                                    :disabled="isMerging"
+                                    class="px-3 py-1.5 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                </svg>
+                                Merge to Main
+                            </button>
+
+                            <!-- View details -->
+                            <button @click="viewIssue(issue)"
+                                    class="p-2 text-gray-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Improve Issue Modal (2-phase workflow) -->
+    <div x-show="improveModal.show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="closeImproveModal()">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
+                <div>
+                    <h3 class="font-semibold text-lg">
+                        <span x-show="improveModal.phase === 1">Phase 1: Clarifying Questions</span>
+                        <span x-show="improveModal.phase === 2">Phase 2: Deep Analysis</span>
+                    </h3>
+                    <p class="text-sm text-gray-500" x-text="improveModal.issue?.linear_identifier"></p>
+                </div>
+                <button @click="closeImproveModal()"
+                        :disabled="improveModal.analyzing"
+                        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Phase 1: Questions -->
+            <div x-show="improveModal.phase === 1" class="p-6 overflow-y-auto flex-1">
+                <div x-show="improveModal.loadingQuestions" class="text-center py-8">
+                    <svg class="animate-spin w-10 h-10 mx-auto text-indigo-500 mb-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <p class="text-gray-500">Generating questions...</p>
+                </div>
+
+                <div x-show="!improveModal.loadingQuestions && improveModal.questions.length > 0" class="space-y-4">
+                    <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                        Please answer the following questions to help me understand the issue better.
+                    </p>
+
+                    <template x-for="question in improveModal.questions" :key="question.id">
+                        <div class="border dark:border-gray-700 rounded-lg p-4">
+                            <label class="block font-medium mb-1">
+                                <span class="text-indigo-600 dark:text-indigo-400" x-text="'Q' + question.id + ':'"></span>
+                                <span x-text="question.question"></span>
+                            </label>
+                            <p class="text-xs text-gray-500 mb-2" x-text="'Why: ' + question.why"></p>
+                            <textarea x-model="improveModal.answers[question.id]"
+                                      rows="2"
+                                      class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm resize-none"
+                                      placeholder="Your answer..."></textarea>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Phase 2: Analysis Progress -->
+            <div x-show="improveModal.phase === 2" class="p-6 overflow-y-auto flex-1">
+                <div x-show="improveModal.analyzing" class="space-y-3">
+                    <div class="flex items-center gap-3 mb-4">
+                        <svg class="animate-spin w-8 h-8 text-indigo-500" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <div>
+                            <p class="font-medium">Analyzing with Claude...</p>
+                            <p class="text-sm text-gray-500">This may take a few moments</p>
+                        </div>
+                    </div>
+
+                    <div class="font-mono text-sm space-y-2 bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-64 overflow-y-auto">
+                        <template x-for="(msg, idx) in improveModal.progressMessages" :key="idx">
+                            <div class="text-gray-600 dark:text-gray-300" x-text="msg"></div>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="!improveModal.analyzing && improveModal.analysisComplete" class="text-center py-8">
+                    <svg class="w-16 h-16 mx-auto text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h4 class="text-xl font-semibold mb-2">Analysis Complete!</h4>
+                    <p class="text-gray-500">Issue has been analyzed and updated on Linear.</p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t dark:border-gray-700 flex justify-end gap-2 shrink-0">
+                <button x-show="improveModal.phase === 1"
+                        @click="proceedToPhase2()"
+                        :disabled="!canProceedToPhase2() || improveModal.loadingQuestions"
+                        class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50">
+                    Analyze with Answers
+                </button>
+                <button x-show="improveModal.phase === 2 && improveModal.analysisComplete"
+                        @click="closeImproveModal(); loadIssues()"
+                        class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link Repository Modal -->
+    <div x-show="linkRepoModal.show"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="linkRepoModal.show = false">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div class="p-4 border-b dark:border-gray-700">
+                <h3 class="font-semibold">Link Repository</h3>
+                <p class="text-sm text-gray-500">Select up to 3 repositories</p>
+            </div>
+            <div class="p-4">
+                <select x-model="linkRepoModal.selectedRepo"
+                        class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg mb-4">
+                    <option value="">Select repository...</option>
+                    {% for repo in repos %}
+                    <option value="{{ repo.id }}">{{ repo.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex justify-end gap-2">
+                <button @click="linkRepoModal.show = false"
+                        class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200">
+                    Cancel
+                </button>
+                <button @click="linkRepository()"
+                        :disabled="!linkRepoModal.selectedRepo"
+                        class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50">
+                    Link
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Issue Detail Modal -->
+    <div x-show="selectedIssue"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="selectedIssue = null">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-[85vw] h-[90vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-3">
+                    <a :href="selectedIssue?.linear_url" target="_blank"
+                       class="font-mono text-sm px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300">
+                        <span x-text="selectedIssue?.linear_identifier"></span>
+                    </a>
+                    <span x-show="selectedIssue?.is_active"
+                          class="px-2 py-0.5 text-xs rounded-full bg-blue-500 text-white">ACTIVE</span>
+                </div>
+                <button @click="selectedIssue = null" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1">
+                <template x-if="selectedIssue">
+                    <div class="space-y-4">
+                        <h2 class="text-xl font-semibold" x-text="selectedIssue.title"></h2>
+
+                        <div>
+                            <h4 class="font-medium mb-2">Original Description</h4>
+                            <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm whitespace-pre-wrap"
+                                 x-text="selectedIssue.description || 'No description'"></div>
+                        </div>
+
+                        <div x-show="selectedIssue.improved_description">
+                            <h4 class="font-medium mb-2">Improved Description (by Claude)</h4>
+                            <div class="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg text-sm prose prose-sm dark:prose-invert max-w-none"
+                                 x-html="selectedIssue.improved_description?.replace(/\n/g, '<br>')"></div>
+                        </div>
+
+                        <div x-show="selectedIssue.analysis_summary">
+                            <h4 class="font-medium mb-2">Analysis Summary</h4>
+                            <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm prose prose-sm dark:prose-invert max-w-none"
+                                 x-html="selectedIssue.analysis_summary?.replace(/\n/g, '<br>')"></div>
+                        </div>
+
+                        <div x-show="selectedIssue.repository_names && selectedIssue.repository_names.length > 0">
+                            <h4 class="font-medium mb-2">Linked Repositories</h4>
+                            <div class="flex gap-2 flex-wrap">
+                                <template x-for="repo in selectedIssue.repository_names" :key="repo">
+                                    <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm" x-text="repo"></span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div x-show="selectedIssue.fix_commit_sha" class="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <h4 class="font-medium mb-2 text-green-700 dark:text-green-400">Fix Details</h4>
+                            <div class="flex items-center gap-4 text-sm">
+                                <div>
+                                    <span class="text-gray-500">Commit:</span>
+                                    <code class="ml-2 font-mono bg-white dark:bg-gray-800 px-2 py-0.5 rounded"
+                                          x-text="selectedIssue.fix_commit_sha?.substring(0, 10)"></code>
+                                </div>
+                                <div x-show="selectedIssue.fix_branch">
+                                    <span class="text-gray-500">Branch:</span>
+                                    <code class="ml-2 font-mono bg-white dark:bg-gray-800 px-2 py-0.5 rounded"
+                                          x-text="selectedIssue.fix_branch"></code>
+                                </div>
+                            </div>
+                            <div x-show="selectedIssue.fix_explanation" class="mt-3 text-sm">
+                                <span class="text-gray-500">Explanation:</span>
+                                <p class="mt-1" x-text="selectedIssue.fix_explanation"></p>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function linearIssuesApp() {
+    return {
+        loading: false,
+        isSyncing: false,
+        isStarting: false,
+        isMerging: false,
+        currentState: 'analysis',
+        issues: [],
+        selectedIssue: null,
+        improveModal: {
+            show: false,
+            phase: 1,
+            issue: null,
+            questions: [],
+            answers: {},
+            loadingQuestions: false,
+            analyzing: false,
+            analysisComplete: false,
+            progressMessages: []
+        },
+        linkRepoModal: {
+            show: false,
+            issue: null,
+            selectedRepo: ''
+        },
+
+        async init() {
+            await this.loadIssues();
+            // Poll every 15s to update
+            setInterval(() => this.loadIssues(), 15000);
+        },
+
+        get filteredIssues() {
+            return this.issues.filter(i => i.turbowrap_state === this.currentState);
+        },
+
+        get stateCounts() {
+            const counts = {
+                analysis: 0,
+                repo_link: 0,
+                in_progress: 0,
+                in_review: 0,
+                merged: 0
+            };
+            this.issues.forEach(i => {
+                if (counts[i.turbowrap_state] !== undefined) {
+                    counts[i.turbowrap_state]++;
+                }
+            });
+            return counts;
+        },
+
+        async loadIssues() {
+            try {
+                const res = await fetch('/api/linear/issues?limit=200');
+                this.issues = await res.json();
+            } catch (error) {
+                console.error('Error loading issues:', error);
+            }
+        },
+
+        async syncFromLinear() {
+            this.isSyncing = true;
+            try {
+                const res = await fetch('/api/linear/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ limit: 100 })
+                });
+                const result = await res.json();
+                alert(`Synced ${result.synced} new, updated ${result.updated}`);
+                await this.loadIssues();
+            } catch (error) {
+                console.error('Sync error:', error);
+                alert('Sync failed: ' + error.message);
+            }
+            this.isSyncing = false;
+        },
+
+        async improveIssue(issue) {
+            this.improveModal = {
+                show: true,
+                phase: 1,
+                issue: issue,
+                questions: [],
+                answers: {},
+                loadingQuestions: true,
+                analyzing: false,
+                analysisComplete: false,
+                progressMessages: []
+            };
+
+            try {
+                const res = await fetch('/api/linear/improve/phase1', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ issue_id: issue.id })
+                });
+                const data = await res.json();
+                this.improveModal.questions = data.questions;
+                this.improveModal.loadingQuestions = false;
+            } catch (error) {
+                console.error('Phase 1 error:', error);
+                alert('Failed to generate questions: ' + error.message);
+                this.closeImproveModal();
+            }
+        },
+
+        canProceedToPhase2() {
+            return Object.keys(this.improveModal.answers).length === this.improveModal.questions.length &&
+                   Object.values(this.improveModal.answers).every(a => a && a.trim().length > 0);
+        },
+
+        async proceedToPhase2() {
+            this.improveModal.phase = 2;
+            this.improveModal.analyzing = true;
+            this.improveModal.progressMessages = [];
+
+            try {
+                const res = await fetch('/api/linear/improve/phase2', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        issue_id: this.improveModal.issue.id,
+                        answers: this.improveModal.answers
+                    })
+                });
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            // Parse event type
+                        } else if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.message) {
+                                    this.improveModal.progressMessages.push(data.message);
+                                }
+                                if (data.status === 'complete') {
+                                    this.improveModal.analyzing = false;
+                                    this.improveModal.analysisComplete = true;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Phase 2 error:', error);
+                alert('Analysis failed: ' + error.message);
+                this.closeImproveModal();
+            }
+        },
+
+        closeImproveModal() {
+            this.improveModal.show = false;
+        },
+
+        showLinkRepoModal(issue) {
+            this.linkRepoModal = {
+                show: true,
+                issue: issue,
+                selectedRepo: ''
+            };
+        },
+
+        async linkRepository() {
+            if (!this.linkRepoModal.selectedRepo) return;
+
+            try {
+                await fetch('/api/linear/link-repository', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        issue_id: this.linkRepoModal.issue.id,
+                        repository_id: this.linkRepoModal.selectedRepo,
+                        link_source: 'manual'
+                    })
+                });
+                this.linkRepoModal.show = false;
+                await this.loadIssues();
+            } catch (error) {
+                console.error('Link error:', error);
+                alert('Failed to link repository');
+            }
+        },
+
+        async startDevelopment(issue) {
+            if (!confirm(`Start development on ${issue.linear_identifier}? This will mark it as the active issue.`)) {
+                return;
+            }
+
+            this.isStarting = true;
+            try {
+                const res = await fetch(`/api/linear/start-development/${issue.id}`, {
+                    method: 'POST'
+                });
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Failed to start development');
+                }
+                await this.loadIssues();
+                // Switch to in_progress tab
+                this.currentState = 'in_progress';
+            } catch (error) {
+                console.error('Start dev error:', error);
+                alert(error.message);
+            }
+            this.isStarting = false;
+        },
+
+        async mergeToMain(issue) {
+            if (!confirm(`Merge ${issue.linear_identifier} to main?`)) return;
+
+            this.isMerging = true;
+            try {
+                const res = await fetch('/api/fix/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: issue.repository_ids[0],
+                        branch_name: issue.fix_branch,
+                        task_id: issue.task_id
+                    })
+                });
+                const result = await res.json();
+                if (res.ok && result.success) {
+                    alert('Merge successful!');
+                    await this.loadIssues();
+                } else {
+                    alert('Merge failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Merge error:', error);
+                alert('Merge error: ' + error.message);
+            }
+            this.isMerging = false;
+        },
+
+        viewIssue(issue) {
+            this.selectedIssue = issue;
+        }
+    }
+}
+</script>
+{% endblock %}

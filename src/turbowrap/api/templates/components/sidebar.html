@@ -81,6 +81,18 @@
             <span x-show="sidebarOpen">Issues</span>
         </a>
 
+        <!-- Linear -->
+        <a href="/linear"
+           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if active_page == 'linear' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+            </svg>
+            <span x-show="sidebarOpen">Linear</span>
+        </a>
+
         <!-- File Editor -->
         <a href="/files"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
@@ -168,32 +180,110 @@
         </a>
     </nav>
 
-    <!-- Footer -->
-    <div class="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700 space-y-2">
-        <!-- Dark mode toggle -->
-        <button @click="darkMode = !darkMode"
-                class="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-            <svg x-show="!darkMode" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-            </svg>
-            <svg x-show="darkMode" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-            </svg>
-            <span x-show="sidebarOpen" x-text="darkMode ? 'Light mode' : 'Dark mode'"></span>
-        </button>
+    <!-- Active Development Banner -->
+    <div x-data="activeDevelopmentBanner()"
+         x-show="activeIssue"
+         class="mx-4 mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform -translate-y-2"
+         x-transition:enter-end="opacity-100 transform translate-y-0">
 
-        <!-- Logout -->
-        <form action="/auth/logout" method="POST" class="w-full">
-            <button type="submit"
-                    class="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors">
-                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        <!-- Expanded view -->
+        <div x-show="sidebarOpen">
+            <div class="flex items-center gap-2 mb-2">
+                <svg class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                 </svg>
-                <span x-show="sidebarOpen">Esci</span>
-            </button>
-        </form>
+                <span class="font-semibold text-blue-800 dark:text-blue-300 text-sm">Active Development</span>
+            </div>
+
+            <a :href="'/linear#' + activeIssue?.id"
+               class="block text-xs font-mono text-blue-700 dark:text-blue-400 hover:underline mb-1"
+               x-text="activeIssue?.linear_identifier"></a>
+
+            <div x-show="activeIssue?.repository_names && activeIssue?.repository_names.length > 0"
+                 class="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
+                <div class="flex items-center gap-1">
+                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    <span class="font-medium">Repositories:</span>
+                </div>
+                <template x-for="(repo, idx) in activeIssue?.repository_names?.slice(0, 3)" :key="idx">
+                    <div class="ml-4 text-xs">
+                        • <span x-text="repo"></span>
+                        <span x-show="activeIssue?.fix_branch"
+                              class="text-gray-500 italic ml-1"
+                              x-text="'(' + activeIssue.fix_branch + ')'"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Collapsed view (icon only) -->
+        <div x-show="!sidebarOpen" class="flex justify-center">
+            <a :href="'/linear#' + activeIssue?.id"
+               :title="'Active: ' + activeIssue?.linear_identifier"
+               class="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+            </a>
+        </div>
     </div>
+
+    <!-- Footer -->
+    <div class="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <!-- Logout -->
+            <form action="/auth/logout" method="POST">
+                <button type="submit"
+                        class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                    </svg>
+                    <span x-show="sidebarOpen">Esci</span>
+                </button>
+            </form>
+
+            <!-- Dark mode toggle (small icon) -->
+            <button @click="darkMode = !darkMode"
+                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400">
+                <svg x-show="!darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                </svg>
+                <svg x-show="darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Development Banner Script -->
+    <script>
+    function activeDevelopmentBanner() {
+        return {
+            activeIssue: null,
+
+            async init() {
+                await this.loadActiveIssue();
+                // Poll every 10s to update
+                setInterval(() => this.loadActiveIssue(), 10000);
+            },
+
+            async loadActiveIssue() {
+                try {
+                    const res = await fetch('/api/linear/issues?is_active=true&limit=1');
+                    const issues = await res.json();
+                    this.activeIssue = issues.length > 0 ? issues[0] : null;
+                } catch (error) {
+                    console.error('Error loading active issue:', error);
+                }
+            }
+        }
+    }
+    </script>
 </aside>
