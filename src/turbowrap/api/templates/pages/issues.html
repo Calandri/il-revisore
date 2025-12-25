@@ -636,7 +636,7 @@
 
                 <!-- Issue Chips - Horizontal Scroll -->
                 <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                    <template x-for="issueId in selectedIssues" :key="issueId">
+                    <template x-for="issueId in fixProgress.fixingIssueIds" :key="issueId">
                         <div class="shrink-0 px-2.5 py-1 rounded-full text-xs font-mono flex items-center gap-1.5 transition-all duration-300"
                              :class="{
                                  'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300': fixProgress.issueStates[issueId]?.status === 'pending',
@@ -944,6 +944,7 @@ function issuesApp() {
             // New fields for improved UI
             branchName: null,
             issueStates: {},  // { issueId: { code, status, score } }
+            fixingIssueIds: [],  // Preserved issue IDs for chip display
             streamingContent: '',
             showStreamingDetails: false,
             lastScore: null
@@ -1146,12 +1147,13 @@ function issuesApp() {
             await this._startFixProcess(firstIssue);
         },
 
-        async _startFixProcess(firstIssue, branchOptions = null) {
+        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false) {
             console.log('[FIX] Starting fix for:', {
                 issue_id: firstIssue.id,
                 repository_id: firstIssue.repository_id,
                 task_id: firstIssue.task_id,
-                branchOptions: branchOptions
+                branchOptions: branchOptions,
+                forceRestart: forceRestart
             });
 
             this.isFixing = true;
@@ -1176,6 +1178,7 @@ function issuesApp() {
                 status: 'running',
                 branchName: branchOptions?.existing_branch_name || null,
                 issueStates: issueStates,
+                fixingIssueIds: [...this.selectedIssues],  // Preserve IDs before they get cleared
                 streamingContent: '',
                 showStreamingDetails: false,
                 lastScore: null
@@ -1187,6 +1190,7 @@ function issuesApp() {
                     repository_id: firstIssue.repository_id,
                     task_id: firstIssue.task_id,
                     issue_ids: this.selectedIssues,
+                    force: forceRestart,  // Force restart if requested
                 };
 
                 // Add branch options if provided (for continuing on existing branch)
@@ -1200,6 +1204,35 @@ function issuesApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody),
                 });
+
+                // Handle 409 Conflict - session already in progress
+                if (response.status === 409) {
+                    const errorData = await response.json();
+                    console.warn('[FIX] Session conflict:', errorData);
+
+                    // Ask user if they want to force restart
+                    const stuckSession = errorData.detail;
+                    const sessionId = stuckSession.session_id;
+                    const startedAt = new Date(stuckSession.started_at).toLocaleString();
+
+                    const confirmForce = confirm(
+                        `Una sessione di fix è già in corso:\n\n` +
+                        `Session ID: ${sessionId.slice(0, 8)}...\n` +
+                        `Iniziata: ${startedAt}\n\n` +
+                        `Se la sessione è bloccata, premi OK per forzare il riavvio.\n` +
+                        `(Questo cancellerà la sessione precedente)`
+                    );
+
+                    if (confirmForce) {
+                        // Close modal and retry with force=true
+                        this.showFixModal = false;
+                        this.isFixing = false;
+                        await this._startFixProcess(firstIssue, branchOptions, true);
+                        return;
+                    } else {
+                        throw new Error('Sessione già in corso. Attendi il completamento o forza il riavvio.');
+                    }
+                }
 
                 if (!response.ok) {
                     const error = await response.text();
