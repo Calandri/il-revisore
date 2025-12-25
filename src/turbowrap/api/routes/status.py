@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..deps import get_db
 from ...config import get_settings
 from ...core.task_queue import get_task_queue
-from ...db.models import Repository, Task, ChatSession
+from ...db.models import Repository, Task, ChatSession, Issue, LinearIssue
 
 router = APIRouter(prefix="/status", tags=["status"])
 
@@ -441,3 +441,60 @@ def format_uptime(seconds: float) -> str:
         parts.append(f"{minutes}m")
 
     return " ".join(parts)
+
+
+@router.get("/active-development")
+def get_active_development(db: Session = Depends(get_db)):
+    """
+    Get currently active development issues (both Linear and GitHub).
+
+    Returns a unified list of active issues for the sidebar banner.
+    """
+    active_issues = []
+
+    # Get active Linear issues
+    linear_issues = db.query(LinearIssue).filter(
+        LinearIssue.is_active == True,
+        LinearIssue.deleted_at.is_(None)
+    ).all()
+
+    for li in linear_issues:
+        # Get repository names
+        repo_names = []
+        for link in li.repository_links:
+            if link.repository:
+                repo_names.append(link.repository.name)
+
+        active_issues.append({
+            "type": "linear",
+            "id": li.id,
+            "identifier": li.linear_identifier,
+            "title": li.title,
+            "url": li.linear_url,
+            "repository_names": repo_names[:3],  # Max 3
+            "fix_branch": li.fix_branch,
+            "fix_commit_sha": li.fix_commit_sha,
+            "turbowrap_state": li.turbowrap_state,
+        })
+
+    # Get active GitHub issues
+    github_issues = db.query(Issue).filter(
+        Issue.is_active == True,
+        Issue.deleted_at.is_(None)
+    ).all()
+
+    for gi in github_issues:
+        active_issues.append({
+            "type": "github",
+            "id": gi.id,
+            "identifier": gi.issue_code,
+            "title": gi.title,
+            "url": None,  # GitHub issues don't have external URLs
+            "repository_names": [gi.repository.name] if gi.repository else [],
+            "fix_branch": gi.fix_branch,
+            "fix_commit_sha": gi.fix_commit_sha,
+            "status": gi.status,
+            "severity": gi.severity,
+        })
+
+    return active_issues

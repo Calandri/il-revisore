@@ -322,6 +322,7 @@ class Issue(Base, SoftDeleteMixin):
 
     # Tracking
     status = Column(String(20), default=IssueStatus.OPEN.value)
+    is_active = Column(Boolean, default=False, index=True)  # True when in development
     resolution_note = Column(Text, nullable=True)  # Why it was resolved/ignored
     resolved_at = Column(DateTime, nullable=True)
 
