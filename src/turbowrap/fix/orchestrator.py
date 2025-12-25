@@ -1118,9 +1118,11 @@ The reviewer found issues with the previous fix. Address this feedback:
             model = self.settings.agents.claude_model
 
             # Build CLI arguments with stream-json for real-time streaming
+            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
             args = [
                 "claude",
                 "--print",
+                "--verbose",
                 "--dangerously-skip-permissions",
                 "--model",
                 model,
@@ -1146,6 +1148,8 @@ The reviewer found issues with the previous fix. Address this feedback:
             process.stdin.write(prompt.encode())
             await process.stdin.drain()
             process.stdin.close()
+            # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
+            await process.stdin.wait_closed()
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries

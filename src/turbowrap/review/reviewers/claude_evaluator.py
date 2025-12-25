@@ -214,10 +214,12 @@ class ClaudeEvaluator:
             # Use model from settings
             model = self.settings.agents.claude_model
 
-            # Build CLI arguments
+            # Build CLI arguments with stream-json for real-time streaming
+            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
             args = [
                 self.cli_path,
                 "--print",
+                "--verbose",
                 "--dangerously-skip-permissions",
                 "--model",
                 model,
@@ -225,10 +227,11 @@ class ClaudeEvaluator:
                 "stream-json",
             ]
 
-            # Add extended thinking if enabled
+            # Extended thinking via MAX_THINKING_TOKENS env var
+            # NOTE: --settings {"alwaysThinkingEnabled": true} is BUGGY in Claude CLI v2.0.64+
+            # and causes the process to hang indefinitely. Use env var instead.
             if self.settings.thinking.enabled:
-                thinking_settings = {"alwaysThinkingEnabled": True}
-                args.extend(["--settings", json.dumps(thinking_settings)])
+                env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
 
             process = await asyncio.create_subprocess_exec(
                 *args,
@@ -243,6 +246,8 @@ class ClaudeEvaluator:
             process.stdin.write(prompt.encode())
             await process.stdin.drain()
             process.stdin.close()
+            # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
+            await process.stdin.wait_closed()
 
             # Read stdout with streaming
             output_chunks: list[str] = []

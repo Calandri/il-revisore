@@ -366,8 +366,11 @@ Be specific with file paths and technical details.
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         # Prepare command
+        # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
         cmd = [
             "claude",
+            "--print",
+            "--verbose",
             "--output-format", "stream-json",
             "--model", "claude-opus-4-5-20251101",
         ]
