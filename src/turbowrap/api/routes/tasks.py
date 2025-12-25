@@ -2,10 +2,13 @@
 
 import asyncio
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from typing import AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sse_starlette.sse import EventSourceResponse
@@ -464,11 +467,11 @@ async def stream_review(
             finally:
                 review_db.close()
 
-        # Start background review
+        # Start background review (session passed directly by manager)
         session = await manager.start_review(
             task_id=task_id,
             repository_id=repository_id,
-            review_coro=lambda: run_review(manager.get_session(task_id)),
+            review_coro=run_review,
         )
 
     # Generator for SSE streaming
@@ -584,11 +587,13 @@ async def restart_reviewer(
     # Create the restart coroutine
     async def run_reviewer_restart(session):
         """Run single reviewer restart in background."""
+        logger.info(f"[RESTART] run_reviewer_restart called with session={session}")
         from ...db.session import get_session_local
         SessionLocal = get_session_local()
         restart_db = SessionLocal()
 
         try:
+            logger.info(f"[RESTART] Starting restart for {reviewer_name}")
             # Emit started event
             session.add_event(ProgressEvent(
                 type=ProgressEventType.REVIEWER_STARTED,
@@ -615,9 +620,32 @@ async def restart_reviewer(
             context = ReviewContext(request=request)
             context.repo_path = Path(local_path)
 
+            # Scan directory for files to review
+            exclude_dirs = {
+                ".git", "node_modules", "__pycache__", ".venv", "venv",
+                ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
+                "coverage", ".tox", "htmlcov",
+            }
+            text_extensions = {
+                ".py", ".js", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
+                ".html", ".css", ".scss", ".less", ".json", ".yaml", ".yml",
+                ".md", ".txt", ".rst", ".sh", ".bash", ".zsh",
+                ".sql", ".graphql", ".prisma", ".env", ".toml", ".ini", ".cfg",
+                ".go", ".rs", ".java", ".kt", ".swift", ".c", ".cpp", ".h",
+                ".rb", ".php", ".ex", ".exs", ".erl", ".hs", ".ml", ".scala",
+            }
+            files = []
+            for path in context.repo_path.rglob("*"):
+                if path.is_file() and path.suffix.lower() in text_extensions:
+                    rel_path = path.relative_to(context.repo_path)
+                    if any(part in exclude_dirs for part in rel_path.parts):
+                        continue
+                    files.append(str(rel_path))
+            context.files = files[:100]  # Limit to 100 files
+            logger.info(f"[RESTART] Found {len(context.files)} files to review")
+
             # Load STRUCTURE.md files
             structure_files = list(context.repo_path.rglob("STRUCTURE.md"))
-            exclude_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv"}
             for structure_file in structure_files:
                 rel_path = structure_file.relative_to(context.repo_path)
                 if any(part in exclude_dirs for part in rel_path.parts):
@@ -705,6 +733,9 @@ async def restart_reviewer(
             ))
 
         except Exception as e:
+            import traceback
+            logger.error(f"[RESTART] Exception in run_reviewer_restart: {e}")
+            logger.error(f"[RESTART] Traceback: {traceback.format_exc()}")
             session.add_event(ProgressEvent(
                 type=ProgressEventType.REVIEWER_ERROR,
                 reviewer_name=reviewer_name,
@@ -719,11 +750,11 @@ async def restart_reviewer(
     # Use a new session ID for this restart
     restart_session_id = f"{task_id}_restart_{reviewer_name}_{datetime.utcnow().strftime('%H%M%S')}"
 
-    # Start background reviewer restart
+    # Start background reviewer restart (session passed directly by manager)
     session = await manager.start_review(
         task_id=restart_session_id,
         repository_id=task.repository_id,
-        review_coro=lambda: run_reviewer_restart(manager.get_session(restart_session_id)),
+        review_coro=run_reviewer_restart,
     )
 
     # Generator for SSE streaming

@@ -483,6 +483,108 @@ class LinearClient:
 
         return data["data"]["commentCreate"]["comment"]["id"]
 
+    async def create_issue(
+        self,
+        team_id: str,
+        title: str,
+        description: str,
+        priority: int = 0,
+        state_id: Optional[str] = None,
+        assignee_id: Optional[str] = None,
+        label_ids: Optional[list[str]] = None,
+    ) -> dict:
+        """
+        Create a new issue on Linear.
+
+        Args:
+            team_id: Linear team UUID
+            title: Issue title
+            description: Issue description in markdown
+            priority: Issue priority (0=None, 1=Urgent, 2=High, 3=Medium, 4=Low)
+            state_id: Optional workflow state UUID (defaults to team's default state)
+            assignee_id: Optional assignee user UUID
+            label_ids: Optional list of label UUIDs
+
+        Returns:
+            Created issue data dict with keys: id, identifier, url, title, state, team
+
+        Raises:
+            RuntimeError: If API call fails or returns errors
+            httpx.HTTPStatusError: If HTTP request fails
+        """
+        mutation = """
+        mutation CreateIssue($input: IssueCreateInput!) {
+            issueCreate(input: $input) {
+                success
+                issue {
+                    id
+                    identifier
+                    title
+                    description
+                    url
+                    priority
+                    createdAt
+                    state {
+                        id
+                        name
+                        type
+                    }
+                    team {
+                        id
+                        name
+                        key
+                    }
+                    assignee {
+                        id
+                        name
+                        email
+                    }
+                }
+            }
+        }
+        """
+
+        # Build input variables
+        input_vars = {
+            "teamId": team_id,
+            "title": title,
+            "description": description,
+            "priority": priority,
+        }
+
+        # Add optional fields
+        if state_id:
+            input_vars["stateId"] = state_id
+        if assignee_id:
+            input_vars["assigneeId"] = assignee_id
+        if label_ids:
+            input_vars["labelIds"] = label_ids
+
+        variables = {"input": input_vars}
+
+        # Make API call with timeout
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                self.API_URL,
+                headers=self.headers,
+                json={"query": mutation, "variables": variables},
+            )
+
+        # Check HTTP status
+        response.raise_for_status()
+        data = response.json()
+
+        # Check for GraphQL errors
+        if "errors" in data:
+            error_messages = [e.get("message", str(e)) for e in data["errors"]]
+            raise RuntimeError(f"Linear API error: {', '.join(error_messages)}")
+
+        # Check success flag
+        if not data.get("data", {}).get("issueCreate", {}).get("success"):
+            raise RuntimeError("Issue creation failed (success=false)")
+
+        return data["data"]["issueCreate"]["issue"]
+
     async def get_workflow_states(self, team_id: str) -> list[dict]:
         """
         Get all workflow states for a team.

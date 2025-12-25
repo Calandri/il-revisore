@@ -125,3 +125,80 @@ class GeminiProClient(GeminiClient):
     @property
     def name(self) -> str:
         return "gemini_pro"
+
+    def analyze_screenshots(
+        self,
+        image_paths: list[str],
+        context: dict,
+    ) -> str:
+        """Analyze screenshots with Gemini Vision API.
+
+        Args:
+            image_paths: List of paths to screenshot images.
+            context: Context dict with keys: title, description, figma_link, website_link.
+
+        Returns:
+            Analysis insights as text.
+
+        Raises:
+            GeminiError: If analysis fails.
+        """
+        from google.genai import types
+
+        # Build analysis prompt
+        prompt = f"""Analizza questi screenshot per una issue di sviluppo.
+
+**Contesto:**
+- **Titolo**: {context.get('title', 'N/A')}
+- **Descrizione**: {context.get('description', 'N/A')}
+- **Link Figma**: {context.get('figma_link', 'N/A')}
+- **Link Sito**: {context.get('website_link', 'N/A')}
+
+**Analisi richiesta:**
+
+Identifica e descrivi in dettaglio:
+
+1. **Componenti UI visibili**: Elenca tutti i componenti UI presenti (bottoni, form, input, dropdown, etc.)
+2. **Layout e design**: Struttura della pagina, grid system, spacing, allineamenti
+3. **User flow**: Sequenza di azioni dell'utente visibile negli screenshot
+4. **Requisiti tecnici**: Tecnologie necessarie, pattern UI da implementare
+5. **Potenziali problemi**: Edge case, accessibilità, responsive design, stati error/loading
+
+Fornisci un'analisi tecnica dettagliata e specifica, non generica."""
+
+        # Build parts list starting with the prompt
+        parts = [{"text": prompt}]
+
+        # Add each image as a Part
+        for img_path in image_paths:
+            try:
+                with open(img_path, "rb") as f:
+                    image_data = f.read()
+
+                # Detect MIME type based on file extension
+                mime_type = "image/png"
+                lower_path = img_path.lower()
+                if lower_path.endswith((".jpg", ".jpeg")):
+                    mime_type = "image/jpeg"
+                elif lower_path.endswith(".webp"):
+                    mime_type = "image/webp"
+                elif lower_path.endswith(".gif"):
+                    mime_type = "image/gif"
+
+                # Create Part from image bytes
+                parts.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
+
+            except FileNotFoundError:
+                raise GeminiError(f"Screenshot not found: {img_path}")
+            except Exception as e:
+                raise GeminiError(f"Error loading screenshot {img_path}: {e}") from e
+
+        # Make API call with multimodal content
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=[{"role": "user", "parts": parts}],
+            )
+            return response.text
+        except Exception as e:
+            raise GeminiError(f"Gemini Vision API error: {e}") from e

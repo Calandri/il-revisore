@@ -374,6 +374,8 @@ Be specific with file paths and technical details.
 
         env = os.environ.copy()
         env["ANTHROPIC_API_KEY"] = api_key
+        # Workaround: Bun file watcher bug on macOS /var/folders
+        env["TMPDIR"] = "/tmp"
 
         logger.debug(f"Running Claude CLI with timeout {timeout}s")
 

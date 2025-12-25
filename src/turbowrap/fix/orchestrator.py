@@ -1086,6 +1086,8 @@ The reviewer found issues with the previous fix. Address this feedback:
             api_key = get_anthropic_api_key()
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
+            # Workaround: Bun file watcher bug on macOS /var/folders
+            env["TMPDIR"] = "/tmp"
 
             # Set thinking budget via environment variable
             # This controls how many tokens Claude can use for internal reasoning

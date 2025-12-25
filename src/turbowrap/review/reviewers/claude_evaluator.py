@@ -208,6 +208,8 @@ class ClaudeEvaluator:
             api_key = get_anthropic_api_key()
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
+            # Workaround: Bun file watcher bug on macOS /var/folders
+            env["TMPDIR"] = "/tmp"
 
             # Use model from settings
             model = self.settings.agents.claude_model

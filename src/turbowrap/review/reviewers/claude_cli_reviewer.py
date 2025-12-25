@@ -502,6 +502,10 @@ After writing, confirm with: "Review saved to {output_file}"
             else:
                 logger.warning("ANTHROPIC_API_KEY not found in AWS - using environment")
 
+            # Workaround: Bun file watcher bug on macOS /var/folders
+            # Force TMPDIR to /tmp to avoid EOPNOTSUPP errors
+            env["TMPDIR"] = "/tmp"
+
             # Workaround: Remove VSCode git socket files that crash Claude CLI
             # Claude CLI crashes when trying to watch .sock files in /var/folders
             import glob
@@ -822,12 +826,27 @@ After writing, confirm with: "Review saved to {output_file}"
 
             # Parse issues
             issues = []
+            # Category normalization for common aliases
+            category_map = {
+                "business_logic": "logic",
+                "business": "logic",
+                "functional": "logic",
+                "code_quality": "style",
+                "quality": "style",
+                "maintainability": "architecture",
+                "error_handling": "logic",
+                "data_integrity": "logic",
+            }
             for issue_data in data.get("issues", []):
                 try:
+                    # Normalize category
+                    raw_category = issue_data.get("category", "style").lower()
+                    normalized_category = category_map.get(raw_category, raw_category)
+
                     issue = Issue(
                         id=issue_data.get("id", f"{self.name.upper()}-ISSUE"),
                         severity=IssueSeverity(issue_data.get("severity", "MEDIUM")),
-                        category=IssueCategory(issue_data.get("category", "style")),
+                        category=IssueCategory(normalized_category),
                         rule=issue_data.get("rule"),
                         file=issue_data.get("file", "unknown"),
                         line=issue_data.get("line"),
@@ -839,7 +858,8 @@ After writing, confirm with: "Review saved to {output_file}"
                         flagged_by=[self.name],
                     )
                     issues.append(issue)
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"[CLAUDE PARSE] Skipping invalid issue: {e} - data: {issue_data.get('id', 'unknown')}")
                     continue
 
             # Parse checklists

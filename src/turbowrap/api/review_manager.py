@@ -104,7 +104,7 @@ class ReviewManager:
         self,
         task_id: str,
         repository_id: str,
-        review_coro: Callable[[], Awaitable[None]],
+        review_coro: Callable[["ReviewSession"], Awaitable[None]],
     ) -> ReviewSession:
         """
         Start a new review in the background.
@@ -112,7 +112,7 @@ class ReviewManager:
         Args:
             task_id: Unique task identifier
             repository_id: Repository being reviewed
-            review_coro: Coroutine that performs the review
+            review_coro: Coroutine function that takes ReviewSession as argument
 
         Returns:
             ReviewSession for tracking/subscribing
@@ -133,7 +133,7 @@ class ReviewManager:
         # Wrapper to catch completion/errors
         async def run_with_tracking():
             try:
-                await review_coro()
+                await review_coro(session)  # Pass session directly!
                 session.status = "completed"
                 session.completed_at = datetime.utcnow()
                 logger.info(f"Review {task_id} completed")
