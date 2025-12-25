@@ -516,6 +516,9 @@ class FixOrchestrator:
                                 type=FixEventType.FIX_CHALLENGER_APPROVED,
                                 session_id=session_id,
                                 message=f"   ✅ {batch_id} PASSED ({score}/100)",
+                                # Include issue IDs so frontend can mark chips green
+                                issue_ids=[i.id for i in batch],
+                                issue_codes=[i.issue_code for i in batch],
                             )
                         )
                     else:

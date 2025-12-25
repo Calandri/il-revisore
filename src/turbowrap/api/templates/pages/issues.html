@@ -1341,10 +1341,29 @@ function issuesApp() {
 
             // 3. Capture score from challenger result
             if (eventType === 'fix_challenger_result' && event.message) {
-                const scoreMatch = event.message.match(/Score:\s*(\d+)/);
-                if (scoreMatch) {
-                    this.fixProgress.lastScore = parseInt(scoreMatch[1]);
+                // Try new format: "📊 BE-1 score: 100/100 | Per-issue: CODE: 100 | ..."
+                const batchScoreMatch = event.message.match(/score:\s*(\d+)/);
+                if (batchScoreMatch) {
+                    this.fixProgress.lastScore = parseInt(batchScoreMatch[1]);
+                } else {
+                    // Old format: "Score: XX/100"
+                    const scoreMatch = event.message.match(/Score:\s*(\d+)/);
+                    if (scoreMatch) {
+                        this.fixProgress.lastScore = parseInt(scoreMatch[1]);
+                    }
                 }
+            }
+
+            // 3b. Mark batch issues as COMPLETED when batch passes Gemini review
+            if (eventType === 'fix_challenger_approved' && event.issue_ids && event.issue_ids.length > 0) {
+                // Batch passed! Mark all issues in this batch as completed
+                event.issue_ids.forEach(issueId => {
+                    if (this.fixProgress.issueStates[issueId]) {
+                        this.fixProgress.issueStates[issueId].status = 'completed';
+                        this.fixProgress.issueStates[issueId].score = this.fixProgress.lastScore;
+                    }
+                });
+                console.log(`[FIX] Batch passed, marked ${event.issue_ids.length} issues as completed`);
             }
 
             // 4. Complete issues on session completed

@@ -283,6 +283,10 @@ class FixProgressEvent(BaseModel):
     issue_index: int | None = Field(default=None, description="1-based index")
     total_issues: int | None = Field(default=None)
 
+    # Batch info (for per-batch challenger events)
+    issue_ids: list[str] | None = Field(default=None, description="Issue IDs in batch (for batch events)")
+    issue_codes: list[str] | None = Field(default=None, description="Issue codes in batch")
+
     # Progress info
     message: str | None = Field(default=None)
     content: str | None = Field(default=None, description="Streaming content")
