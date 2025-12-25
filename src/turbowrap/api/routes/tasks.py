@@ -343,185 +343,24 @@ async def stream_review(
 
     Returns server-sent events with progress updates from all parallel reviewers.
     """
-    from ..review_manager import get_review_manager
-    from ...review.orchestrator import Orchestrator
-    from ...review.models.review import ReviewRequest, ReviewRequestSource, ReviewOptions, ReviewMode
+    from ..services.review_stream_service import get_review_stream_service
 
     # Verify repository exists
     repo = db.query(Repository).filter(Repository.id == repository_id).first()
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    manager = get_review_manager()
+    # Delegate to service layer
+    service = get_review_stream_service(db)
+    session_info = await service.start_or_reconnect(
+        repository_id=repository_id,
+        repo=repo,
+        mode=request_body.mode,
+        challenger_enabled=request_body.challenger_enabled,
+        include_functional=request_body.include_functional,
+    )
 
-    # Check for existing running review for this repo
-    existing_session = None
-    for session in manager.get_active_sessions():
-        if session.repository_id == repository_id:
-            existing_session = session
-            break
-
-    if existing_session:
-        # Reconnect to existing review
-        task_id = existing_session.task_id
-        session = existing_session
-    else:
-        # Create new task record
-        task = Task(
-            repository_id=repository_id,
-            type="review",
-            status="running",
-            config={
-                "mode": request_body.mode,
-                "challenger_enabled": request_body.challenger_enabled,
-            },
-        )
-        db.add(task)
-        db.commit()
-        db.refresh(task)
-        task_id = task.id
-
-        # Capture request options
-        review_mode = request_body.mode
-        challenger_enabled = request_body.challenger_enabled
-        include_functional = request_body.include_functional
-        local_path = repo.local_path
-
-        # Create the review coroutine
-        async def run_review(session):
-            """Run the review in background."""
-            from ...db.session import get_session_local
-            SessionLocal = get_session_local()
-            review_db = SessionLocal()
-
-            try:
-                orchestrator = Orchestrator()
-
-                async def progress_callback(event: ProgressEvent):
-                    """Callback to add events to session."""
-                    session.add_event(event)
-
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=local_path),
-                    options=ReviewOptions(
-                        mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
-                        challenger_enabled=challenger_enabled,
-                        include_functional=include_functional,
-                    ),
-                )
-
-                report = await orchestrator.review(request, progress_callback)
-
-                # Update task record in new session
-                db_task = review_db.query(Task).filter(Task.id == task_id).first()
-                if db_task:
-                    db_task.status = "completed"
-                    db_task.result = report.model_dump(mode="json")
-                    db_task.completed_at = datetime.utcnow()
-
-                    # Save issues to database for tracking
-                    for issue in report.issues:
-                        db_issue = Issue(
-                            task_id=task_id,
-                            repository_id=repository_id,
-                            issue_code=issue.id,
-                            severity=issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity),
-                            category=issue.category.value if hasattr(issue.category, 'value') else str(issue.category),
-                            rule=issue.rule,
-                            file=issue.file,
-                            line=issue.line,
-                            title=issue.title,
-                            description=issue.description,
-                            current_code=issue.current_code,
-                            suggested_fix=issue.suggested_fix,
-                            references=issue.references if issue.references else None,
-                            flagged_by=issue.flagged_by if issue.flagged_by else None,
-                            # Effort estimation for fix batching
-                            estimated_effort=issue.estimated_effort,
-                            estimated_files_count=issue.estimated_files_count,
-                        )
-                        review_db.add(db_issue)
-
-                    review_db.commit()
-
-            except asyncio.CancelledError:
-                db_task = review_db.query(Task).filter(Task.id == task_id).first()
-                if db_task:
-                    db_task.status = "cancelled"
-                    db_task.completed_at = datetime.utcnow()
-                    review_db.commit()
-                raise
-
-            except Exception as e:
-                session.add_event(ProgressEvent(
-                    type=ProgressEventType.REVIEW_ERROR,
-                    error=str(e),
-                    message=f"Review failed: {str(e)[:100]}",
-                ))
-
-                db_task = review_db.query(Task).filter(Task.id == task_id).first()
-                if db_task:
-                    db_task.status = "failed"
-                    db_task.error = str(e)
-                    db_task.completed_at = datetime.utcnow()
-                    review_db.commit()
-
-            finally:
-                review_db.close()
-
-        # Start background review (session passed directly by manager)
-        session = await manager.start_review(
-            task_id=task_id,
-            repository_id=repository_id,
-            review_coro=run_review,
-        )
-
-    # Generator for SSE streaming
-    async def generate() -> AsyncIterator[dict]:
-        """Generate SSE events from review progress."""
-
-        # Subscribe to session events
-        queue = session.subscribe()
-
-        try:
-            # Emit task_started with task_id
-            yield {
-                "event": "task_started",
-                "data": f'{{"task_id": "{task_id}", "reconnected": {str(existing_session is not None).lower()}}}',
-            }
-
-            # Replay event history for reconnecting clients
-            for event in session.get_history():
-                yield event.to_sse()
-
-            # If already completed, signal done
-            if session.status != "running":
-                return
-
-            # Stream live events until done
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-
-                    if event is None:
-                        break
-
-                    yield event.to_sse()
-
-                except asyncio.TimeoutError:
-                    # Send keepalive ping
-                    yield {"event": "ping", "data": "{}"}
-
-        except asyncio.CancelledError:
-            # Client disconnected - DON'T cancel the review!
-            pass
-
-        finally:
-            # Unsubscribe (review continues running)
-            session.unsubscribe(queue)
-
-    return EventSourceResponse(generate())
+    return EventSourceResponse(service.generate_events(session_info))
 
 
 class RestartReviewerRequest(BaseModel):
