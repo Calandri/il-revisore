@@ -49,6 +49,13 @@ class Issue(BaseModel):
     flagged_by: list[str] = Field(
         default_factory=list, description="Reviewers that flagged this issue"
     )
+    # Workload estimation for fix orchestrator batching
+    estimated_effort: Optional[int] = Field(
+        None, ge=1, le=5, description="Estimated fix effort: 1=trivial, 5=major refactor"
+    )
+    estimated_files_count: Optional[int] = Field(
+        None, ge=1, description="Estimated number of files to modify for the fix"
+    )
 
 
 class ChecklistResult(BaseModel):

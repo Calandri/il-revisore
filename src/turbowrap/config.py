@@ -164,7 +164,7 @@ class FixChallengerSettings(BaseSettings):
         description="Model for fix evaluation (Pro for better reasoning)"
     )
     satisfaction_threshold: float = Field(
-        default=80.0, ge=0, le=100,
+        default=95.0, ge=0, le=100,
         description="Required satisfaction score to approve fix (0-100)"
     )
     max_iterations: int = Field(

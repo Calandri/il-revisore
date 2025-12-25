@@ -15,8 +15,10 @@ AI-Powered Code Repository Orchestrator with Web UI and AWS Deployment.
 | Agent | Model | Purpose |
 |-------|-------|---------|
 | Flash Analyzer | Gemini Flash | Fast repository structure analysis |
-| Code Reviewer | Claude Opus | Deep code review with actionable items |
-| Challenger | Gemini Flash | Validates Claude reviews (iterative loop until 50%+ approval) |
+| Code Reviewer (BE) | Claude Opus | Backend architecture & quality review |
+| Code Reviewer (FE) | Claude Opus | Frontend architecture & quality review |
+| Challenger | Gemini Pro | Validates reviews (iterative loop until threshold) |
+| Fixer | Claude Opus | Autonomous code fixes based on issues |
 | Tree Generator | Gemini Flash | Documentation tree (STRUCTURE.md) |
 
 ## Tech Stack
@@ -212,6 +214,36 @@ The review process uses an iterative challenger loop:
 
 This ensures high-quality, actionable reviews.
 
+## Fix System
+
+TurboWrap includes an automated fix system that can resolve issues found during review:
+
+### Fix Flow
+
+1. **Select Issues**: Choose issues to fix from the dashboard
+2. **Sequential Execution**: BE issues fixed first, then FE (avoids macOS file watcher limits)
+3. **Dynamic Batching**: Issues grouped by workload estimation (max 15 points or 5 issues per batch)
+4. **Challenger Review**: Gemini validates all fixes, provides feedback if needed
+5. **Commit**: Only issues with files in commit are marked RESOLVED
+
+### Issue Lifecycle
+
+```
+OPEN → IN_PROGRESS → RESOLVED → MERGED
+                  ↘ FAILED (if CLI crashes)
+```
+
+Other statuses: `IGNORED`, `DUPLICATE`
+
+### Workload Estimation
+
+Reviewers estimate fix complexity:
+- `estimated_effort`: 1-5 (trivial to major refactor)
+- `estimated_files_count`: number of files to modify
+- Workload = effort × files (max 15 per batch)
+
+See [Fix System README](src/turbowrap/fix/README.md) for detailed architecture.
+
 ## Development
 
 ```bash
@@ -223,6 +255,9 @@ uv run mypy src/
 
 # Format code
 uv run ruff format src/
+
+# Run database migrations
+./migrations/migrate.sh
 ```
 
 ## License

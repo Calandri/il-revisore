@@ -71,6 +71,8 @@ Your review MUST include a "Linter Results" section:
 - **Category**: [TypeScript|React|Performance|Security|A11y|Style]
 - **Issue**: Description
 - **Fix**: Code example
+- **Effort**: [1-5] (1=trivial, 2=simple, 3=moderate, 4=complex, 5=major refactor)
+- **Files to Modify**: [number] (estimated count of files needing changes)
 
 ## Warnings (Should Fix)
 ### [WARN-001] ...

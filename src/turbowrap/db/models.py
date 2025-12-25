@@ -332,6 +332,7 @@ class Issue(Base, SoftDeleteMixin):
     fix_files_modified = Column(JSON, nullable=True)  # Lista file modificati: ["file1.ts", "file2.ts"]
     fix_commit_sha = Column(String(40), nullable=True)  # SHA del commit
     fix_branch = Column(String(100), nullable=True)  # Branch dove è stato fatto il fix (e.g., "fix/1234567890")
+    fix_session_id = Column(String(36), nullable=True, index=True)  # UUID sessione fix (per log S3)
     fixed_at = Column(DateTime, nullable=True)  # Quando è stato fixato
     fixed_by = Column(String(50), nullable=True)  # Agent che ha fixato (e.g., "fixer_claude")
 

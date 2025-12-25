@@ -14,6 +14,7 @@ from .users import router as users_router
 from .thinking import router as thinking_router
 from .relationships import router as relationships_router
 from .analysis import router as analysis_router
+from .git import router as git_router
 
 __all__ = [
     "repos_router",
@@ -30,4 +31,5 @@ __all__ = [
     "thinking_router",
     "relationships_router",
     "analysis_router",
+    "git_router",
 ]

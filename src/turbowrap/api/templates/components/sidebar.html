@@ -185,11 +185,16 @@
 
     <!-- GitHub Recent Activity Widget -->
     <div x-data="githubActivityWidget()"
-         x-show="repositories.length > 0"
+         x-show="!loading && repositories.length > 0"
          class="mx-4 mb-4"
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="opacity-0 transform -translate-y-2"
          x-transition:enter-end="opacity-100 transform translate-y-0">
+
+        <!-- Error state -->
+        <div x-show="error" class="p-3 mb-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400 text-sm">
+            <span x-text="'Errore: ' + error"></span>
+        </div>
 
         <!-- Expanded view -->
         <div x-show="sidebarOpen" class="space-y-3">
@@ -296,7 +301,12 @@
         return {
             repositories: [],
             selectedCommit: null,
-            sidebarOpen: Alpine.store('sidebar')?.open ?? true,
+            loading: true,
+            error: null,
+
+            get sidebarOpen() {
+                return Alpine.store('sidebar')?.open ?? true;
+            },
 
             async init() {
                 await this.loadRepositories();
@@ -305,85 +315,88 @@
             },
 
             async loadRepositories() {
+                this.loading = true;
+                this.error = null;
                 try {
                     const res = await fetch('/api/git/repositories');
+                    if (!res.ok) {
+                        throw new Error(`HTTP ${res.status}`);
+                    }
                     const repos = await res.json();
 
-                    // Initialize expanded state if not exists
-                    for (const repo of repos) {
-                        const existing = this.repositories.find(r => r.id === repo.id);
-                        repo.expanded = existing?.expanded ?? false;
-                        repo.commits = [];
-                        repo.currentBranch = null;
+                    // Preserve expanded state from existing repos
+                    const expandedMap = {};
+                    this.repositories.forEach(r => {
+                        expandedMap[r.id] = r.expanded;
+                    });
 
-                        // Only load branch and commits if path exists
+                    // Load branch and commits for each repo with Promise.all
+                    const loadedRepos = await Promise.all(repos.map(async (repo) => {
+                        repo.expanded = expandedMap[repo.id] ?? false;
+                        repo.commits = [];
+                        repo.currentBranch = 'Loading...';
+
                         if (repo.path_exists !== false) {
-                            this.loadRepoBranch(repo);
-                            this.loadRepoCommits(repo);
+                            await Promise.all([
+                                this.loadRepoBranchInline(repo),
+                                this.loadRepoCommitsInline(repo)
+                            ]);
                         } else {
                             repo.currentBranch = 'N/A';
                         }
-                    }
+                        return repo;
+                    }));
 
-                    this.repositories = repos;
+                    this.repositories = loadedRepos;
                 } catch (error) {
                     console.error('Error loading repositories:', error);
+                    this.error = error.message;
+                } finally {
+                    this.loading = false;
                 }
             },
 
-            async loadRepoBranch(repo) {
+            async loadRepoBranchInline(repo) {
                 try {
                     const res = await fetch(`/api/git/repositories/${repo.id}/branch`);
-                    if (!res.ok) {
-                        const errText = await res.text();
-                        console.error(`Branch API error for ${repo.name}:`, res.status, errText);
-                        this.updateRepo(repo.id, { currentBranch: 'N/A' });
-                        return;
+                    if (res.ok) {
+                        const data = await res.json();
+                        repo.currentBranch = data.branch || 'N/A';
+                    } else {
+                        console.error(`Branch API error for ${repo.name}:`, res.status);
+                        repo.currentBranch = 'N/A';
                     }
-                    const data = await res.json();
-                    this.updateRepo(repo.id, { currentBranch: data.branch || 'N/A' });
                 } catch (error) {
                     console.error(`Error loading branch for ${repo.name}:`, error);
-                    this.updateRepo(repo.id, { currentBranch: 'Error' });
+                    repo.currentBranch = 'Error';
                 }
             },
 
-            async loadRepoCommits(repo) {
+            async loadRepoCommitsInline(repo) {
                 try {
                     const res = await fetch(`/api/git/repositories/${repo.id}/commits?limit=5`);
-                    if (!res.ok) {
-                        const errText = await res.text();
-                        console.error(`Commits API error for ${repo.name}:`, res.status, errText);
-                        this.updateRepo(repo.id, { commits: [] });
-                        return;
-                    }
-                    const commits = await res.json();
-                    this.updateRepo(repo.id, {
-                        commits: commits.map(c => ({
+                    if (res.ok) {
+                        const commits = await res.json();
+                        repo.commits = commits.map(c => ({
                             sha: c.sha,
                             message: c.message,
                             author: c.author,
                             date: this.formatDate(c.date)
-                        }))
-                    });
+                        }));
+                    } else {
+                        console.error(`Commits API error for ${repo.name}:`, res.status);
+                        repo.commits = [];
+                    }
                 } catch (error) {
                     console.error(`Error loading commits for ${repo.name}:`, error);
-                    this.updateRepo(repo.id, { commits: [] });
+                    repo.commits = [];
                 }
-            },
-
-            updateRepo(repoId, updates) {
-                // Force Alpine reactivity by creating a new array
-                this.repositories = this.repositories.map(r =>
-                    r.id === repoId ? { ...r, ...updates } : r
-                );
             },
 
             toggleRepo(repoId) {
-                const repo = this.repositories.find(r => r.id === repoId);
-                if (repo) {
-                    this.updateRepo(repoId, { expanded: !repo.expanded });
-                }
+                this.repositories = this.repositories.map(r =>
+                    r.id === repoId ? { ...r, expanded: !r.expanded } : r
+                );
             },
 
             async viewCommit(repo, commit) {

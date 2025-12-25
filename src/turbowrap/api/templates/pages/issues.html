@@ -161,9 +161,13 @@
                     </svg>
                     Reset In Progress (<span x-text="issues.filter(i => i.status === 'in_progress').length"></span>)
                 </button>
+                <button @click="selectAll()"
+                        class="text-sm text-gray-600 dark:text-gray-400 hover:text-primary">
+                    Seleziona Tutte
+                </button>
                 <button @click="selectAllCritical()"
                         class="text-sm text-gray-600 dark:text-gray-400 hover:text-primary">
-                    Seleziona Critical/High
+                    Solo Critical/High
                 </button>
                 <button @click="clearSelection()"
                         x-show="selectedIssues.length > 0"
@@ -1084,6 +1088,13 @@ function issuesApp() {
         nextIssue() {
             if (!this.canGoNext()) return;
             this.selectedIssue = this.issues[this.currentIssueIndex + 1];
+        },
+
+        selectAll() {
+            // Select all open issues (not resolved or ignored)
+            this.selectedIssues = this.issues
+                .filter(i => i.status === 'open' || i.status === 'in_progress')
+                .map(i => i.id);
         },
 
         selectAllCritical() {

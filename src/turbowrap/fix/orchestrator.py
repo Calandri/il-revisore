@@ -54,7 +54,7 @@ BACKEND_EXTENSIONS = {".py", ".go", ".java", ".rb", ".php", ".rs", ".c", ".cpp",
 ProgressCallback = Callable[[FixProgressEvent], Awaitable[None]]
 
 # Timeouts
-CLAUDE_CLI_TIMEOUT = 300  # 5 minutes per fix
+CLAUDE_CLI_TIMEOUT = 900  # 15 minutes per fix
 GEMINI_CLI_TIMEOUT = 120  # 2 minutes per review
 
 # Parallelism limits - prevent macOS file watcher exhaustion (EOPNOTSUPP)
@@ -847,7 +847,12 @@ The reviewer found issues with the previous fix. Address this feedback:
 
             if process.returncode != 0:
                 stderr = await process.stderr.read()
-                logger.error(f"Claude CLI failed: {stderr.decode()}")
+                logger.error(f"Claude CLI failed with return code {process.returncode}")
+                logger.error(f"Claude CLI stderr: {stderr.decode()[:2000]}")
+                # Also log what we got from stdout
+                raw = "".join(output_chunks)
+                if raw:
+                    logger.error(f"Claude CLI stdout (first 1000 chars): {raw[:1000]}")
                 return None
 
             # Parse stream-json output (NDJSON)

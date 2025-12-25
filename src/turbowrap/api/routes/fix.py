@@ -200,6 +200,12 @@ class FixStartRequest(BaseModel):
         default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
     )
 
+    # Force restart - bypasses idempotency check for stuck sessions
+    force: bool = Field(
+        default=False,
+        description="Force restart even if a session is already in progress (use when session is stuck)"
+    )
+
 
 class ClarificationAnswerRequest(BaseModel):
     """Request with clarification answer."""
@@ -374,15 +380,28 @@ async def start_fix(
 
     if is_duplicate and existing:
         if existing.status == "in_progress":
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "Fix session already in progress for these issues",
-                    "session_id": existing.session_id,
-                    "status": existing.status,
-                    "started_at": existing.created_at.isoformat(),
-                },
-            )
+            if request.force:
+                # Force restart: remove old entry and continue
+                logger.warning(
+                    f"Force restart requested, removing stuck session: {existing.session_id}"
+                )
+                _idempotency_store.remove(idempotency_key)
+                # Re-register with new session
+                _idempotency_store.check_and_register(
+                    key=idempotency_key,
+                    session_id=session_id,
+                )
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "Fix session already in progress for these issues",
+                        "session_id": existing.session_id,
+                        "status": existing.status,
+                        "started_at": existing.created_at.isoformat(),
+                        "hint": "Use force=true to restart if the session is stuck",
+                    },
+                )
         else:
             # Return previous result
             return {
@@ -608,6 +627,108 @@ async def submit_clarification(data: ClarificationAnswerRequest):
         future.set_result(answer)
 
     return {"status": "received", "question_id": question_id}
+
+
+# Session timeout for stale detection (30 minutes)
+STALE_SESSION_TIMEOUT_SECONDS = 30 * 60
+
+
+class ActiveSessionInfo(BaseModel):
+    """Info about an active fix session."""
+
+    session_id: str
+    status: str
+    started_at: datetime
+    is_stale: bool  # True if session is older than STALE_SESSION_TIMEOUT
+
+
+class ActiveSessionsResponse(BaseModel):
+    """Response with active fix sessions."""
+
+    sessions: list[ActiveSessionInfo]
+    total: int
+
+
+@router.get("/sessions/active", response_model=ActiveSessionsResponse)
+def list_active_sessions():
+    """
+    List all active (in_progress) fix sessions.
+
+    Sessions older than 30 minutes are marked as stale.
+    """
+    now = datetime.utcnow()
+    stale_cutoff = now - timedelta(seconds=STALE_SESSION_TIMEOUT_SECONDS)
+
+    sessions = []
+    with _idempotency_store._lock:
+        for key, entry in _idempotency_store._store.items():
+            if entry.status == "in_progress":
+                sessions.append(ActiveSessionInfo(
+                    session_id=entry.session_id,
+                    status=entry.status,
+                    started_at=entry.created_at,
+                    is_stale=entry.created_at < stale_cutoff,
+                ))
+
+    return ActiveSessionsResponse(sessions=sessions, total=len(sessions))
+
+
+@router.delete("/sessions/{session_id}")
+def cancel_session(session_id: str):
+    """
+    Cancel a stuck fix session by session ID.
+
+    Use this when a session is stuck in 'in_progress' and needs to be cleared.
+    """
+    # Find and remove the session
+    removed = False
+    with _idempotency_store._lock:
+        keys_to_remove = []
+        for key, entry in _idempotency_store._store.items():
+            if entry.session_id == session_id:
+                keys_to_remove.append(key)
+                removed = True
+
+        for key in keys_to_remove:
+            del _idempotency_store._store[key]
+            logger.info(f"Cancelled fix session: {session_id} (key: {key})")
+
+    if not removed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session {session_id} not found or already completed",
+        )
+
+    return {"status": "cancelled", "session_id": session_id}
+
+
+@router.delete("/sessions/stale")
+def clear_stale_sessions():
+    """
+    Clear all stale (stuck) fix sessions.
+
+    Removes sessions that have been in_progress for more than 30 minutes.
+    """
+    now = datetime.utcnow()
+    stale_cutoff = now - timedelta(seconds=STALE_SESSION_TIMEOUT_SECONDS)
+
+    cleared = []
+    with _idempotency_store._lock:
+        keys_to_remove = []
+        for key, entry in _idempotency_store._store.items():
+            if entry.status == "in_progress" and entry.created_at < stale_cutoff:
+                keys_to_remove.append(key)
+                cleared.append(entry.session_id)
+
+        for key in keys_to_remove:
+            del _idempotency_store._store[key]
+            logger.info(f"Cleared stale session (key: {key})")
+
+    return {
+        "status": "cleared",
+        "cleared_count": len(cleared),
+        "cleared_sessions": cleared,
+    }
 
 
 class PendingBranchInfo(BaseModel):

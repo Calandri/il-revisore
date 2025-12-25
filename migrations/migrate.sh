@@ -65,5 +65,29 @@ sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN fix_branch VARCHAR(100);" 2>/d
     echo "  - Added fix_branch to issues" || \
     echo "  - issues.fix_branch already exists"
 
+# Migration 004: Add workload estimation columns
+echo ""
+echo "Migration 004: Adding workload estimation columns..."
+
+sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN estimated_effort INTEGER;" 2>/dev/null && \
+    echo "  - Added estimated_effort to issues" || \
+    echo "  - issues.estimated_effort already exists"
+
+sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN estimated_files_count INTEGER;" 2>/dev/null && \
+    echo "  - Added estimated_files_count to issues" || \
+    echo "  - issues.estimated_files_count already exists"
+
+# Migration 005: Add is_active and fix_session_id columns
+echo ""
+echo "Migration 005: Adding is_active and fix_session_id columns..."
+
+sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN is_active BOOLEAN DEFAULT 0;" 2>/dev/null && \
+    echo "  - Added is_active to issues" || \
+    echo "  - issues.is_active already exists"
+
+sqlite3 "$DB_PATH" "ALTER TABLE issues ADD COLUMN fix_session_id VARCHAR(36);" 2>/dev/null && \
+    echo "  - Added fix_session_id to issues" || \
+    echo "  - issues.fix_session_id already exists"
+
 echo ""
 echo "Migrations complete!"

@@ -38,7 +38,7 @@ class GeminiFixChallenger:
         self,
         model: str = "gemini-3-pro-preview",
         thinking_budget: int = FIX_CHALLENGER_THINKING_BUDGET,
-        satisfaction_threshold: float = 80.0,
+        satisfaction_threshold: float = 95.0,
     ):
         """
         Initialize the fix challenger.
