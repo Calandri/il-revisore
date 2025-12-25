@@ -57,6 +57,16 @@ ProgressCallback = Callable[[FixProgressEvent], Awaitable[None]]
 CLAUDE_CLI_TIMEOUT = 300  # 5 minutes per fix
 GEMINI_CLI_TIMEOUT = 120  # 2 minutes per review
 
+# Parallelism limits - prevent macOS file watcher exhaustion (EOPNOTSUPP)
+# Sequential execution: first all BE issues, then all FE issues (not parallel)
+# This avoids file watcher limit issues on macOS
+
+# Issue batching - don't overload a single Claude CLI with too many issues
+MAX_ISSUES_PER_CLI_CALL = 5  # Max issues per batch (fallback if no estimates)
+MAX_WORKLOAD_POINTS_PER_BATCH = 15  # Max workload points per batch
+DEFAULT_EFFORT = 3  # Default effort if not estimated (1-5 scale)
+DEFAULT_FILES = 1  # Default files to modify if not estimated
+
 
 class FixOrchestrator:
     """
@@ -77,7 +87,7 @@ class FixOrchestrator:
         # Get challenger settings from config
         fix_config = self.settings.fix_challenger
         self.max_iterations = fix_config.max_iterations  # default 3
-        self.satisfaction_threshold = fix_config.satisfaction_threshold  # default 80.0
+        self.satisfaction_threshold = fix_config.satisfaction_threshold  # default 95.0
 
         # Load agent prompts
         self._agent_cache: dict[str, str] = {}
@@ -217,22 +227,91 @@ class FixOrchestrator:
                 )
             )
 
-            # Create branch from main (using agent)
-            branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
-            branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
-            await self._run_claude_cli(branch_creator_prompt, timeout=60)
+            # Handle branch: either use existing or create new from main
+            if request.use_existing_branch and request.existing_branch_name:
+                # Use existing branch - just checkout
+                branch_name = request.existing_branch_name
+                result.branch_name = branch_name
+                logger.info(f"Using existing branch: {branch_name}")
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_STREAMING,
+                        session_id=session_id,
+                        message=f"Continuing on existing branch: {branch_name}",
+                    )
+                )
+                # Simple checkout - no need for full agent
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "checkout", branch_name,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(self.repo_path),
+                )
+                _, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    raise Exception(f"Failed to checkout branch {branch_name}: {stderr.decode()}")
+            else:
+                # Create new branch from main (using agent)
+                branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
+                branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
+                await self._run_claude_cli(branch_creator_prompt, timeout=60)
 
             feedback_be = ""
             feedback_fe = ""
             last_gemini_output: str | None = None  # Store for fix explanation
 
+            # Collect prompts for S3 logging
+            claude_prompts: list[dict] = []  # [{type: "be"|"fe", batch: N, prompt: str}]
+            gemini_prompt: str | None = None
+
             for iteration in range(1, self.max_iterations + 1):
-                # Step 1: Launch Claude CLI(s) in parallel
+                # Pre-calculate batches to show plan
+                def get_issue_workload(issue: Issue) -> int:
+                    """Calculate workload points for an issue based on estimates."""
+                    effort = issue.estimated_effort or DEFAULT_EFFORT
+                    files = issue.estimated_files_count or DEFAULT_FILES
+                    return effort * files
+
+                def batch_issues_by_workload(issues: list[Issue]) -> list[list[Issue]]:
+                    """Split issues into batches based on workload estimates."""
+                    batches: list[list[Issue]] = []
+                    current_batch: list[Issue] = []
+                    current_workload = 0
+
+                    for issue in issues:
+                        workload = get_issue_workload(issue)
+                        if current_batch and (
+                            current_workload + workload > MAX_WORKLOAD_POINTS_PER_BATCH
+                            or len(current_batch) >= MAX_ISSUES_PER_CLI_CALL
+                        ):
+                            batches.append(current_batch)
+                            current_batch = []
+                            current_workload = 0
+                        current_batch.append(issue)
+                        current_workload += workload
+
+                    if current_batch:
+                        batches.append(current_batch)
+                    return batches
+
+                # Calculate batches upfront
+                be_batches = batch_issues_by_workload(be_issues) if has_be else []
+                fe_batches = batch_issues_by_workload(fe_issues) if has_fe else []
+                total_batches = len(be_batches) + len(fe_batches)
+
+                # Show batching plan
+                plan_parts = []
+                if be_batches:
+                    plan_parts.append(f"{len(be_batches)} BE batch{'es' if len(be_batches) > 1 else ''}")
+                if fe_batches:
+                    plan_parts.append(f"{len(fe_batches)} FE batch{'es' if len(fe_batches) > 1 else ''}")
+                plan_msg = " + ".join(plan_parts) if plan_parts else "No batches"
+
                 await safe_emit(
                     FixProgressEvent(
                         type=FixEventType.FIX_ISSUE_GENERATING,
                         session_id=session_id,
-                        message=f"Fixing (iteration {iteration}/{self.max_iterations})...",
+                        message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n📋 Plan: {plan_msg} ({total_batches} total)",
                     )
                 )
 
@@ -255,48 +334,119 @@ class FixOrchestrator:
                         )
                     )
 
-                tasks = []
-                task_types = []
+                # SEQUENTIAL EXECUTION with BATCHING
+                # First all BE batches, then all FE batches
+                successful_issues: list[Issue] = []
+                failed_issues: list[Issue] = []
+                completed_batches = 0
 
+                # Step 1a: Run BE issues in batches (if any)
                 if has_be:
-                    prompt_be = self._build_fix_prompt(be_issues, "be", feedback_be, iteration)
-                    tasks.append(self._run_claude_cli(prompt_be, on_chunk=on_chunk_be))
-                    task_types.append("be")
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
-                            session_id=session_id,
-                            message=f"→ Claude CLI (BE): fixing {len(be_issues)} issues",
+                    for batch_idx, batch in enumerate(be_batches, 1):
+                        completed_batches += 1
+                        batch_workload = sum(get_issue_workload(i) for i in batch)
+                        issue_codes = ", ".join(str(i.issue_code) for i in batch)
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_ISSUE_STREAMING,
+                                session_id=session_id,
+                                message=f"🔧 BE batch {batch_idx}/{len(be_batches)} [{completed_batches}/{total_batches}] | {len(batch)} issues, workload={batch_workload}\n   Issues: {issue_codes}",
+                            )
                         )
-                    )
+                        prompt_be = self._build_fix_prompt(batch, "be", feedback_be, iteration)
+                        # Save prompt for S3 logging (only first iteration to avoid bloat)
+                        if iteration == 1:
+                            claude_prompts.append({
+                                "type": "be",
+                                "batch": batch_idx,
+                                "issues": [i.issue_code for i in batch],
+                                "prompt": prompt_be,
+                            })
+                        try:
+                            output_be = await self._run_claude_cli(prompt_be, on_chunk=on_chunk_be)
+                            if output_be is None:
+                                logger.error(f"Claude CLI (BE batch {batch_idx}) failed: returned None")
+                                failed_issues.extend(batch)
+                            else:
+                                successful_issues.extend(batch)
+                                await safe_emit(
+                                    FixProgressEvent(
+                                        type=FixEventType.FIX_ISSUE_STREAMING,
+                                        session_id=session_id,
+                                        message=f"   ✅ BE batch {batch_idx} completed ({len(batch)} issues fixed)",
+                                    )
+                                )
+                        except Exception as e:
+                            logger.error(f"Claude CLI (BE batch {batch_idx}) failed with exception: {e}")
+                            failed_issues.extend(batch)
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_ISSUE_STREAMING,
+                                    session_id=session_id,
+                                    message=f"   ❌ BE batch {batch_idx} FAILED: {str(e)[:100]}",
+                                )
+                            )
 
+                # Step 1b: Run FE issues in batches (if any)
                 if has_fe:
-                    prompt_fe = self._build_fix_prompt(fe_issues, "fe", feedback_fe, iteration)
-                    tasks.append(self._run_claude_cli(prompt_fe, on_chunk=on_chunk_fe))
-                    task_types.append("fe")
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
-                            session_id=session_id,
-                            message=f"→ Claude CLI (FE): fixing {len(fe_issues)} issues",
+                    for batch_idx, batch in enumerate(fe_batches, 1):
+                        completed_batches += 1
+                        batch_workload = sum(get_issue_workload(i) for i in batch)
+                        issue_codes = ", ".join(str(i.issue_code) for i in batch)
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_ISSUE_STREAMING,
+                                session_id=session_id,
+                                message=f"🔧 FE batch {batch_idx}/{len(fe_batches)} [{completed_batches}/{total_batches}] | {len(batch)} issues, workload={batch_workload}\n   Issues: {issue_codes}",
+                            )
                         )
-                    )
+                        prompt_fe = self._build_fix_prompt(batch, "fe", feedback_fe, iteration)
+                        # Save prompt for S3 logging (only first iteration to avoid bloat)
+                        if iteration == 1:
+                            claude_prompts.append({
+                                "type": "fe",
+                                "batch": batch_idx,
+                                "issues": [i.issue_code for i in batch],
+                                "prompt": prompt_fe,
+                            })
+                        try:
+                            output_fe = await self._run_claude_cli(prompt_fe, on_chunk=on_chunk_fe)
+                            if output_fe is None:
+                                logger.error(f"Claude CLI (FE batch {batch_idx}) failed: returned None")
+                                failed_issues.extend(batch)
+                            else:
+                                successful_issues.extend(batch)
+                                await safe_emit(
+                                    FixProgressEvent(
+                                        type=FixEventType.FIX_ISSUE_STREAMING,
+                                        session_id=session_id,
+                                        message=f"   ✅ FE batch {batch_idx} completed ({len(batch)} issues fixed)",
+                                    )
+                                )
+                        except Exception as e:
+                            logger.error(f"Claude CLI (FE batch {batch_idx}) failed with exception: {e}")
+                            failed_issues.extend(batch)
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_ISSUE_STREAMING,
+                                    session_id=session_id,
+                                    message=f"   ❌ FE batch {batch_idx} FAILED: {str(e)[:100]}",
+                                )
+                            )
 
-                # Run in parallel
-                outputs = await asyncio.gather(*tasks, return_exceptions=True)
-
-                # Check for failures
-                for i, output in enumerate(outputs):
-                    if isinstance(output, Exception) or output is None:
-                        logger.error(f"Claude CLI ({task_types[i]}) failed: {output}")
-
+                # Summary after all batches
                 await safe_emit(
                     FixProgressEvent(
                         type=FixEventType.FIX_ISSUE_STREAMING,
                         session_id=session_id,
-                        message="Claude CLI(s) completed",
+                        message=f"══════ Batches Complete ══════\n📊 {len(successful_issues)} issues processed, {len(failed_issues)} CLI failures",
                     )
                 )
+
+                # If ALL CLIs failed, abort early
+                if len(successful_issues) == 0:
+                    logger.error("All Claude CLI processes failed, aborting fix session")
+                    raise Exception("All Claude CLI processes failed")
 
                 # Step 2: Gemini reviews ALL changes together
                 await safe_emit(
@@ -318,6 +468,9 @@ class FixOrchestrator:
                     )
 
                 review_prompt = self._build_review_prompt_batch(issues)
+                # Save Gemini prompt for S3 logging (only first iteration)
+                if iteration == 1:
+                    gemini_prompt = review_prompt
                 gemini_output = await self._run_gemini_cli(review_prompt, on_chunk=on_chunk_gemini)
                 last_gemini_output = gemini_output  # Store for fix explanation
 
@@ -378,44 +531,84 @@ class FixOrchestrator:
 
             # Step 4: Collect git info and build results
             commit_sha, modified_files, _ = await self._get_git_info()
-            fix_explanation = self._build_fix_explanation(issues, last_gemini_output)
+            fix_explanation = self._build_fix_explanation(successful_issues, last_gemini_output)
 
-            # Create IssueFixResult for each issue
-            for issue in issues:
-                # Get code snippet for this issue's file
-                fix_code = await self._get_diff_for_file(str(issue.file))
+            # CRITICAL: Only mark issues as COMPLETED if their file was actually committed
+            # The commit is sacred - no commit = no completion
+            actually_fixed_count = 0
 
+            # Create IssueFixResult for SUCCESSFUL issues (only if file in commit)
+            for issue in successful_issues:
+                # Check if this issue's file was actually modified in the commit
+                issue_file = str(issue.file)
+                file_in_commit = any(
+                    issue_file.endswith(mod_file) or mod_file.endswith(issue_file)
+                    for mod_file in modified_files
+                )
+
+                if file_in_commit and commit_sha:
+                    # File was committed - mark as COMPLETED
+                    fix_code = await self._get_diff_for_file(issue_file)
+                    issue_result = IssueFixResult(
+                        issue_id=issue.id,
+                        issue_code=str(issue.issue_code),
+                        status=FixStatus.COMPLETED,
+                        commit_sha=commit_sha,
+                        commit_message=f"[FIX] {issue_codes}",
+                        changes_made=f"Fixed {issue.title}",
+                        fix_code=fix_code,
+                        fix_explanation=fix_explanation,
+                        fix_files_modified=modified_files,
+                        started_at=result.started_at,
+                        completed_at=datetime.utcnow(),
+                    )
+                    actually_fixed_count += 1
+                else:
+                    # File NOT in commit - mark as FAILED (CLI crashed before commit)
+                    logger.warning(f"Issue {issue.issue_code} file not in commit, marking as FAILED")
+                    issue_result = IssueFixResult(
+                        issue_id=issue.id,
+                        issue_code=str(issue.issue_code),
+                        status=FixStatus.FAILED,
+                        error=f"File {issue_file} not found in commit (CLI may have crashed before git add)",
+                        started_at=result.started_at,
+                        completed_at=datetime.utcnow(),
+                    )
+                result.results.append(issue_result)
+
+            # Create FAILED results for issues where CLI crashed
+            for issue in failed_issues:
+                logger.warning(f"Issue {issue.issue_code} CLI failed, marking as FAILED")
                 issue_result = IssueFixResult(
                     issue_id=issue.id,
                     issue_code=str(issue.issue_code),
-                    status=FixStatus.COMPLETED,
-                    commit_sha=commit_sha,
-                    commit_message=f"[FIX] {issue_codes}",
-                    changes_made=f"Fixed {issue.title}",
-                    fix_code=fix_code,
-                    fix_explanation=fix_explanation,
-                    fix_files_modified=modified_files,
+                    status=FixStatus.FAILED,
+                    error="Claude CLI process failed (possible macOS file watcher limit - EOPNOTSUPP)",
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                 )
                 result.results.append(issue_result)
 
-            result.status = FixStatus.COMPLETED
-            result.issues_fixed = len(issues)
+            result.status = FixStatus.COMPLETED if actually_fixed_count > 0 else FixStatus.FAILED
+            result.issues_fixed = actually_fixed_count
             result.completed_at = datetime.utcnow()
 
+            failed_count = len(issues) - actually_fixed_count
             await safe_emit(
                 FixProgressEvent(
                     type=FixEventType.FIX_SESSION_COMPLETED,
                     session_id=session_id,
                     branch_name=branch_name,
                     issues_fixed=result.issues_fixed,
-                    message=f"Fixed {len(issues)} issues",
+                    message=f"Fixed {actually_fixed_count}/{len(issues)} issues ({failed_count} failed - not in commit)",
                 )
             )
 
             # Save fix log to S3 for debugging (10 day retention)
-            await self._save_fix_log_to_s3(session_id, result, issues, last_gemini_output)
+            await self._save_fix_log_to_s3(
+                session_id, result, issues, last_gemini_output,
+                claude_prompts=claude_prompts, gemini_prompt=gemini_prompt
+            )
 
             return result
 
@@ -550,15 +743,26 @@ The reviewer found issues with the previous fix. Address this feedback:
         # Look for "SCORE: XX" pattern
         match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
         if match:
-            return float(match.group(1))
+            score = float(match.group(1))
+            logger.info(f"Parsed SCORE: {score}")
+            return score
+
+        # Look for "satisfaction_score": XX in JSON (most direct)
+        match = re.search(r'"satisfaction_score"\s*:\s*(\d+)', output)
+        if match:
+            score = float(match.group(1))
+            logger.info(f"Parsed satisfaction_score from JSON: {score}")
+            return score
 
         # Fallback: look for any number followed by /100
         match = re.search(r"(\d+)\s*/\s*100", output)
         if match:
-            return float(match.group(1))
+            score = float(match.group(1))
+            logger.info(f"Parsed XX/100: {score}")
+            return score
 
         # Default to 70 if can't parse
-        logger.warning("Could not parse score from Gemini output, defaulting to 70")
+        logger.warning(f"Could not parse score from Gemini output, defaulting to 70. Output: {output[:500]}")
         return 70.0
 
     async def _run_claude_cli(
@@ -697,21 +901,19 @@ The reviewer found issues with the previous fix. Address this feedback:
             # Use Pro model from settings (for better reasoning in review)
             model = self.settings.agents.gemini_pro_model
 
+            # Gemini CLI expects prompt as positional argument, not stdin
+            # Use --yolo to auto-approve any tool calls
             process = await asyncio.create_subprocess_exec(
                 "gemini",
                 "-m",
                 model,
-                stdin=asyncio.subprocess.PIPE,
+                "--yolo",
+                prompt,  # Prompt as positional argument
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
                 env=env,
             )
-
-            # Write prompt to stdin
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
 
             # Read stdout in streaming mode with incremental UTF-8 decoder
             # This handles multi-byte UTF-8 characters split across chunk boundaries
@@ -869,6 +1071,8 @@ The reviewer found issues with the previous fix. Address this feedback:
         result: FixSessionResult,
         issues: list[Issue],
         gemini_output: str | None,
+        claude_prompts: list[dict] | None = None,
+        gemini_prompt: str | None = None,
     ) -> str | None:
         """
         Save fix session log to S3 for debugging.
@@ -917,6 +1121,9 @@ The reviewer found issues with the previous fix. Address this feedback:
                     for r in result.results
                 ],
                 "gemini_review": gemini_output[:2000] if gemini_output else None,
+                # Prompts sent to CLIs (for debugging)
+                "claude_prompts": claude_prompts or [],
+                "gemini_prompt": gemini_prompt,
             }
 
             # Upload to S3

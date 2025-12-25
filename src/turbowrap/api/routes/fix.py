@@ -192,6 +192,14 @@ class FixStartRequest(BaseModel):
     task_id: str = Field(..., description="Task ID that found the issues")
     issue_ids: list[str] = Field(..., min_length=1, description="Issue IDs to fix")
 
+    # Branch handling - allows continuing on existing branch instead of creating new one
+    use_existing_branch: bool = Field(
+        default=False, description="If True, use existing branch instead of creating new one from main"
+    )
+    existing_branch_name: Optional[str] = Field(
+        default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
+    )
+
 
 class ClarificationAnswerRequest(BaseModel):
     """Request with clarification answer."""
@@ -424,6 +432,8 @@ async def start_fix(
         repository_id=request.repository_id,
         task_id=request.task_id,
         issue_ids=[i.id for i in issues],
+        use_existing_branch=request.use_existing_branch,
+        existing_branch_name=request.existing_branch_name,
     )
 
     async def generate() -> AsyncIterator[dict]:
@@ -468,6 +478,7 @@ async def start_fix(
                             db_issue.fix_files_modified = issue_result.fix_files_modified
                             db_issue.fix_commit_sha = issue_result.commit_sha
                             db_issue.fix_branch = result.branch_name
+                            db_issue.fix_session_id = result.session_id  # For S3 log retrieval
                             db_issue.fixed_at = datetime.utcnow()
                             db_issue.fixed_by = "fixer_claude"
                             completed_count += 1
@@ -597,6 +608,75 @@ async def submit_clarification(data: ClarificationAnswerRequest):
         future.set_result(answer)
 
     return {"status": "received", "question_id": question_id}
+
+
+class PendingBranchInfo(BaseModel):
+    """Info about a pending (unmerged) fix branch."""
+
+    branch_name: str
+    repository_id: str
+    repository_name: str
+    issues_count: int
+    issue_codes: list[str]
+    created_at: datetime
+
+
+class PendingBranchesResponse(BaseModel):
+    """Response with pending fix branches."""
+
+    has_pending: bool
+    branches: list[PendingBranchInfo]
+
+
+@router.get("/pending-branches/{repository_id}", response_model=PendingBranchesResponse)
+def get_pending_branches(
+    repository_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Check if there are unmerged fix branches for a repository.
+
+    Returns branches with resolved issues that haven't been merged yet.
+    """
+    # Get repo info
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Find issues that are "resolved" with a fix_branch set (not merged yet)
+    resolved_issues = db.query(Issue).filter(
+        Issue.repository_id == repository_id,
+        Issue.status == IssueStatus.RESOLVED.value,
+        Issue.fix_branch.isnot(None),
+    ).all()
+
+    if not resolved_issues:
+        return PendingBranchesResponse(has_pending=False, branches=[])
+
+    # Group by branch
+    branches_map: dict[str, list[Issue]] = {}
+    for issue in resolved_issues:
+        branch = issue.fix_branch
+        if branch not in branches_map:
+            branches_map[branch] = []
+        branches_map[branch].append(issue)
+
+    # Build response
+    branches = []
+    for branch_name, issues in branches_map.items():
+        branches.append(PendingBranchInfo(
+            branch_name=branch_name,
+            repository_id=repository_id,
+            repository_name=repo.name,
+            issues_count=len(issues),
+            issue_codes=[i.issue_code for i in issues],
+            created_at=min(i.fixed_at for i in issues if i.fixed_at) or datetime.utcnow(),
+        ))
+
+    return PendingBranchesResponse(
+        has_pending=len(branches) > 0,
+        branches=branches,
+    )
 
 
 class MergeRequest(BaseModel):

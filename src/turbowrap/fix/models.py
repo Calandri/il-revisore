@@ -169,6 +169,14 @@ class FixRequest(BaseModel):
     task_id: str = Field(..., description="Task ID that found the issues")
     issue_ids: list[str] = Field(..., min_length=1, description="Issue IDs to fix (in order)")
 
+    # Branch handling - allows continuing on existing branch instead of creating new one
+    use_existing_branch: bool = Field(
+        default=False, description="If True, use existing branch instead of creating new one from main"
+    )
+    existing_branch_name: str | None = Field(
+        default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
+    )
+
 
 class ClarificationQuestion(BaseModel):
     """Question requiring user clarification."""
