@@ -453,6 +453,7 @@ async def start_fix(
         issue_ids=[i.id for i in issues],
         use_existing_branch=request.use_existing_branch,
         existing_branch_name=request.existing_branch_name,
+        workspace_path=repo.workspace_path,  # Monorepo: restrict fixes to this folder
     )
 
     async def generate() -> AsyncIterator[dict]:

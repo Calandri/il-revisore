@@ -28,6 +28,7 @@ from turbowrap.fix.models import (
     FixSessionResult,
     FixStatus,
     IssueFixResult,
+    ScopeValidationError,
 )
 from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_google_api_key
 
@@ -181,6 +182,46 @@ class FixOrchestrator:
     def _get_challenger_prompt(self) -> str:
         """Get fix challenger prompt."""
         return self._load_agent(FIX_CHALLENGER_AGENT)
+
+    def _get_code_snippet(self, issue: Issue, context_lines: int = 5) -> str:
+        """Extract code snippet from file around the issue location.
+
+        Args:
+            issue: The issue with file path and line numbers
+            context_lines: Number of lines to show before/after the issue
+
+        Returns:
+            Code snippet with line numbers, or empty string if file not found
+        """
+        if issue.current_code:
+            # Already have the code, return it with line info
+            line_info = f"(lines {issue.line}-{issue.end_line})" if issue.line and issue.end_line else f"(line {issue.line})" if issue.line else ""
+            return f"{line_info}\n{issue.current_code}"
+
+        if not issue.line:
+            return ""
+
+        try:
+            file_path = self.repo_path / issue.file
+            if not file_path.exists():
+                return f"[File not found: {issue.file}]"
+
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+
+            start_line = max(1, issue.line - context_lines)
+            end_line = min(len(lines), (issue.end_line or issue.line) + context_lines)
+
+            snippet_lines = []
+            for i in range(start_line - 1, end_line):
+                line_num = i + 1
+                marker = ">>>" if issue.line <= line_num <= (issue.end_line or issue.line) else "   "
+                snippet_lines.append(f"{marker} {line_num:4d} | {lines[i].rstrip()}")
+
+            return "\n".join(snippet_lines)
+        except Exception as e:
+            logger.warning(f"Failed to read code snippet for {issue.file}:{issue.line}: {e}")
+            return f"[Error reading file: {e}]"
 
     async def fix_issues(
         self,
@@ -405,7 +446,7 @@ class FixOrchestrator:
                     )
 
                     # Step 1: Run Claude CLI for this batch
-                    prompt = self._build_fix_prompt(batch, batch_type.lower(), feedback, iteration)
+                    prompt = self._build_fix_prompt(batch, batch_type.lower(), feedback, iteration, request.workspace_path)
                     if iteration == 1:
                         claude_prompts.append({
                             "type": batch_type.lower(),
@@ -561,9 +602,64 @@ class FixOrchestrator:
                     break
 
             # After all iterations, collect failed issues from batches that never passed
-            for batch_id, result in batch_results.items():
-                if not result["passed"]:
-                    failed_issues.extend(result["issues"])
+            for batch_id, batch_data in batch_results.items():
+                if not batch_data["passed"]:
+                    failed_issues.extend(batch_data["issues"])
+
+            # ============== WORKSPACE SCOPE VALIDATION ==============
+            # Before committing, validate that all modified files are within the workspace scope
+            # This is a CRITICAL safety check for monorepos - prevents Claude from modifying
+            # files outside the designated workspace folder
+            if request.workspace_path:
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_VALIDATING,
+                        session_id=session_id,
+                        message=f"🔒 Validating workspace scope: {request.workspace_path}",
+                    )
+                )
+
+                # Get all uncommitted files (staged, unstaged, untracked)
+                uncommitted_files = await self._get_uncommitted_files()
+                logger.info(f"Uncommitted files: {uncommitted_files}")
+
+                # Check for violations
+                violations = self._validate_workspace_scope(uncommitted_files, request.workspace_path)
+
+                if violations:
+                    # CRITICAL: Files modified outside workspace!
+                    # Revert ALL changes and raise error
+                    logger.error(f"Workspace scope violation! Files outside '{request.workspace_path}': {violations}")
+
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_SESSION_ERROR,
+                            session_id=session_id,
+                            error=f"🚫 BLOCKED: Modified files outside workspace scope",
+                            message=f"Violations: {', '.join(violations[:5])}{'...' if len(violations) > 5 else ''}",
+                        )
+                    )
+
+                    # Revert all changes
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message="⏪ Reverting all uncommitted changes...",
+                        )
+                    )
+                    await self._revert_uncommitted_changes()
+
+                    # Raise exception to abort
+                    raise ScopeValidationError(violations, request.workspace_path)
+
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_STREAMING,
+                        session_id=session_id,
+                        message=f"✅ Workspace scope validated ({len(uncommitted_files)} files in scope)",
+                    )
+                )
 
             # Step 3: Commit all changes
             await safe_emit(
@@ -830,24 +926,35 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         task_parts = ["# Task: Fix Code Issues\n"]
 
         for i, issue in enumerate(issues, 1):
+            # Get code snippet with context (marks problematic lines with >>>)
+            code_snippet = self._get_code_snippet(issue, context_lines=5)
+
+            # Build location info
+            if issue.line and issue.end_line and issue.line != issue.end_line:
+                location = f"Lines {issue.line}-{issue.end_line}"
+            elif issue.line:
+                location = f"Line {issue.line}"
+            else:
+                location = "Location not specified"
+
             task_parts.append(f"""
 ## Issue {i}: {issue.issue_code}
 **Title**: {issue.title}
 **Severity**: {issue.severity}
 **Category**: {issue.category}
 **File**: {issue.file}
-**Line**: {issue.line or "N/A"}
+**Location**: {location}
 
 ### Description
 {issue.description}
 
-### Current Code
+### Problematic Code (lines marked with >>> need fixing)
 ```
-{issue.current_code or "Read the file at " + issue.file}
+{code_snippet or f"[No snippet available - read {issue.file}]"}
 ```
 
 ### Suggested Fix
-{issue.suggested_fix or "Use your best judgment"}
+{issue.suggested_fix or "Use your best judgment based on the issue description"}
 
 ---
 """)
@@ -1194,6 +1301,147 @@ The reviewer found issues with the previous fix. Address this feedback:
         except Exception as e:
             logger.warning(f"Failed to get diff for {file_path}: {e}")
         return None
+
+    # ============== Workspace Scope Validation ==============
+
+    async def _get_uncommitted_files(self) -> list[str]:
+        """Get list of all uncommitted files (staged, unstaged, and untracked).
+
+        Returns:
+            List of file paths relative to repo root
+        """
+        all_files: set[str] = set()
+
+        try:
+            # 1. Staged files (git diff --cached --name-only)
+            proc = await asyncio.create_subprocess_exec(
+                "git", "diff", "--cached", "--name-only",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                staged = [f.strip() for f in stdout.decode().strip().split("\n") if f.strip()]
+                all_files.update(staged)
+                if staged:
+                    logger.debug(f"Staged files: {staged}")
+
+            # 2. Unstaged modified files (git diff --name-only)
+            proc = await asyncio.create_subprocess_exec(
+                "git", "diff", "--name-only",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                unstaged = [f.strip() for f in stdout.decode().strip().split("\n") if f.strip()]
+                all_files.update(unstaged)
+                if unstaged:
+                    logger.debug(f"Unstaged files: {unstaged}")
+
+            # 3. Untracked files (git ls-files --others --exclude-standard)
+            proc = await asyncio.create_subprocess_exec(
+                "git", "ls-files", "--others", "--exclude-standard",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                untracked = [f.strip() for f in stdout.decode().strip().split("\n") if f.strip()]
+                all_files.update(untracked)
+                if untracked:
+                    logger.debug(f"Untracked files: {untracked}")
+
+        except Exception as e:
+            logger.warning(f"Failed to get uncommitted files: {e}")
+
+        return list(all_files)
+
+    def _validate_workspace_scope(
+        self,
+        modified_files: list[str],
+        workspace_path: str,
+    ) -> list[str]:
+        """Validate that all modified files are within the workspace scope.
+
+        Args:
+            modified_files: List of modified file paths (relative to repo root)
+            workspace_path: Allowed workspace path (e.g., "packages/frontend")
+
+        Returns:
+            List of files that are OUTSIDE the workspace scope (violations)
+        """
+        if not workspace_path:
+            # No workspace restriction
+            return []
+
+        # Normalize workspace path (remove trailing slash)
+        workspace = workspace_path.rstrip("/")
+        violations: list[str] = []
+
+        for file_path in modified_files:
+            # Check if file is within workspace
+            # File must start with workspace path (e.g., "packages/frontend/src/...")
+            if not file_path.startswith(workspace + "/") and file_path != workspace:
+                violations.append(file_path)
+                logger.warning(f"File outside workspace scope: {file_path} (workspace: {workspace})")
+
+        return violations
+
+    async def _revert_uncommitted_changes(self) -> bool:
+        """Revert all uncommitted changes (staged, unstaged, and untracked).
+
+        This is a hard reset to clean state:
+        1. git reset HEAD -- . (unstage all)
+        2. git checkout -- . (discard modifications)
+        3. git clean -fd (remove untracked files)
+
+        Returns:
+            True if revert succeeded, False otherwise
+        """
+        try:
+            # 1. Unstage all staged changes
+            proc = await asyncio.create_subprocess_exec(
+                "git", "reset", "HEAD", "--", ".",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            await proc.communicate()
+            logger.info("git reset HEAD -- . completed")
+
+            # 2. Discard all modifications to tracked files
+            proc = await asyncio.create_subprocess_exec(
+                "git", "checkout", "--", ".",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            await proc.communicate()
+            logger.info("git checkout -- . completed")
+
+            # 3. Remove untracked files and directories
+            proc = await asyncio.create_subprocess_exec(
+                "git", "clean", "-fd",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.repo_path),
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                cleaned = stdout.decode().strip()
+                if cleaned:
+                    logger.info(f"git clean -fd output: {cleaned}")
+
+            logger.info("All uncommitted changes reverted")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to revert uncommitted changes: {e}")
+            return False
 
     def _build_fix_explanation(
         self,

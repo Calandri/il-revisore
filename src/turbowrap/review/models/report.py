@@ -9,6 +9,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from turbowrap.review.models.review import Issue, ReviewMetrics, ChecklistResult
+from turbowrap.review.models.evaluation import RepositoryEvaluation
 
 
 class RepoType(str, Enum):
@@ -160,6 +161,10 @@ class FinalReport(BaseModel):
 
     next_steps: list[NextStep] = Field(
         default_factory=list, description="Prioritized action items"
+    )
+
+    evaluation: Optional[RepositoryEvaluation] = Field(
+        None, description="Final repository evaluation scores (0-100)"
     )
 
     def calculate_recommendation(self) -> Recommendation:

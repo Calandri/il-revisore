@@ -36,6 +36,7 @@ from turbowrap.review.models.report import (
     NextStep,
     RepositoryInfo,
 )
+from turbowrap.review.models.evaluation import RepositoryEvaluation
 
 __all__ = [
     # Review models
@@ -69,4 +70,6 @@ __all__ = [
     "ChallengerMetadata",
     "NextStep",
     "RepositoryInfo",
+    # Evaluation models
+    "RepositoryEvaluation",
 ]

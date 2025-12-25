@@ -106,6 +106,7 @@ class Repository(Base, SoftDeleteMixin):
     repo_type = Column(String(50), nullable=True)  # backend, frontend, fullstack
     project_name = Column(String(255), nullable=True, index=True)  # Group related repos by project
     metadata_ = Column("metadata", JSON, nullable=True)
+    workspace_path = Column(String(512), nullable=True)  # Monorepo: relative path (e.g., "packages/frontend")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

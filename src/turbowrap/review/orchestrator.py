@@ -35,7 +35,9 @@ from turbowrap.review.models.progress import (
     get_reviewer_display_name,
 )
 from turbowrap.review.reviewers.base import ReviewContext
+from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
 from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
+from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.utils.repo_detector import RepoDetector, detect_repo_type
 from turbowrap.review.utils.git_utils import GitUtils
 from turbowrap.review.utils.file_utils import FileUtils
@@ -255,6 +257,44 @@ class Orchestrator:
         deduplicated_issues = self._deduplicate_issues(all_issues)
         prioritized_issues = self._prioritize_issues(deduplicated_issues)
 
+        # Step 5.5: Run final evaluator (Claude Opus)
+        repo_info = RepositoryInfo(
+            type=repo_type,
+            name=context.repo_name,
+            branch=context.current_branch,
+            commit_sha=context.commit_sha,
+        )
+
+        await emit(ProgressEvent(
+            type=ProgressEventType.REVIEWER_STARTED,
+            reviewer_name="evaluator",
+            reviewer_display_name="Repository Evaluator",
+            message="Running final evaluation...",
+        ))
+
+        evaluation = await self._run_evaluator(
+            context=context,
+            issues=prioritized_issues,
+            reviewer_results=reviewer_results,
+            repo_info=repo_info,
+            emit=emit,
+        )
+
+        if evaluation:
+            await emit(ProgressEvent(
+                type=ProgressEventType.REVIEWER_COMPLETED,
+                reviewer_name="evaluator",
+                reviewer_display_name="Repository Evaluator",
+                message=f"Evaluation complete: {evaluation.overall_score}/100",
+            ))
+        else:
+            await emit(ProgressEvent(
+                type=ProgressEventType.REVIEWER_ERROR,
+                reviewer_name="evaluator",
+                reviewer_display_name="Repository Evaluator",
+                error="Evaluation failed",
+            ))
+
         # Step 6: Build final report
         report = self._build_report(
             report_id=report_id,
@@ -264,6 +304,7 @@ class Orchestrator:
             reviewer_results=reviewer_results,
             issues=prioritized_issues,
             loop_results=loop_results,
+            evaluation=evaluation,
         )
 
         logger.info(
@@ -739,6 +780,62 @@ class Orchestrator:
 
         return sorted(issues, key=priority_score, reverse=True)
 
+    async def _run_evaluator(
+        self,
+        context: ReviewContext,
+        issues: list[Issue],
+        reviewer_results: list[ReviewerResult],
+        repo_info: RepositoryInfo,
+        emit: Optional[Callable[[ProgressEvent], Awaitable[None]]] = None,
+    ) -> Optional[RepositoryEvaluation]:
+        """
+        Run the final repository evaluator.
+
+        Args:
+            context: Review context with structure docs
+            issues: All deduplicated/prioritized issues
+            reviewer_results: Results from each reviewer
+            repo_info: Repository metadata
+            emit: Optional callback for progress events
+
+        Returns:
+            RepositoryEvaluation with 6 scores, or None if failed
+        """
+        try:
+            evaluator = ClaudeEvaluator()
+
+            # Create streaming callback
+            async def on_chunk(chunk: str) -> None:
+                if emit:
+                    await emit(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name="evaluator",
+                        reviewer_display_name="Repository Evaluator",
+                        content=chunk,
+                    ))
+
+            evaluation = await evaluator.evaluate(
+                structure_docs=context.structure_docs,
+                issues=issues,
+                reviewer_results=reviewer_results,
+                repo_info=repo_info,
+                repo_path=context.repo_path,
+                on_chunk=on_chunk,
+            )
+
+            if evaluation:
+                logger.info(
+                    f"Evaluation complete: overall={evaluation.overall_score}, "
+                    f"arch={evaluation.architecture_quality}, "
+                    f"code={evaluation.code_quality}"
+                )
+
+            return evaluation
+
+        except Exception as e:
+            logger.error(f"Evaluator failed: {e}")
+            return None
+
     def _build_report(
         self,
         report_id: str,
@@ -748,6 +845,7 @@ class Orchestrator:
         reviewer_results: list[ReviewerResult],
         issues: list[Issue],
         loop_results: list[ChallengerLoopResult],
+        evaluation: Optional[RepositoryEvaluation] = None,
     ) -> FinalReport:
         """Build the final report."""
         # Count by severity
@@ -797,6 +895,7 @@ class Orchestrator:
             challenger=challenger_metadata,
             issues=issues,
             next_steps=next_steps,
+            evaluation=evaluation,
         )
 
     def _calculate_score(self, issues: list[Issue]) -> float:

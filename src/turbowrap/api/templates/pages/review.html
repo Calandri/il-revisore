@@ -174,6 +174,133 @@
         <p class="font-medium" x-text="statusMessage"></p>
     </div>
 
+    <!-- Repository Evaluation Section -->
+    <div x-show="evaluation" x-transition class="mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <!-- Header with Overall Score -->
+            <div class="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-purple-500/5 to-indigo-500/5">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                        <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold">Repository Evaluation</h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Valutazione complessiva della qualita del codice</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-3xl font-bold" :class="getScoreTextColor(evaluation.overall_score)" x-text="evaluation.overall_score"></span>
+                    <span class="text-gray-400">/100</span>
+                </div>
+            </div>
+
+            <!-- Metrics Grid -->
+            <div class="p-6">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                    <!-- Architecture Quality -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Architettura</div>
+                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
+                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.architecture_quality)" :style="`width: ${evaluation.architecture_quality}%`"></div>
+                        </div>
+                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.architecture_quality)" x-text="evaluation.architecture_quality"></div>
+                    </div>
+
+                    <!-- Code Quality -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Qualita Codice</div>
+                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
+                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.code_quality)" :style="`width: ${evaluation.code_quality}%`"></div>
+                        </div>
+                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.code_quality)" x-text="evaluation.code_quality"></div>
+                    </div>
+
+                    <!-- Functionality -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Funzionalita</div>
+                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
+                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.functionality)" :style="`width: ${evaluation.functionality}%`"></div>
+                        </div>
+                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.functionality)" x-text="evaluation.functionality"></div>
+                    </div>
+
+                    <!-- Effectiveness -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Efficacia</div>
+                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
+                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.effectiveness)" :style="`width: ${evaluation.effectiveness}%`"></div>
+                        </div>
+                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.effectiveness)" x-text="evaluation.effectiveness"></div>
+                    </div>
+
+                    <!-- Comment Quality -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Commenti</div>
+                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
+                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.comment_quality)" :style="`width: ${evaluation.comment_quality}%`"></div>
+                        </div>
+                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.comment_quality)" x-text="evaluation.comment_quality"></div>
+                    </div>
+
+                    <!-- Code Duplication -->
+                    <div class="text-center">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">DRY</div>
+                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
+                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.code_duplication)" :style="`width: ${evaluation.code_duplication}%`"></div>
+                        </div>
+                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.code_duplication)" x-text="evaluation.code_duplication"></div>
+                    </div>
+                </div>
+
+                <!-- Summary -->
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                    <p class="text-sm text-gray-700 dark:text-gray-300" x-text="evaluation.summary"></p>
+                </div>
+
+                <!-- Strengths & Weaknesses -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Strengths -->
+                    <div x-show="evaluation.strengths && evaluation.strengths.length > 0">
+                        <h4 class="text-sm font-semibold text-green-600 dark:text-green-400 mb-2 flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Punti di Forza
+                        </h4>
+                        <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                            <template x-for="strength in evaluation.strengths" :key="strength">
+                                <li class="flex items-start gap-2">
+                                    <span class="text-green-500 mt-0.5">+</span>
+                                    <span x-text="strength"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+
+                    <!-- Weaknesses -->
+                    <div x-show="evaluation.weaknesses && evaluation.weaknesses.length > 0">
+                        <h4 class="text-sm font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            Aree di Miglioramento
+                        </h4>
+                        <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                            <template x-for="weakness in evaluation.weaknesses" :key="weakness">
+                                <li class="flex items-start gap-2">
+                                    <span class="text-red-500 mt-0.5">-</span>
+                                    <span x-text="weakness"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Agents Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
@@ -835,8 +962,20 @@ function reviewApp() {
         relationshipsResult: null,
         selectedConnections: [],
 
+        // Repository evaluation
+        evaluation: null,
+
         init() {
-            // Initialize empty agent states
+            // Check URL for existing task_id (to restore after refresh)
+            const urlParams = new URLSearchParams(window.location.search);
+            const savedTaskId = urlParams.get('task_id');
+            if (savedTaskId) {
+                this.taskId = savedTaskId;
+                this.reviewStatus = 'completed';
+                this.statusMessage = 'Review caricata';
+                this.loadIssues();
+                this.loadEvaluation();
+            }
         },
 
         isClaudeReviewer(name) {
@@ -943,6 +1082,10 @@ function reviewApp() {
             switch (eventType) {
                 case 'task_started':
                     this.taskId = data.task_id;
+                    // Save task_id to URL for refresh persistence
+                    const url = new URL(window.location);
+                    url.searchParams.set('task_id', data.task_id);
+                    window.history.replaceState({}, '', url);
                     break;
 
                 case 'review_started':
@@ -1028,8 +1171,9 @@ function reviewApp() {
                 case 'review_completed':
                     this.reviewStatus = 'completed';
                     this.statusMessage = data.message || `Review completata con ${data.issues_found || 0} issues trovate`;
-                    // Load issues from API
+                    // Load issues and evaluation from API
                     this.loadIssues();
+                    this.loadEvaluation();
                     break;
 
                 case 'review_error':
@@ -1055,6 +1199,30 @@ function reviewApp() {
             } catch (e) {
                 console.error('Failed to load issues:', e);
             }
+        },
+
+        async loadEvaluation() {
+            if (!this.taskId) return;
+            try {
+                const response = await fetch(`/api/tasks/${this.taskId}/evaluation`);
+                if (response.ok) {
+                    this.evaluation = await response.json();
+                }
+            } catch (e) {
+                console.error('Failed to load evaluation:', e);
+            }
+        },
+
+        getScoreColor(score) {
+            if (score < 50) return 'bg-red-500';
+            if (score < 75) return 'bg-yellow-500';
+            return 'bg-green-500';
+        },
+
+        getScoreTextColor(score) {
+            if (score < 50) return 'text-red-600 dark:text-red-400';
+            if (score < 75) return 'text-yellow-600 dark:text-yellow-400';
+            return 'text-green-600 dark:text-green-400';
         },
 
         selectAllCritical() {

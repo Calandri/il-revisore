@@ -208,6 +208,42 @@ def get_task_progress(
     }
 
 
+@router.get("/{task_id}/evaluation")
+def get_task_evaluation(
+    task_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get evaluation metrics from a completed review task.
+
+    Returns the RepositoryEvaluation scores (0-100) for:
+    - functionality
+    - code_quality
+    - comment_quality
+    - architecture_quality
+    - effectiveness
+    - code_duplication
+    - overall_score (weighted average)
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.status != "completed":
+        raise HTTPException(status_code=400, detail="Task not completed")
+
+    if not task.result:
+        raise HTTPException(status_code=404, detail="No result available")
+
+    # Extract evaluation from the stored result
+    result = task.result if isinstance(task.result, dict) else json.loads(task.result)
+    evaluation = result.get("evaluation")
+
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="No evaluation available")
+
+    return evaluation
+
+
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: str,

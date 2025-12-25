@@ -6,6 +6,24 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
+class ScopeValidationError(Exception):
+    """Raised when modified files are outside the allowed workspace scope.
+
+    This exception is raised during fix operations when Claude modifies files
+    that are outside the configured workspace_path for a monorepo.
+    The orchestrator will automatically revert all uncommitted changes when this occurs.
+    """
+
+    def __init__(self, files_outside_scope: list[str], workspace_path: str):
+        self.files_outside_scope = files_outside_scope
+        self.workspace_path = workspace_path
+        message = (
+            f"Fix modified files outside workspace scope '{workspace_path}': "
+            f"{', '.join(files_outside_scope)}"
+        )
+        super().__init__(message)
+
+
 class FixStatus(str, Enum):
     """Status of a fix operation."""
 
@@ -178,6 +196,13 @@ class FixRequest(BaseModel):
     )
     existing_branch_name: str | None = Field(
         default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
+    )
+
+    # Monorepo workspace scope - limits fix operations to a subfolder
+    workspace_path: str | None = Field(
+        default=None,
+        description="Relative path within repo to limit fixes (e.g., 'packages/frontend'). "
+        "If set, fixes outside this path will be rejected and reverted."
     )
 
 
