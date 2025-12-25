@@ -40,7 +40,7 @@ document.body.addEventListener('htmx:configRequest', function(evt) {
 document.body.addEventListener('htmx:responseError', function(evt) {
     window.dispatchEvent(new CustomEvent('show-toast', {
         detail: {
-            message: 'Errore di connessione. Riprova.',
+            message: 'Connection error. Please try again.',
             type: 'error'
         }
     }));
@@ -160,23 +160,23 @@ function formatDate(dateString) {
 
     // Less than a minute
     if (diff < 60000) {
-        return 'Adesso';
+        return 'Now';
     }
 
     // Less than an hour
     if (diff < 3600000) {
         const minutes = Math.floor(diff / 60000);
-        return `${minutes} min fa`;
+        return `${minutes} min ago`;
     }
 
     // Less than a day
     if (diff < 86400000) {
         const hours = Math.floor(diff / 3600000);
-        return `${hours} ore fa`;
+        return `${hours} hours ago`;
     }
 
     // More than a day
-    return date.toLocaleDateString('it-IT', {
+    return date.toLocaleDateString('en-US', {
         day: 'numeric',
         month: 'short',
         hour: '2-digit',

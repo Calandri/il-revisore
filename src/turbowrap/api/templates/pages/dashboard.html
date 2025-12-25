@@ -8,14 +8,14 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold">Dashboard</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">Benvenuto in TurboWrap</p>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Welcome to TurboWrap</p>
         </div>
         <a href="/repos"
            class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
-            Aggiungi Repository
+            Add Repository
         </a>
     </div>
 
@@ -28,7 +28,7 @@
                     <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Repository</h3>
                     <p class="text-3xl font-bold mt-1" x-text="stats.repositories?.total ?? '-'"></p>
                     <p class="text-sm text-green-500 mt-1" x-show="stats.repositories?.active">
-                        <span x-text="stats.repositories?.active"></span> attive
+                        <span x-text="stats.repositories?.active"></span> active
                     </p>
                 </div>
                 <div class="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
@@ -44,10 +44,10 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Task Totali</h3>
+                    <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Total Tasks</h3>
                     <p class="text-3xl font-bold mt-1" x-text="stats.tasks?.total ?? '-'"></p>
                     <p class="text-sm text-green-500 mt-1" x-show="stats.tasks?.completed">
-                        <span x-text="stats.tasks?.completed"></span> completati
+                        <span x-text="stats.tasks?.completed"></span> completed
                     </p>
                 </div>
                 <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center">
@@ -63,14 +63,14 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Task Attivi</h3>
+                    <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Active Tasks</h3>
                     <p class="text-3xl font-bold mt-1" x-text="(stats.tasks?.running ?? 0) + (stats.tasks?.pending ?? 0)"></p>
                     <div class="flex items-center gap-2 text-sm mt-1">
                         <span class="text-yellow-500" x-show="stats.tasks?.running">
-                            <span x-text="stats.tasks?.running"></span> in esecuzione
+                            <span x-text="stats.tasks?.running"></span> running
                         </span>
                         <span class="text-gray-400" x-show="stats.tasks?.pending">
-                            <span x-text="stats.tasks?.pending"></span> in coda
+                            <span x-text="stats.tasks?.pending"></span> queued
                         </span>
                     </div>
                 </div>
@@ -87,7 +87,7 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Sessioni Chat</h3>
+                    <h3 class="text-gray-500 dark:text-gray-400 text-sm uppercase tracking-wide">Chat Sessions</h3>
                     <p class="text-3xl font-bold mt-1" x-text="stats.chat_sessions ?? '-'"></p>
                 </div>
                 <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center">
@@ -109,8 +109,8 @@
                       d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
             <span class="text-red-700 dark:text-red-400">
-                <span x-text="stats.tasks?.failed"></span> task falliti -
-                <a href="/tasks" class="underline hover:no-underline">vedi storico</a>
+                <span x-text="stats.tasks?.failed"></span> failed tasks -
+                <a href="/tasks" class="underline hover:no-underline">view history</a>
             </span>
         </div>
     </div>
@@ -121,9 +121,9 @@
         <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <div class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                <h2 class="text-xl font-semibold">Review in Corso</h2>
+                <h2 class="text-xl font-semibold">Reviews in Progress</h2>
             </div>
-            <span class="text-sm text-gray-500" x-text="activeTasks.length + ' attive'"></span>
+            <span class="text-sm text-gray-500" x-text="activeTasks.length + ' active'"></span>
         </div>
 
         <div class="divide-y dark:divide-gray-700">
@@ -149,7 +149,7 @@
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-full">
-                                In esecuzione
+                                Running
                             </span>
                             <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -176,7 +176,7 @@
             <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-3">
                     <div class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                    <h3 class="font-semibold" x-text="selectedTask?.repo_name || 'Review in corso'"></h3>
+                    <h3 class="font-semibold" x-text="selectedTask?.repo_name || 'Review in progress'"></h3>
                 </div>
                 <button @click="closeStreamModal()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,14 +218,14 @@
                     </div>
                 </template>
                 <div x-show="streamLogs.length === 0" class="text-gray-400 text-center py-8">
-                    Connessione allo stream...
+                    Connecting to stream...
                 </div>
             </div>
 
             <!-- Footer with actions -->
             <div class="p-4 border-t dark:border-gray-700 flex justify-between items-center shrink-0">
                 <div class="text-sm text-gray-500">
-                    <span x-text="streamLogs.length"></span> eventi
+                    <span x-text="streamLogs.length"></span> events
                 </div>
                 <div class="flex gap-2">
                     <button @click="cancelReview()"
@@ -234,11 +234,11 @@
                         <svg x-show="isCancelling" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                         </svg>
-                        <span x-text="isCancelling ? 'Annullamento...' : 'Annulla Review'"></span>
+                        <span x-text="isCancelling ? 'Cancelling...' : 'Cancel Review'"></span>
                     </button>
                     <button @click="goToReviewPage()"
                             class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                        Apri pagina Review
+                        Open Review Page
                     </button>
                 </div>
             </div>
@@ -248,8 +248,8 @@
     <!-- Repository list -->
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
-            <h2 class="text-xl font-semibold">Repository Recenti</h2>
-            <a href="/repos" class="text-primary hover:text-primary/80 text-sm">Vedi tutte</a>
+            <h2 class="text-xl font-semibold">Recent Repositories</h2>
+            <a href="/repos" class="text-primary hover:text-primary/80 text-sm">View all</a>
         </div>
 
         <div id="repo-list"
@@ -258,7 +258,7 @@
              hx-swap="innerHTML">
             <div class="p-8 text-center text-gray-500">
                 <div class="animate-spin inline-block w-6 h-6 border-2 border-primary border-t-transparent rounded-full"></div>
-                <p class="mt-2">Caricamento...</p>
+                <p class="mt-2">Loading...</p>
             </div>
         </div>
     </div>
@@ -276,8 +276,8 @@
                     </svg>
                 </div>
                 <div>
-                    <h3 class="font-semibold text-lg">Chat con AI</h3>
-                    <p class="text-white/80 text-sm">Inizia una conversazione con l'assistente AI</p>
+                    <h3 class="font-semibold text-lg">AI Chat</h3>
+                    <p class="text-white/80 text-sm">Start a conversation with the AI assistant</p>
                 </div>
             </div>
         </a>
@@ -294,7 +294,7 @@
                 </div>
                 <div>
                     <h3 class="font-semibold text-lg">API Documentation</h3>
-                    <p class="text-gray-500 dark:text-gray-400 text-sm">Esplora le API REST disponibili</p>
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">Explore available REST APIs</p>
                 </div>
             </div>
         </a>
@@ -376,9 +376,9 @@ function dashboardStats() {
             ];
 
             // Add initial log
-            this.addLog('info', `Review avviata per ${task.repo_name || 'repository'}`);
-            this.addLog('info', 'Nota: Lo stream live non è disponibile per review già avviate.');
-            this.addLog('info', 'Puoi aprire la pagina Review per vedere i risultati quando completa.');
+            this.addLog('info', `Review started for ${task.repo_name || 'repository'}`);
+            this.addLog('info', 'Note: Live streaming is not available for reviews already started.');
+            this.addLog('info', 'You can open the Review page to see results when complete.');
 
             // Poll task status
             this.pollTaskStatus(task.id);
@@ -393,16 +393,16 @@ function dashboardStats() {
                     const task = await response.json();
 
                     if (task.status === 'completed') {
-                        this.addLog('success', 'Review completata!');
+                        this.addLog('success', 'Review completed!');
                         if (task.result?.issues?.length > 0) {
-                            this.addLog('info', `Trovate ${task.result.issues.length} issues`);
+                            this.addLog('info', `Found ${task.result.issues.length} issues`);
                         }
                         // Update reviewers to completed
                         this.reviewers.forEach(r => r.status = 'completed');
                         await this.loadActiveTasks();
                         return;
                     } else if (task.status === 'failed') {
-                        this.addLog('error', `Review fallita: ${task.error || 'Errore sconosciuto'}`);
+                        this.addLog('error', `Review failed: ${task.error || 'Unknown error'}`);
                         this.reviewers.forEach(r => r.status = 'error');
                         await this.loadActiveTasks();
                         return;
@@ -432,7 +432,7 @@ function dashboardStats() {
         async cancelReview() {
             if (!this.selectedTask || this.isCancelling) return;
 
-            if (!confirm('Sei sicuro di voler annullare questa review?')) return;
+            if (!confirm('Are you sure you want to cancel this review?')) return;
 
             this.isCancelling = true;
             try {
@@ -441,17 +441,17 @@ function dashboardStats() {
                 });
 
                 if (response.ok) {
-                    this.addLog('warning', 'Review annullata');
+                    this.addLog('warning', 'Review cancelled');
                     this.reviewers.forEach(r => r.status = 'error');
                     await this.loadActiveTasks();
                     setTimeout(() => this.closeStreamModal(), 1500);
                 } else {
                     const error = await response.json();
-                    this.addLog('error', `Errore: ${error.detail || 'Impossibile annullare'}`);
+                    this.addLog('error', `Error: ${error.detail || 'Unable to cancel'}`);
                 }
             } catch (error) {
                 console.error('Error cancelling review:', error);
-                this.addLog('error', 'Errore di connessione');
+                this.addLog('error', 'Connection error');
             } finally {
                 this.isCancelling = false;
             }
@@ -466,7 +466,7 @@ function dashboardStats() {
         },
 
         addLog(type, message) {
-            const time = new Date().toLocaleTimeString('it-IT');
+            const time = new Date().toLocaleTimeString('en-US');
             this.streamLogs.push({ type, message, time });
             // Auto-scroll
             this.$nextTick(() => {
@@ -481,11 +481,11 @@ function dashboardStats() {
             const now = new Date();
             const diff = now - date;
             const minutes = Math.floor(diff / 60000);
-            if (minutes < 1) return 'ora';
-            if (minutes < 60) return `${minutes}m fa`;
+            if (minutes < 1) return 'now';
+            if (minutes < 60) return `${minutes}m ago`;
             const hours = Math.floor(minutes / 60);
-            if (hours < 24) return `${hours}h fa`;
-            return date.toLocaleDateString('it-IT');
+            if (hours < 24) return `${hours}h ago`;
+            return date.toLocaleDateString('en-US');
         }
     }
 }
