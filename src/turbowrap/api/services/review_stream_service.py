@@ -171,7 +171,7 @@ class ReviewStreamService:
         checkpoints_for_closure = completed_checkpoints  # Capture for closure
 
         # Extract repo name for display
-        repo_name = repo.git_url.rstrip("/").split("/")[-1] if repo.git_url else "unknown"
+        repo_name = repo.url.rstrip("/").split("/")[-1] if repo.url else "unknown"
         if repo_name.endswith(".git"):
             repo_name = repo_name[:-4]
 

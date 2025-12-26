@@ -384,8 +384,8 @@ def _get_repo_and_path(repo_id: str, db: Session) -> tuple[Repository, Path]:
 
 def _extract_repo_name(repo: Repository) -> str:
     """Extract display name from repository."""
-    if repo.git_url:
-        name = repo.git_url.rstrip("/").split("/")[-1]
+    if repo.url:
+        name = repo.url.rstrip("/").split("/")[-1]
         if name.endswith(".git"):
             name = name[:-4]
         return name

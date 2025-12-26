@@ -357,7 +357,7 @@ def sync_repo(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     # Extract repo name
-    repo_name = repo.git_url.rstrip("/").split("/")[-1] if repo.git_url else repo.name
+    repo_name = repo.url.rstrip("/").split("/")[-1] if repo.url else repo.name
     if repo_name and repo_name.endswith(".git"):
         repo_name = repo_name[:-4]
 

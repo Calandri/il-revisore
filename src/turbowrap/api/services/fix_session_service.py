@@ -166,8 +166,8 @@ class FixSessionService:
         )
 
         # Build metadata for active sessions display
-        # Extract repo name from git_url (e.g., "https://github.com/org/repo" -> "repo")
-        repo_name = repo.git_url.rstrip("/").split("/")[-1] if repo.git_url else "unknown"
+        # Extract repo name from url (e.g., "https://github.com/org/repo" -> "repo")
+        repo_name = repo.url.rstrip("/").split("/")[-1] if repo.url else "unknown"
         if repo_name.endswith(".git"):
             repo_name = repo_name[:-4]
 
