@@ -539,17 +539,41 @@ async def restart_reviewer(
             logger.info(f"[RESTART] Found {len(context.files)} files to review")
 
             # Load .llms/structure.xml (consolidated XML format, optimized for LLM)
-            # Note: Always load from repo root since structure.xml is repo-wide
-            xml_path = context.repo_path / ".llms" / "structure.xml"
+            # For monorepo: load from workspace/.llms/structure.xml
+            if context.workspace_path:
+                xml_path = context.repo_path / context.workspace_path / ".llms" / "structure.xml"
+            else:
+                xml_path = context.repo_path / ".llms" / "structure.xml"
+
             if xml_path.exists():
                 try:
                     content = xml_path.read_text(encoding="utf-8")
                     context.structure_docs["structure.xml"] = content
-                    logger.info(f"[RESTART] Loaded .llms/structure.xml ({xml_path.stat().st_size:,} bytes)")
+                    logger.info(f"[RESTART] Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)")
                 except Exception as e:
                     logger.warning(f"[RESTART] Failed to read {xml_path}: {e}")
             else:
-                logger.info("[RESTART] No .llms/structure.xml found - structure docs not available")
+                # Auto-generate structure.xml if missing
+                logger.info(f"[RESTART] No {xml_path.relative_to(context.repo_path)} found - auto-generating...")
+                try:
+                    from ...tools.structure_generator import StructureGenerator
+                    from ...llm.gemini_client import GeminiClient
+
+                    generator = StructureGenerator(
+                        str(context.repo_path),
+                        workspace_path=context.workspace_path,
+                        gemini_client=GeminiClient(),
+                    )
+                    generated_files = generator.generate(verbose=True, formats=["xml"])
+                    logger.info(f"[RESTART] Auto-generated {len(generated_files)} structure file(s)")
+
+                    # Reload after generation
+                    if xml_path.exists():
+                        content = xml_path.read_text(encoding="utf-8")
+                        context.structure_docs["structure.xml"] = content
+                        logger.info(f"[RESTART] Loaded auto-generated structure.xml")
+                except Exception as e:
+                    logger.warning(f"[RESTART] Failed to auto-generate structure.xml: {e}")
 
             # Create progress callbacks
             async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
