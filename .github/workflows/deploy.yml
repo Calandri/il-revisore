@@ -72,11 +72,10 @@ jobs:
               "for i in 1 2 3 4 5 6 7 8 9 10; do if curl -sf http://localhost:8001/api/status; then echo OK; break; fi; echo waiting...; sleep 3; done",
               "curl -sf http://localhost:8001/api/status || { echo FAILED; docker logs turbowrap-new --tail 20; exit 1; }",
 
-              "echo Step 5: Switch traffic - stop old, rename new...",
+              "echo Step 5: Switch traffic - stop old, start new on 8000...",
               "docker stop turbowrap 2>/dev/null || true",
               "docker rm turbowrap 2>/dev/null || true",
-              "docker stop turbowrap-new",
-              "docker rename turbowrap-new turbowrap",
+              "docker rm -f turbowrap-new 2>/dev/null || true",
               "docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /opt/turbowrap/data/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
 
               "echo Step 6: Cleanup old images...",
