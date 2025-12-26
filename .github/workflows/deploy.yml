@@ -40,21 +40,59 @@ jobs:
 
       - name: Deploy to EC2 via SSM
         run: |
+          # Send deploy command
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["docker image prune -af --filter until=24h","aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com","docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","docker stop turbowrap || true","docker rm turbowrap || true","docker run -d --name turbowrap --restart always -p 8000:8000 -v /opt/turbowrap/data:/data --env-file /opt/turbowrap/.env 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest"]' \
+            --parameters 'commands=["set -e","echo Starting deployment...","docker image prune -af --filter until=24h","docker stop turbowrap 2>/dev/null || true","docker rm turbowrap 2>/dev/null || true","aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com","docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","SECRETS=$(aws secretsmanager get-secret-value --secret-id agent-zero/global/api-keys --region eu-west-3 --query SecretString --output text)","ANTHROPIC_KEY=$(echo $SECRETS | jq -r .ANTHROPIC_API_KEY)","DB_URL=$(echo $SECRETS | jq -r .TURBOWRAP_DB_URL)","docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /opt/turbowrap/data/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","sleep 5","docker ps | grep turbowrap","echo Deployment complete!"]' \
             --query 'Command.CommandId' --output text)
 
           echo "Command ID: $COMMAND_ID"
-          sleep 15
 
-          aws ssm get-command-invocation \
-            --command-id $COMMAND_ID \
-            --instance-id ${{ env.EC2_INSTANCE_ID }} \
-            --query 'Status' --output text
+          # Poll for completion (max 120 seconds)
+          for i in {1..12}; do
+            sleep 10
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id $COMMAND_ID \
+              --instance-id ${{ env.EC2_INSTANCE_ID }} \
+              --query 'Status' --output text 2>/dev/null || echo "Pending")
+
+            echo "Attempt $i: Status = $STATUS"
+
+            if [ "$STATUS" = "Success" ]; then
+              echo "✅ Deployment command succeeded!"
+              aws ssm get-command-invocation \
+                --command-id $COMMAND_ID \
+                --instance-id ${{ env.EC2_INSTANCE_ID }} \
+                --query 'StandardOutputContent' --output text
+              break
+            elif [ "$STATUS" = "Failed" ]; then
+              echo "❌ Deployment command failed!"
+              aws ssm get-command-invocation \
+                --command-id $COMMAND_ID \
+                --instance-id ${{ env.EC2_INSTANCE_ID }} \
+                --query 'StandardErrorContent' --output text
+              exit 1
+            fi
+          done
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "❌ Timeout waiting for deployment command"
+            exit 1
+          fi
 
       - name: Health check
         run: |
+          echo "Waiting for application to start..."
           sleep 10
-          curl -sf https://turbo-wrap.com/api/status && echo "✅ Deployment successful!" || echo "⏳ Deployment in progress..."
+          for i in {1..6}; do
+            if curl -sf https://turbo-wrap.com/api/status; then
+              echo ""
+              echo "✅ Deployment successful!"
+              exit 0
+            fi
+            echo "Attempt $i: waiting..."
+            sleep 5
+          done
+          echo "❌ Health check failed after 60 seconds"
+          exit 1

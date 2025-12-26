@@ -622,6 +622,7 @@ After writing, confirm with: "Review saved to {output_file}"
             chunks_received = 0
             total_bytes = 0
             last_log_time = time.time()
+            line_buffer = ""  # Buffer for incomplete JSON lines
             try:
                 async with asyncio.timeout(self.timeout):
                     while True:
@@ -631,8 +632,6 @@ After writing, confirm with: "Review saved to {output_file}"
                             decoded = decoder.decode(b"", final=True)
                             if decoded:
                                 output_chunks.append(decoded)
-                                if on_chunk:
-                                    await on_chunk(decoded)
                             logger.info(f"[CLAUDE CLI] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
                             break
 
@@ -653,9 +652,32 @@ After writing, confirm with: "Review saved to {output_file}"
                         decoded = decoder.decode(chunk)
                         if decoded:
                             output_chunks.append(decoded)
-                            # Emit chunk for streaming
+
+                            # Parse stream-json and extract text for streaming callback
                             if on_chunk:
-                                await on_chunk(decoded)
+                                line_buffer += decoded
+                                while "\n" in line_buffer:
+                                    line, line_buffer = line_buffer.split("\n", 1)
+                                    if not line.strip():
+                                        continue
+                                    try:
+                                        event = json.loads(line)
+                                        # Extract text from content_block_delta events
+                                        if event.get("type") == "content_block_delta":
+                                            delta = event.get("delta", {})
+                                            text = delta.get("text", "")
+                                            if text:
+                                                await on_chunk(text)
+                                        # Also handle assistant message content
+                                        elif event.get("type") == "assistant":
+                                            message = event.get("message", {})
+                                            for block in message.get("content", []):
+                                                if block.get("type") == "text":
+                                                    text = block.get("text", "")
+                                                    if text:
+                                                        await on_chunk(text)
+                                    except json.JSONDecodeError:
+                                        pass  # Skip non-JSON or incomplete lines
             except asyncio.TimeoutError:
                 logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes before timeout")
                 stdin_task.cancel()
