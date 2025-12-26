@@ -76,8 +76,8 @@ def configure_logging() -> None:
     logging.getLogger("sse_starlette").setLevel(logging.WARNING)
 
 
-def _ensure_all_repos_exist():
-    """Check all repositories and re-clone any with missing local paths.
+def _ensure_all_repos_exist_sync():
+    """Check all repositories and re-clone any with missing local paths (sync version).
 
     This handles the case where local files were deleted (e.g., disk cleanup)
     but the database records still exist.
@@ -130,6 +130,18 @@ def _ensure_all_repos_exist():
         db.close()
 
 
+async def _ensure_all_repos_exist_task():
+    """Background task to restore missing repositories."""
+    import asyncio
+
+    logger = logging.getLogger(__name__)
+    logger.info("[STARTUP] Starting background repo check task...")
+
+    # Run sync function in thread pool to not block event loop
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _ensure_all_repos_exist_sync)
+
+
 async def _cleanup_stale_processes_task():
     """Background task to cleanup stale CLI processes."""
     import asyncio
@@ -172,17 +184,22 @@ async def lifespan(app: FastAPI):
     # Startup
     init_db()
 
-    # Check and restore missing repository local paths
-    _ensure_all_repos_exist()
+    # Start background repo check task (non-blocking, repos may take time to clone)
+    repo_check_task = asyncio.create_task(_ensure_all_repos_exist_task())
 
     # Start background cleanup task
     cleanup_task = asyncio.create_task(_cleanup_stale_processes_task())
-    logger.info("[STARTUP] Background process cleanup task started")
+    logger.info("[STARTUP] Background tasks started")
 
     yield
 
     # Shutdown
+    repo_check_task.cancel()
     cleanup_task.cancel()
+    try:
+        await repo_check_task
+    except asyncio.CancelledError:
+        pass
     try:
         await cleanup_task
     except asyncio.CancelledError:

@@ -1090,6 +1090,10 @@ function issuesApp() {
             lastScore: null,
             billingError: null  // Billing error message if any
         },
+        // Throttling state for streaming updates (prevents UI freeze)
+        _streamingBuffer: '',
+        _updateScheduled: false,
+        _eventBuffer: [],  // Buffer for non-streaming events
         filters: {
             repository_id: '',
             severity: '',
@@ -1101,6 +1105,35 @@ function issuesApp() {
 
         async init() {
             await this.refresh();
+        },
+
+        // Throttled update methods to prevent UI freeze during streaming
+        _scheduleUpdate() {
+            if (this._updateScheduled) return;
+            this._updateScheduled = true;
+            requestAnimationFrame(() => {
+                this._flushBuffers();
+                this._updateScheduled = false;
+            });
+        },
+
+        _flushBuffers() {
+            // Flush streaming content buffer
+            if (this._streamingBuffer) {
+                this.fixProgress.streamingContent += this._streamingBuffer;
+                // Keep only last 2000 chars
+                if (this.fixProgress.streamingContent.length > 2000) {
+                    this.fixProgress.streamingContent = this.fixProgress.streamingContent.slice(-2000);
+                }
+                this._streamingBuffer = '';
+            }
+
+            // Flush event buffer (process all pending events)
+            if (this._eventBuffer.length > 0) {
+                const events = this._eventBuffer;
+                this._eventBuffer = [];
+                events.forEach(event => this._processEvent(event));
+            }
         },
 
         async refresh() {
@@ -1333,6 +1366,11 @@ function issuesApp() {
                 billingError: null  // Reset billing error
             };
 
+            // Reset throttling buffers
+            this._streamingBuffer = '';
+            this._eventBuffer = [];
+            this._updateScheduled = false;
+
             try {
                 // Build request body with optional branch options
                 const requestBody = {
@@ -1424,6 +1462,30 @@ function issuesApp() {
         handleFixEvent(event) {
             const eventType = event.type || event.event;
 
+            // FAST PATH: Buffer streaming content (high-frequency) and schedule RAF update
+            // This prevents UI freeze by batching many rapid updates into single frame
+            if (event.content && (eventType === 'fix_issue_streaming' || eventType === 'fix_challenger_evaluating')) {
+                this._streamingBuffer += event.content;
+                this._scheduleUpdate();
+                return; // Don't process further
+            }
+
+            // CRITICAL EVENTS: Process immediately (errors, completion)
+            const criticalEvents = ['fix_session_error', 'fix_billing_error', 'fix_session_completed'];
+            if (criticalEvents.includes(eventType)) {
+                this._processEvent(event);
+                return;
+            }
+
+            // ALL OTHER EVENTS: Buffer and schedule for next frame
+            this._eventBuffer.push(event);
+            this._scheduleUpdate();
+        },
+
+        // Process a single event (called from _flushBuffers)
+        _processEvent(event) {
+            const eventType = event.type || event.event;
+
             // 1. Capture branch name from session start
             if (eventType === 'fix_session_started') {
                 if (event.branch_name) {
@@ -1444,11 +1506,6 @@ function issuesApp() {
                             state.status = 'in_progress';
                         }
                     });
-                }
-                // Mark batch complete
-                if (event.message.includes('completed')) {
-                    const codeMatch = event.message.match(/(\w+) batch/);
-                    // Keep in_progress until session completes
                 }
             }
 
@@ -1512,15 +1569,6 @@ function issuesApp() {
                 });
             }
 
-            // 6. STREAMING CONTENT -> goes to collapsible area
-            if (event.content && (eventType === 'fix_issue_streaming' || eventType === 'fix_challenger_evaluating')) {
-                this.fixProgress.streamingContent += event.content;
-                if (this.fixProgress.streamingContent.length > 2000) {
-                    this.fixProgress.streamingContent = this.fixProgress.streamingContent.slice(-2000);
-                }
-                return; // Don't add to main logs
-            }
-
             // 6b. LOG EVENTS -> Toast notifications
             if (eventType === 'fix_log' && event.message) {
                 const toastId = Date.now();
@@ -1546,6 +1594,7 @@ function issuesApp() {
                 // Reset streaming when new phase starts
                 if (eventType === 'fix_issue_generating' || eventType === 'fix_challenger_evaluating') {
                     this.fixProgress.streamingContent = '';
+                    this._streamingBuffer = '';  // Also clear buffer
                 }
 
                 const logEntry = {
