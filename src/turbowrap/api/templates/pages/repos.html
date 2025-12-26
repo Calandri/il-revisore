@@ -202,10 +202,10 @@
              x-transition:leave="transition ease-in duration-200"
              x-transition:leave-start="opacity-100 scale-100"
              x-transition:leave-end="opacity-0 scale-95"
-             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col">
 
-            <div class="p-6 border-b dark:border-gray-700">
-                <h3 class="text-xl font-bold">Aggiungi Repository</h3>
+            <div class="p-4 md:p-6 border-b dark:border-gray-700 shrink-0">
+                <h3 class="text-lg md:text-xl font-bold">Aggiungi Repository</h3>
             </div>
 
             <form hx-post="/htmx/repos"
@@ -213,7 +213,7 @@
                   hx-swap="innerHTML"
                   @htmx:before-request="cloneLoading = true; cloneError = null"
                   @htmx:after-request="cloneLoading = false; if($event.detail.successful) { showAddModal = false; resetFolderSelector(); } else { cloneError = 'Errore durante la clonazione'; }"
-                  class="p-6 space-y-4">
+                  class="p-4 md:p-6 space-y-4 overflow-y-auto flex-1">
 
                 <div>
                     <label class="block text-sm font-medium mb-2">URL GitHub</label>
