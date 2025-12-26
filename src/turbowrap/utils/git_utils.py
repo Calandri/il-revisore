@@ -468,7 +468,16 @@ def get_repo_status(repo_path: Path) -> GitStatus:
                 status = line[:2]
                 filepath = line[3:]
                 if status.startswith("?"):
-                    untracked.append(filepath)
+                    # Check if it's a directory - if so, list files inside
+                    full_path = repo_path / filepath
+                    if full_path.is_dir():
+                        # Expand directory to show individual files
+                        for child in full_path.rglob("*"):
+                            if child.is_file():
+                                rel_path = str(child.relative_to(repo_path))
+                                untracked.append(rel_path)
+                    else:
+                        untracked.append(filepath)
                 else:
                     modified.append(filepath)
 
