@@ -535,7 +535,8 @@ class ClaudeCLI:
                     for block in event.get("message", {}).get("content", []):
                         if block.get("type") == "thinking":
                             thinking_text = block.get("thinking", "")
-                            if thinking_text:
+                            # Ensure thinking is a string (could be dict/list in malformed response)
+                            if thinking_text and isinstance(thinking_text, str):
                                 thinking_chunks.append(thinking_text)
 
                 # Extract final result

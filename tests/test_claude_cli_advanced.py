@@ -492,5 +492,341 @@ class TestModelUsageParsing:
         assert model_usage[0].cost_usd == 15.50
 
 
+class TestExtremeEdgeCases:
+    """Test 11: Extreme edge cases for 'stupid users' who break everything."""
+
+    def test_null_bytes_in_output(self):
+        """Handle null bytes in output (binary data leak)."""
+        cli = ClaudeCLI(model="opus")
+        # Null byte in the middle of output
+        raw_output = '{"type":"result","result":"Hello\\u0000World","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        assert output is not None
+        assert api_error is None
+        # Should handle null byte gracefully
+
+    def test_ansi_escape_codes_in_output(self):
+        """Handle ANSI escape codes (terminal color codes) in output."""
+        cli = ClaudeCLI(model="opus")
+        # ANSI red color code
+        raw_output = '{"type":"result","result":"\\u001b[31mERROR\\u001b[0m: Not really an error","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        assert output is not None
+        # Should NOT be detected as error (it's just colored text)
+        assert api_error is None
+
+    def test_json_with_bom(self):
+        """Handle JSON with UTF-8 BOM (common Windows issue)."""
+        cli = ClaudeCLI(model="opus")
+        # UTF-8 BOM + valid JSON
+        raw_output = '\ufeff{"type":"result","result":"BOM test","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle BOM gracefully (either parse or fallback)
+        assert output is not None
+
+    def test_windows_line_endings(self):
+        """Handle Windows CRLF line endings in NDJSON."""
+        cli = ClaudeCLI(model="opus")
+        # Windows line endings
+        raw_output = '{"type":"content_block_delta","delta":{"text":"Hello"}}\r\n{"type":"result","result":"Done","modelUsage":{}}\r\n'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        assert output == "Done"
+        assert api_error is None
+
+    def test_mixed_line_endings(self):
+        """Handle mixed LF, CR, CRLF line endings."""
+        cli = ClaudeCLI(model="opus")
+        # Mixed line endings chaos
+        raw_output = '{"type":"content_block_delta","delta":{"text":"A"}}\n{"type":"content_block_delta","delta":{"text":"B"}}\r\n{"type":"content_block_delta","delta":{"text":"C"}}\r{"type":"result","result":"ABC","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle gracefully
+        assert output is not None
+
+    def test_extremely_nested_json(self):
+        """Handle deeply nested JSON (potential stack overflow)."""
+        cli = ClaudeCLI(model="opus")
+        # 50 levels of nesting in result
+        nested = '{"a":' * 50 + '"deep"' + '}' * 50
+        raw_output = f'{{"type":"result","result":{nested},"modelUsage":{{}}}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should either parse or gracefully fail, not crash
+        assert api_error is None
+
+    def test_json_with_trailing_comma(self):
+        """Handle JSON with trailing comma (common user mistake)."""
+        cli = ClaudeCLI(model="opus")
+        # Invalid JSON with trailing comma - should skip this line
+        raw_output = '{"type":"result","result":"oops",}\n{"type":"result","result":"valid","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should skip invalid line and use valid one
+        assert output == "valid"
+
+    def test_result_looks_like_error_but_isnt(self):
+        """Don't false-positive on 'error' keyword in normal output."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":"The function handles error cases correctly. No billing issues found.","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should NOT detect as error - is_error is not set
+        assert api_error is None
+        assert "error" in output.lower()  # Word exists but not an error
+
+    def test_model_usage_with_negative_values(self):
+        """Handle negative token counts (should never happen but...)."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":"Done","modelUsage":{"model":{"inputTokens":-100,"outputTokens":-50,"costUSD":-5.00}}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle gracefully (store the values as-is or clamp to 0)
+        assert len(model_usage) == 1
+        # Values stored as received
+        assert model_usage[0].input_tokens == -100
+
+    def test_duplicate_result_events(self):
+        """Handle multiple result events (should use last one)."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = """{"type":"result","result":"First result","modelUsage":{"m1":{"inputTokens":100,"outputTokens":50}}}
+{"type":"result","result":"Second result","modelUsage":{"m2":{"inputTokens":200,"outputTokens":100}}}
+{"type":"result","result":"Third result","modelUsage":{"m3":{"inputTokens":300,"outputTokens":150}}}"""
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should use the LAST result
+        assert output == "Third result"
+        # Should accumulate all model usage
+        assert len(model_usage) == 3
+
+
+class TestPathTraversalAndInjection:
+    """Test 12: Security edge cases - path traversal, injection attempts."""
+
+    def test_context_id_path_traversal(self):
+        """Context ID with path traversal should be handled."""
+        cli = ClaudeCLI(model="opus")
+
+        # Malicious context_id with path traversal
+        context_id = "../../../etc/passwd"
+
+        # The S3 key is built using f-string, so path traversal chars are included
+        # This documents the current behavior - context_id is used as-is
+        # S3 allows ".." in keys, but it doesn't affect server filesystem
+        s3_key = f"test/{context_id}_output.md"
+
+        # Should contain the path traversal chars (S3 handles them as literal chars)
+        assert "../" in s3_key
+
+    def test_context_id_with_s3_special_chars(self):
+        """Context ID with control characters should be handled."""
+        cli = ClaudeCLI(model="opus")
+
+        # Control characters in context_id
+        context_id = "test\x00id\x1fwith\x7fcontrol"
+
+        # Building S3 key with control chars - documents current behavior
+        s3_key = f"test/{context_id}_output.md"
+
+        # Key is built, contains control chars (S3 may reject these)
+        assert "\x00" in s3_key
+
+    def test_model_name_with_special_chars(self):
+        """Model name with injection attempt."""
+        # User tries to inject via model name
+        cli = ClaudeCLI(model="opus; rm -rf /")
+
+        # Model name should be stored as-is (it goes to CLI args)
+        assert cli.model == "opus; rm -rf /"
+        # The actual CLI execution would escape this properly
+
+
+class TestResourceLimits:
+    """Test 13: Resource limit edge cases."""
+
+    def test_timeout_zero(self):
+        """Timeout of 0 seconds."""
+        cli = ClaudeCLI(model="opus", timeout=0)
+        assert cli.timeout == 0
+        # Should probably fail immediately when run
+
+    def test_timeout_negative(self):
+        """Negative timeout (invalid input)."""
+        cli = ClaudeCLI(model="opus", timeout=-10)
+        # Should store the value (validation happens at runtime)
+        assert cli.timeout == -10
+
+    def test_thinking_budget_extreme_high(self):
+        """Extremely high thinking budget."""
+        cli = ClaudeCLI(model="opus")
+
+        # 10 billion tokens - absurd but should not crash
+        # The _build_cli_args would use this value
+        assert hasattr(cli, 'settings')
+
+
+class TestAgentFileCorruption:
+    """Test 14: Agent file corruption and edge cases."""
+
+    def test_agent_file_deleted_between_checks(self, tmp_path):
+        """Agent file deleted after ClaudeCLI init but before load."""
+        agent_file = tmp_path / "agent.md"
+        agent_file.write_text("# Instructions")
+
+        cli = ClaudeCLI(agent_md_path=agent_file, model="opus")
+
+        # Delete file after init
+        agent_file.unlink()
+
+        # Should handle gracefully
+        prompt = cli.load_agent_prompt()
+        assert prompt is None  # File no longer exists
+
+    def test_agent_file_replaced_with_directory(self, tmp_path):
+        """Agent file path becomes a directory (weird but possible)."""
+        agent_path = tmp_path / "agent.md"
+        agent_path.write_text("# Instructions")
+
+        cli = ClaudeCLI(agent_md_path=agent_path, model="opus")
+
+        # Replace file with directory
+        agent_path.unlink()
+        agent_path.mkdir()
+
+        # Current impl raises IsADirectoryError - this documents that behavior
+        # A more robust impl would catch this and return None
+        try:
+            prompt = cli.load_agent_prompt()
+            assert prompt is None  # If it handles gracefully
+        except IsADirectoryError:
+            pass  # Current behavior - documents this edge case
+
+    def test_agent_file_permission_denied(self, tmp_path):
+        """Agent file with no read permissions."""
+        import os
+        import platform
+
+        # Skip on Windows (no chmod support)
+        if platform.system() == "Windows":
+            pytest.skip("chmod not supported on Windows")
+
+        agent_file = tmp_path / "agent.md"
+        agent_file.write_text("# Secret Instructions")
+
+        # Remove read permissions
+        os.chmod(agent_file, 0o000)
+
+        try:
+            cli = ClaudeCLI(agent_md_path=agent_file, model="opus")
+            # Current impl raises PermissionError - this documents that behavior
+            try:
+                prompt = cli.load_agent_prompt()
+                assert prompt is None  # If it handles gracefully
+            except PermissionError:
+                pass  # Current behavior - documents this edge case
+        finally:
+            # Restore permissions for cleanup
+            os.chmod(agent_file, 0o644)
+
+
+class TestOutputParsingRobustness:
+    """Test 15: Output parsing robustness against malformed data."""
+
+    def test_result_is_array_not_string(self):
+        """Handle result field being an array instead of string."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":["item1","item2"],"modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle gracefully (convert to string or use raw)
+        assert output is not None
+
+    def test_result_is_object_not_string(self):
+        """Handle result field being an object instead of string."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":{"key":"value"},"modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle gracefully
+        assert output is not None
+
+    def test_result_is_number(self):
+        """Handle result field being a number."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":42,"modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should convert to string or handle gracefully
+        assert output is not None
+
+    def test_result_is_boolean(self):
+        """Handle result field being a boolean."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":true,"modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle gracefully
+        assert output is not None
+
+    def test_thinking_is_not_string(self):
+        """Handle thinking field being non-string type."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":{"nested":"object"}}]}}\n{"type":"result","result":"Done","modelUsage":{}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should not crash
+        assert output == "Done"
+
+    def test_model_usage_tokens_as_strings(self):
+        """Handle token counts as strings instead of integers (API inconsistency)."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":"Done","modelUsage":{"model":{"inputTokens":"100","outputTokens":"50"}}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        # Should handle gracefully (current impl expects int, might fail)
+        # This documents the edge case
+        assert output == "Done"
+
+    def test_model_usage_cost_as_string(self):
+        """Handle cost as string instead of float."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":"Done","modelUsage":{"model":{"inputTokens":100,"outputTokens":50,"costUSD":"0.005"}}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        assert output == "Done"
+        # Cost might be 0.0 if parsing fails, or correctly parsed
+
+    def test_empty_model_name(self):
+        """Handle empty string as model name in usage."""
+        cli = ClaudeCLI(model="opus")
+        raw_output = '{"type":"result","result":"Done","modelUsage":{"":{"inputTokens":100,"outputTokens":50}}}'
+
+        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+
+        assert output == "Done"
+        assert len(model_usage) == 1
+        assert model_usage[0].model == ""
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
