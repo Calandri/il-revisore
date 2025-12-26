@@ -69,6 +69,26 @@
                     {{ repo.status }}
                 </span>
 
+                <!-- RECLONE button (shown when status is error) -->
+                {% if repo.status == 'error' %}
+                <button hx-post="/htmx/repos/{{ repo.id }}/reclone"
+                        hx-target="#repo-list"
+                        hx-indicator="#reclone-spinner-{{ repo.id }}"
+                        class="px-3 py-1.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors flex items-center gap-1.5"
+                        title="Riscarica repository (reclone)">
+                    <svg id="reclone-spinner-{{ repo.id }}" class="w-4 h-4 htmx-indicator animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <svg class="w-4 h-4 htmx-indicator-hide" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    <span class="htmx-indicator-hide">Reclona</span>
+                    <span class="htmx-indicator">Reclonando...</span>
+                </button>
+                {% endif %}
+
                 <!-- Pull button -->
                 <button hx-post="/htmx/repos/{{ repo.id }}/sync"
                         hx-target="#repo-list"

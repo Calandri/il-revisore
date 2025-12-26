@@ -343,6 +343,46 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
     )
 
 
+@router.post("/htmx/repos/{repo_id}/reclone", response_class=HTMLResponse)
+async def htmx_reclone_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+    """HTMX: force reclone a repository (delete local + fresh clone)."""
+    import logging
+    import shutil
+    from pathlib import Path
+
+    from ...core.repo_manager import RepoManager
+
+    logger = logging.getLogger(__name__)
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+
+    if repo:
+        try:
+            local_path = Path(repo.local_path)
+
+            # Delete local directory if exists
+            if local_path.exists():
+                logger.info(f"[RECLONE] Removing local directory: {local_path}")
+                shutil.rmtree(local_path)
+
+            # Use sync which calls ensure_repo_exists to reclone
+            manager = RepoManager(db)
+            manager.sync(repo_id)
+            logger.info(f"[RECLONE] Successfully recloned: {repo.name}")
+        except Exception as e:
+            logger.error(f"[RECLONE] Failed for {repo.name}: {e}")
+            # Mark as error
+            repo.status = "error"
+            db.commit()
+
+    # Return updated list (redirect to GET which loads evaluations properly)
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "components/repo_list.html",
+        {"request": request, "repos": repos, "evaluations": {}},
+    )
+
+
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
 async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
     """HTMX: push repository changes with automatic conflict resolution via Claude CLI."""
