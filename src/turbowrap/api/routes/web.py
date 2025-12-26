@@ -229,6 +229,34 @@ async def users_page(request: Request):
     )
 
 
+@router.get("/databases", response_class=HTMLResponse)
+async def databases_page(request: Request):
+    """Database viewer page - manage and visualize databases."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/databases.html",
+        {
+            "request": request,
+            "active_page": "databases",
+            "current_user": get_current_user(request),
+        },
+    )
+
+
+@router.get("/endpoints", response_class=HTMLResponse)
+async def endpoints_page(request: Request):
+    """Endpoint manager page - view and document API endpoints."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/endpoints.html",
+        {
+            "request": request,
+            "active_page": "endpoints",
+            "current_user": get_current_user(request),
+        },
+    )
+
+
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):

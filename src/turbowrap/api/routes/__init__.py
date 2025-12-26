@@ -4,7 +4,9 @@ from .analysis import router as analysis_router
 from .auth import router as auth_router
 from .chat import router as chat_router
 from .cli_chat import router as cli_chat_router
+from .databases import router as databases_router
 from .deployments import router as deployments_router
+from .endpoints import router as endpoints_router
 from .fix import router as fix_router
 from .operations import router as operations_router
 from .git import router as git_router
@@ -40,4 +42,6 @@ __all__ = [
     "cli_chat_router",
     "deployments_router",
     "operations_router",
+    "databases_router",
+    "endpoints_router",
 ]

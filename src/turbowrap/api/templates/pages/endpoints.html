@@ -1,0 +1,524 @@
+{% extends "base.html" %}
+
+{% block title %}Endpoint Manager - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="endpointsApp()">
+    <!-- Header -->
+    <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+            <h1 class="text-3xl font-bold">Endpoint Manager</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Gestisci e documenta gli endpoint delle tue API</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <!-- Repository Selector -->
+            <select x-model="selectedRepoId"
+                    @change="loadEndpoints()"
+                    class="px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent min-w-[200px]">
+                <option value="">Seleziona repository...</option>
+                <template x-for="repo in repos" :key="repo.id">
+                    <option :value="repo.id" x-text="`${repo.name} (${repo.endpoint_count} endpoints)`"></option>
+                </template>
+            </select>
+
+            <!-- Detect Endpoints Button -->
+            <button @click="detectEndpoints()"
+                    :disabled="!selectedRepoId || detecting"
+                    class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg x-show="detecting" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                <svg x-show="!detecting" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <span x-text="detecting ? 'Rilevamento...' : 'Rileva Endpoints'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+    </div>
+
+    <!-- Empty State - No Repository Selected -->
+    <div x-show="!loading && !selectedRepoId"
+         class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-medium mb-2">Seleziona un Repository</h3>
+        <p class="text-gray-500 dark:text-gray-400 mb-6">Scegli un repository dal dropdown per visualizzare gli endpoint API</p>
+    </div>
+
+    <!-- Empty State - No Endpoints -->
+    <div x-show="!loading && selectedRepoId && endpoints.routes.length === 0 && !endpoints.error"
+         class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-medium mb-2">Nessun endpoint rilevato</h3>
+        <p class="text-gray-500 dark:text-gray-400 mb-6">Clicca "Rileva Endpoints" per scansionare il repository</p>
+        <button @click="detectEndpoints()"
+                :disabled="detecting"
+                class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+            Rileva Endpoints
+        </button>
+    </div>
+
+    <!-- Error State -->
+    <div x-show="endpoints.error"
+         class="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800 p-6">
+        <div class="flex items-center gap-3 text-red-600 dark:text-red-400">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span x-text="endpoints.error"></span>
+        </div>
+    </div>
+
+    <!-- Endpoint Info Header -->
+    <div x-show="!loading && selectedRepoId && endpoints.routes.length > 0"
+         class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-6">
+                <!-- Framework Badge -->
+                <div class="flex items-center gap-2" x-show="endpoints.framework">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Framework:</span>
+                    <span class="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm font-medium"
+                          x-text="endpoints.framework"></span>
+                </div>
+
+                <!-- Endpoint Count -->
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Endpoints:</span>
+                    <span class="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium"
+                          x-text="endpoints.routes.length"></span>
+                </div>
+
+                <!-- Last Updated -->
+                <div class="flex items-center gap-2" x-show="endpoints.detected_at">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Aggiornato:</span>
+                    <span class="text-sm" x-text="formatDate(endpoints.detected_at)"></span>
+                </div>
+            </div>
+
+            <!-- Swagger Link -->
+            <div class="flex items-center gap-3">
+                <template x-if="endpoints.openapi_file">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                        OpenAPI: <span class="font-mono text-xs" x-text="endpoints.openapi_file"></span>
+                    </span>
+                </template>
+                <template x-if="endpoints.swagger_url">
+                    <a :href="endpoints.swagger_url" target="_blank"
+                       class="px-3 py-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-sm font-medium hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.383 0 0 5.383 0 12s5.383 12 12 12 12-5.383 12-12S18.617 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/>
+                        </svg>
+                        Swagger UI
+                    </a>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div x-show="!loading && selectedRepoId && endpoints.routes.length > 0"
+         class="flex flex-wrap items-center gap-3">
+        <!-- Search -->
+        <div class="flex-1 min-w-[200px]">
+            <input type="text" x-model="searchQuery" placeholder="Cerca endpoint..."
+                   class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+        </div>
+
+        <!-- Method Filter -->
+        <div class="flex gap-1">
+            <template x-for="method in ['ALL', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH']" :key="method">
+                <button @click="methodFilter = method"
+                        :class="methodFilter === method ? getMethodClass(method) : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        x-text="method"></button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Endpoints List -->
+    <div x-show="!loading && selectedRepoId && filteredEndpoints.length > 0" class="space-y-3">
+        <template x-for="(endpoint, index) in filteredEndpoints" :key="index">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                <!-- Endpoint Header -->
+                <div class="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                     @click="toggleEndpoint(index)">
+                    <div class="flex items-center gap-4">
+                        <!-- Method Badge -->
+                        <span class="px-3 py-1 rounded-lg text-xs font-bold min-w-[60px] text-center"
+                              :class="getMethodClass(endpoint.method)"
+                              x-text="endpoint.method"></span>
+
+                        <!-- Path -->
+                        <span class="font-mono text-sm" x-text="endpoint.path"></span>
+
+                        <!-- Auth Badge -->
+                        <span x-show="endpoint.auth_required"
+                              class="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded text-xs">
+                            Auth
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                        <!-- Description Preview -->
+                        <span class="text-sm text-gray-500 dark:text-gray-400 max-w-md truncate hidden md:block"
+                              x-text="endpoint.description"></span>
+
+                        <!-- Expand Icon -->
+                        <svg class="w-5 h-5 text-gray-400 transition-transform"
+                             :class="expandedEndpoints.includes(index) ? 'rotate-180' : ''"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Endpoint Details -->
+                <div x-show="expandedEndpoints.includes(index)"
+                     x-collapse
+                     class="border-t dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-900">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Left Column -->
+                        <div class="space-y-4">
+                            <!-- Description -->
+                            <div x-show="endpoint.description">
+                                <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Descrizione</h4>
+                                <p class="text-sm" x-text="endpoint.description"></p>
+                            </div>
+
+                            <!-- File Location -->
+                            <div x-show="endpoint.file">
+                                <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">File</h4>
+                                <p class="text-sm font-mono text-blue-600 dark:text-blue-400">
+                                    <span x-text="endpoint.file"></span><span x-show="endpoint.line" x-text="':' + endpoint.line"></span>
+                                </p>
+                            </div>
+
+                            <!-- Parameters -->
+                            <div x-show="endpoint.parameters && endpoint.parameters.length > 0">
+                                <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Parametri</h4>
+                                <div class="space-y-2">
+                                    <template x-for="param in endpoint.parameters" :key="param.name">
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <span class="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs"
+                                                  x-text="param.param_type"></span>
+                                            <span class="font-mono font-medium" x-text="param.name"></span>
+                                            <span class="text-gray-400" x-text="param.data_type"></span>
+                                            <span x-show="param.required" class="text-red-500 text-xs">*required</span>
+                                            <span x-show="param.description" class="text-gray-500" x-text="'- ' + param.description"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- Response Type -->
+                            <div x-show="endpoint.response_type">
+                                <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Response</h4>
+                                <p class="text-sm font-mono" x-text="endpoint.response_type"></p>
+                            </div>
+
+                            <!-- Tags -->
+                            <div x-show="endpoint.tags && endpoint.tags.length > 0">
+                                <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Tags</h4>
+                                <div class="flex flex-wrap gap-1">
+                                    <template x-for="tag in endpoint.tags" :key="tag">
+                                        <span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs"
+                                              x-text="tag"></span>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column - Actions & Examples -->
+                        <div class="space-y-4">
+                            <!-- Action Buttons -->
+                            <div class="flex flex-wrap gap-2">
+                                <button @click="getAIInstructions(endpoint)"
+                                        :disabled="loadingInstructions"
+                                        class="px-3 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg text-sm hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors flex items-center gap-2">
+                                    <svg x-show="loadingInstructions && activeEndpoint === index" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                    </svg>
+                                    <svg x-show="!loadingInstructions || activeEndpoint !== index" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                                    </svg>
+                                    AI Instructions
+                                </button>
+
+                                <button @click="copyAsCurl(endpoint)"
+                                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                    </svg>
+                                    Copy cURL
+                                </button>
+                            </div>
+
+                            <!-- AI Instructions Result -->
+                            <div x-show="aiInstructions && activeEndpoint === index"
+                                 class="space-y-3 bg-white dark:bg-gray-800 rounded-lg p-4 border dark:border-gray-700">
+                                <!-- Description -->
+                                <div x-show="aiInstructions.description">
+                                    <h5 class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Descrizione</h5>
+                                    <p class="text-sm" x-text="aiInstructions.description"></p>
+                                </div>
+
+                                <!-- cURL -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-1">
+                                        <h5 class="text-xs font-medium text-gray-500 dark:text-gray-400">cURL</h5>
+                                        <button @click="copyToClipboard(aiInstructions.curl_example)" class="text-xs text-blue-600 hover:underline">Copy</button>
+                                    </div>
+                                    <pre class="text-xs bg-gray-900 text-green-400 p-3 rounded-lg overflow-x-auto" x-text="aiInstructions.curl_example"></pre>
+                                </div>
+
+                                <!-- Python -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-1">
+                                        <h5 class="text-xs font-medium text-gray-500 dark:text-gray-400">Python</h5>
+                                        <button @click="copyToClipboard(aiInstructions.python_example)" class="text-xs text-blue-600 hover:underline">Copy</button>
+                                    </div>
+                                    <pre class="text-xs bg-gray-900 text-blue-400 p-3 rounded-lg overflow-x-auto" x-text="aiInstructions.python_example"></pre>
+                                </div>
+
+                                <!-- JavaScript -->
+                                <div>
+                                    <div class="flex items-center justify-between mb-1">
+                                        <h5 class="text-xs font-medium text-gray-500 dark:text-gray-400">JavaScript</h5>
+                                        <button @click="copyToClipboard(aiInstructions.javascript_example)" class="text-xs text-blue-600 hover:underline">Copy</button>
+                                    </div>
+                                    <pre class="text-xs bg-gray-900 text-yellow-400 p-3 rounded-lg overflow-x-auto" x-text="aiInstructions.javascript_example"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-transition
+         :class="toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'"
+         class="fixed bottom-6 right-6 px-6 py-3 text-white rounded-lg shadow-lg flex items-center gap-3 z-50">
+        <span x-text="toast.message"></span>
+        <button @click="toast.show = false" class="hover:opacity-80">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function endpointsApp() {
+    return {
+        loading: true,
+        detecting: false,
+        loadingInstructions: false,
+        repos: [],
+        selectedRepoId: '',
+        endpoints: {
+            swagger_url: null,
+            openapi_file: null,
+            detected_at: null,
+            framework: '',
+            routes: [],
+            error: null
+        },
+        searchQuery: '',
+        methodFilter: 'ALL',
+        expandedEndpoints: [],
+        activeEndpoint: null,
+        aiInstructions: null,
+        toast: { show: false, message: '', type: 'success' },
+
+        async init() {
+            await this.loadRepos();
+        },
+
+        async loadRepos() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/endpoints?include_without_endpoints=true');
+                if (response.ok) {
+                    this.repos = await response.json();
+                }
+            } catch (error) {
+                this.showToast('Errore nel caricamento', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async loadEndpoints() {
+            if (!this.selectedRepoId) {
+                this.endpoints = { routes: [] };
+                return;
+            }
+
+            this.loading = true;
+            this.expandedEndpoints = [];
+            this.aiInstructions = null;
+
+            try {
+                const response = await fetch(`/api/endpoints/${this.selectedRepoId}`);
+                if (response.ok) {
+                    this.endpoints = await response.json();
+                }
+            } catch (error) {
+                this.showToast('Errore nel caricamento endpoints', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async detectEndpoints() {
+            if (!this.selectedRepoId) return;
+
+            this.detecting = true;
+            try {
+                const response = await fetch(`/api/endpoints/${this.selectedRepoId}/detect?use_ai=true`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    this.showToast(result.message, 'success');
+                    await this.loadEndpoints();
+                    await this.loadRepos(); // Refresh repo list
+                } else {
+                    this.showToast(result.message || 'Rilevamento fallito', 'error');
+                }
+            } catch (error) {
+                this.showToast('Errore nel rilevamento', 'error');
+            } finally {
+                this.detecting = false;
+            }
+        },
+
+        get filteredEndpoints() {
+            let filtered = this.endpoints.routes || [];
+
+            // Filter by method
+            if (this.methodFilter !== 'ALL') {
+                filtered = filtered.filter(e => e.method === this.methodFilter);
+            }
+
+            // Filter by search query
+            if (this.searchQuery) {
+                const query = this.searchQuery.toLowerCase();
+                filtered = filtered.filter(e =>
+                    e.path.toLowerCase().includes(query) ||
+                    (e.description && e.description.toLowerCase().includes(query)) ||
+                    (e.tags && e.tags.some(t => t.toLowerCase().includes(query)))
+                );
+            }
+
+            return filtered;
+        },
+
+        toggleEndpoint(index) {
+            const idx = this.expandedEndpoints.indexOf(index);
+            if (idx > -1) {
+                this.expandedEndpoints.splice(idx, 1);
+            } else {
+                this.expandedEndpoints.push(index);
+            }
+        },
+
+        async getAIInstructions(endpoint) {
+            const index = this.filteredEndpoints.indexOf(endpoint);
+            this.activeEndpoint = index;
+            this.loadingInstructions = true;
+            this.aiInstructions = null;
+
+            try {
+                const response = await fetch('/api/endpoints/ai-instructions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        method: endpoint.method,
+                        path: endpoint.path,
+                        description: endpoint.description,
+                        parameters: endpoint.parameters || [],
+                        base_url: window.location.origin
+                    })
+                });
+
+                if (response.ok) {
+                    this.aiInstructions = await response.json();
+                }
+            } catch (error) {
+                this.showToast('Errore nella generazione', 'error');
+            } finally {
+                this.loadingInstructions = false;
+            }
+        },
+
+        copyAsCurl(endpoint) {
+            const baseUrl = window.location.origin;
+            const curl = `curl -X ${endpoint.method} '${baseUrl}${endpoint.path}'`;
+            this.copyToClipboard(curl);
+        },
+
+        async copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                this.showToast('Copiato negli appunti', 'success');
+            } catch (error) {
+                this.showToast('Errore nella copia', 'error');
+            }
+        },
+
+        getMethodClass(method) {
+            const classes = {
+                'GET': 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+                'POST': 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+                'PUT': 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
+                'DELETE': 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+                'PATCH': 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+                'ALL': 'bg-primary text-white'
+            };
+            return classes[method] || 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300';
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('it-IT', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        },
+
+        showToast(message, type = 'success') {
+            this.toast = { show: true, message, type };
+            setTimeout(() => this.toast.show = false, 4000);
+        }
+    };
+}
+</script>
+{% endblock %}

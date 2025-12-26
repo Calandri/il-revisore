@@ -1,0 +1,802 @@
+{% extends "base.html" %}
+
+{% block title %}Database Viewer - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="databasesApp()">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold">Database Viewer</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Gestisci e visualizza i tuoi database</p>
+        </div>
+        <button @click="showAddModal = true"
+                class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Aggiungi Database
+        </button>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!loading && connections.length === 0"
+         class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
+        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-medium mb-2">Nessun database configurato</h3>
+        <p class="text-gray-500 dark:text-gray-400 mb-6">Aggiungi la tua prima connessione database per iniziare</p>
+        <button @click="showAddModal = true"
+                class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+            Aggiungi Database
+        </button>
+    </div>
+
+    <!-- Connections Grid -->
+    <div x-show="!loading && connections.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="conn in connections" :key="conn.id">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow">
+                <!-- Card Header -->
+                <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center"
+                         :style="`background-color: ${conn.color || getTypeColor(conn.db_type)}20`">
+                        <span class="text-lg" :style="`color: ${conn.color || getTypeColor(conn.db_type)}`"
+                              x-text="getTypeIcon(conn.db_type)"></span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-medium truncate" x-text="conn.name"></h3>
+                            <button @click="toggleFavorite(conn.id)"
+                                    class="text-gray-400 hover:text-yellow-500 transition-colors">
+                                <svg class="w-4 h-4" :class="conn.is_favorite ? 'text-yellow-500 fill-current' : ''"
+                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 truncate"
+                           x-text="conn.db_type === 'sqlite' ? conn.database : `${conn.host}:${conn.port}/${conn.database}`"></p>
+                    </div>
+                </div>
+
+                <!-- Card Body -->
+                <div class="p-4 space-y-3">
+                    <!-- Connection Status -->
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="text-gray-500 dark:text-gray-400">Tipo:</span>
+                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs font-medium uppercase"
+                              x-text="conn.db_type"></span>
+                    </div>
+
+                    <template x-if="conn.username">
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Utente:</span>
+                            <span x-text="conn.username"></span>
+                        </div>
+                    </template>
+
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="text-gray-500 dark:text-gray-400">SSL:</span>
+                        <span :class="conn.ssl_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-400'"
+                              x-text="conn.ssl_enabled ? 'Attivo' : 'Disattivo'"></span>
+                    </div>
+
+                    <template x-if="conn.last_error">
+                        <div class="p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs text-red-600 dark:text-red-400 truncate"
+                             x-text="conn.last_error"></div>
+                    </template>
+
+                    <!-- Tags -->
+                    <template x-if="conn.tags && conn.tags.length > 0">
+                        <div class="flex flex-wrap gap-1">
+                            <template x-for="tag in conn.tags" :key="tag">
+                                <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs"
+                                      x-text="tag"></span>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Card Actions -->
+                <div class="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center gap-2">
+                    <button @click="testConnection(conn.id)"
+                            :disabled="testingId === conn.id"
+                            class="flex-1 px-3 py-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
+                        <svg x-show="testingId === conn.id" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span x-text="testingId === conn.id ? 'Testing...' : 'Test'"></span>
+                    </button>
+                    <button @click="openInDbGate(conn)"
+                            class="flex-1 px-3 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90 transition-colors">
+                        Apri in DbGate
+                    </button>
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open"
+                                class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+                            </svg>
+                        </button>
+                        <div x-show="open" @click.away="open = false"
+                             x-transition
+                             class="absolute right-0 bottom-full mb-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 py-1 z-10">
+                            <button @click="editConnection(conn); open = false"
+                                    class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Modifica
+                            </button>
+                            <button @click="duplicateConnection(conn.id); open = false"
+                                    class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                                Duplica
+                            </button>
+                            <hr class="my-1 dark:border-gray-700">
+                            <button @click="deleteConnection(conn.id); open = false"
+                                    class="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                                Elimina
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- DbGate Embed Section -->
+    <div x-show="!loading && connections.length > 0"
+         class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="font-semibold">DbGate Database Manager</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Esplora e gestisci i tuoi database</p>
+                </div>
+            </div>
+            <a href="http://localhost:3000" target="_blank"
+               class="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+                Apri in nuova finestra
+            </a>
+        </div>
+        <div class="h-[600px] bg-gray-100 dark:bg-gray-900">
+            <iframe src="http://localhost:3000"
+                    class="w-full h-full border-0"
+                    allow="clipboard-read; clipboard-write"></iframe>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div x-show="showAddModal || editingConnection"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+         @keydown.escape.window="closeModal()">
+        <div @click.away="closeModal()"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+
+            <!-- Modal Header -->
+            <div class="p-6 border-b dark:border-gray-700 flex items-center justify-between">
+                <h2 class="text-xl font-semibold" x-text="editingConnection ? 'Modifica Connessione' : 'Nuova Connessione Database'"></h2>
+                <button @click="closeModal()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                <!-- Database Type Selection -->
+                <div>
+                    <label class="block text-sm font-medium mb-3">Tipo Database</label>
+                    <div class="grid grid-cols-4 gap-2">
+                        <template x-for="type in dbTypes" :key="type.type">
+                            <button type="button"
+                                    @click="form.db_type = type.type; updateDefaultPort()"
+                                    :class="form.db_type === type.type ? 'ring-2 ring-primary bg-primary/10' : 'hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                    class="p-3 border dark:border-gray-600 rounded-lg flex flex-col items-center gap-2 transition-all">
+                                <span class="text-2xl" x-text="getTypeIcon(type.type)"></span>
+                                <span class="text-xs font-medium" x-text="type.name"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Basic Info -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium mb-2">Nome Connessione *</label>
+                        <input type="text" x-model="form.name" placeholder="es. Production DB"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium mb-2">Descrizione</label>
+                        <input type="text" x-model="form.description" placeholder="Opzionale"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                </div>
+
+                <!-- Connection Details -->
+                <div x-show="form.db_type !== 'sqlite'" class="space-y-4">
+                    <h3 class="font-medium text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wide">Connessione</h3>
+
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium mb-2">Host *</label>
+                            <input type="text" x-model="form.host" placeholder="localhost o IP"
+                                   class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Porta</label>
+                            <input type="number" x-model="form.port" :placeholder="getDefaultPort(form.db_type)"
+                                   class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Database *</label>
+                        <input type="text" x-model="form.database" placeholder="Nome database"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Username</label>
+                            <input type="text" x-model="form.username" placeholder="root"
+                                   class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Password</label>
+                            <div class="relative">
+                                <input :type="showPassword ? 'text' : 'password'" x-model="form.password"
+                                       :placeholder="editingConnection ? '(invariata)' : ''"
+                                       class="w-full px-4 py-2 pr-10 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                                <button type="button" @click="showPassword = !showPassword"
+                                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                    <svg x-show="!showPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                    </svg>
+                                    <svg x-show="showPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SQLite File Path -->
+                <div x-show="form.db_type === 'sqlite'">
+                    <label class="block text-sm font-medium mb-2">Percorso File Database *</label>
+                    <input type="text" x-model="form.database" placeholder="/path/to/database.db"
+                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Inserisci il percorso completo al file .db o .sqlite</p>
+                </div>
+
+                <!-- SSL Configuration -->
+                <div x-show="form.db_type !== 'sqlite'" x-data="{ expanded: false }">
+                    <button type="button" @click="expanded = !expanded"
+                            class="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                        <svg class="w-4 h-4 transition-transform" :class="expanded ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        Configurazione SSL/TLS
+                    </button>
+
+                    <div x-show="expanded" x-collapse class="mt-4 space-y-4 pl-6 border-l-2 dark:border-gray-700">
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" x-model="form.ssl.enabled"
+                                   class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                            <span class="text-sm">Abilita SSL/TLS</span>
+                        </label>
+
+                        <div x-show="form.ssl.enabled" class="space-y-4">
+                            <label class="flex items-center gap-3">
+                                <input type="checkbox" x-model="form.ssl.verify"
+                                       class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                                <span class="text-sm">Verifica certificato server</span>
+                            </label>
+
+                            <div>
+                                <label class="block text-sm font-medium mb-2">CA Certificate (opzionale)</label>
+                                <textarea x-model="form.ssl.ca_cert" rows="3" placeholder="-----BEGIN CERTIFICATE-----"
+                                          class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-xs"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SSH Tunnel Configuration -->
+                <div x-show="form.db_type !== 'sqlite'" x-data="{ expanded: false }">
+                    <button type="button" @click="expanded = !expanded"
+                            class="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                        <svg class="w-4 h-4 transition-transform" :class="expanded ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        SSH Tunnel
+                    </button>
+
+                    <div x-show="expanded" x-collapse class="mt-4 space-y-4 pl-6 border-l-2 dark:border-gray-700">
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" x-model="form.ssh.enabled"
+                                   class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                            <span class="text-sm">Usa SSH Tunnel</span>
+                        </label>
+
+                        <div x-show="form.ssh.enabled" class="space-y-4">
+                            <div class="grid grid-cols-3 gap-4">
+                                <div class="col-span-2">
+                                    <label class="block text-sm font-medium mb-2">SSH Host</label>
+                                    <input type="text" x-model="form.ssh.host" placeholder="ssh.example.com"
+                                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">SSH Port</label>
+                                    <input type="number" x-model="form.ssh.port" placeholder="22"
+                                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium mb-2">SSH Username</label>
+                                <input type="text" x-model="form.ssh.username" placeholder="ubuntu"
+                                       class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium mb-2">SSH Private Key</label>
+                                <textarea x-model="form.ssh.private_key" rows="3" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                                          class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-xs"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Options -->
+                <div x-data="{ expanded: false }">
+                    <button type="button" @click="expanded = !expanded"
+                            class="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                        <svg class="w-4 h-4 transition-transform" :class="expanded ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        Opzioni Avanzate
+                    </button>
+
+                    <div x-show="expanded" x-collapse class="mt-4 space-y-4 pl-6 border-l-2 dark:border-gray-700">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-2">Timeout (secondi)</label>
+                                <input type="number" x-model="form.connection_timeout" min="1" max="300"
+                                       class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-2">Max Connessioni</label>
+                                <input type="number" x-model="form.max_connections" min="1" max="100"
+                                       class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+                        </div>
+
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" x-model="form.read_only"
+                                   class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                            <span class="text-sm">Modalita sola lettura</span>
+                        </label>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Tags (separati da virgola)</label>
+                            <input type="text" x-model="tagsInput" placeholder="production, main, critical"
+                                   class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Colore</label>
+                            <div class="flex gap-2">
+                                <template x-for="color in ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899']" :key="color">
+                                    <button type="button" @click="form.color = color"
+                                            :class="form.color === color ? 'ring-2 ring-offset-2 ring-gray-400' : ''"
+                                            :style="`background-color: ${color}`"
+                                            class="w-8 h-8 rounded-full"></button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" x-model="form.is_favorite"
+                                   class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+                            <span class="text-sm">Aggiungi ai preferiti</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Test Result -->
+                <div x-show="testResult" x-transition
+                     :class="testResult?.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'"
+                     class="p-4 rounded-lg border">
+                    <div class="flex items-center gap-2">
+                        <svg x-show="testResult?.success" class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        <svg x-show="!testResult?.success" class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        <span :class="testResult?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'"
+                              x-text="testResult?.message"></span>
+                    </div>
+                    <template x-if="testResult?.success && testResult?.server_version">
+                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                            Server: <span x-text="testResult.server_version"></span>
+                            <template x-if="testResult?.latency_ms">
+                                <span> | Latenza: <span x-text="testResult.latency_ms"></span>ms</span>
+                            </template>
+                        </p>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex items-center justify-between">
+                <button type="button"
+                        @click="testNewConnection()"
+                        :disabled="!form.name || !form.database || testingNew"
+                        class="px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <svg x-show="testingNew" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Test Connessione
+                </button>
+
+                <div class="flex gap-3">
+                    <button type="button" @click="closeModal()"
+                            class="px-4 py-2 border dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Annulla
+                    </button>
+                    <button type="button"
+                            @click="saveConnection()"
+                            :disabled="!form.name || !form.database || saving"
+                            class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                        <svg x-show="saving" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span x-text="editingConnection ? 'Salva Modifiche' : 'Crea Connessione'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div x-show="toast.show" x-transition
+         :class="toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'"
+         class="fixed bottom-6 right-6 px-6 py-3 text-white rounded-lg shadow-lg flex items-center gap-3 z-50">
+        <span x-text="toast.message"></span>
+        <button @click="toast.show = false" class="hover:opacity-80">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function databasesApp() {
+    return {
+        loading: true,
+        connections: [],
+        showAddModal: false,
+        editingConnection: null,
+        saving: false,
+        testingId: null,
+        testingNew: false,
+        testResult: null,
+        showPassword: false,
+        tagsInput: '',
+        toast: { show: false, message: '', type: 'success' },
+
+        dbTypes: [
+            { type: 'mysql', name: 'MySQL' },
+            { type: 'postgresql', name: 'PostgreSQL' },
+            { type: 'sqlite', name: 'SQLite' },
+            { type: 'mongodb', name: 'MongoDB' },
+            { type: 'redis', name: 'Redis' },
+            { type: 'mariadb', name: 'MariaDB' },
+            { type: 'mssql', name: 'SQL Server' },
+        ],
+
+        form: {
+            name: '',
+            description: '',
+            db_type: 'mysql',
+            host: 'localhost',
+            port: null,
+            database: '',
+            username: '',
+            password: '',
+            ssl: { enabled: false, ca_cert: '', client_cert: '', client_key: '', verify: true },
+            ssh: { enabled: false, host: '', port: 22, username: '', private_key: '', passphrase: '' },
+            connection_timeout: 30,
+            read_only: false,
+            max_connections: 5,
+            color: null,
+            is_favorite: false,
+        },
+
+        async init() {
+            await this.loadConnections();
+        },
+
+        async loadConnections() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/databases');
+                if (response.ok) {
+                    this.connections = await response.json();
+                }
+            } catch (error) {
+                this.showToast('Errore nel caricamento', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        getTypeIcon(type) {
+            const icons = {
+                mysql: '🐬',
+                postgresql: '🐘',
+                sqlite: '📁',
+                mongodb: '🍃',
+                redis: '🔴',
+                mariadb: '🦭',
+                mssql: '📊',
+            };
+            return icons[type] || '💾';
+        },
+
+        getTypeColor(type) {
+            const colors = {
+                mysql: '#00758F',
+                postgresql: '#336791',
+                sqlite: '#003B57',
+                mongodb: '#47A248',
+                redis: '#DC382D',
+                mariadb: '#003545',
+                mssql: '#CC2927',
+            };
+            return colors[type] || '#6366f1';
+        },
+
+        getDefaultPort(type) {
+            const ports = {
+                mysql: 3306,
+                mariadb: 3306,
+                postgresql: 5432,
+                mongodb: 27017,
+                redis: 6379,
+                mssql: 1433,
+            };
+            return ports[type] || '';
+        },
+
+        updateDefaultPort() {
+            if (!this.form.port) {
+                this.form.port = this.getDefaultPort(this.form.db_type);
+            }
+        },
+
+        resetForm() {
+            this.form = {
+                name: '',
+                description: '',
+                db_type: 'mysql',
+                host: 'localhost',
+                port: null,
+                database: '',
+                username: '',
+                password: '',
+                ssl: { enabled: false, ca_cert: '', client_cert: '', client_key: '', verify: true },
+                ssh: { enabled: false, host: '', port: 22, username: '', private_key: '', passphrase: '' },
+                connection_timeout: 30,
+                read_only: false,
+                max_connections: 5,
+                color: null,
+                is_favorite: false,
+            };
+            this.tagsInput = '';
+            this.testResult = null;
+            this.showPassword = false;
+        },
+
+        editConnection(conn) {
+            this.editingConnection = conn;
+            this.form = {
+                name: conn.name,
+                description: conn.description || '',
+                db_type: conn.db_type,
+                host: conn.host || 'localhost',
+                port: conn.port,
+                database: conn.database,
+                username: conn.username || '',
+                password: '',
+                ssl: { enabled: conn.ssl_enabled, ca_cert: '', client_cert: '', client_key: '', verify: true },
+                ssh: { enabled: conn.ssh_enabled, host: '', port: 22, username: '', private_key: '', passphrase: '' },
+                connection_timeout: conn.connection_timeout || 30,
+                read_only: conn.read_only || false,
+                max_connections: conn.max_connections || 5,
+                color: conn.color,
+                is_favorite: conn.is_favorite || false,
+            };
+            this.tagsInput = (conn.tags || []).join(', ');
+            this.testResult = null;
+        },
+
+        closeModal() {
+            this.showAddModal = false;
+            this.editingConnection = null;
+            this.resetForm();
+        },
+
+        async saveConnection() {
+            this.saving = true;
+            try {
+                const tags = this.tagsInput.split(',').map(t => t.trim()).filter(t => t);
+                const payload = { ...this.form, tags };
+
+                const url = this.editingConnection
+                    ? `/api/databases/${this.editingConnection.id}`
+                    : '/api/databases';
+                const method = this.editingConnection ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (response.ok) {
+                    this.showToast(this.editingConnection ? 'Connessione aggiornata' : 'Connessione creata', 'success');
+                    this.closeModal();
+                    await this.loadConnections();
+                } else {
+                    const data = await response.json();
+                    this.showToast(data.detail || 'Errore nel salvataggio', 'error');
+                }
+            } catch (error) {
+                this.showToast('Errore di connessione', 'error');
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async deleteConnection(id) {
+            if (!confirm('Sei sicuro di voler eliminare questa connessione?')) return;
+
+            try {
+                const response = await fetch(`/api/databases/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    this.showToast('Connessione eliminata', 'success');
+                    await this.loadConnections();
+                }
+            } catch (error) {
+                this.showToast('Errore nell\'eliminazione', 'error');
+            }
+        },
+
+        async duplicateConnection(id) {
+            try {
+                const response = await fetch(`/api/databases/${id}/duplicate`, { method: 'POST' });
+                if (response.ok) {
+                    this.showToast('Connessione duplicata', 'success');
+                    await this.loadConnections();
+                }
+            } catch (error) {
+                this.showToast('Errore nella duplicazione', 'error');
+            }
+        },
+
+        async toggleFavorite(id) {
+            try {
+                const response = await fetch(`/api/databases/${id}/favorite`, { method: 'POST' });
+                if (response.ok) {
+                    await this.loadConnections();
+                }
+            } catch (error) {
+                this.showToast('Errore', 'error');
+            }
+        },
+
+        async testConnection(id) {
+            this.testingId = id;
+            try {
+                const response = await fetch('/api/databases/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connection_id: id }),
+                });
+                const result = await response.json();
+                this.showToast(result.message, result.success ? 'success' : 'error');
+            } catch (error) {
+                this.showToast('Errore nel test', 'error');
+            } finally {
+                this.testingId = null;
+            }
+        },
+
+        async testNewConnection() {
+            this.testingNew = true;
+            this.testResult = null;
+            try {
+                const response = await fetch('/api/databases/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        db_type: this.form.db_type,
+                        host: this.form.host,
+                        port: this.form.port || this.getDefaultPort(this.form.db_type),
+                        database: this.form.database,
+                        username: this.form.username,
+                        password: this.form.password,
+                        ssl: this.form.ssl,
+                        ssh: this.form.ssh,
+                    }),
+                });
+                this.testResult = await response.json();
+            } catch (error) {
+                this.testResult = { success: false, message: 'Errore di connessione' };
+            } finally {
+                this.testingNew = false;
+            }
+        },
+
+        openInDbGate(conn) {
+            // DbGate will use its own connection, just open it
+            window.open('http://localhost:3000', '_blank');
+        },
+
+        showToast(message, type = 'success') {
+            this.toast = { show: true, message, type };
+            setTimeout(() => this.toast.show = false, 4000);
+        },
+    };
+}
+</script>
+{% endblock %}

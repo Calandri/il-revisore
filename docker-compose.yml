@@ -1,0 +1,31 @@
+# TurboWrap Docker Compose - Additional Services
+# Start with: docker-compose up -d
+
+version: "3.8"
+
+services:
+  # DbGate - Database Management Web UI
+  # Access at http://localhost:3000
+  dbgate:
+    image: dbgate/dbgate:latest
+    container_name: turbowrap-dbgate
+    ports:
+      - "3000:3000"
+    volumes:
+      - dbgate_data:/root/.dbgate
+    environment:
+      # Allow embedding in iframe
+      - EMBEDDING=true
+      # Optional: pre-configure connections via environment
+      # - CONNECTIONS=/connections
+    restart: unless-stopped
+    networks:
+      - turbowrap-network
+
+networks:
+  turbowrap-network:
+    driver: bridge
+
+volumes:
+  dbgate_data:
+    driver: local

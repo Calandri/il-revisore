@@ -120,6 +120,30 @@
             <span x-show="sidebarOpen">File Editor</span>
         </a>
 
+        <!-- Databases -->
+        <a href="/databases"
+           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if active_page == 'databases' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+            </svg>
+            <span x-show="sidebarOpen">Database</span>
+        </a>
+
+        <!-- Endpoints -->
+        <a href="/endpoints"
+           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+                  {% if active_page == 'endpoints' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span x-show="sidebarOpen">Endpoints</span>
+        </a>
+
         <!-- Chat -->
         <a href="/chat"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
@@ -1096,10 +1120,10 @@ function liveTasksBadge() {
 
         async fetchCount() {
             try {
-                const response = await fetch('/api/fix/sessions/active');
+                const response = await fetch('/api/operations/active');
                 if (response.ok) {
                     const data = await response.json();
-                    this.count = (data.sessions || []).length;
+                    this.count = (data.operations || []).length;
                 }
             } catch (error) {
                 console.error('Error fetching active sessions count:', error);
