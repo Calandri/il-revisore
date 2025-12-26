@@ -357,7 +357,10 @@ IMPORTANT: Output ONLY the JSON. No markdown code blocks, no explanations before
 
     def _get_default_prompt(self) -> str:
         """Get default system prompt if agent file not found."""
-        return """You are an expert code reviewer. Analyze the provided code thoroughly and identify:
+        return (
+            "You are an expert code reviewer. Analyze the provided code "
+            "thoroughly and identify:\n"
+            """
 
 1. Security vulnerabilities (SQL injection, XSS, authentication issues, etc.)
 2. Performance problems (N+1 queries, memory leaks, inefficient algorithms)
@@ -369,3 +372,4 @@ IMPORTANT: Output ONLY the JSON. No markdown code blocks, no explanations before
 Provide specific, actionable feedback with code examples where applicable.
 Prioritize issues by severity: CRITICAL > HIGH > MEDIUM > LOW.
 """
+        )

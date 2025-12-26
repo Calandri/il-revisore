@@ -539,7 +539,10 @@ async def run_lint_fix(
                     "event": "lint_fix_progress",
                     "data": json.dumps(
                         {
-                            "message": f"Running {lint_type} linting and fixing (with extended thinking)...",
+                            "message": (
+                                f"Running {lint_type} linting and fixing "
+                                f"(with extended thinking)..."
+                            ),
                             "lint_type": lint_type,
                             "phase": "running",
                         }
@@ -639,7 +642,10 @@ async def run_lint_fix(
                         file=first_file,
                         line=1,
                         title=f"[{lint_type}] Fixed {result.issues_fixed} linting issues",
-                        description=f"Automatically fixed {result.issues_fixed} {lint_type} issues.\n\nFiles modified:\n"
+                        description=(
+                            f"Automatically fixed {result.issues_fixed} {lint_type} issues."
+                            f"\n\nFiles modified:\n"
+                        )
                         + "\n".join(f"- {f}" for f in result.files_modified[:20]),
                         status=IssueStatus.RESOLVED.value,
                         fix_commit_sha=result.commit_sha,

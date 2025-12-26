@@ -21,7 +21,9 @@ from .base import BaseStep
 
 logger = logging.getLogger(__name__)
 
-EVALUATION_SYSTEM_PROMPT = """You are a senior software architect evaluating potential new features for a developer tool.
+EVALUATION_SYSTEM_PROMPT = (
+    """You are a senior software architect evaluating potential new features """
+    """for a developer tool.
 
 Your task is to:
 1. Compare existing capabilities with market research
@@ -37,6 +39,7 @@ Be critical and selective. Only propose features that:
 For each proposed feature, generate 3-5 specific questions that would help refine the requirements.
 These questions will be presented to humans for input before implementation.
 """
+)
 
 
 class EvaluateFeaturesStep(BaseStep[Step3Checkpoint]):
@@ -269,7 +272,10 @@ Respond in JSON format:
     {{
       "id": "blockchain-audit",
       "title": "Blockchain Smart Contract Auditing",
-      "reason": "Out of scope - TurboWrap focuses on general code review, not blockchain-specific tools"
+      "reason": (
+          "Out of scope - TurboWrap focuses on general code review, "
+          "not blockchain-specific tools"
+      )
     }}
   ]
 }}

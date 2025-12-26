@@ -113,7 +113,8 @@ class ChallengerLoop:
         Args:
             context: Review context with files to review
             reviewer_name: Name of the reviewer agent
-            on_iteration_callback: Called after each iteration with (iteration, satisfaction, issues_count)
+            on_iteration_callback: Called after each iteration with
+                (iteration, satisfaction, issues_count)
             on_content_callback: Called with streaming content chunks
 
         Returns:
@@ -178,7 +179,8 @@ class ChallengerLoop:
                 )
             else:
                 logger.info("[LOOP] >> Starting REFINEMENT with Claude CLI...")
-                # challenger_feedback should never be None when refining (it's set after first iteration)
+                # challenger_feedback should never be None when refining
+                # (it's set after first iteration)
                 assert (
                     challenger_feedback is not None
                 ), "challenger_feedback should be set after first iteration"
@@ -209,7 +211,8 @@ class ChallengerLoop:
                 f"(threshold={self.satisfaction_threshold}%)"
             )
             logger.info(
-                f"[LOOP] Missed issues: {len(challenger_feedback.missed_issues)}, Challenges: {len(challenger_feedback.challenges)}"
+                f"[LOOP] Missed issues: {len(challenger_feedback.missed_issues)}, "
+                f"Challenges: {len(challenger_feedback.challenges)}"
             )
 
             # Record iteration history

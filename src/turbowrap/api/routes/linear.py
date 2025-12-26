@@ -123,7 +123,10 @@ def _get_team_id(db: Session, provided: str | None = None) -> str:
         if not setting or not setting.value:
             raise HTTPException(
                 status_code=400,
-                detail="Linear team ID not configured. Please go to Settings and configure your Linear Team ID (UUID format).",
+                detail=(
+                    "Linear team ID not configured. Please go to Settings and "
+                    "configure your Linear Team ID (UUID format)."
+                ),
             )
         team_id = str(setting.value)
 
@@ -131,8 +134,11 @@ def _get_team_id(db: Session, provided: str | None = None) -> str:
     if len(team_id) < 20:  # UUIDs are much longer
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid Team ID format: '{team_id}'. Team ID must be a UUID (e.g., 'a1b2c3d4-...'). "
-            f"You can find it in Linear Settings or by clicking on your team name.",
+            detail=(
+                f"Invalid Team ID format: '{team_id}'. "
+                f"Team ID must be a UUID (e.g., 'a1b2c3d4-...'). "
+                f"You can find it in Linear Settings or by clicking on your team name."
+            ),
         )
 
     return team_id
@@ -236,7 +242,10 @@ async def sync_linear_issues(
             logger.error(f"Failed to fetch issues from Linear: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to fetch issues from Linear API: {str(e)}. Check your API key and Team ID.",
+                detail=(
+                    f"Failed to fetch issues from Linear API: {str(e)}. "
+                    f"Check your API key and Team ID."
+                ),
             )
 
         synced_count = 0
@@ -260,7 +269,8 @@ async def sync_linear_issues(
             # Handle both "To Do" (with space) and "Todo" (without space)
             if state_name.lower() not in ["triage", "to do", "todo"]:
                 logger.info(
-                    f"⏭️  Skipping issue {linear_issue['identifier']} - state '{state_name}' not in [Triage, To Do, Todo]"
+                    f"⏭️  Skipping issue {linear_issue['identifier']} - "
+                    f"state '{state_name}' not in [Triage, To Do, Todo]"
                 )
                 continue
 
@@ -394,7 +404,10 @@ async def improve_issue_phase1(
     if issue.turbowrap_state not in ["analysis", "repo_link"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Issue must be in 'analysis' or 'repo_link' state, currently in '{issue.turbowrap_state}'",
+            detail=(
+                f"Issue must be in 'analysis' or 'repo_link' state, "
+                f"currently in '{issue.turbowrap_state}'"
+            ),
         )
 
     client = _get_linear_client(db)
@@ -422,7 +435,10 @@ async def improve_issue_phase2(
     if issue.turbowrap_state not in ["analysis", "repo_link"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Issue must be in 'analysis' or 'repo_link' state, currently in '{issue.turbowrap_state}'",
+            detail=(
+                f"Issue must be in 'analysis' or 'repo_link' state, "
+                f"currently in '{issue.turbowrap_state}'"
+            ),
         )
 
     client = _get_linear_client(db)
@@ -960,7 +976,9 @@ Genera descrizione markdown con:
                 repo_names = [r.name for r in repos]
 
                 if repo_names:
-                    detect_prompt = f"""Analizza questa issue e identifica quale repository è coinvolto.
+                    detect_prompt = (
+                        f"""Analizza questa issue e identifica quale """
+                        f"""repository è coinvolto.
 
 Titolo: {request.title}
 Descrizione: {request.description}
@@ -970,8 +988,10 @@ Risposte utente: {answers_text[:500]}
 Repository disponibili:
 {chr(10).join(f"- {name}" for name in repo_names)}
 
-Rispondi SOLO con il nome esatto del repository coinvolto, oppure "NONE" se non puoi determinarlo con certezza.
+Rispondi SOLO con il nome esatto del repository coinvolto, oppure "NONE" """
+                        f"""se non puoi determinarlo con certezza.
 Non aggiungere spiegazioni, solo il nome del repository."""
+                    )
 
                     result = subprocess.run(
                         ["claude", "--model", "claude-sonnet-4-5-20250929"],

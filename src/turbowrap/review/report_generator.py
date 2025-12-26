@@ -77,7 +77,11 @@ class ReportGenerator:
             f"| **Medium** | {summary.by_severity.medium} |",
             f"| **Low** | {summary.by_severity.low} |",
             f"| **Overall Score** | {summary.overall_score:.1f} / 10 |",
-            f"| **Recommendation** | {rec_emoji.get(summary.recommendation, '')} {summary.recommendation.value} |",
+            (
+                f"| **Recommendation** | "
+                f"{rec_emoji.get(summary.recommendation, '')} "
+                f"{summary.recommendation.value} |"
+            ),
             "",
         ]
 
@@ -103,7 +107,11 @@ class ReportGenerator:
             f"| **Challenger Iterations** | {challenger.total_iterations} |",
             f"| **Final Satisfaction Score** | {challenger.final_satisfaction_score:.1f}% |",
             f"| **Threshold** | {challenger.threshold}% |",
-            f"| **Convergence** | {conv_emoji.get(challenger.convergence, '')} {challenger.convergence.value.replace('_', ' ').title()} |",
+            (
+                f"| **Convergence** | "
+                f"{conv_emoji.get(challenger.convergence, '')} "
+                f"{challenger.convergence.value.replace('_', ' ').title()} |"
+            ),
             "",
         ]
 
@@ -161,7 +169,8 @@ class ReportGenerator:
                 status_text += f" ({reviewer.error[:30]}...)"
 
             lines.append(
-                f"| {reviewer.name} | {emoji} {status_text} | {issues} | {duration} | {iterations} |"
+                f"| {reviewer.name} | {emoji} {status_text} | {issues} | "
+                f"{duration} | {iterations} |"
             )
 
         lines.append("")

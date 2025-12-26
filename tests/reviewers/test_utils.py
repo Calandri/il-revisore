@@ -13,7 +13,6 @@ These tests verify the reviewer utilities refactoring is correct:
 """
 
 import warnings
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -280,9 +279,18 @@ class TestParseReviewOutput:
     def test_category_alias_normalization(self):
         """Category aliases should be normalized."""
         response = """{"summary": {"files_reviewed": 1, "score": 8}, "issues": [
-            {"id": "1", "severity": "MEDIUM", "category": "business_logic", "file": "a.py", "title": "Test"},
-            {"id": "2", "severity": "MEDIUM", "category": "maintainability", "file": "b.py", "title": "Test2"},
-            {"id": "3", "severity": "MEDIUM", "category": "code_quality", "file": "c.py", "title": "Test3"}
+            {
+                "id": "1", "severity": "MEDIUM", "category": "business_logic",
+                "file": "a.py", "title": "Test"
+            },
+            {
+                "id": "2", "severity": "MEDIUM", "category": "maintainability",
+                "file": "b.py", "title": "Test2"
+            },
+            {
+                "id": "3", "severity": "MEDIUM", "category": "code_quality",
+                "file": "c.py", "title": "Test3"
+            }
         ]}"""
         result = parse_review_output(response, "test", 1)
 
@@ -313,7 +321,10 @@ class TestParseReviewOutput:
 
     def test_alternative_field_names(self):
         """Handle alternative field name variations."""
-        response = """{"summary": {"files_reviewed": 2, "critical": 1, "high": 2, "score": 6}, "issues": []}"""
+        response = (
+            '{"summary": {"files_reviewed": 2, "critical": 1, "high": 2, "score": 6}, '
+            '"issues": []}'
+        )
         result = parse_review_output(response, "test", 2)
 
         # Uses "critical" instead of "critical_issues"
@@ -395,11 +406,17 @@ class TestParseChallengerFeedback:
 
     def test_status_from_score_when_missing(self):
         """Derive status from score when not provided."""
-        response = """{"satisfaction_score": 95, "dimension_scores": {"completeness": 95, "accuracy": 95, "depth": 95, "actionability": 95}}"""
+        response = (
+            '{"satisfaction_score": 95, "dimension_scores": '
+            '{"completeness": 95, "accuracy": 95, "depth": 95, "actionability": 95}}'
+        )
         result = parse_challenger_feedback(response, iteration=1, threshold=90.0)
         assert result.status == ChallengerStatus.APPROVED
 
-        response2 = """{"satisfaction_score": 50, "dimension_scores": {"completeness": 50, "accuracy": 50, "depth": 50, "actionability": 50}}"""
+        response2 = (
+            '{"satisfaction_score": 50, "dimension_scores": '
+            '{"completeness": 50, "accuracy": 50, "depth": 50, "actionability": 50}}'
+        )
         result2 = parse_challenger_feedback(response2, iteration=1, threshold=90.0)
         assert result2.status == ChallengerStatus.MAJOR_ISSUES
 
@@ -515,10 +532,7 @@ class TestS3Logger:
                 mock_s3 = MagicMock()
                 mock_boto.client.return_value = mock_s3
 
-                from turbowrap.review.reviewers.utils.s3_logger import (
-                    S3ArtifactMetadata,
-                    S3Logger,
-                )
+                from turbowrap.review.reviewers.utils.s3_logger import S3ArtifactMetadata, S3Logger
 
                 logger = S3Logger()
                 metadata = S3ArtifactMetadata(
@@ -539,7 +553,9 @@ class TestS3Logger:
                 call_args = mock_s3.put_object.call_args
                 # Handle both positional and keyword args
                 body_bytes = call_args.kwargs.get("Body") or call_args[1].get("Body", b"")
-                body = body_bytes.decode("utf-8") if isinstance(body_bytes, bytes) else str(body_bytes)
+                body = (
+                    body_bytes.decode("utf-8") if isinstance(body_bytes, bytes) else str(body_bytes)
+                )
 
                 assert "# Code Review - reviewer_be" in body
                 assert "System prompt here" in body
@@ -559,10 +575,7 @@ class TestGeminiChallengerModes:
             mock.return_value.agents.effective_google_key = "test-key"
             mock.return_value.agents.gemini_model = "gemini-2.0-flash"
 
-            from turbowrap.review.reviewers.gemini_challenger import (
-                GeminiChallenger,
-                GeminiMode,
-            )
+            from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger, GeminiMode
 
             challenger = GeminiChallenger(mode=GeminiMode.SDK)
             assert challenger.mode == GeminiMode.SDK
@@ -576,10 +589,7 @@ class TestGeminiChallengerModes:
             mock.return_value.agents.effective_google_key = "test-key"
             mock.return_value.agents.gemini_model = "gemini-2.0-flash"
 
-            from turbowrap.review.reviewers.gemini_challenger import (
-                GeminiChallenger,
-                GeminiMode,
-            )
+            from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger, GeminiMode
 
             challenger = GeminiChallenger(mode=GeminiMode.CLI)
             assert challenger.mode == GeminiMode.CLI
@@ -592,10 +602,7 @@ class TestGeminiChallengerModes:
             mock.return_value.agents.effective_google_key = "test-key"
             mock.return_value.agents.gemini_model = "gemini-2.0-flash"
 
-            from turbowrap.review.reviewers.gemini_challenger import (
-                GeminiChallenger,
-                GeminiMode,
-            )
+            from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger, GeminiMode
 
             challenger_sdk = GeminiChallenger(mode="sdk")
             assert challenger_sdk.mode == GeminiMode.SDK
@@ -636,9 +643,7 @@ class TestGeminiChallengerModes:
 
             # challenge() should raise ValueError for CLI mode
             with pytest.raises(ValueError, match="challenge_cli"):
-                await challenger.challenge(
-                    context=MagicMock(), review=MagicMock(), iteration=1
-                )
+                await challenger.challenge(context=MagicMock(), review=MagicMock(), iteration=1)
 
 
 # =============================================================================
@@ -654,13 +659,11 @@ class TestDeprecatedGeminiCLIChallenger:
             mock.return_value.agents.effective_google_key = "test-key"
             mock.return_value.agents.gemini_model = "gemini-2.0-flash"
 
-            from turbowrap.review.reviewers.gemini_cli_challenger import (
-                GeminiCLIChallenger,
-            )
+            from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                challenger = GeminiCLIChallenger()
+                GeminiCLIChallenger()  # instantiate to trigger deprecation warning
 
                 assert len(w) == 1
                 assert issubclass(w[0].category, DeprecationWarning)
@@ -675,10 +678,8 @@ class TestDeprecatedGeminiCLIChallenger:
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                from turbowrap.review.reviewers.gemini_cli_challenger import (
-                    GeminiCLIChallenger,
-                )
                 from turbowrap.review.reviewers.gemini_challenger import GeminiMode
+                from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 
                 challenger = GeminiCLIChallenger()
                 assert challenger.mode == GeminiMode.CLI
@@ -692,9 +693,7 @@ class TestDeprecatedGeminiCLIChallenger:
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                from turbowrap.review.reviewers.gemini_cli_challenger import (
-                    GeminiCLIChallenger,
-                )
+                from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 
                 challenger = GeminiCLIChallenger()
 
@@ -720,6 +719,7 @@ class TestMalformedLLMResponses:
     def test_response_with_control_characters(self):
         """Handle control characters in response - raises JSONDecodeError."""
         import json
+
         response = '{"key": "value\x00with\x1fnull\x7fbytes"}'
         # Control characters cause JSON parse to fail
         with pytest.raises(json.JSONDecodeError):
@@ -740,6 +740,7 @@ class TestMalformedLLMResponses:
     def test_trailing_comma_in_json(self):
         """Trailing comma is invalid JSON - raises JSONDecodeError."""
         import json
+
         response = '{"items": [1, 2, 3,], "key": "value",}'
         # Python's json module doesn't accept trailing commas
         with pytest.raises(json.JSONDecodeError):
@@ -748,6 +749,7 @@ class TestMalformedLLMResponses:
     def test_single_quotes_in_json(self):
         """Single quotes are invalid JSON - raises JSONDecodeError."""
         import json
+
         response = "{'key': 'value'}"
         with pytest.raises(json.JSONDecodeError):
             parse_json_safe(response)
@@ -755,6 +757,7 @@ class TestMalformedLLMResponses:
     def test_comments_in_json(self):
         """Comments are invalid JSON - raises JSONDecodeError."""
         import json
+
         response = """{
     // This is a comment
     "key": "value"
@@ -809,10 +812,22 @@ class TestRealReviewStructures:
     def test_all_severity_levels(self):
         """Verify all severity levels parse correctly."""
         response = """{"summary": {"files_reviewed": 1, "score": 5}, "issues": [
-            {"id": "1", "severity": "CRITICAL", "category": "security", "file": "a.py", "title": "Critical"},
-            {"id": "2", "severity": "HIGH", "category": "security", "file": "a.py", "title": "High"},
-            {"id": "3", "severity": "MEDIUM", "category": "logic", "file": "a.py", "title": "Medium"},
-            {"id": "4", "severity": "LOW", "category": "style", "file": "a.py", "title": "Low"}
+            {
+                "id": "1", "severity": "CRITICAL", "category": "security",
+                "file": "a.py", "title": "Critical"
+            },
+            {
+                "id": "2", "severity": "HIGH", "category": "security",
+                "file": "a.py", "title": "High"
+            },
+            {
+                "id": "3", "severity": "MEDIUM", "category": "logic",
+                "file": "a.py", "title": "Medium"
+            },
+            {
+                "id": "4", "severity": "LOW", "category": "style",
+                "file": "a.py", "title": "Low"
+            }
         ]}"""
         result = parse_review_output(response, "test", 1)
 
@@ -833,9 +848,7 @@ class TestChallengerDimensionScores:
         """Test weighted score calculation."""
         from turbowrap.review.models.challenger import DimensionScores
 
-        scores = DimensionScores(
-            completeness=100, accuracy=100, depth=100, actionability=100
-        )
+        scores = DimensionScores(completeness=100, accuracy=100, depth=100, actionability=100)
         assert scores.weighted_score == 100
 
         scores2 = DimensionScores(completeness=0, accuracy=0, depth=0, actionability=0)
@@ -851,7 +864,7 @@ class TestChallengerDimensionScores:
 
     def test_partial_dimension_scores(self):
         """Handle partial dimension scores."""
-        response = '{"satisfaction_score": 75, "dimension_scores": {"completeness": 80}}'
+        response = '{"satisfaction_score": 75, ' '"dimension_scores": {"completeness": 80}}'
         result = parse_challenger_feedback(response, iteration=1, threshold=85.0)
 
         assert result.dimension_scores.completeness == 80
@@ -943,7 +956,10 @@ class TestFullPipelineIntegration:
     def test_review_output_to_challenger_input(self):
         """ReviewOutput can be serialized for challenger."""
         response = """{"summary": {"files_reviewed": 5, "score": 7.5}, "issues": [
-            {"id": "SEC-001", "severity": "HIGH", "category": "security", "file": "auth.py", "title": "Test"}
+            {
+                "id": "SEC-001", "severity": "HIGH", "category": "security",
+                "file": "auth.py", "title": "Test"
+            }
         ]}"""
         review = parse_review_output(response, "reviewer_be", 5)
 
@@ -954,10 +970,17 @@ class TestFullPipelineIntegration:
 
     def test_challenger_feedback_for_refinement(self):
         """ChallengerFeedback provides refinement guidance."""
-        response = """{"satisfaction_score": 60, "status": "NEEDS_REFINEMENT",
-            "dimension_scores": {"completeness": 50, "accuracy": 70, "depth": 60, "actionability": 50},
-            "missed_issues": [{"type": "security", "description": "XSS", "file": "a.py", "why_important": "bad"}],
-            "improvements_needed": ["Check for XSS", "Add more depth"]}"""
+        response = (
+            '{"satisfaction_score": 60, "status": "NEEDS_REFINEMENT", '
+            '"dimension_scores": {'
+            '"completeness": 50, "accuracy": 70, "depth": 60, "actionability": 50'
+            "}, "
+            '"missed_issues": [{'
+            '"type": "security", "description": "XSS", "file": "a.py", '
+            '"why_important": "bad"'
+            "}], "
+            '"improvements_needed": ["Check for XSS", "Add more depth"]}'
+        )
         feedback = parse_challenger_feedback(response, iteration=1, threshold=85.0)
 
         # Should provide refinement prompt
@@ -969,15 +992,25 @@ class TestFullPipelineIntegration:
         """Categories normalize consistently through pipeline."""
         # Reviewer uses alias
         review_response = """{"summary": {"files_reviewed": 1, "score": 8}, "issues": [
-            {"id": "1", "severity": "MEDIUM", "category": "business_logic", "file": "a.py", "title": "Logic bug"}
+            {
+                "id": "1", "severity": "MEDIUM", "category": "business_logic",
+                "file": "a.py", "title": "Logic bug"
+            }
         ]}"""
         review = parse_review_output(review_response, "test", 1)
         assert review.issues[0].category == IssueCategory.LOGIC
 
         # Challenger references the issue
-        challenge_response = """{"satisfaction_score": 90, "status": "APPROVED",
-            "dimension_scores": {"completeness": 90, "accuracy": 90, "depth": 90, "actionability": 90},
-            "challenges": [{"issue_id": "1", "challenge_type": "severity", "challenge": "Should be HIGH"}]}"""
+        challenge_response = (
+            '{"satisfaction_score": 90, "status": "APPROVED", '
+            '"dimension_scores": {'
+            '"completeness": 90, "accuracy": 90, "depth": 90, "actionability": 90'
+            "}, "
+            '"challenges": [{'
+            '"issue_id": "1", "challenge_type": "severity", '
+            '"challenge": "Should be HIGH"'
+            "}]}"
+        )
         feedback = parse_challenger_feedback(challenge_response, iteration=1, threshold=85.0)
         assert feedback.challenges[0].issue_id == "1"
 

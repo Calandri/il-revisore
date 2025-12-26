@@ -658,7 +658,8 @@ async def test_connection(
             from pymongo import MongoClient
 
             uri = (
-                f"mongodb://{username_str}:{password_str}@{host_str}:{port_int or 27017}/{database_str}"
+                f"mongodb://{username_str}:{password_str}@{host_str}:"
+                f"{port_int or 27017}/{database_str}"
                 if username_str
                 else f"mongodb://{host_str}:{port_int or 27017}/{database_str}"
             )

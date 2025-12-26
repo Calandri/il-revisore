@@ -194,7 +194,10 @@ Respond ONLY with valid JSON in this format:
     {{
       "id": "code-review-challenger",
       "name": "Code Review with Challenger Loop",
-      "description": "Performs code review using Claude with Gemini challenger for validation. Implements iterative refinement until quality threshold is met.",
+      "description": (
+          "Performs code review using Claude with Gemini challenger for validation. "
+          "Implements iterative refinement until quality threshold is met."
+      ),
       "category": "review",
       "files": ["review/orchestrator.py", "review/challenger_loop.py"],
       "dependencies": ["llm-claude", "llm-gemini"],

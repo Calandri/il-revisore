@@ -225,7 +225,9 @@ class FixStartRequest(BaseModel):
     # Force restart - bypasses idempotency check for stuck sessions
     force: bool = Field(
         default=False,
-        description="Force restart even if a session is already in progress (use when session is stuck)",
+        description=(
+            "Force restart even if a session is already in progress " "(use when session is stuck)"
+        ),
     )
 
     # User notes - additional context/instructions for the fixer

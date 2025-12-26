@@ -598,7 +598,8 @@ async def send_message(
                         }
 
             logger.info(
-                f"[STREAM] Done. System: {len(system_events)}, Content: {len(''.join(full_content))} chars"
+                f"[STREAM] Done. System: {len(system_events)}, "
+                f"Content: {len(''.join(full_content))} chars"
             )
 
             # Save assistant message

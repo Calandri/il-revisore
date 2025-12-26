@@ -59,23 +59,41 @@ def hello():
 @pytest.fixture
 def sample_stream_json_success():
     """Sample successful stream-json output."""
-    return """{"type":"content_block_delta","delta":{"text":"Hello"}}
-{"type":"content_block_delta","delta":{"text":" World"}}
-{"type":"result","result":"Hello World","modelUsage":{"claude-opus-4-5-20251101":{"inputTokens":100,"outputTokens":50,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"costUSD":0.005}}}"""
+    return (
+        '{"type":"content_block_delta","delta":{"text":"Hello"}}\n'
+        '{"type":"content_block_delta","delta":{"text":" World"}}\n'
+        '{"type":"result","result":"Hello World","modelUsage":{'
+        '"claude-opus-4-5-20251101":{"inputTokens":100,"outputTokens":50,'
+        '"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"costUSD":0.005}}}'
+    )
 
 
 @pytest.fixture
 def sample_stream_json_error():
     """Sample error stream-json output."""
-    return """{"type":"result","result":"Your credit balance is too low","is_error":true,"modelUsage":{}}"""
+    return (
+        '{"type":"result","result":"Your credit balance is too low",'
+        '"is_error":true,"modelUsage":{}}'
+    )
 
 
 @pytest.fixture
 def sample_stream_json_with_thinking():
     """Sample stream-json with extended thinking."""
-    return """{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me analyze this problem step by step..."}]}}
-{"type":"content_block_delta","delta":{"text":"Based on my analysis"}}
-{"type":"result","result":"Based on my analysis, the answer is 42.","modelUsage":{"claude-opus-4-5-20251101":{"inputTokens":200,"outputTokens":100}}}"""
+    thinking = (
+        '{"type":"assistant","message":{"content":[{"type":"thinking",'
+        '"thinking":"Let me analyze this problem step by step..."}]}}\n'
+    )
+    content = (
+        '{"type":"content_block_delta",'
+        '"delta":{"text":"Based on my analysis"}}\n'
+    )
+    result = (
+        '{"type":"result","result":"Based on my analysis, the answer is 42.",'
+        '"modelUsage":{"claude-opus-4-5-20251101":{'
+        '"inputTokens":200,"outputTokens":100}}}'
+    )
+    return thinking + content + result
 
 
 @pytest.fixture

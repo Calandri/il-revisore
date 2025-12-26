@@ -7,16 +7,14 @@ These tests verify the new reviewer_dedup_be and reviewer_dedup_fe agents
 are correctly structured and can be loaded by the AgentLoader.
 """
 
-import json
 import re
 from pathlib import Path
 
 import pytest
 import yaml
 
-
-# Path to agents directory
-AGENTS_DIR = Path(__file__).parent.parent / "agents"
+# Path to agents directory (at project root, not tests/agents)
+AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
 
 
 class TestDedupAgentFiles:
@@ -76,9 +74,9 @@ class TestDedupAgentFiles:
 
         # Name should be kebab-case version of filename
         expected_name = agent_name.replace("_", "-")
-        assert metadata["name"] == expected_name, (
-            f"Name mismatch: {metadata['name']} != {expected_name}"
-        )
+        assert (
+            metadata["name"] == expected_name
+        ), f"Name mismatch: {metadata['name']} != {expected_name}"
 
     @pytest.mark.parametrize("agent_name", ["reviewer_dedup_be", "reviewer_dedup_fe"])
     def test_agent_has_valid_model(self, agent_name: str):
@@ -91,9 +89,7 @@ class TestDedupAgentFiles:
         metadata = yaml.safe_load(match.group(1))
 
         valid_models = ["opus", "sonnet", "haiku", "claude-opus-4-5-20251101"]
-        assert metadata["model"] in valid_models, (
-            f"Invalid model: {metadata['model']}"
-        )
+        assert metadata["model"] in valid_models, f"Invalid model: {metadata['model']}"
 
 
 class TestDedupAgentContent:
@@ -105,9 +101,9 @@ class TestDedupAgentContent:
         agent_path = AGENTS_DIR / f"{agent_name}.md"
         content = agent_path.read_text()
 
-        assert "## Review Output Format" in content or "## Output Format" in content, (
-            "Missing output format section"
-        )
+        assert (
+            "## Review Output Format" in content or "## Output Format" in content
+        ), "Missing output format section"
 
     @pytest.mark.parametrize("agent_name", ["reviewer_dedup_be", "reviewer_dedup_fe"])
     def test_agent_has_severity_levels(self, agent_name: str):
@@ -115,9 +111,7 @@ class TestDedupAgentContent:
         agent_path = AGENTS_DIR / f"{agent_name}.md"
         content = agent_path.read_text()
 
-        assert "## Severity Levels" in content or "CRITICAL" in content, (
-            "Missing severity levels"
-        )
+        assert "## Severity Levels" in content or "CRITICAL" in content, "Missing severity levels"
         assert "HIGH" in content
         assert "MEDIUM" in content
         assert "LOW" in content
@@ -272,10 +266,13 @@ class TestOrchestratorIntegration:
         content = orchestrator_path.read_text()
 
         # Check the flow section mentions dedup
-        assert "Backend → reviewer_be + reviewer_dedup_be" in content or \
-               "reviewer_dedup_be" in content, "Flow missing BE dedup"
-        assert "Frontend → reviewer_fe + reviewer_dedup_fe" in content or \
-               "reviewer_dedup_fe" in content, "Flow missing FE dedup"
+        assert (
+            "Backend → reviewer_be + reviewer_dedup_be" in content or "reviewer_dedup_be" in content
+        ), "Flow missing BE dedup"
+        assert (
+            "Frontend → reviewer_fe + reviewer_dedup_fe" in content
+            or "reviewer_dedup_fe" in content
+        ), "Flow missing FE dedup"
 
 
 class TestDedupAgentSpecificContent:
@@ -294,9 +291,9 @@ class TestDedupAgentSpecificContent:
         agent_path = AGENTS_DIR / "reviewer_dedup_fe.md"
         content = agent_path.read_text()
 
-        assert "TypeScript" in content or "typescript" in content or "React" in content, (
-            "FE agent should mention TypeScript/React"
-        )
+        assert (
+            "TypeScript" in content or "typescript" in content or "React" in content
+        ), "FE agent should mention TypeScript/React"
         assert ".tsx" in content or ".ts" in content, "FE agent should mention .ts/.tsx files"
 
     def test_be_agent_has_backend_patterns(self):

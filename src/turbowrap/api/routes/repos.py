@@ -156,7 +156,10 @@ def list_github_folders(
         if e.status == 401:
             raise HTTPException(
                 status_code=401,
-                detail="Token GitHub richiesto per repository private. Configuralo nelle Impostazioni.",
+                detail=(
+                    "Token GitHub richiesto per repository private. "
+                    "Configuralo nelle Impostazioni."
+                ),
             )
         if e.status == 404:
             raise HTTPException(

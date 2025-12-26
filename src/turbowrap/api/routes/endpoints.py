@@ -337,7 +337,15 @@ Return ONLY the JSON, no markdown or extra text."""
 
         return AIInstructionsResponse(
             curl_example=f"curl -X {req.method} '{full_url}'",
-            python_example=f"import requests\n\nresponse = requests.{req.method.lower()}('{full_url}')\nprint(response.json())",
-            javascript_example=f"const response = await fetch('{full_url}', {{ method: '{req.method}' }});\nconst data = await response.json();",
+            python_example=(
+                f"import requests\n\n"
+                f"response = requests.{req.method.lower()}('{full_url}')\n"
+                f"print(response.json())"
+            ),
+            javascript_example=(
+                f"const response = await fetch('{full_url}', "
+                f"{{ method: '{req.method}' }});\n"
+                f"const data = await response.json();"
+            ),
             description=req.description or f"{req.method} request to {req.path}",
         )

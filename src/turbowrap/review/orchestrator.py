@@ -179,7 +179,10 @@ class Orchestrator:
                             iteration=iterations,
                             satisfaction_score=satisfaction,
                             issues_found=issues_count,
-                            message=f"⚡ {display_name} restored from checkpoint ({issues_count} issues)",
+                            message=(
+                                f"⚡ {display_name} restored from checkpoint "
+                                f"({issues_count} issues)"
+                            ),
                         )
                     )
 
@@ -216,7 +219,10 @@ class Orchestrator:
                             iteration=result.iterations,
                             satisfaction_score=result.final_satisfaction,
                             issues_found=len(result.final_review.issues),
-                            message=f"{display_name} completed with {len(result.final_review.issues)} issues",
+                            message=(
+                                f"{display_name} completed with "
+                                f"{len(result.final_review.issues)} issues"
+                            ),
                             model_usage=[m.model_dump() for m in result.final_review.model_usage],
                         )
                     )
@@ -224,7 +230,11 @@ class Orchestrator:
                     # Toast notification for completed reviewer
                     await emit_log(
                         "INFO",
-                        f"✓ {display_name}: {result.final_satisfaction:.0f}% ({result.iterations} iter, {len(result.final_review.issues)} issues)",
+                        (
+                            f"✓ {display_name}: {result.final_satisfaction:.0f}% "
+                            f"({result.iterations} iter, "
+                            f"{len(result.final_review.issues)} issues)"
+                        ),
                     )
 
                     # SAVE CHECKPOINT on success
@@ -485,14 +495,20 @@ class Orchestrator:
                 type=ProgressEventType.REVIEW_COMPLETED,
                 review_id=report_id,
                 issues_found=report.summary.total_issues,
-                message=f"Review completed with {report.summary.total_issues} issues (score: {report.summary.overall_score:.1f})",
+                message=(
+                    f"Review completed with {report.summary.total_issues} issues "
+                    f"(score: {report.summary.overall_score:.1f})"
+                ),
             )
         )
 
         # Final toast notification
         await emit_log(
             "INFO",
-            f"🎉 Review completata: {report.summary.total_issues} issues, score {report.summary.overall_score:.1f}/10",
+            (
+                f"🎉 Review completata: {report.summary.total_issues} issues, "
+                f"score {report.summary.overall_score:.1f}/10"
+            ),
         )
 
         # Save report to output directory
@@ -696,7 +712,8 @@ class Orchestrator:
                 content = xml_path.read_text(encoding="utf-8")
                 context.structure_docs["structure.xml"] = content
                 logger.info(
-                    f"Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)"
+                    f"Loaded {xml_path.relative_to(context.repo_path)} "
+                    f"({xml_path.stat().st_size:,} bytes)"
                 )
             except Exception as e:
                 logger.warning(f"Failed to read {xml_path}: {e}")
@@ -749,7 +766,8 @@ class Orchestrator:
             # Create generator with GeminiClient
             # Pass workspace_path for monorepo support
             logger.info(
-                f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}"
+                f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, "
+                f"workspace={context.workspace_path}"
             )
             # context.repo_path is guaranteed to be set at this point
             assert context.repo_path is not None
@@ -791,7 +809,8 @@ class Orchestrator:
                 )
 
             logger.info(
-                f"[ORCHESTRATOR] SUCCESS: Generated {len(generated_files)} structure files: {generated_files}"
+                f"[ORCHESTRATOR] SUCCESS: Generated {len(generated_files)} "
+                f"structure files: {generated_files}"
             )
 
         except Exception as e:

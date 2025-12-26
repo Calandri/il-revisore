@@ -137,7 +137,8 @@ class WebResearchStep(BaseStep[Step2Checkpoint]):
         """
         gemini = self._get_gemini_client()
 
-        prompt = f"""You are a technical analyst researching developer tools and AI-powered software.
+        prompt = f"""You are a technical analyst researching developer tools and \
+AI-powered software.
 
 Search query: {query}
 

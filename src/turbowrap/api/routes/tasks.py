@@ -605,14 +605,16 @@ async def restart_reviewer(
                     content = xml_path.read_text(encoding="utf-8")
                     context.structure_docs["structure.xml"] = content
                     logger.info(
-                        f"[RESTART] Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)"
+                        f"[RESTART] Loaded {xml_path.relative_to(context.repo_path)} "
+                        f"({xml_path.stat().st_size:,} bytes)"
                     )
                 except Exception as e:
                     logger.warning(f"[RESTART] Failed to read {xml_path}: {e}")
             else:
                 # Auto-generate structure.xml if missing - GeminiClient is REQUIRED
                 logger.error(
-                    f"[RESTART] CRITICAL: {xml_path.relative_to(context.repo_path)} NOT FOUND - attempting auto-generation..."
+                    f"[RESTART] CRITICAL: {xml_path.relative_to(context.repo_path)} "
+                    f"NOT FOUND - attempting auto-generation..."
                 )
 
                 # Notify user via WebSocket that structure generation is starting
@@ -621,7 +623,10 @@ async def restart_reviewer(
                         type=ProgressEventType.REVIEWER_STREAMING,
                         reviewer_name=reviewer_name,
                         reviewer_display_name=display_name,
-                        content="⚙️ Generating repository structure analysis (this may take 1-2 minutes)...\n",
+                        content=(
+                            "⚙️ Generating repository structure analysis "
+                            "(this may take 1-2 minutes)...\n"
+                        ),
                     )
                 )
 
@@ -636,7 +641,8 @@ async def restart_reviewer(
 
                     # Generate structure.xml
                     logger.info(
-                        f"[RESTART] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}"
+                        f"[RESTART] StructureGenerator: repo={context.repo_path}, "
+                        f"workspace={context.workspace_path}"
                     )
                     generator = StructureGenerator(
                         context.repo_path,
@@ -659,7 +665,8 @@ async def restart_reviewer(
 
                     if not generated_files:
                         raise RuntimeError(
-                            f"StructureGenerator returned empty list! scan_root={generator.scan_root}"
+                            f"StructureGenerator returned empty list! "
+                            f"scan_root={generator.scan_root}"
                         )
 
                     logger.info(
@@ -679,12 +686,16 @@ async def restart_reviewer(
                                 type=ProgressEventType.REVIEWER_STREAMING,
                                 reviewer_name=reviewer_name,
                                 reviewer_display_name=display_name,
-                                content=f"✅ Structure analysis complete ({len(content):,} bytes)\n\n",
+                                content=(
+                                    f"✅ Structure analysis complete "
+                                    f"({len(content):,} bytes)\n\n"
+                                ),
                             )
                         )
                     else:
                         raise RuntimeError(
-                            f"Generation completed but file NOT FOUND at {xml_path}! Generated files: {generated_files}"
+                            f"Generation completed but file NOT FOUND at {xml_path}! "
+                            f"Generated files: {generated_files}"
                         )
 
                 except Exception as e:
@@ -799,7 +810,10 @@ async def restart_reviewer(
                     iteration=result.iterations,
                     satisfaction_score=result.final_satisfaction,
                     issues_found=len(result.final_review.issues),
-                    message=f"{display_name} restarted successfully with {len(result.final_review.issues)} issues",
+                    message=(
+                        f"{display_name} restarted successfully with "
+                        f"{len(result.final_review.issues)} issues"
+                    ),
                     model_usage=[m.model_dump() for m in result.final_review.model_usage],
                 )
             )

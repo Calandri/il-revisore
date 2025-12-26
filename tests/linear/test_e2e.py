@@ -153,7 +153,10 @@ async def test_linear_create_issue():
         issue = await client.create_issue(
             team_id=team_id,
             title=f"[TEST] {TEST_ISSUE['title']}",
-            description=f"{TEST_ISSUE['description']}\n\n**This is a test issue created by test script**",
+            description=(
+                f"{TEST_ISSUE['description']}" 
+                "\n\n**This is a test issue created by test script**" 
+            ), 
             priority=0,
         )
 

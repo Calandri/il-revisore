@@ -354,9 +354,16 @@ This is a **monorepo** review. You MUST only analyze files within the workspace:
 
         # Adjust exploration instruction based on workspace
         if context.workspace_path:
-            explore_instruction = f"**Explore within workspace only** - you can read other files in `{context.workspace_path}/` (imports, dependencies, tests) but NOT outside it"
+            explore_instruction = (
+                f"**Explore within workspace only** - you can read other files in "
+                f"`{context.workspace_path}/` (imports, dependencies, tests) "
+                f"but NOT outside it"
+            )
         else:
-            explore_instruction = "**Explore freely** - you can read other files (imports, dependencies, tests) if needed"
+            explore_instruction = (
+                "**Explore freely** - you can read other files "
+                "(imports, dependencies, tests) if needed"
+            )
 
         sections.append(
             f"""

@@ -69,8 +69,10 @@ class ApplyConnectionsResult(BaseModel):
 
 # --- Prompts ---
 
-ANALYSIS_SYSTEM_PROMPT = """Sei un esperto analista di architetture software. Il tuo compito è analizzare
-i file STRUCTURE.md di diversi repository per identificare connessioni e dipendenze tra di essi.
+ANALYSIS_SYSTEM_PROMPT = (
+    """Sei un esperto analista di architetture software. Il tuo """
+    """compito è analizzare i file STRUCTURE.md di diversi repository """
+    """per identificare connessioni e dipendenze tra di essi.
 
 Devi identificare:
 1. Frontend che consumano API di Backend specifici
@@ -93,6 +95,7 @@ IMPORTANTE:
 - Fornisci una spiegazione chiara del perché hai identificato la connessione
 - Non inventare connessioni se non ci sono evidenze
 - Cerca riferimenti a API endpoints, import, package names, URL, etc."""
+)
 
 
 def build_analysis_prompt(repos: list[RepoStructure]) -> str:
@@ -297,7 +300,10 @@ async def analyze_relationships_stream(
         manager = RepoManager(db)
         repos = manager.list_all(status="active")
 
-        yield f"event: progress\ndata: {json.dumps({'message': f'Trovati {len(repos)} repository'})}\n\n"
+        yield (
+            f"event: progress\ndata: "
+            f"{json.dumps({'message': f'Trovati {len(repos)} repository'})}\n\n"
+        )
 
         if len(repos) < 2:
             yield f"event: error\ndata: {json.dumps({'error': 'Servono almeno 2 repository'})}\n\n"
@@ -318,10 +324,17 @@ async def analyze_relationships_stream(
                         structure_content=content,
                     )
                 )
-                yield f"event: progress\ndata: {json.dumps({'message': f'Caricato: {repo.name}'})}\n\n"
+                yield (
+                    f"event: progress\ndata: "
+                    f"{json.dumps({'message': f'Caricato: {repo.name}'})}\n\n"
+                )
 
         if len(repo_structures) < 2:
-            yield f"event: error\ndata: {json.dumps({'error': 'Servono almeno 2 repository con STRUCTURE.md'})}\n\n"
+            yield (
+                f"event: error\ndata: "
+                f"{json.dumps({'error': 'Servono almeno 2 repository con STRUCTURE.md'})}"
+                f"\n\n"
+            )
             return
 
         yield f"event: progress\ndata: {json.dumps({'message': 'Analisi con Gemini Flash...'})}\n\n"
@@ -347,7 +360,10 @@ async def analyze_relationships_stream(
                 if json_match:
                     result = json.loads(json_match.group())
                 else:
-                    yield f"event: error\ndata: {json.dumps({'error': 'Errore parsing risposta AI'})}\n\n"
+                    yield (
+                        f"event: error\ndata: "
+                        f"{json.dumps({'error': 'Errore parsing risposta AI'})}\n\n"
+                    )
                     return
 
             connections = []
