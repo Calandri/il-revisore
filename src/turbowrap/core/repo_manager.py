@@ -223,6 +223,125 @@ class RepoManager:
 
         return repo
 
+    def create_pending(
+        self,
+        url: str,
+        branch: str = "main",
+        workspace_path: str | None = None,
+    ) -> Repository:
+        """Create a pending repository record for async clone.
+
+        This creates the DB record immediately with status='cloning',
+        allowing the frontend to show progress while the actual clone
+        happens in a background task.
+
+        Args:
+            url: GitHub repository URL.
+            branch: Branch to clone.
+            workspace_path: Monorepo workspace path (e.g., 'packages/frontend').
+
+        Returns:
+            Created Repository record with status='cloning'.
+        """
+        repo_info = parse_github_url(url)
+
+        # Check if already exists with same URL AND workspace_path
+        query = self.db.query(Repository).filter(Repository.url == repo_info.url)
+        if workspace_path:
+            query = query.filter(Repository.workspace_path == workspace_path)
+        else:
+            query = query.filter(Repository.workspace_path.is_(None))
+
+        existing = query.first()
+        if existing:
+            # If already cloning, just return it (avoid duplicate clones)
+            if existing.status == "cloning":
+                return existing
+            # If already cloned (active/error), sync instead
+            return self.sync(existing.id)
+
+        # Create record with cloning status
+        display_name = repo_info.full_name
+        if workspace_path:
+            display_name = f"{repo_info.full_name} [{workspace_path}]"
+
+        repo = Repository(
+            name=display_name,
+            url=repo_info.url,
+            local_path="",  # Will be set after clone completes
+            default_branch=branch,
+            status="cloning",
+            workspace_path=workspace_path,
+            metadata_={"cloning_started": datetime.utcnow().isoformat()},
+        )
+
+        self.db.add(repo)
+        self.db.commit()
+        self.db.refresh(repo)
+        return repo
+
+    def complete_clone(
+        self,
+        repo_id: str,
+        url: str,
+        branch: str,
+        token: str | None,
+        workspace_path: str | None,
+    ) -> Repository:
+        """Complete the clone operation (called from background task).
+
+        This performs the actual git clone and updates the repository record
+        with file stats and status='active'.
+
+        Args:
+            repo_id: ID of the pending repository record.
+            url: GitHub repository URL.
+            branch: Branch to clone.
+            token: Optional GitHub token for private repos.
+            workspace_path: Monorepo workspace path.
+
+        Returns:
+            Updated Repository record.
+
+        Raises:
+            RepositoryError: If repository not found or clone fails.
+        """
+        repo = self.db.query(Repository).filter(Repository.id == repo_id).first()
+        if not repo:
+            raise RepositoryError(f"Repository {repo_id} not found")
+
+        # Get effective token
+        effective_token = self._get_token(token)
+
+        # Clone to local
+        repo_info = parse_github_url(url)
+        local_path = clone_repo(repo_info.url, branch, effective_token)
+
+        # Detect repo type and calculate tokens
+        scan_path = local_path / workspace_path if workspace_path else local_path
+        be_files, fe_files = discover_files(scan_path)
+        repo_type = detect_repo_type(len(be_files), len(fe_files))
+
+        # Calculate token stats
+        be_stats = _calculate_token_totals(scan_path, be_files)
+        fe_stats = _calculate_token_totals(scan_path, fe_files)
+
+        # Update repo record
+        repo.local_path = str(local_path)
+        repo.status = "active"
+        repo.repo_type = repo_type
+        repo.last_synced_at = datetime.utcnow()
+        repo.metadata_ = {
+            "be_files": be_stats,
+            "fe_files": fe_stats,
+            "total_tokens": be_stats["tokens"] + fe_stats["tokens"],
+            "total_files": be_stats["count"] + fe_stats["count"],
+        }
+
+        self.db.commit()
+        self.db.refresh(repo)
+        return repo
+
     def ensure_repo_exists(self, repo_id: str, token: str | None = None) -> Repository:
         """Ensure repository local path exists, re-clone if missing.
 

@@ -3,7 +3,9 @@
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from github import GithubException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -195,12 +197,52 @@ def list_projects(db: Session = Depends(get_db)):
     }
 
 
+def _clone_repo_background(
+    repo_id: str,
+    url: str,
+    branch: str,
+    token: str | None,
+    workspace_path: str | None,
+):
+    """Background task to clone repository.
+
+    This runs after the endpoint returns, performing the actual git clone
+    and updating the repository record with status='active' or 'error'.
+    """
+    from ...db.session import SessionLocal
+    from ...db.models import Repository
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"[CLONE] Starting background clone for {url}")
+
+    db = SessionLocal()
+    try:
+        manager = RepoManager(db)
+        manager.complete_clone(repo_id, url, branch, token, workspace_path)
+        logger.info(f"[CLONE] Completed clone for {url}")
+    except Exception as e:
+        logger.error(f"[CLONE] Failed to clone {url}: {e}")
+        # Update status to error
+        repo = db.query(Repository).filter(Repository.id == repo_id).first()
+        if repo:
+            repo.status = "error"
+            repo.metadata_ = {"error": str(e)}
+            db.commit()
+    finally:
+        db.close()
+
+
 @router.post("", response_model=RepoResponse)
 def clone_repo(
     data: RepoCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Clone a new repository.
+    """Clone a new repository (async - returns immediately).
+
+    The clone operation runs in the background. The response includes
+    the repository with status='cloning'. Poll the repository to check
+    when it becomes 'active' (success) or 'error' (failed).
 
     For private repos, provide a GitHub token via:
     - `token` field in request body, OR
@@ -211,12 +253,28 @@ def clone_repo(
     """
     manager = RepoManager(db)
     try:
-        return manager.clone(
+        # Create pending repo record (returns immediately)
+        repo = manager.create_pending(
+            data.url,
+            data.branch,
+            workspace_path=data.workspace_path,
+        )
+
+        # If repo already exists and is active, it was synced - return immediately
+        if repo.status != "cloning":
+            return repo
+
+        # Start background clone task
+        background_tasks.add_task(
+            _clone_repo_background,
+            repo.id,
             data.url,
             data.branch,
             data.token,
-            workspace_path=data.workspace_path,
+            data.workspace_path,
         )
+
+        return repo
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
