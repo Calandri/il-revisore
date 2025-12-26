@@ -449,6 +449,12 @@ class ClaudeCLIReviewer(BaseReviewer):
                 sections.append(f"### {path}\n{content}\n")
             sections.append("\n---\n")
 
+        # Include business context if available
+        if context.business_context:
+            sections.append("## Business Context\n")
+            sections.append(context.business_context)
+            sections.append("\n\n---\n")
+
         # File list to analyze
         sections.append("## Files to Analyze\n")
         sections.append("Read and analyze the following files:\n")
