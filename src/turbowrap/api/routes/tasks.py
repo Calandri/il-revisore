@@ -490,6 +490,7 @@ async def restart_reviewer(
             # Prepare context (similar to orchestrator._prepare_context)
             context = ReviewContext(request=request)
             context.repo_path = Path(local_path)
+            context.metadata["review_id"] = f"{task_id}_{reviewer_name}"  # For S3 logging
 
             # Scan directory for files to review
             exclude_dirs = {
