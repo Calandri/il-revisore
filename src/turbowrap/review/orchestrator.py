@@ -479,26 +479,22 @@ class Orchestrator:
             context.workspace_path = source.workspace_path
             logger.info(f"Monorepo mode: limiting review to workspace '{source.workspace_path}'")
 
-        # Check and regenerate stale STRUCTURE.md files BEFORE loading
-        await self._refresh_stale_structures(context, emit)
-
-        # Load STRUCTURE.md files first (used in all modes)
+        # Load .llms/structure.xml (used in all modes for context)
         self._load_structure_docs(context)
 
-        # INITIAL mode: Only use STRUCTURE.md, no code files
-        if mode == ReviewMode.INITIAL:
-            logger.info("INITIAL mode: Reviewing architecture via STRUCTURE.md files only")
+        # AUTO-GENERATE .llms/structure.xml if missing (for all modes)
+        if not context.structure_docs:
+            logger.info("No .llms/structure.xml found - auto-generating with Gemini Flash...")
+            await self._auto_generate_structure(context, emit)
+            # Reload after generation
+            self._load_structure_docs(context)
 
-            # AUTO-GENERATE STRUCTURE.md if missing
             if not context.structure_docs:
-                logger.info("No STRUCTURE.md files found - auto-generating with Gemini Flash...")
-                await self._auto_generate_structure(context, emit)
-                # Reload after generation
-                self._load_structure_docs(context)
+                logger.warning("Structure generation completed but .llms/structure.xml not found!")
 
-                if not context.structure_docs:
-                    logger.warning("Structure generation completed but no files found!")
-
+        # INITIAL mode: Only use structure docs, no code files
+        if mode == ReviewMode.INITIAL:
+            logger.info("INITIAL mode: Reviewing architecture via .llms/structure.xml only")
             # No file contents loaded - reviewers use only structure docs
 
         # DIFF mode: Load only changed/specified files
@@ -596,9 +592,8 @@ class Orchestrator:
         """
         Load repository structure documentation for LLM context.
 
-        Priority order:
-        1. .llms/structure.xml (consolidated XML format, optimized for LLM)
-        2. STRUCTURE.md files (legacy markdown format, fallback)
+        Only uses .llms/structure.xml (consolidated XML format, optimized for LLM).
+        No fallback to STRUCTURE.md.
 
         If workspace_path is set (monorepo), only loads from that subfolder.
         """
@@ -614,50 +609,17 @@ class Orchestrator:
         else:
             search_base = context.repo_path
 
-        # Priority 1: .llms/structure.xml (consolidated XML format)
+        # Load .llms/structure.xml (only supported format)
         xml_path = search_base / ".llms" / "structure.xml"
         if xml_path.exists():
             try:
                 content = xml_path.read_text(encoding="utf-8")
                 context.structure_docs["structure.xml"] = content
                 logger.info(f"Loaded .llms/structure.xml ({xml_path.stat().st_size:,} bytes)")
-                return  # Use XML exclusively, don't load STRUCTURE.md
             except Exception as e:
                 logger.warning(f"Failed to read {xml_path}: {e}")
-
-        # Fallback: STRUCTURE.md files (legacy format)
-        logger.info("No .llms/structure.xml found, falling back to STRUCTURE.md files...")
-
-        # Find all STRUCTURE.md files within search base
-        structure_files = list(search_base.rglob("STRUCTURE.md"))
-
-        # Also check for structure.md (lowercase)
-        structure_files.extend(search_base.rglob("structure.md"))
-
-        # Filter out common excluded directories
-        exclude_dirs = {
-            ".git", "node_modules", "__pycache__", ".venv", "venv",
-            ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
-        }
-
-        for structure_file in structure_files:
-            rel_path = structure_file.relative_to(context.repo_path)
-            # Skip if in excluded directory (use relative path, not absolute)
-            if any(part in exclude_dirs for part in rel_path.parts):
-                continue
-
-            try:
-                relative_path = str(rel_path)
-                content = structure_file.read_text(encoding="utf-8")
-                context.structure_docs[relative_path] = content
-                logger.info(f"  Loaded: {relative_path}")
-            except Exception as e:
-                logger.warning(f"  Failed to read {structure_file}: {e}")
-
-        if context.structure_docs:
-            logger.info(f"Found {len(context.structure_docs)} STRUCTURE.md file(s)")
         else:
-            logger.info("No STRUCTURE.md files found")
+            logger.info("No .llms/structure.xml found - structure docs not available")
 
     async def _auto_generate_structure(
         self,
@@ -667,8 +629,8 @@ class Orchestrator:
         """
         Auto-generate structure documentation using Gemini Flash.
 
-        Generates both .llms/structure.xml (for LLM) and STRUCTURE.md (for humans).
-        Called when INITIAL mode review is requested but no structure docs exist.
+        Generates only .llms/structure.xml (optimized for LLM).
+        Called when no structure docs exist.
 
         Args:
             context: Review context with repo_path set
@@ -711,11 +673,11 @@ class Orchestrator:
                 ))
 
             # Run generation (sync method, run in executor)
-            # Generates both XML (.llms/structure.xml) and Markdown (STRUCTURE.md)
+            # Only generate XML format (.llms/structure.xml)
             loop = asyncio.get_event_loop()
             generated_files = await loop.run_in_executor(
                 None,
-                lambda: generator.generate(verbose=True)
+                lambda: generator.generate(verbose=True, formats=["xml"])
             )
 
             # Emit completion

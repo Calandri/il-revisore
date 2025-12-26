@@ -391,6 +391,21 @@ class ClaudeCLIReviewer(BaseReviewer):
         for f in file_list:
             sections.append(f"- {f}\n")
 
+        # Add workspace constraint for monorepos
+        workspace_constraint = ""
+        if context.workspace_path:
+            workspace_constraint = f"""
+## IMPORTANT: Monorepo Workspace Scope
+
+This is a **monorepo** review. You MUST only analyze files within the workspace:
+- **Workspace path**: `{context.workspace_path}/`
+- **DO NOT** read or analyze files outside this workspace
+- **DO NOT** navigate to other apps/packages in the monorepo
+- If you need to explore imports, only follow them if they're within `{context.workspace_path}/`
+
+"""
+            sections.append(workspace_constraint)
+
         # Output file for this reviewer - use ABSOLUTE path to prevent issues with monorepos
         output_filename = f".turbowrap_review_{self.name}.json"
         if context.repo_path:
@@ -398,11 +413,17 @@ class ClaudeCLIReviewer(BaseReviewer):
         else:
             output_file = output_filename
 
+        # Adjust exploration instruction based on workspace
+        if context.workspace_path:
+            explore_instruction = f"**Explore within workspace only** - you can read other files in `{context.workspace_path}/` (imports, dependencies, tests) but NOT outside it"
+        else:
+            explore_instruction = "**Explore freely** - you can read other files (imports, dependencies, tests) if needed"
+
         sections.append(f"""
 ## Important Instructions
 
 1. **Read the files** listed above using your file reading capabilities
-2. **Explore freely** - you can read other files (imports, dependencies, tests) if needed
+2. {explore_instruction}
 3. **Apply your expertise** from the system prompt above
 4. **CRITICAL**: Always save output to the ABSOLUTE path specified below, not a relative path
 

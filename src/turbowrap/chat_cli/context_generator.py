@@ -25,7 +25,8 @@ def load_structure_documentation(
     """
     Load repository structure documentation for context injection.
 
-    Prioritizes XML format over Markdown for better LLM parsing.
+    Only uses .llms/structure.xml (consolidated XML format, optimized for LLM).
+    No fallback to STRUCTURE.md.
 
     Args:
         repo_path: Path to the repository root
@@ -40,7 +41,7 @@ def load_structure_documentation(
         if workspace_base.exists():
             base = workspace_base
 
-    # Priority 1: .llms/structure.xml (consolidated XML format)
+    # Load .llms/structure.xml (only supported format)
     xml_path = base / ".llms" / "structure.xml"
     if xml_path.exists():
         try:
@@ -49,26 +50,6 @@ def load_structure_documentation(
             return content
         except Exception as e:
             logger.warning(f"Failed to read {xml_path}: {e}")
-
-    # Fallback: Concatenate STRUCTURE.md files
-    structure_docs: list[str] = []
-    for structure_file in base.rglob("STRUCTURE.md"):
-        # Skip common ignored directories
-        rel_path = structure_file.relative_to(base)
-        if any(part.startswith(".") or part in {
-            "node_modules", "__pycache__", ".venv", "venv", "dist", "build"
-        } for part in rel_path.parts):
-            continue
-
-        try:
-            content = structure_file.read_text(encoding="utf-8")
-            structure_docs.append(f"### {rel_path}\n\n{content}")
-        except Exception as e:
-            logger.warning(f"Failed to read {structure_file}: {e}")
-
-    if structure_docs:
-        logger.info(f"Loaded {len(structure_docs)} STRUCTURE.md files")
-        return "\n\n---\n\n".join(structure_docs)
 
     return None
 
