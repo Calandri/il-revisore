@@ -181,6 +181,7 @@ function systemMonitor() {
 
         // Docker Logs Streaming
         showLogs: false,
+        logsExpanded: false,
         logFilter: 'all',
         logs: [],
         logEventSource: null,
@@ -235,10 +236,15 @@ function systemMonitor() {
                 this.logEventSource.addEventListener('connected', (e) => {
                     try {
                         const data = JSON.parse(e.data);
-                        this.containerName = data.container || null;
+                        this.containerName = data.container || 'turbowrap';
                     } catch {}
                     this.logConnected = true;
                     this.logError = null;
+                });
+
+                // Handle keepalive pings (ignore, just confirms connection is alive)
+                this.logEventSource.addEventListener('ping', () => {
+                    this.logConnected = true;
                 });
 
                 this.logEventSource.addEventListener('error', (e) => {
@@ -272,6 +278,10 @@ function systemMonitor() {
 
         clearLogs() {
             this.logs = [];
+        },
+
+        toggleLogsExpanded() {
+            this.logsExpanded = !this.logsExpanded;
         }
     };
 }

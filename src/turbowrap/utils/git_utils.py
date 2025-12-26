@@ -127,13 +127,20 @@ def _get_auth_url(url: str, token: str | None = None) -> str:
     return url
 
 
-def clone_repo(url: str, branch: str = "main", token: str | None = None) -> Path:
+def clone_repo(
+    url: str,
+    branch: str = "main",
+    token: str | None = None,
+    target_path: Path | None = None,
+) -> Path:
     """Clone a GitHub repository.
 
     Args:
         url: GitHub repository URL.
         branch: Branch to clone.
         token: Optional GitHub token for private repos.
+        target_path: Optional explicit path to clone to. If not provided,
+                     uses get_local_path(url) to generate a path.
 
     Returns:
         Path to cloned repository.
@@ -141,7 +148,7 @@ def clone_repo(url: str, branch: str = "main", token: str | None = None) -> Path
     Raises:
         CloneError: If clone fails.
     """
-    local_path = get_local_path(url)
+    local_path = target_path if target_path else get_local_path(url)
 
     if local_path.exists():
         # Already cloned, just pull

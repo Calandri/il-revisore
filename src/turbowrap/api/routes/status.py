@@ -710,150 +710,114 @@ def get_active_development(db: Session = Depends(get_db)):
 
 
 # =============================================================================
-# Docker Logs Streaming
+# Application Logs Streaming
 # =============================================================================
 
+import logging
+from collections import deque
+from weakref import WeakSet
 
-async def find_main_container() -> str | None:
+# Global log buffer and subscribers
+_log_buffer: deque = deque(maxlen=500)  # Keep last 500 logs
+_log_subscribers: WeakSet = WeakSet()
+
+
+class SSELogHandler(logging.Handler):
+    """Custom log handler that stores logs for SSE streaming."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            log_entry = {
+                "content": self.format(record),
+                "level": record.levelname,
+                "timestamp": datetime.utcnow().isoformat(),
+                "logger": record.name,
+            }
+            _log_buffer.append(log_entry)
+
+            # Notify all subscribers
+            for queue in list(_log_subscribers):
+                try:
+                    queue.put_nowait(log_entry)
+                except Exception:
+                    pass  # Queue full or closed
+        except Exception:
+            pass  # Never fail in log handler
+
+
+def setup_sse_logging():
+    """Setup SSE log handler on root logger."""
+    handler = SSELogHandler()
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    )
+
+    # Add to root logger
+    root_logger = logging.getLogger()
+    # Check if already added
+    for h in root_logger.handlers:
+        if isinstance(h, SSELogHandler):
+            return  # Already setup
+    root_logger.addHandler(handler)
+
+
+# Setup on module load
+setup_sse_logging()
+
+
+async def generate_app_logs(level: str = "all") -> AsyncIterator[dict]:
     """
-    Find the main TurboWrap Docker container.
-
-    Looks for containers with 'turbowrap' in the name, otherwise returns the first running container.
-    """
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "ps",
-            "--format",
-            "{{.Names}}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, _ = await proc.communicate()
-
-        if proc.returncode != 0:
-            return None
-
-        containers = [c.strip() for c in stdout.decode().strip().split("\n") if c.strip()]
-
-        if not containers:
-            return None
-
-        # Look for container with 'turbowrap' in name
-        for name in containers:
-            if "turbowrap" in name.lower():
-                return name
-
-        # Fallback to first container
-        return containers[0]
-
-    except Exception:
-        return None
-
-
-def detect_log_level(line: str) -> str:
-    """
-    Detect log level from a log line.
-
-    Returns: 'ERROR', 'WARNING', or 'INFO'
-    """
-    line_upper = line.upper()
-
-    # Error patterns
-    if any(
-        kw in line_upper
-        for kw in ["ERROR", "EXCEPTION", "TRACEBACK", "CRITICAL", "FATAL", "FAILED"]
-    ):
-        return "ERROR"
-
-    # Warning patterns
-    if any(kw in line_upper for kw in ["WARNING", "WARN", "DEPRECATED"]):
-        return "WARNING"
-
-    return "INFO"
-
-
-async def generate_docker_logs(level: str = "all") -> AsyncIterator[dict]:
-    """
-    Generator that streams Docker logs via SSE.
+    Generator that streams application logs via SSE.
 
     Args:
         level: Filter level - 'all', 'warning', 'error'
     """
-    container = await find_main_container()
+    import asyncio
 
-    if not container:
+    # Create a queue for this subscriber
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    _log_subscribers.add(queue)
+
+    try:
+        # Send connected event
         yield {
-            "event": "error",
+            "event": "connected",
             "data": json.dumps(
                 {
-                    "message": "No Docker container found",
-                    "level": "ERROR",
+                    "message": "Connected to TurboWrap logs",
+                    "container": "turbowrap-app",
                     "timestamp": datetime.utcnow().isoformat(),
                 }
             ),
         }
-        return
 
-    # Notify which container we're tailing
-    yield {
-        "event": "connected",
-        "data": json.dumps(
-            {
-                "message": f"Connected to container: {container}",
-                "container": container,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        ),
-    }
+        # Send buffered logs first (last 100)
+        for log_entry in list(_log_buffer)[-100:]:
+            if _should_include_log(log_entry, level):
+                yield {
+                    "event": "log",
+                    "data": json.dumps(log_entry),
+                }
 
-    try:
-        # Start docker logs with --follow
-        process = await asyncio.create_subprocess_exec(
-            "docker",
-            "logs",
-            "--follow",
-            "--tail",
-            "100",
-            "--timestamps",
-            container,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-
-        # Stream lines as they come
-        async for line in process.stdout:
-            log_line = line.decode(errors="replace").strip()
-            if not log_line:
-                continue
-
-            log_level = detect_log_level(log_line)
-
-            # Apply filter
-            if level != "all":
-                if level.lower() == "error" and log_level != "ERROR":
-                    continue
-                if level.lower() == "warning" and log_level not in ("WARNING", "ERROR"):
-                    continue
-
-            yield {
-                "event": "log",
-                "data": json.dumps(
-                    {
-                        "content": log_line,
-                        "level": log_level,
-                        "timestamp": datetime.utcnow().isoformat(),
+        # Stream new logs
+        while True:
+            try:
+                log_entry = await asyncio.wait_for(queue.get(), timeout=30.0)
+                if _should_include_log(log_entry, level):
+                    yield {
+                        "event": "log",
+                        "data": json.dumps(log_entry),
                     }
-                ),
-            }
+            except asyncio.TimeoutError:
+                # Send keepalive
+                yield {
+                    "event": "ping",
+                    "data": json.dumps({"timestamp": datetime.utcnow().isoformat()}),
+                }
 
     except asyncio.CancelledError:
-        # Client disconnected
-        if process:
-            process.terminate()
-            await process.wait()
         raise
-
     except Exception as e:
         yield {
             "event": "error",
@@ -865,12 +829,29 @@ async def generate_docker_logs(level: str = "all") -> AsyncIterator[dict]:
                 }
             ),
         }
+    finally:
+        _log_subscribers.discard(queue)
+
+
+def _should_include_log(log_entry: dict, level: str) -> bool:
+    """Check if log entry should be included based on filter."""
+    if level == "all":
+        return True
+
+    log_level = log_entry.get("level", "INFO").upper()
+
+    if level.lower() == "error":
+        return log_level in ("ERROR", "CRITICAL", "FATAL")
+    if level.lower() == "warning":
+        return log_level in ("WARNING", "WARN", "ERROR", "CRITICAL", "FATAL")
+
+    return True
 
 
 @router.get("/docker-logs/stream")
-async def stream_docker_logs(level: str = "all"):
+async def stream_app_logs(level: str = "all"):
     """
-    Stream Docker container logs via Server-Sent Events.
+    Stream application logs via Server-Sent Events.
 
     Args:
         level: Filter level - 'all' (default), 'warning', or 'error'
@@ -879,8 +860,9 @@ async def stream_docker_logs(level: str = "all"):
         EventSourceResponse with log events
 
     Events:
-        - info: Connection info (container name)
+        - connected: Connection established
         - log: Log line with content, level, timestamp
+        - ping: Keepalive
         - error: Error message
     """
-    return EventSourceResponse(generate_docker_logs(level))
+    return EventSourceResponse(generate_app_logs(level))

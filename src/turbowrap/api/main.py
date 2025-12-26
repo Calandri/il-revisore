@@ -76,6 +76,58 @@ def configure_logging() -> None:
     logging.getLogger("sse_starlette").setLevel(logging.WARNING)
 
 
+def _ensure_all_repos_exist():
+    """Check all repositories and re-clone any with missing local paths.
+
+    This handles the case where local files were deleted (e.g., disk cleanup)
+    but the database records still exist.
+    """
+    from ..core.repo_manager import RepoManager
+    from ..db.models import Repository
+    from ..db.session import SessionLocal
+
+    logger = logging.getLogger(__name__)
+    logger.info("[STARTUP] Checking repository local paths...")
+
+    db = SessionLocal()
+    try:
+        repos = db.query(Repository).filter(Repository.status == "active").all()
+        logger.info(f"[STARTUP] Found {len(repos)} active repositories to check")
+
+        missing_count = 0
+        restored_count = 0
+        failed_repos = []
+
+        for repo in repos:
+            local_path = Path(repo.local_path)
+            if not local_path.exists() or not (local_path / ".git").exists():
+                missing_count += 1
+                logger.warning(f"[STARTUP] Missing repo: {repo.name} at {local_path}")
+
+                try:
+                    manager = RepoManager(db)
+                    manager.ensure_repo_exists(repo.id)
+                    restored_count += 1
+                    logger.info(f"[STARTUP] Restored repo: {repo.name}")
+                except Exception as e:
+                    failed_repos.append(repo.name)
+                    logger.error(f"[STARTUP] Failed to restore {repo.name}: {e}")
+
+        if missing_count == 0:
+            logger.info("[STARTUP] All repository paths OK")
+        else:
+            logger.info(
+                f"[STARTUP] Repository check complete: "
+                f"{missing_count} missing, {restored_count} restored, "
+                f"{len(failed_repos)} failed"
+            )
+            if failed_repos:
+                logger.warning(f"[STARTUP] Failed repos: {failed_repos}")
+
+    finally:
+        db.close()
+
+
 async def _cleanup_stale_processes_task():
     """Background task to cleanup stale CLI processes."""
     import asyncio
@@ -117,6 +169,9 @@ async def lifespan(app: FastAPI):
 
     # Startup
     init_db()
+
+    # Check and restore missing repository local paths
+    _ensure_all_repos_exist()
 
     # Start background cleanup task
     cleanup_task = asyncio.create_task(_cleanup_stale_processes_task())

@@ -221,6 +221,58 @@ class RepoManager:
 
         return repo
 
+    def ensure_repo_exists(self, repo_id: str, token: str | None = None) -> Repository:
+        """Ensure repository local path exists, re-clone if missing.
+
+        This handles the case where local files were deleted (e.g., disk cleanup)
+        but the database record still exists.
+
+        Args:
+            repo_id: Repository ID.
+            token: Optional GitHub token for private repos.
+
+        Returns:
+            Repository with valid local path.
+
+        Raises:
+            RepositoryError: If repository not found in DB or re-clone fails.
+        """
+        repo = self.db.query(Repository).filter(Repository.id == repo_id).first()
+
+        if not repo:
+            raise RepositoryError(f"Repository not found: {repo_id}")
+
+        local_path = Path(repo.local_path)
+
+        # Check if local path exists
+        if local_path.exists() and (local_path / ".git").exists():
+            return repo  # All good
+
+        # Local path missing - re-clone
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Repository local path missing, re-cloning: {repo.name} -> {local_path}")
+
+        effective_token = self._get_token(token)
+
+        try:
+            # Re-clone to the same path
+            clone_repo(repo.url, repo.default_branch or "main", effective_token, target_path=local_path)
+
+            # Update sync timestamp
+            repo.last_synced_at = datetime.utcnow()
+            repo.status = "active"
+            self.db.commit()
+            self.db.refresh(repo)
+
+            logger.info(f"Successfully re-cloned repository: {repo.name}")
+            return repo
+
+        except Exception as e:
+            repo.status = "error"
+            self.db.commit()
+            raise RepositoryError(f"Failed to re-clone repository {repo.name}: {e}") from e
+
     def sync(self, repo_id: str, token: str | None = None) -> Repository:
         """Sync (pull) an existing repository.
 
@@ -238,6 +290,9 @@ class RepoManager:
 
         if not repo:
             raise RepositoryError(f"Repository not found: {repo_id}")
+
+        # Ensure local path exists before syncing
+        repo = self.ensure_repo_exists(repo_id, token)
 
         repo.status = "syncing"
         self.db.commit()

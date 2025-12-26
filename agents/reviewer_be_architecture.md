@@ -558,6 +558,67 @@ async def readiness(db: Session = Depends(get_db)):
         raise HTTPException(503, "Database not ready")
 ```
 
+### 4.7 Async/Await Patterns
+```python
+# BAD - Blocking calls in async context
+@router.get("/data")
+async def get_data():
+    result = requests.get("https://api.example.com")  # BLOCKS EVENT LOOP!
+    time.sleep(1)  # BLOCKS EVENT LOOP!
+
+# GOOD - Proper async I/O
+@router.get("/data")
+async def get_data():
+    async with httpx.AsyncClient() as client:
+        result = await client.get("https://api.example.com")
+    await asyncio.sleep(1)
+```
+
+**Flag these blocking calls in async functions:**
+- `requests.*` → use `httpx.AsyncClient`
+- `time.sleep()` → use `asyncio.sleep()`
+- `open()` → use `aiofiles.open()`
+- Sync DB calls → use `run_in_executor` or async driver
+
+### 4.8 Request Validation
+```python
+from fastapi import Body, Path, Query
+
+@router.post("/messages")
+async def create_message(
+    content: str = Body(..., max_length=10000),
+    attachments: list[str] = Body(default=[], max_length=10)
+): ...
+
+@router.get("/tickets")
+async def list_tickets(
+    page: int = Query(1, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=250),
+    status: TicketStatus | None = Query(None)
+): ...
+
+@router.get("/tickets/{ticket_id}")
+async def get_ticket(ticket_id: int = Path(..., gt=0)): ...
+```
+
+### 4.9 Middleware (Cross-cutting concerns only)
+```python
+# GOOD - Request ID propagation
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+# BAD - Business logic in middleware
+@app.middleware("http")
+async def check_subscription(request, call_next):
+    if not user.has_subscription():  # WRONG PLACE! Use dependency instead
+        return JSONResponse({"error": "..."}, 403)
+```
+
 ---
 
 ## 5. Pydantic Best Practices
@@ -607,6 +668,82 @@ class UserResponse(BaseModel):
 
 ---
 
+## 6. Security Patterns
+
+### 6.1 SQL Injection Prevention
+```python
+# BAD - String concatenation/f-strings
+query = f"SELECT * FROM users WHERE id = {user_id}"
+query = "SELECT * FROM users WHERE email = '" + email + "'"
+
+# GOOD - Parameterized queries
+query = "SELECT * FROM users WHERE id = %s"
+cursor.execute(query, (user_id,))
+```
+
+### 6.2 Input Sanitization
+```python
+# Sanitize HTML content before storage
+from bleach import clean
+content = clean(user_input, tags=['p', 'br', 'b', 'i'], strip=True)
+
+# Validate file uploads
+ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg'}
+if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
+    raise HTTPException(400, "Invalid file type")
+```
+
+### 6.3 Sensitive Data Handling
+```python
+# Never log sensitive data
+logger.info("Login attempt", email=email)  # OK
+logger.info("Login", password=password)  # NEVER!
+
+# Exclude from responses
+class UserResponse(BaseModel):
+    password_hash: str = Field(exclude=True)
+    api_key: str = Field(exclude=True)
+```
+
+---
+
+## 7. Testing Patterns
+
+### 7.1 Test Structure
+```
+tests/
+├── unit/           # Fast, isolated tests (mock dependencies)
+├── integration/    # DB/API tests (real connections)
+└── conftest.py     # Shared fixtures
+```
+
+### 7.2 FastAPI Test Client
+```python
+from fastapi.testclient import TestClient
+
+def test_create_user(client: TestClient, mock_service):
+    mock_service.create_user.return_value = User(id=1, email="test@test.com")
+    response = client.post("/users", json={"email": "test@test.com"})
+    assert response.status_code == 201
+
+# Use dependency overrides for mocking
+app.dependency_overrides[get_user_service] = lambda: mock_service
+```
+
+### 7.3 Database Test Isolation
+```python
+@pytest.fixture
+def db_session():
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+    yield session
+    transaction.rollback()  # Always rollback
+    connection.close()
+```
+
+---
+
 ## Architecture Review Checklist
 
 ### SOLID Principles
@@ -637,10 +774,23 @@ class UserResponse(BaseModel):
 
 ### FastAPI Patterns
 - [ ] Response models defined
-- [ ] Proper status codes
-- [ ] Background tasks for long ops
-- [ ] Health checks implemented
-- [ ] OpenAPI docs complete
+- [ ] Proper status codes (201 create, 204 delete)
+- [ ] Route handlers < 10 lines
+- [ ] No blocking calls in async (requests, time.sleep)
+- [ ] Input validation with Body/Query/Path limits
+- [ ] Health checks implemented (live + ready)
+- [ ] Middleware only for cross-cutting concerns
+
+### Security
+- [ ] Parameterized SQL queries (no f-strings in queries)
+- [ ] Input sanitization for HTML/file uploads
+- [ ] Sensitive data excluded from logs and responses
+- [ ] No secrets hardcoded (use env vars)
+
+### Testing
+- [ ] Unit tests for services (mocked dependencies)
+- [ ] Integration tests for routes
+- [ ] Database tests with transaction rollback
 
 ### Pydantic
 - [ ] Input validation with Field constraints
