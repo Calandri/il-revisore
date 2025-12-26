@@ -1,14 +1,23 @@
 """Deployment status routes - GitHub Actions integration."""
 
+import asyncio
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
+import boto3
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ...config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# AWS SSM config
+AWS_REGION = "eu-west-3"
+EC2_INSTANCE_ID = "i-02cac4811086c1f92"
 
 router = APIRouter(prefix="/deployments", tags=["deployments"])
 

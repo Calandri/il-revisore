@@ -227,7 +227,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="TurboWrap",
         description="AI-Powered Repository Orchestrator",
-        version="0.3.0",
+        version="0.8.0",
         lifespan=lifespan,
     )
 
