@@ -87,6 +87,18 @@ This creates:
 - IAM role with Secrets Manager access
 - Route53 A record pointing to ALB
 
+### SSH Access to EC2
+
+```bash
+# Connect to TurboRepo instance
+ssh -i ~/.ssh/turborepo-key ec2-user@ec2-51-44-252-165.eu-west-3.compute.amazonaws.com
+
+# Instance details:
+# - ID: i-02cac4811086c1f92
+# - Region: eu-west-3
+# - Key: ~/.ssh/turborepo-key
+```
+
 ### Deploy New Version
 
 ```bash
