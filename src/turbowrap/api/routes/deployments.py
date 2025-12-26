@@ -27,13 +27,15 @@ class DeploymentRun(BaseModel):
     id: int
     commit_sha: str
     commit_short: str
+    commit_message: str | None  # First line of commit message
+    commit_url: str  # Link to GitHub commit page
     status: Literal["queued", "in_progress", "completed"]
     conclusion: Literal["success", "failure", "cancelled", "skipped", "timed_out"] | None
     started_at: str | None
     completed_at: str | None
     duration_seconds: int | None
     time_ago: str
-    html_url: str
+    html_url: str  # Link to GitHub Actions run
 
 
 class DeploymentStatus(BaseModel):
@@ -87,10 +89,21 @@ def _parse_run(run: dict) -> DeploymentRun:
 
     commit_sha = run.get("head_sha", "unknown")
 
+    # Extract commit message (first line only)
+    head_commit = run.get("head_commit", {})
+    commit_message = head_commit.get("message", "")
+    if commit_message:
+        commit_message = commit_message.split("\n")[0][:80]  # First line, max 80 chars
+
+    # Build commit URL
+    commit_url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/commit/{commit_sha}"
+
     return DeploymentRun(
         id=run["id"],
         commit_sha=commit_sha,
         commit_short=commit_sha[:7],
+        commit_message=commit_message or None,
+        commit_url=commit_url,
         status=run["status"],
         conclusion=run.get("conclusion"),
         started_at=started_at,
@@ -186,3 +199,89 @@ async def get_current_deployment():
         "current": status.current,
         "in_progress": status.in_progress is not None,
     }
+
+
+@router.post("/trigger")
+async def trigger_deployment():
+    """Trigger a new deployment via workflow_dispatch."""
+    settings = get_settings()
+
+    if not settings.agents.github_token:
+        raise HTTPException(status_code=503, detail="GitHub token not configured")
+
+    headers = {
+        "Authorization": f"Bearer {settings.agents.github_token}",
+        "Accept": "application/vnd.github.v3+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    # Trigger workflow_dispatch on main branch
+    url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
+    payload = {"ref": "main"}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, headers=headers, json=payload)
+
+        if response.status_code == 204:
+            # Clear cache to force refresh
+            _cache["data"] = None
+            _cache["timestamp"] = 0
+            return {"status": "ok", "message": "Deploy triggered successfully"}
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to trigger deploy: {response.text}"
+            )
+
+
+@router.post("/rollback/{commit_sha}")
+async def rollback_to_commit(commit_sha: str):
+    """Rollback to a specific commit by triggering a deploy with that SHA.
+
+    Note: This requires the workflow to support workflow_dispatch with inputs,
+    or we can use the GitHub API to create a deployment.
+    For now, this is a placeholder that shows how it would work.
+    """
+    settings = get_settings()
+
+    if not settings.agents.github_token:
+        raise HTTPException(status_code=503, detail="GitHub token not configured")
+
+    # Validate commit SHA format
+    if len(commit_sha) < 7 or len(commit_sha) > 40:
+        raise HTTPException(status_code=400, detail="Invalid commit SHA")
+
+    headers = {
+        "Authorization": f"Bearer {settings.agents.github_token}",
+        "Accept": "application/vnd.github.v3+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    # For rollback, we trigger workflow_dispatch with the specific ref
+    # This requires modifying the workflow to accept workflow_dispatch
+    url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/deploy.yml/dispatches"
+    payload = {"ref": commit_sha}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, headers=headers, json=payload)
+
+        if response.status_code == 204:
+            # Clear cache to force refresh
+            _cache["data"] = None
+            _cache["timestamp"] = 0
+            return {
+                "status": "ok",
+                "message": f"Rollback to {commit_sha[:7]} triggered successfully"
+            }
+        elif response.status_code == 422:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot rollback - commit not found or workflow doesn't support this ref"
+            )
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to trigger rollback: {response.text}"
+            )

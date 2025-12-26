@@ -47,7 +47,9 @@ function systemMonitor() {
         deployments: [],
         currentDeploy: null,
         inProgressDeploy: null,
+        previousInProgress: null,  // Track previous state for notifications
         deployLoading: true,
+        deployTriggering: false,
         loading: true,
 
         async init() {
@@ -83,13 +85,90 @@ function systemMonitor() {
                 if (!res.ok) throw new Error('Deployments API error');
                 const data = await res.json();
 
+                // Check if a deploy just completed (was in_progress, now isn't)
+                const wasInProgress = this.previousInProgress;
+                const isNowInProgress = data.in_progress;
+
+                if (wasInProgress && !isNowInProgress) {
+                    // Find what happened to the previous in-progress deploy
+                    const completedDeploy = data.recent?.find(d => d.id === wasInProgress.id);
+                    if (completedDeploy) {
+                        this.showDeployNotification(completedDeploy);
+                    }
+                }
+
                 this.currentDeploy = data.current;
                 this.inProgressDeploy = data.in_progress;
+                this.previousInProgress = data.in_progress;  // Save for next comparison
                 this.deployments = data.recent || [];
                 this.deployLoading = false;
             } catch (e) {
                 console.error('Deployments error:', e);
                 this.deployLoading = false;
+            }
+        },
+
+        showDeployNotification(deploy) {
+            const isSuccess = deploy.conclusion === 'success';
+            const message = isSuccess
+                ? `Deploy ${deploy.commit_short} completato con successo!`
+                : `Deploy ${deploy.commit_short} fallito`;
+
+            window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: {
+                    message: message,
+                    type: isSuccess ? 'success' : 'error'
+                }
+            }));
+        },
+
+        async triggerDeploy() {
+            if (this.deployTriggering) return;
+            this.deployTriggering = true;
+
+            try {
+                const res = await fetch('/api/deployments/trigger', { method: 'POST' });
+                const data = await res.json();
+
+                if (res.ok) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: 'Deploy avviato!', type: 'success' }
+                    }));
+                    // Refresh deployments after a short delay
+                    setTimeout(() => this.refreshDeployments(), 3000);
+                } else {
+                    throw new Error(data.detail || 'Failed to trigger deploy');
+                }
+            } catch (e) {
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: `Errore: ${e.message}`, type: 'error' }
+                }));
+            } finally {
+                this.deployTriggering = false;
+            }
+        },
+
+        async rollbackTo(commitSha) {
+            if (!confirm(`Sei sicuro di voler fare rollback a ${commitSha.substring(0, 7)}?`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/deployments/rollback/${commitSha}`, { method: 'POST' });
+                const data = await res.json();
+
+                if (res.ok) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Rollback a ${commitSha.substring(0, 7)} avviato!`, type: 'success' }
+                    }));
+                    setTimeout(() => this.refreshDeployments(), 3000);
+                } else {
+                    throw new Error(data.detail || 'Failed to trigger rollback');
+                }
+            } catch (e) {
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: `Errore: ${e.message}`, type: 'error' }
+                }));
             }
         },
 
