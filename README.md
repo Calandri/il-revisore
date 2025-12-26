@@ -134,6 +134,57 @@ aws secretsmanager create-secret \
   --secret-string '{"ANTHROPIC_API_KEY":"...","GOOGLE_API_KEY":"...","GITHUB_TOKEN":"..."}'
 ```
 
+### Repository Storage
+
+Cloned repositories are stored on a dedicated **12GB EBS volume** to persist across deployments.
+
+#### Storage Paths
+
+| Environment | Path | Description |
+|-------------|------|-------------|
+| **EC2 (host)** | `/mnt/repos` | EBS volume mount point |
+| **Docker (container)** | `/data/repos` | Mapped via `-v /mnt/repos:/data/repos` |
+| **Local dev** | `~/.turbowrap/repos` | Default local path |
+
+#### How It Works
+
+1. **Terraform** creates a gp3 EBS volume and attaches it to EC2 at `/dev/xvdf`
+2. **Deploy workflow** auto-mounts the volume to `/mnt/repos` (formats on first use)
+3. **Docker** maps `/mnt/repos` → `/data/repos` inside the container
+4. **App** uses `TURBOWRAP_REPOS_DIR=/data/repos` to read/write repos
+
+#### Infrastructure (Terraform)
+
+```bash
+cd terraform
+terraform init
+terraform plan    # Preview changes
+terraform apply   # Create/update volume
+```
+
+Current volume: `vol-018dc9033f9740b30` (12GB gp3, eu-west-3b)
+
+#### Why Separate Volume?
+
+- **Persistence**: Repos survive container restarts and EC2 reboots
+- **Disk space**: Main volume is only 8GB, repos can grow large
+- **Backup**: Can snapshot EBS volume independently
+- **Cost**: ~$1.14/month for 12GB gp3
+
+#### Local Development
+
+In local dev, repos are stored in `~/.turbowrap/repos` by default. You can override with:
+
+```bash
+export TURBOWRAP_REPOS_DIR=/custom/path/repos
+```
+
+Or with Docker:
+
+```bash
+docker run -v /your/local/repos:/data/repos turbowrap:latest
+```
+
 ## Configuration
 
 ### Environment Variables
