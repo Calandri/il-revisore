@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it" x-data="{ sidebarOpen: window.innerWidth >= 768, darkMode: localStorage.getItem('darkMode') === 'true', chatMode: localStorage.getItem('chatMode') || 'hidden' }"
+<html lang="it" x-data="{ sidebarOpen: window.innerWidth >= 768, darkMode: localStorage.getItem('darkMode') === 'true', chatMode: localStorage.getItem('chatMode') || 'third' }"
       :class="{ 'dark': darkMode }"
       x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val)); $watch('chatMode', val => localStorage.setItem('chatMode', val))">
 <head>
@@ -26,6 +26,9 @@
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
+
+    <!-- Custom JS (MUST load before Alpine.js) -->
+    <script src="/static/js/cli-chat.js"></script>
 
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -116,7 +119,6 @@
 
     <!-- Custom JS -->
     <script src="/static/js/app.js"></script>
-    <script src="/static/js/cli-chat.js"></script>
 
     <!-- HTMX event handlers -->
     <script>

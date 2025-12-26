@@ -28,17 +28,22 @@ function chatSidebar() {
         showNewChatMenu: false,
         eventSource: null,
 
-        // Computed - get chatMode from parent scope
-        get chatMode() {
-            return Alpine.raw(this.$data)?.chatMode || 'hidden';
-        },
+        // NOTE: chatMode is inherited from parent scope (html element x-data)
+        // Do NOT define a getter here - it causes infinite recursion!
 
         /**
          * Initialize component
          */
         async init() {
-            await this.loadSessions();
-            await this.loadAgents();
+            console.log('[chatSidebar] Initializing...');
+            try {
+                await this.loadSessions();
+                console.log('[chatSidebar] Sessions loaded:', this.sessions.length);
+                await this.loadAgents();
+                console.log('[chatSidebar] Agents loaded:', this.agents.length);
+            } catch (error) {
+                console.error('[chatSidebar] Init error:', error);
+            }
 
             // Poll for session updates every 10s
             setInterval(() => this.loadSessions(), 10000);
@@ -49,12 +54,16 @@ function chatSidebar() {
          */
         async loadSessions() {
             try {
+                console.log('[chatSidebar] Fetching sessions...');
                 const res = await fetch('/api/cli-chat/sessions');
+                console.log('[chatSidebar] Sessions response:', res.status);
                 if (res.ok) {
                     this.sessions = await res.json();
+                } else {
+                    console.error('[chatSidebar] Sessions API error:', res.status, await res.text());
                 }
             } catch (error) {
-                console.error('Error loading sessions:', error);
+                console.error('[chatSidebar] Error loading sessions:', error);
             }
         },
 
@@ -330,3 +339,6 @@ function chatSidebar() {
 
 // Register globally for Alpine.js
 window.chatSidebar = chatSidebar;
+
+// Debug: log when script is loaded
+console.log('[cli-chat.js] Script loaded, chatSidebar function registered');
