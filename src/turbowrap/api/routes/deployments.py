@@ -292,3 +292,158 @@ async def rollback_to_commit(commit_sha: str) -> dict[str, str]:
         raise HTTPException(
             status_code=response.status_code, detail=f"Failed to trigger rollback: {response.text}"
         )
+
+
+async def _run_ssm_command(commands: list[str], timeout_seconds: int = 30) -> dict[str, Any]:
+    """Run commands on EC2 via SSM and wait for result."""
+    loop = asyncio.get_event_loop()
+
+    def _execute():
+        ssm = boto3.client("ssm", region_name=AWS_REGION)
+
+        # Send command
+        response = ssm.send_command(
+            InstanceIds=[EC2_INSTANCE_ID],
+            DocumentName="AWS-RunShellScript",
+            Parameters={"commands": commands},
+        )
+        command_id = response["Command"]["CommandId"]
+
+        # Wait for completion
+        for _ in range(timeout_seconds):
+            time.sleep(1)
+            try:
+                result = ssm.get_command_invocation(
+                    CommandId=command_id,
+                    InstanceId=EC2_INSTANCE_ID,
+                )
+                status = result["Status"]
+                if status in ("Success", "Failed", "Cancelled", "TimedOut"):
+                    return {
+                        "status": status,
+                        "stdout": result.get("StandardOutputContent", ""),
+                        "stderr": result.get("StandardErrorContent", ""),
+                    }
+            except ssm.exceptions.InvocationDoesNotExist:
+                continue
+
+        return {"status": "Timeout", "stdout": "", "stderr": "Command timed out"}
+
+    return await loop.run_in_executor(None, _execute)
+
+
+class StagingStatus(BaseModel):
+    """Staging container status."""
+
+    running: bool
+    container_id: str | None = None
+    image: str | None = None
+    started_at: str | None = None
+
+
+@router.get("/staging/status", response_model=StagingStatus)
+async def get_staging_status() -> StagingStatus:
+    """Check if staging container (turbowrap-staging) is running on port 8001."""
+    try:
+        result = await _run_ssm_command(
+            [
+                'docker ps --filter "name=turbowrap-staging" --format "{{.ID}}|{{.Image}}|{{.CreatedAt}}" | head -1'
+            ],
+            timeout_seconds=15,
+        )
+
+        if result["status"] != "Success":
+            logger.warning(f"SSM command failed: {result}")
+            return StagingStatus(running=False)
+
+        output = result["stdout"].strip()
+        if not output:
+            return StagingStatus(running=False)
+
+        parts = output.split("|")
+        if len(parts) >= 3:
+            return StagingStatus(
+                running=True,
+                container_id=parts[0],
+                image=parts[1],
+                started_at=parts[2],
+            )
+
+        return StagingStatus(running=True, container_id=parts[0] if parts else None)
+
+    except Exception as e:
+        logger.error(f"Error checking staging status: {e}")
+        return StagingStatus(running=False)
+
+
+@router.post("/promote")
+async def promote_to_production() -> dict[str, str]:
+    """Switch staging to production via SSM.
+
+    This stops the current production container and starts a new one
+    from the latest ECR image (same as staging).
+    """
+    # First verify staging is running
+    staging_status = await get_staging_status()
+    if not staging_status.running:
+        raise HTTPException(
+            status_code=400,
+            detail="No staging container running. Deploy first via GitHub Actions.",
+        )
+
+    logger.info("Promoting staging to production...")
+
+    # Commands to switch - get secrets and start new production container
+    commands = [
+        "set -e",
+        "echo === PROMOTING STAGING TO PRODUCTION ===",
+        # Get secrets
+        "SECRETS=$(aws secretsmanager get-secret-value --secret-id agent-zero/global/api-keys --region eu-west-3 --query SecretString --output text)",
+        'ANTHROPIC_KEY=$(echo $SECRETS | jq -r .ANTHROPIC_API_KEY)',
+        'DB_URL=$(echo $SECRETS | jq -r .TURBOWRAP_DB_URL)',
+        'GOOGLE_KEY=$(echo $SECRETS | jq -r .GOOGLE_API_KEY)',
+        'GEMINI_KEY=$(echo $SECRETS | jq -r .GEMINI_API_KEY)',
+        'GITHUB_TOKEN=$(echo $SECRETS | jq -r .GITHUB_TOKEN)',
+        # Stop old production
+        "echo Stopping old production...",
+        "docker stop turbowrap 2>/dev/null || true",
+        "docker rm turbowrap 2>/dev/null || true",
+        # Start new production from latest image
+        "echo Starting new production...",
+        'docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /mnt/repos:/data/repos -e TURBOWRAP_DB_URL="$DB_URL" -e ANTHROPIC_API_KEY="$ANTHROPIC_KEY" -e GOOGLE_API_KEY="$GOOGLE_KEY" -e GEMINI_API_KEY="$GEMINI_KEY" -e GITHUB_TOKEN="$GITHUB_TOKEN" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest',
+        # Cleanup staging
+        "echo Cleaning up staging...",
+        "docker stop turbowrap-staging 2>/dev/null || true",
+        "docker rm turbowrap-staging 2>/dev/null || true",
+        # Verify
+        "echo Verifying...",
+        "sleep 3",
+        "docker ps | grep turbowrap",
+        "echo === PROMOTION COMPLETE ===",
+    ]
+
+    try:
+        result = await _run_ssm_command(commands, timeout_seconds=60)
+
+        if result["status"] == "Success":
+            logger.info("Promotion successful")
+            # Clear deployment cache to force refresh
+            _cache["data"] = None
+            _cache["timestamp"] = 0
+            return {
+                "status": "ok",
+                "message": "Production updated successfully",
+                "output": result["stdout"],
+            }
+        else:
+            logger.error(f"Promotion failed: {result}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Promotion failed: {result['stderr'] or result['stdout']}",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error promoting to production: {e}")
+        raise HTTPException(status_code=500, detail=f"Promotion error: {str(e)}")
