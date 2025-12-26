@@ -214,9 +214,7 @@ class RepoDetector:
             "backend_files": len(backend_files),
             "frontend_files": len(frontend_files),
             "other_files": len(other_files),
-            "backend_percentage": (
-                round(len(backend_files) / len(files) * 100, 1) if files else 0
-            ),
+            "backend_percentage": (round(len(backend_files) / len(files) * 100, 1) if files else 0),
             "frontend_percentage": (
                 round(len(frontend_files) / len(files) * 100, 1) if files else 0
             ),

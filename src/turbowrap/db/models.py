@@ -117,13 +117,17 @@ class Repository(Base, SoftDeleteMixin):
     repo_type = Column(String(50), nullable=True)  # backend, frontend, fullstack
     project_name = Column(String(255), nullable=True, index=True)  # Group related repos by project
     metadata_ = Column("metadata", JSON, nullable=True)
-    workspace_path = Column(String(512), nullable=True)  # Monorepo: relative path (e.g., "packages/frontend")
+    workspace_path = Column(
+        String(512), nullable=True
+    )  # Monorepo: relative path (e.g., "packages/frontend")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     tasks = relationship("Task", back_populates="repository", cascade="all, delete-orphan")
-    chat_sessions = relationship("ChatSession", back_populates="repository", cascade="all, delete-orphan")
+    chat_sessions = relationship(
+        "ChatSession", back_populates="repository", cascade="all, delete-orphan"
+    )
     issues = relationship("Issue", back_populates="repository", cascade="all, delete-orphan")
 
     # Link relationships
@@ -233,9 +237,7 @@ class AgentRun(Base):
     # Relationships
     task = relationship("Task", back_populates="agent_runs")
 
-    __table_args__ = (
-        Index("idx_agent_runs_task", "task_id"),
-    )
+    __table_args__ = (Index("idx_agent_runs_task", "task_id"),)
 
     def __repr__(self) -> str:
         return f"<AgentRun {self.agent_type}/{self.agent_name}>"
@@ -277,9 +279,7 @@ class ChatMessage(Base):
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
 
-    __table_args__ = (
-        Index("idx_chat_messages_session", "session_id"),
-    )
+    __table_args__ = (Index("idx_chat_messages_session", "session_id"),)
 
     def __repr__(self) -> str:
         return f"<ChatMessage {self.role}>"
@@ -341,9 +341,13 @@ class Issue(Base, SoftDeleteMixin):
     # Fix result fields (populated when issue is fixed)
     fix_code = Column(Text, nullable=True)  # Snippet del codice fixato (display: max 500 chars)
     fix_explanation = Column(Text, nullable=True)  # Spiegazione PR-style del fix
-    fix_files_modified = Column(JSON, nullable=True)  # Lista file modificati: ["file1.ts", "file2.ts"]
+    fix_files_modified = Column(
+        JSON, nullable=True
+    )  # Lista file modificati: ["file1.ts", "file2.ts"]
     fix_commit_sha = Column(String(40), nullable=True)  # SHA del commit
-    fix_branch = Column(String(100), nullable=True)  # Branch dove è stato fatto il fix (e.g., "fix/1234567890")
+    fix_branch = Column(
+        String(100), nullable=True
+    )  # Branch dove è stato fatto il fix (e.g., "fix/1234567890")
     fix_session_id = Column(String(36), nullable=True, index=True)  # UUID sessione fix (per log S3)
     fixed_at = Column(DateTime, nullable=True)  # Quando è stato fixato
     fixed_by = Column(String(50), nullable=True)  # Agent che ha fixato (e.g., "fixer_claude")
@@ -558,7 +562,9 @@ class CLIChatSession(Base, SoftDeleteMixin):
 
     # Process State
     process_pid = Column(Integer, nullable=True)  # OS process ID when running
-    status = Column(String(20), default="idle")  # idle, starting, running, streaming, stopping, error
+    status = Column(
+        String(20), default="idle"
+    )  # idle, starting, running, streaming, stopping, error
 
     # UI Configuration
     icon = Column(String(50), default="chat")  # Icon identifier

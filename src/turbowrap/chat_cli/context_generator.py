@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
-    from ..db.models import Repository, LinearIssue, Issue
+    from ..db.models import Issue, LinearIssue, Repository
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ def load_structure_documentation(
             logger.warning(f"Failed to read {xml_path}: {e}")
 
     return None
+
 
 # Template del context
 CONTEXT_TEMPLATE = """# TurboWrap Context
@@ -164,7 +165,7 @@ def generate_context(
     Returns:
         Context string formattato
     """
-    from ..db.models import Repository, LinearIssue, Issue
+    from ..db.models import Issue, LinearIssue, Repository
 
     try:
         # Fetch repos
@@ -192,7 +193,11 @@ def generate_context(
             .limit(max_linear_issues)
             .all()
         )
-        linear_section = _format_linear_issues(linear_issues) if linear_issues else "_Nessuna issue Linear attiva_"
+        linear_section = (
+            _format_linear_issues(linear_issues)
+            if linear_issues
+            else "_Nessuna issue Linear attiva_"
+        )
     except Exception as e:
         logger.error(f"Error fetching Linear issues: {e}")
         linear_section = f"_Errore caricamento issue Linear: {e}_"
@@ -209,33 +214,37 @@ def generate_context(
             .limit(max_code_issues)
             .all()
         )
-        code_section = _format_code_issues(code_issues) if code_issues else "_Nessuna issue di code review aperta_"
+        code_section = (
+            _format_code_issues(code_issues)
+            if code_issues
+            else "_Nessuna issue di code review aperta_"
+        )
     except Exception as e:
         logger.error(f"Error fetching code issues: {e}")
         code_section = f"_Errore caricamento issue code review: {e}_"
 
     # Build context
-    context = CONTEXT_TEMPLATE.format(
+    return CONTEXT_TEMPLATE.format(
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
         repos_section=repos_section,
         linear_issues_section=linear_section,
         code_issues_section=code_section,
     )
 
-    return context
-
 
 def _format_repos(repos: list["Repository"]) -> str:
     """Formatta la lista dei repository."""
     sections = []
     for repo in repos:
-        sections.append(REPO_ITEM_TEMPLATE.format(
-            name=repo.name,
-            repo_type=repo.repo_type or "unknown",
-            local_path=repo.local_path or "N/A",
-            project_name=repo.project_name or "N/A",
-            url=repo.url,
-        ))
+        sections.append(
+            REPO_ITEM_TEMPLATE.format(
+                name=repo.name,
+                repo_type=repo.repo_type or "unknown",
+                local_path=repo.local_path or "N/A",
+                project_name=repo.project_name or "N/A",
+                url=repo.url,
+            )
+        )
     return "\n".join(sections)
 
 
@@ -245,20 +254,22 @@ def _format_linear_issues(issues: list["LinearIssue"]) -> str:
     for issue in issues:
         # Get linked repos
         repo_names = []
-        if hasattr(issue, 'repository_links'):
+        if hasattr(issue, "repository_links"):
             for link in issue.repository_links:
                 if link.repository:
                     repo_names.append(link.repository.name)
 
-        sections.append(LINEAR_ISSUE_TEMPLATE.format(
-            identifier=issue.linear_identifier or issue.linear_id[:8],
-            title=issue.title[:60] + "..." if len(issue.title) > 60 else issue.title,
-            turbowrap_state=issue.turbowrap_state or "unknown",
-            linear_state=issue.linear_state_name or "N/A",
-            team_name=issue.linear_team_name or issue.linear_team_id or "N/A",
-            repos=", ".join(repo_names) if repo_names else "Nessuno",
-            url=issue.linear_url or "N/A",
-        ))
+        sections.append(
+            LINEAR_ISSUE_TEMPLATE.format(
+                identifier=issue.linear_identifier or issue.linear_id[:8],
+                title=issue.title[:60] + "..." if len(issue.title) > 60 else issue.title,
+                turbowrap_state=issue.turbowrap_state or "unknown",
+                linear_state=issue.linear_state_name or "N/A",
+                team_name=issue.linear_team_name or issue.linear_team_id or "N/A",
+                repos=", ".join(repo_names) if repo_names else "Nessuno",
+                url=issue.linear_url or "N/A",
+            )
+        )
     return "\n".join(sections)
 
 
@@ -266,15 +277,17 @@ def _format_code_issues(issues: list["Issue"]) -> str:
     """Formatta la lista delle issue di code review."""
     sections = []
     for issue in issues:
-        sections.append(CODE_ISSUE_TEMPLATE.format(
-            issue_code=issue.issue_code,
-            title=issue.title[:50] + "..." if len(issue.title) > 50 else issue.title,
-            severity=issue.severity,
-            category=issue.category or "N/A",
-            file=issue.file or "N/A",
-            line=issue.line or 0,
-            status=issue.status,
-        ))
+        sections.append(
+            CODE_ISSUE_TEMPLATE.format(
+                issue_code=issue.issue_code,
+                title=issue.title[:50] + "..." if len(issue.title) > 50 else issue.title,
+                severity=issue.severity,
+                category=issue.category or "N/A",
+                file=issue.file or "N/A",
+                line=issue.line or 0,
+                status=issue.status,
+            )
+        )
     return "\n".join(sections)
 
 
@@ -321,7 +334,7 @@ def get_context_for_session(
     Returns:
         Context string
     """
-    from ..db.models import Repository, LinearIssue
+    from ..db.models import LinearIssue, Repository
 
     # Base context
     context = generate_context(db)
@@ -332,7 +345,8 @@ def get_context_for_session(
     if repo_id:
         repo = db.query(Repository).filter(Repository.id == repo_id).first()
         if repo:
-            extras.append(f"""
+            extras.append(
+                f"""
 ## Repository Corrente
 
 Stai lavorando su **{repo.name}** ({repo.repo_type or 'generic'}).
@@ -342,34 +356,40 @@ Stai lavorando su **{repo.name}** ({repo.repo_type or 'generic'}).
 - **URL**: {repo.url}
 
 Quando modifichi file, usa path relativi a: `{repo.local_path}`
-""")
+"""
+            )
             # Load structure documentation if available
             if repo.local_path:
                 structure_doc = load_structure_documentation(
                     repo.local_path,
-                    workspace_path=getattr(repo, 'workspace_path', None),
+                    workspace_path=getattr(repo, "workspace_path", None),
                 )
                 if structure_doc:
                     # Wrap XML in semantic tags for better LLM parsing
                     if structure_doc.strip().startswith("<?xml"):
-                        extras.append(f"""
+                        extras.append(
+                            f"""
 ## Repository Structure
 
 <repository-structure>
 {structure_doc}
 </repository-structure>
-""")
+"""
+                        )
                     else:
-                        extras.append(f"""
+                        extras.append(
+                            f"""
 ## Repository Structure
 
 {structure_doc}
-""")
+"""
+                        )
 
     if linear_issue_id:
         issue = db.query(LinearIssue).filter(LinearIssue.id == linear_issue_id).first()
         if issue:
-            extras.append(f"""
+            extras.append(
+                f"""
 ## Issue Linear Corrente
 
 **{issue.linear_identifier}**: {issue.title}
@@ -380,14 +400,17 @@ Quando modifichi file, usa path relativi a: `{repo.local_path}`
 **Stato TurboWrap**: {issue.turbowrap_state}
 **Stato Linear**: {issue.linear_state_name or 'N/A'}
 **URL**: {issue.linear_url}
-""")
+"""
+            )
 
             # Add analysis if available
             if issue.analysis_summary:
-                extras.append(f"""
+                extras.append(
+                    f"""
 **Analisi precedente**:
 {issue.analysis_summary[:500]}...
-""")
+"""
+                )
 
     if extras:
         context += "\n\n---\n" + "\n".join(extras)

@@ -105,7 +105,7 @@ def create_task(
     if data.type not in registry.available_tasks:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown task type: {data.type}. Available: {registry.available_tasks}"
+            detail=f"Unknown task type: {data.type}. Available: {registry.available_tasks}",
         )
 
     # Create task record
@@ -287,8 +287,7 @@ async def cancel_task(
 
     if task.status not in ("pending", "running"):
         raise HTTPException(
-            status_code=400,
-            detail=f"Cannot cancel task with status: {task.status}"
+            status_code=400, detail=f"Cannot cancel task with status: {task.status}"
         )
 
     # Try to remove from queue (for pending tasks)
@@ -331,21 +330,17 @@ async def cancel_task(
 
 class ReviewStreamRequest(BaseModel):
     """Request body for streaming review."""
+
     mode: Literal["initial", "diff"] = Field(
         default="initial",
-        description="Review mode: 'initial' for .llms/structure.xml only, 'diff' for changed files"
+        description="Review mode: 'initial' for .llms/structure.xml only, 'diff' for changed files",
     )
-    challenger_enabled: bool = Field(
-        default=True,
-        description="Enable challenger validation loop"
-    )
+    challenger_enabled: bool = Field(default=True, description="Enable challenger validation loop")
     include_functional: bool = Field(
-        default=True,
-        description="Include functional analyst reviewer"
+        default=True, description="Include functional analyst reviewer"
     )
     resume: bool = Field(
-        default=False,
-        description="Resume from checkpoints of the most recent failed review"
+        default=False, description="Resume from checkpoints of the most recent failed review"
     )
 
 
@@ -390,10 +385,8 @@ async def stream_review(
 
 class RestartReviewerRequest(BaseModel):
     """Request body for restarting a single reviewer."""
-    challenger_enabled: bool = Field(
-        default=True,
-        description="Enable challenger validation loop"
-    )
+
+    challenger_enabled: bool = Field(default=True, description="Enable challenger validation loop")
 
 
 @router.post("/{task_id}/review/restart/{reviewer_name}")
@@ -432,14 +425,18 @@ async def restart_reviewer(
 
     # Validate reviewer name (support both old and new naming conventions)
     valid_reviewers = [
-        "reviewer_be", "reviewer_be_architecture", "reviewer_be_quality",
-        "reviewer_fe", "reviewer_fe_architecture", "reviewer_fe_quality",
-        "analyst_func"
+        "reviewer_be",
+        "reviewer_be_architecture",
+        "reviewer_be_quality",
+        "reviewer_fe",
+        "reviewer_fe_architecture",
+        "reviewer_fe_quality",
+        "analyst_func",
     ]
     if reviewer_name not in valid_reviewers:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid reviewer: {reviewer_name}. Must be one of: {valid_reviewers}"
+            detail=f"Invalid reviewer: {reviewer_name}. Must be one of: {valid_reviewers}",
         )
 
     # Get task
@@ -460,18 +457,21 @@ async def restart_reviewer(
         """Run single reviewer restart in background."""
         logger.info(f"[RESTART] run_reviewer_restart called with session={session}")
         from ...db.session import get_session_local
+
         SessionLocal = get_session_local()
         restart_db = SessionLocal()
 
         try:
             logger.info(f"[RESTART] Starting restart for {reviewer_name}")
             # Emit started event
-            session.add_event(ProgressEvent(
-                type=ProgressEventType.REVIEWER_STARTED,
-                reviewer_name=reviewer_name,
-                reviewer_display_name=display_name,
-                message=f"Restarting {display_name}...",
-            ))
+            session.add_event(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STARTED,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    message=f"Restarting {display_name}...",
+                )
+            )
 
             # Build review context
             local_path = repo.local_path
@@ -495,27 +495,78 @@ async def restart_reviewer(
             # Set workspace_path for monorepo scope limiting
             if repo.workspace_path:
                 context.workspace_path = repo.workspace_path
-                logger.info(f"[RESTART] Monorepo mode: limiting review to workspace '{repo.workspace_path}'")
+                logger.info(
+                    f"[RESTART] Monorepo mode: limiting review to workspace '{repo.workspace_path}'"
+                )
 
             # Scan directory for files to review (respect workspace_path for monorepos)
             exclude_dirs = {
-                ".git", "node_modules", "__pycache__", ".venv", "venv",
-                ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
-                "coverage", ".tox", "htmlcov", ".reviews",
+                ".git",
+                "node_modules",
+                "__pycache__",
+                ".venv",
+                "venv",
+                ".mypy_cache",
+                ".pytest_cache",
+                "dist",
+                "build",
+                ".next",
+                "coverage",
+                ".tox",
+                "htmlcov",
+                ".reviews",
             }
             text_extensions = {
-                ".py", ".js", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
-                ".html", ".css", ".scss", ".less", ".json", ".yaml", ".yml",
-                ".sh", ".bash", ".zsh",
-                ".sql", ".graphql", ".prisma",
-                ".go", ".rs", ".java", ".kt", ".swift", ".c", ".cpp", ".h",
-                ".rb", ".php", ".ex", ".exs", ".erl", ".hs", ".ml", ".scala",
+                ".py",
+                ".js",
+                ".ts",
+                ".tsx",
+                ".jsx",
+                ".vue",
+                ".svelte",
+                ".html",
+                ".css",
+                ".scss",
+                ".less",
+                ".json",
+                ".yaml",
+                ".yml",
+                ".sh",
+                ".bash",
+                ".zsh",
+                ".sql",
+                ".graphql",
+                ".prisma",
+                ".go",
+                ".rs",
+                ".java",
+                ".kt",
+                ".swift",
+                ".c",
+                ".cpp",
+                ".h",
+                ".rb",
+                ".php",
+                ".ex",
+                ".exs",
+                ".erl",
+                ".hs",
+                ".ml",
+                ".scala",
             }
             # Exclude config/lock files that shouldn't be reviewed
             exclude_files = {
-                "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
-                "pyproject.toml", "poetry.lock", "requirements.txt",
-                "tsconfig.json", "tsconfig.build.json", ".eslintrc.js", ".prettierrc",
+                "package.json",
+                "package-lock.json",
+                "pnpm-lock.yaml",
+                "yarn.lock",
+                "pyproject.toml",
+                "poetry.lock",
+                "requirements.txt",
+                "tsconfig.json",
+                "tsconfig.build.json",
+                ".eslintrc.js",
+                ".prettierrc",
             }
 
             files = []
@@ -549,32 +600,40 @@ async def restart_reviewer(
                 try:
                     content = xml_path.read_text(encoding="utf-8")
                     context.structure_docs["structure.xml"] = content
-                    logger.info(f"[RESTART] Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)")
+                    logger.info(
+                        f"[RESTART] Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)"
+                    )
                 except Exception as e:
                     logger.warning(f"[RESTART] Failed to read {xml_path}: {e}")
             else:
                 # Auto-generate structure.xml if missing - GeminiClient is REQUIRED
-                logger.error(f"[RESTART] CRITICAL: {xml_path.relative_to(context.repo_path)} NOT FOUND - attempting auto-generation...")
+                logger.error(
+                    f"[RESTART] CRITICAL: {xml_path.relative_to(context.repo_path)} NOT FOUND - attempting auto-generation..."
+                )
 
                 # Notify user via WebSocket that structure generation is starting
-                session.add_event(ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STREAMING,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                    content="⚙️ Generating repository structure analysis (this may take 1-2 minutes)...\n",
-                ))
+                session.add_event(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        content="⚙️ Generating repository structure analysis (this may take 1-2 minutes)...\n",
+                    )
+                )
 
                 try:
-                    from ...tools.structure_generator import StructureGenerator
                     from ...llm.gemini import GeminiClient
+                    from ...tools.structure_generator import StructureGenerator
 
                     # GeminiClient is REQUIRED - fail loudly if not available
-                    logger.info(f"[RESTART] Creating GeminiClient...")
+                    logger.info("[RESTART] Creating GeminiClient...")
                     gemini_client = GeminiClient()
                     logger.info("[RESTART] GeminiClient OK")
 
                     # Generate structure.xml
-                    logger.info(f"[RESTART] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}")
+                    logger.info(
+                        f"[RESTART] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}"
+                    )
                     generator = StructureGenerator(
                         str(context.repo_path),
                         workspace_path=context.workspace_path,
@@ -583,70 +642,89 @@ async def restart_reviewer(
                     logger.info(f"[RESTART] scan_root={generator.scan_root}")
 
                     # Send progress update
-                    session.add_event(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        content=f"📂 Scanning {generator.scan_root}...\n",
-                    ))
+                    session.add_event(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_STREAMING,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            content=f"📂 Scanning {generator.scan_root}...\n",
+                        )
+                    )
 
                     generated_files = generator.generate(verbose=True, formats=["xml"])
 
                     if not generated_files:
-                        raise RuntimeError(f"StructureGenerator returned empty list! scan_root={generator.scan_root}")
+                        raise RuntimeError(
+                            f"StructureGenerator returned empty list! scan_root={generator.scan_root}"
+                        )
 
-                    logger.info(f"[RESTART] Generated {len(generated_files)} files: {generated_files}")
+                    logger.info(
+                        f"[RESTART] Generated {len(generated_files)} files: {generated_files}"
+                    )
 
                     # Reload after generation
                     if xml_path.exists():
                         content = xml_path.read_text(encoding="utf-8")
                         context.structure_docs["structure.xml"] = content
-                        logger.info(f"[RESTART] SUCCESS: Loaded structure.xml ({len(content)} chars)")
+                        logger.info(
+                            f"[RESTART] SUCCESS: Loaded structure.xml ({len(content)} chars)"
+                        )
                         # Notify success
-                        session.add_event(ProgressEvent(
-                            type=ProgressEventType.REVIEWER_STREAMING,
-                            reviewer_name=reviewer_name,
-                            reviewer_display_name=display_name,
-                            content=f"✅ Structure analysis complete ({len(content):,} bytes)\n\n",
-                        ))
+                        session.add_event(
+                            ProgressEvent(
+                                type=ProgressEventType.REVIEWER_STREAMING,
+                                reviewer_name=reviewer_name,
+                                reviewer_display_name=display_name,
+                                content=f"✅ Structure analysis complete ({len(content):,} bytes)\n\n",
+                            )
+                        )
                     else:
-                        raise RuntimeError(f"Generation completed but file NOT FOUND at {xml_path}! Generated files: {generated_files}")
+                        raise RuntimeError(
+                            f"Generation completed but file NOT FOUND at {xml_path}! Generated files: {generated_files}"
+                        )
 
                 except Exception as e:
                     import traceback
-                    logger.error(f"[RESTART] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
+
+                    logger.error("[RESTART] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
                     logger.error(f"[RESTART] Error: {e}")
                     logger.error(f"[RESTART] Traceback:\n{traceback.format_exc()}")
                     # Notify failure
-                    session.add_event(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        content=f"❌ Structure generation failed: {e}\n",
-                    ))
+                    session.add_event(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_STREAMING,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            content=f"❌ Structure generation failed: {e}\n",
+                        )
+                    )
                     # DON'T swallow the error - let it propagate so the user sees it
                     raise
 
             # Create progress callbacks
             async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
-                session.add_event(ProgressEvent(
-                    type=ProgressEventType.REVIEWER_ITERATION,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                    iteration=iteration,
-                    max_iterations=5,
-                    satisfaction_score=satisfaction,
-                    issues_found=issues_count,
-                    message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
-                ))
+                session.add_event(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_ITERATION,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        iteration=iteration,
+                        max_iterations=5,
+                        satisfaction_score=satisfaction,
+                        issues_found=issues_count,
+                        message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
+                    )
+                )
 
             async def on_content(content: str):
-                session.add_event(ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STREAMING,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                    content=content,
-                ))
+                session.add_event(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        content=content,
+                    )
+                )
 
             # Run challenger loop
             loop = ChallengerLoop()
@@ -660,10 +738,7 @@ async def restart_reviewer(
             # Delete old issues from this reviewer
             old_issues = (
                 restart_db.query(Issue)
-                .filter(
-                    Issue.task_id == task_id,
-                    Issue.flagged_by.contains([reviewer_name])
-                )
+                .filter(Issue.task_id == task_id, Issue.flagged_by.contains([reviewer_name]))
                 .all()
             )
             for old_issue in old_issues:
@@ -675,8 +750,16 @@ async def restart_reviewer(
                     task_id=task_id,
                     repository_id=task.repository_id,
                     issue_code=issue.id,
-                    severity=issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity),
-                    category=issue.category.value if hasattr(issue.category, 'value') else str(issue.category),
+                    severity=(
+                        issue.severity.value
+                        if hasattr(issue.severity, "value")
+                        else str(issue.severity)
+                    ),
+                    category=(
+                        issue.category.value
+                        if hasattr(issue.category, "value")
+                        else str(issue.category)
+                    ),
                     rule=issue.rule,
                     file=issue.file,
                     line=issue.line,
@@ -695,28 +778,33 @@ async def restart_reviewer(
             restart_db.commit()
 
             # Emit completed
-            session.add_event(ProgressEvent(
-                type=ProgressEventType.REVIEWER_COMPLETED,
-                reviewer_name=reviewer_name,
-                reviewer_display_name=display_name,
-                iteration=result.iterations,
-                satisfaction_score=result.final_satisfaction,
-                issues_found=len(result.final_review.issues),
-                message=f"{display_name} restarted successfully with {len(result.final_review.issues)} issues",
-                model_usage=[m.model_dump() for m in result.final_review.model_usage],
-            ))
+            session.add_event(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_COMPLETED,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    iteration=result.iterations,
+                    satisfaction_score=result.final_satisfaction,
+                    issues_found=len(result.final_review.issues),
+                    message=f"{display_name} restarted successfully with {len(result.final_review.issues)} issues",
+                    model_usage=[m.model_dump() for m in result.final_review.model_usage],
+                )
+            )
 
         except Exception as e:
             import traceback
+
             logger.error(f"[RESTART] Exception in run_reviewer_restart: {e}")
             logger.error(f"[RESTART] Traceback: {traceback.format_exc()}")
-            session.add_event(ProgressEvent(
-                type=ProgressEventType.REVIEWER_ERROR,
-                reviewer_name=reviewer_name,
-                reviewer_display_name=display_name,
-                error=str(e),
-                message=f"{display_name} restart failed: {str(e)[:100]}",
-            ))
+            session.add_event(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_ERROR,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    error=str(e),
+                    message=f"{display_name} restart failed: {str(e)[:100]}",
+                )
+            )
 
         finally:
             restart_db.close()
@@ -777,11 +865,7 @@ def get_task_checkpoints(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    checkpoints = (
-        db.query(ReviewCheckpoint)
-        .filter(ReviewCheckpoint.task_id == task_id)
-        .all()
-    )
+    checkpoints = db.query(ReviewCheckpoint).filter(ReviewCheckpoint.task_id == task_id).all()
 
     return {
         "task_id": task_id,
@@ -797,9 +881,8 @@ def get_task_checkpoints(
             }
             for cp in checkpoints
         ],
-        "resumable": task.status == "failed" and any(
-            cp.status == "completed" for cp in checkpoints
-        ),
+        "resumable": task.status == "failed"
+        and any(cp.status == "completed" for cp in checkpoints),
     }
 
 

@@ -29,15 +29,14 @@ Usage:
 
 import asyncio
 import codecs
-import json
 import logging
 import os
 import tempfile
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Callable, Awaitable
 
 from .models import CLIType, SessionStatus
 
@@ -194,7 +193,9 @@ class CLIProcessManager:
             with os.fdopen(fd, "w") as f:
                 f.write(combined_prompt)
             args.extend(["--system-prompt-file", str(temp_prompt_file)])
-            logger.info(f"[CLAUDE] System prompt file: {temp_prompt_file} ({len(combined_prompt)} chars)")
+            logger.info(
+                f"[CLAUDE] System prompt file: {temp_prompt_file} ({len(combined_prompt)} chars)"
+            )
 
         # Add MCP config if provided
         if mcp_config and mcp_config.exists():
@@ -228,7 +229,9 @@ class CLIProcessManager:
         async with self._lock:
             self._processes[session_id] = cli_proc
 
-        logger.info(f"[CLAUDE] Spawned process PID={process.pid} for session {session_id} (claude_session={claude_session_id})")
+        logger.info(
+            f"[CLAUDE] Spawned process PID={process.pid} for session {session_id} (claude_session={claude_session_id})"
+        )
         return cli_proc
 
     async def spawn_gemini(
@@ -264,7 +267,7 @@ class CLIProcessManager:
                 raise RuntimeError(f"Max processes ({self._max_processes}) reached")
 
         # Build environment
-        env = os.environ.copy()
+        os.environ.copy()
 
         # Create a placeholder process (Gemini starts fresh per message)
         # We'll create the actual process in send_message
@@ -282,7 +285,9 @@ class CLIProcessManager:
         if context:
             cli_proc._gemini_context = context
             cli_proc._context_used = False
-            logger.info(f"[GEMINI] Context stored: {len(context)} chars (will prepend to first msg)")
+            logger.info(
+                f"[GEMINI] Context stored: {len(context)} chars (will prepend to first msg)"
+            )
 
         async with self._lock:
             self._processes[session_id] = cli_proc
@@ -630,14 +635,16 @@ class CLIProcessManager:
 
         for session_id, proc in self._processes.items():
             age_seconds = (now - proc.started_at).total_seconds()
-            stats["processes"].append({
-                "session_id": session_id,
-                "cli_type": proc.cli_type.value,
-                "pid": proc.pid,
-                "status": proc.status.value,
-                "age_hours": round(age_seconds / 3600, 2),
-                "model": proc.model,
-            })
+            stats["processes"].append(
+                {
+                    "session_id": session_id,
+                    "cli_type": proc.cli_type.value,
+                    "pid": proc.pid,
+                    "status": proc.status.value,
+                    "age_hours": round(age_seconds / 3600, 2),
+                    "model": proc.model,
+                }
+            )
 
         return stats
 

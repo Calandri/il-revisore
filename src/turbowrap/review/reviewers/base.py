@@ -183,13 +183,15 @@ class BaseReviewer(ABC):
 
     def _timed_execution(self, func):
         """Decorator to time execution."""
+
         async def wrapper(*args, **kwargs):
             start = time.time()
             result = await func(*args, **kwargs)
             duration = time.time() - start
-            if hasattr(result, 'duration_seconds'):
+            if hasattr(result, "duration_seconds"):
                 result.duration_seconds = duration
             return result
+
         return wrapper
 
     def load_agent_prompt(self, agents_dir: str | Path) -> str:

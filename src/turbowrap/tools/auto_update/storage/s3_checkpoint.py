@@ -224,7 +224,9 @@ class S3CheckpointManager:
                 status["steps"][step_name] = {
                     "status": checkpoint.status.value,
                     "started_at": checkpoint.started_at.isoformat(),
-                    "completed_at": checkpoint.completed_at.isoformat() if checkpoint.completed_at else None,
+                    "completed_at": (
+                        checkpoint.completed_at.isoformat() if checkpoint.completed_at else None
+                    ),
                     "error": checkpoint.error,
                 }
 

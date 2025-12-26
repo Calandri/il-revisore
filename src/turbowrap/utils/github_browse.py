@@ -1,7 +1,5 @@
 """GitHub repository browsing utilities."""
 
-from typing import Any
-
 from github import Github, GithubException
 from pydantic import BaseModel
 

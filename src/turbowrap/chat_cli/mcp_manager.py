@@ -336,15 +336,13 @@ class MCPManager:
             return None
 
         # Filter to only enabled servers
-        filtered = {
-            name: config for name, config in servers.items() if name in enabled_servers
-        }
+        filtered = {name: config for name, config in servers.items() if name in enabled_servers}
 
         if not filtered:
             return None
 
         # Generate temporary config file
-        temp_config = self._claude_dir / f"mcp_session.json"
+        temp_config = self._claude_dir / "mcp_session.json"
         self.ensure_claude_dir()
 
         try:

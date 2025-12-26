@@ -146,21 +146,15 @@ class FinalReport(BaseModel):
         description="Challenger loop metadata",
     )
 
-    issues: list[Issue] = Field(
-        default_factory=list, description="All deduplicated issues"
-    )
+    issues: list[Issue] = Field(default_factory=list, description="All deduplicated issues")
 
     checklists: dict[str, ChecklistResult] = Field(
         default_factory=dict, description="Aggregated checklist results"
     )
 
-    metrics: ReviewMetrics = Field(
-        default_factory=ReviewMetrics, description="Aggregated metrics"
-    )
+    metrics: ReviewMetrics = Field(default_factory=ReviewMetrics, description="Aggregated metrics")
 
-    next_steps: list[NextStep] = Field(
-        default_factory=list, description="Prioritized action items"
-    )
+    next_steps: list[NextStep] = Field(default_factory=list, description="Prioritized action items")
 
     evaluation: RepositoryEvaluation | None = Field(
         None, description="Final repository evaluation scores (0-100)"

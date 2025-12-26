@@ -57,9 +57,7 @@ class MissedIssue(BaseModel):
     file: str | None = Field(None, description="File where issue exists")
     lines: str | None = Field(None, description="Line range (e.g., '45-62')")
     why_important: str = Field(..., description="Why this issue matters")
-    suggested_severity: str | None = Field(
-        None, description="Suggested severity level"
-    )
+    suggested_severity: str | None = Field(None, description="Suggested severity level")
 
 
 class Challenge(BaseModel):
@@ -72,9 +70,7 @@ class Challenge(BaseModel):
     )
     challenge: str = Field(..., description="The challenge statement")
     reasoning: str = Field(..., description="Detailed reasoning for the challenge")
-    suggested_change: str | None = Field(
-        None, description="What the reviewer should change"
-    )
+    suggested_change: str | None = Field(None, description="What the reviewer should change")
 
 
 class ChallengerFeedback(BaseModel):

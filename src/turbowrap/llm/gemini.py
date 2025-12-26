@@ -27,7 +27,8 @@ class GeminiClient(BaseAgent):
         api_key = settings.agents.effective_google_key
         if not api_key:
             # Fallback to AWS Secrets Manager
-            from turbowrap.utils.aws_secrets import get_google_api_key, get_gemini_api_key
+            from turbowrap.utils.aws_secrets import get_gemini_api_key, get_google_api_key
+
             api_key = get_google_api_key() or get_gemini_api_key()
 
         if not api_key:
@@ -67,7 +68,12 @@ class GeminiClient(BaseAgent):
         # Gemini doesn't have native system prompt, so we simulate it
         if system_prompt:
             contents.append({"role": "user", "parts": [{"text": system_prompt}]})
-            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions."}]})
+            contents.append(
+                {
+                    "role": "model",
+                    "parts": [{"text": "Understood. I will follow these instructions."}],
+                }
+            )
 
         contents.append({"role": "user", "parts": [{"text": prompt}]})
 
@@ -94,7 +100,12 @@ class GeminiClient(BaseAgent):
 
         if system_prompt:
             contents.append({"role": "user", "parts": [{"text": system_prompt}]})
-            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions."}]})
+            contents.append(
+                {
+                    "role": "model",
+                    "parts": [{"text": "Understood. I will follow these instructions."}],
+                }
+            )
 
         contents.append({"role": "user", "parts": [{"text": prompt}]})
 

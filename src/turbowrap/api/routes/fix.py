@@ -40,11 +40,13 @@ def _load_agent(agent_path: Path) -> str:
     # Strip YAML frontmatter (--- ... ---)
     if content.startswith("---"):
         import re
+
         end_match = re.search(r"\n---\n", content[3:])
         if end_match:
-            content = content[3 + end_match.end():]
+            content = content[3 + end_match.end() :]
 
     return content.strip()
+
 
 # Store for pending clarifications (session_id -> Question)
 _pending_clarifications: dict[str, ClarificationQuestion] = {}
@@ -57,6 +59,7 @@ IDEMPOTENCY_TTL_SECONDS = 3600  # 1 hour
 @dataclass
 class IdempotencyEntry:
     """Entry for tracking idempotent requests."""
+
     session_id: str
     status: str  # "in_progress", "completed", "failed"
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -121,10 +124,7 @@ class IdempotencyStore:
 
         with self._lock:
             # Clean up expired entries
-            expired_keys = [
-                k for k, v in self._store.items()
-                if v.created_at < cutoff
-            ]
+            expired_keys = [k for k, v in self._store.items() if v.created_at < cutoff]
             for k in expired_keys:
                 del self._store[k]
 
@@ -184,16 +184,18 @@ class FixStartRequest(BaseModel):
 
     # Branch handling - allows continuing on existing branch instead of creating new one
     use_existing_branch: bool = Field(
-        default=False, description="If True, use existing branch instead of creating new one from main"
+        default=False,
+        description="If True, use existing branch instead of creating new one from main",
     )
     existing_branch_name: str | None = Field(
-        default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
+        default=None,
+        description="Name of existing branch to use (required if use_existing_branch=True)",
     )
 
     # Force restart - bypasses idempotency check for stuck sessions
     force: bool = Field(
         default=False,
-        description="Force restart even if a session is already in progress (use when session is stuck)"
+        description="Force restart even if a session is already in progress (use when session is stuck)",
     )
 
 
@@ -332,7 +334,7 @@ async def start_fix(
     x_idempotency_key: str | None = Header(
         default=None,
         description="Optional client-provided idempotency key. "
-        "If not provided, a key is generated from issue IDs."
+        "If not provided, a key is generated from issue IDs.",
     ),
 ):
     """
@@ -451,12 +453,14 @@ def list_active_sessions():
     with _idempotency_store._lock:
         for _key, entry in _idempotency_store._store.items():
             if entry.status == "in_progress":
-                sessions.append(ActiveSessionInfo(
-                    session_id=entry.session_id,
-                    status=entry.status,
-                    started_at=entry.created_at,
-                    is_stale=entry.created_at < stale_cutoff,
-                ))
+                sessions.append(
+                    ActiveSessionInfo(
+                        session_id=entry.session_id,
+                        status=entry.status,
+                        started_at=entry.created_at,
+                        is_stale=entry.created_at < stale_cutoff,
+                    )
+                )
 
     return ActiveSessionsResponse(sessions=sessions, total=len(sessions))
 
@@ -553,11 +557,15 @@ def get_pending_branches(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     # Find issues that are "resolved" with a fix_branch set (not merged yet)
-    resolved_issues = db.query(Issue).filter(
-        Issue.repository_id == repository_id,
-        Issue.status == IssueStatus.RESOLVED.value,
-        Issue.fix_branch.isnot(None),
-    ).all()
+    resolved_issues = (
+        db.query(Issue)
+        .filter(
+            Issue.repository_id == repository_id,
+            Issue.status == IssueStatus.RESOLVED.value,
+            Issue.fix_branch.isnot(None),
+        )
+        .all()
+    )
 
     if not resolved_issues:
         return PendingBranchesResponse(has_pending=False, branches=[])
@@ -573,14 +581,16 @@ def get_pending_branches(
     # Build response
     branches = []
     for branch_name, issues in branches_map.items():
-        branches.append(PendingBranchInfo(
-            branch_name=branch_name,
-            repository_id=repository_id,
-            repository_name=repo.name,
-            issues_count=len(issues),
-            issue_codes=[i.issue_code for i in issues],
-            created_at=min(i.fixed_at for i in issues if i.fixed_at) or datetime.utcnow(),
-        ))
+        branches.append(
+            PendingBranchInfo(
+                branch_name=branch_name,
+                repository_id=repository_id,
+                repository_name=repo.name,
+                issues_count=len(issues),
+                issue_codes=[i.issue_code for i in issues],
+                created_at=min(i.fixed_at for i in issues if i.fixed_at) or datetime.utcnow(),
+            )
+        )
 
     return PendingBranchesResponse(
         has_pending=len(branches) > 0,

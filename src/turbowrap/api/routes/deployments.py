@@ -2,7 +2,7 @@
 
 import time
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal, cast
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -13,7 +13,7 @@ from ...config import get_settings
 router = APIRouter(prefix="/deployments", tags=["deployments"])
 
 # Cache for GitHub API responses (avoid rate limits)
-_cache: dict = {"data": None, "timestamp": 0}
+_cache: dict[str, Any] = {"data": None, "timestamp": 0}
 CACHE_TTL_SECONDS = 30
 
 # GitHub repo info
@@ -24,6 +24,7 @@ WORKFLOW_NAME = "Deploy to AWS"
 
 class DeploymentRun(BaseModel):
     """Single deployment run."""
+
     id: int
     commit_sha: str
     commit_short: str
@@ -40,6 +41,7 @@ class DeploymentRun(BaseModel):
 
 class DeploymentStatus(BaseModel):
     """Complete deployment status."""
+
     current: DeploymentRun | None  # Most recent successful deploy
     in_progress: DeploymentRun | None  # Currently running deploy
     recent: list[DeploymentRun]  # Last 5 deploys
@@ -73,7 +75,7 @@ def _time_ago(dt_str: str | None) -> str:
         return "N/A"
 
 
-def _parse_run(run: dict) -> DeploymentRun:
+def _parse_run(run: dict[str, Any]) -> DeploymentRun:
     """Parse GitHub Actions run to DeploymentRun."""
     started_at = run.get("run_started_at") or run.get("created_at")
     completed_at = run.get("updated_at") if run.get("status") == "completed" else None
@@ -123,8 +125,9 @@ async def _fetch_deployments() -> DeploymentStatus:
 
     # Check cache
     now = time.time()
-    if _cache["data"] and (now - _cache["timestamp"]) < CACHE_TTL_SECONDS:
-        return _cache["data"]
+    cached_data = _cache["data"]
+    if cached_data is not None and (now - _cache["timestamp"]) < CACHE_TTL_SECONDS:
+        return cast(DeploymentStatus, cached_data)
 
     headers = {
         "Authorization": f"Bearer {settings.agents.github_token}",
@@ -133,7 +136,7 @@ async def _fetch_deployments() -> DeploymentStatus:
     }
 
     url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/runs"
-    params = {
+    params: dict[str, str | int] = {
         "per_page": 10,
         "event": "push",  # Only push-triggered deploys
     }
@@ -146,15 +149,14 @@ async def _fetch_deployments() -> DeploymentStatus:
         if response.status_code == 404:
             raise HTTPException(status_code=404, detail="Repository not found")
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=f"GitHub API error: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code, detail=f"GitHub API error: {response.text}"
+            )
 
         data = response.json()
 
     # Filter for deploy workflow only
-    deploy_runs = [
-        run for run in data.get("workflow_runs", [])
-        if run.get("name") == WORKFLOW_NAME
-    ]
+    deploy_runs = [run for run in data.get("workflow_runs", []) if run.get("name") == WORKFLOW_NAME]
 
     # Parse runs
     parsed_runs = [_parse_run(run) for run in deploy_runs[:10]]
@@ -186,13 +188,13 @@ async def _fetch_deployments() -> DeploymentStatus:
 
 
 @router.get("/status", response_model=DeploymentStatus)
-async def get_deployment_status():
+async def get_deployment_status() -> DeploymentStatus:
     """Get current deployment status and recent history."""
     return await _fetch_deployments()
 
 
 @router.get("/current")
-async def get_current_deployment():
+async def get_current_deployment() -> dict[str, Any]:
     """Get just the current production deployment info."""
     status = await _fetch_deployments()
     return {
@@ -202,7 +204,7 @@ async def get_current_deployment():
 
 
 @router.post("/trigger")
-async def trigger_deployment():
+async def trigger_deployment() -> dict[str, str]:
     """Trigger a new deployment via workflow_dispatch."""
     settings = get_settings()
 
@@ -227,17 +229,15 @@ async def trigger_deployment():
             _cache["data"] = None
             _cache["timestamp"] = 0
             return {"status": "ok", "message": "Deploy triggered successfully"}
-        elif response.status_code == 404:
+        if response.status_code == 404:
             raise HTTPException(status_code=404, detail="Workflow not found")
-        else:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Failed to trigger deploy: {response.text}"
-            )
+        raise HTTPException(
+            status_code=response.status_code, detail=f"Failed to trigger deploy: {response.text}"
+        )
 
 
 @router.post("/rollback/{commit_sha}")
-async def rollback_to_commit(commit_sha: str):
+async def rollback_to_commit(commit_sha: str) -> dict[str, str]:
     """Rollback to a specific commit by triggering a deploy with that SHA.
 
     Note: This requires the workflow to support workflow_dispatch with inputs,
@@ -273,15 +273,13 @@ async def rollback_to_commit(commit_sha: str):
             _cache["timestamp"] = 0
             return {
                 "status": "ok",
-                "message": f"Rollback to {commit_sha[:7]} triggered successfully"
+                "message": f"Rollback to {commit_sha[:7]} triggered successfully",
             }
-        elif response.status_code == 422:
+        if response.status_code == 422:
             raise HTTPException(
                 status_code=422,
-                detail="Cannot rollback - commit not found or workflow doesn't support this ref"
+                detail="Cannot rollback - commit not found or workflow doesn't support this ref",
             )
-        else:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Failed to trigger rollback: {response.text}"
-            )
+        raise HTTPException(
+            status_code=response.status_code, detail=f"Failed to trigger rollback: {response.text}"
+        )

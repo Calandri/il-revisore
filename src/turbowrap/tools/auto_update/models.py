@@ -23,7 +23,9 @@ class Functionality(BaseModel):
     description: str = Field(..., description="2-3 sentence description")
     category: str = Field(..., description="One of: review, fix, linear, cli, api, core, tools")
     files: list[str] = Field(default_factory=list, description="Main files involved")
-    dependencies: list[str] = Field(default_factory=list, description="Dependencies on other functionalities")
+    dependencies: list[str] = Field(
+        default_factory=list, description="Dependencies on other functionalities"
+    )
     maturity: str = Field(default="stable", description="One of: stable, beta, experimental")
 
 
@@ -76,7 +78,9 @@ class ProposedFeature(BaseModel):
     effort_estimate: str = Field(..., description="One of: small, medium, large, xlarge")
     impact_estimate: str = Field(..., description="One of: low, medium, high, critical")
     priority_score: float = Field(default=0, ge=0, le=100, description="Calculated priority 0-100")
-    related_existing: list[str] = Field(default_factory=list, description="Related existing functionality IDs")
+    related_existing: list[str] = Field(
+        default_factory=list, description="Related existing functionality IDs"
+    )
     human_questions: list[str] = Field(default_factory=list, description="3-5 HITL questions")
 
 

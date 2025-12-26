@@ -2,12 +2,14 @@
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from .config import get_autoupdate_settings
-from .models import AutoUpdateRun, Step1Checkpoint, Step2Checkpoint, Step3Checkpoint, Step4Checkpoint
+from .models import (
+    AutoUpdateRun,
+)
 from .steps.step1_analyze import AnalyzeFunctionalitiesStep
 from .steps.step2_research import WebResearchStep
 from .steps.step3_evaluate import EvaluateFeaturesStep
@@ -91,7 +93,9 @@ class AutoUpdateOrchestrator:
         try:
             # Step 1: Analyze
             if resume_from is None or resume_from <= 1:
-                await self._emit(progress_callback, "step1", 1, "Analyzing codebase functionalities...")
+                await self._emit(
+                    progress_callback, "step1", 1, "Analyzing codebase functionalities..."
+                )
                 run.step1 = await self.step1.execute_with_retry()
                 await self.step1.save_checkpoint(self.run_id, run.step1)
                 run.current_step = 2
@@ -106,7 +110,9 @@ class AutoUpdateOrchestrator:
 
             # Step 2: Research
             if resume_from is None or resume_from <= 2:
-                await self._emit(progress_callback, "step2", 2, "Researching competitors and best practices...")
+                await self._emit(
+                    progress_callback, "step2", 2, "Researching competitors and best practices..."
+                )
                 run.step2 = await self.step2.execute_with_retry(step1_checkpoint=run.step1)
                 await self.step2.save_checkpoint(self.run_id, run.step2)
                 run.current_step = 3
@@ -115,7 +121,9 @@ class AutoUpdateOrchestrator:
 
             # Step 3: Evaluate
             if resume_from is None or resume_from <= 3:
-                await self._emit(progress_callback, "step3", 3, "Evaluating potential new features...")
+                await self._emit(
+                    progress_callback, "step3", 3, "Evaluating potential new features..."
+                )
                 run.step3 = await self.step3.execute_with_retry(
                     step1_checkpoint=run.step1,
                     step2_checkpoint=run.step2,

@@ -148,11 +148,13 @@ class ReviewManager:
                 session.completed_at = datetime.utcnow()
                 logger.error(f"Review {task_id} failed: {e}")
                 # Send error event
-                session.add_event(ProgressEvent(
-                    type=ProgressEventType.REVIEW_ERROR,
-                    error=str(e),
-                    message=f"Review failed: {str(e)[:100]}",
-                ))
+                session.add_event(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEW_ERROR,
+                        error=str(e),
+                        message=f"Review failed: {str(e)[:100]}",
+                    )
+                )
             finally:
                 # Send completion signal to all subscribers
                 for queue in session.subscribers:

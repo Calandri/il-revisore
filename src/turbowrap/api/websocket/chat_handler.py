@@ -13,6 +13,7 @@ from ...llm import ClaudeClient
 
 class SessionInvalidatedError(Exception):
     """Raised when a chat session is deleted or invalidated during operation."""
+
     pass
 
 
@@ -51,14 +52,10 @@ class ChatWebSocketHandler:
         # Refresh the session to get latest state from DB
         self.db.expire_all()
 
-        session = self.db.query(ChatSession).filter(
-            ChatSession.id == self.session_id
-        ).first()
+        session = self.db.query(ChatSession).filter(ChatSession.id == self.session_id).first()
 
         if not session:
-            raise SessionInvalidatedError(
-                f"Session {self.session_id} was deleted during operation"
-            )
+            raise SessionInvalidatedError(f"Session {self.session_id} was deleted during operation")
 
         return session
 
@@ -128,10 +125,12 @@ class ChatWebSocketHandler:
             raise  # Re-raise original error if session exists
 
         # Send acknowledgment
-        await self.send_json({
-            "type": "message_received",
-            "message_id": user_message.id,
-        })
+        await self.send_json(
+            {
+                "type": "message_received",
+                "message_id": user_message.id,
+            }
+        )
 
         # Validate session before querying context
         self._validate_session()
@@ -146,9 +145,7 @@ class ChatWebSocketHandler:
         )
         previous.reverse()
 
-        context = "\n".join([
-            f"{m.role}: {m.content}" for m in previous
-        ])
+        context = "\n".join([f"{m.role}: {m.content}" for m in previous])
 
         prompt = f"""Previous conversation:
 {context}
@@ -163,10 +160,7 @@ Respond helpfully as an AI assistant for code development."""
         try:
             # Run Claude in thread pool to not block
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.claude.generate(prompt)
-            )
+            response = await loop.run_in_executor(None, lambda: self.claude.generate(prompt))
 
             # Validate session before saving response
             # (session could be deleted during AI generation)
@@ -188,12 +182,14 @@ Respond helpfully as an AI assistant for code development."""
                 raise
 
             # Send response
-            await self.send_json({
-                "type": "message",
-                "role": "assistant",
-                "content": response,
-                "message_id": assistant_message.id,
-            })
+            await self.send_json(
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": response,
+                    "message_id": assistant_message.id,
+                }
+            )
 
         except SessionInvalidatedError:
             # Re-raise to be handled by main loop
@@ -207,7 +203,9 @@ Respond helpfully as an AI assistant for code development."""
 
     async def send_error(self, message: str):
         """Send error message."""
-        await self.send_json({
-            "type": "error",
-            "message": message,
-        })
+        await self.send_json(
+            {
+                "type": "error",
+                "message": message,
+            }
+        )

@@ -72,16 +72,12 @@ class ChecklistResult(BaseModel):
 class ReviewMetrics(BaseModel):
     """Code metrics from the review."""
 
-    complexity_avg: float | None = Field(
-        None, description="Average cyclomatic complexity"
-    )
+    complexity_avg: float | None = Field(None, description="Average cyclomatic complexity")
     complexity_max: int | None = Field(None, description="Maximum complexity")
     test_coverage: float | None = Field(None, description="Test coverage percentage")
     type_coverage: float | None = Field(None, description="Type annotation coverage")
     lines_reviewed: int | None = Field(None, description="Total lines reviewed")
-    functions_reviewed: int | None = Field(
-        None, description="Total functions reviewed"
-    )
+    functions_reviewed: int | None = Field(None, description="Total functions reviewed")
 
 
 class ReviewSummary(BaseModel):
@@ -92,18 +88,11 @@ class ReviewSummary(BaseModel):
     high_issues: int = Field(0, description="Count of high severity issues")
     medium_issues: int = Field(0, description="Count of medium severity issues")
     low_issues: int = Field(0, description="Count of low severity issues")
-    score: float = Field(
-        10.0, ge=0.0, le=10.0, description="Overall score out of 10"
-    )
+    score: float = Field(10.0, ge=0.0, le=10.0, description="Overall score out of 10")
 
     @property
     def total_issues(self) -> int:
-        return (
-            self.critical_issues
-            + self.high_issues
-            + self.medium_issues
-            + self.low_issues
-        )
+        return self.critical_issues + self.high_issues + self.medium_issues + self.low_issues
 
 
 class ModelUsageInfo(BaseModel):
@@ -157,16 +146,14 @@ class ReviewRequestSource(BaseModel):
     workspace_path: str | None = Field(
         None,
         description="Monorepo workspace path (e.g., 'packages/frontend'). "
-        "Limits review scope to this subfolder."
+        "Limits review scope to this subfolder.",
     )
 
 
 class ReviewRequirements(BaseModel):
     """Optional requirements for functional analysis."""
 
-    description: str | None = Field(
-        None, description="What the changes should do"
-    )
+    description: str | None = Field(None, description="What the changes should do")
     acceptance_criteria: list[str] = Field(
         default_factory=list, description="List of acceptance criteria"
     )
@@ -185,20 +172,14 @@ class ReviewOptions(BaseModel):
 
     mode: ReviewMode = Field(
         ReviewMode.DIFF,
-        description="Review mode: initial (STRUCTURE.md only) or diff (changed files)"
+        description="Review mode: initial (STRUCTURE.md only) or diff (changed files)",
     )
-    include_functional: bool = Field(
-        True, description="Include functional analyst"
-    )
+    include_functional: bool = Field(True, description="Include functional analyst")
     severity_threshold: IssueSeverity = Field(
         IssueSeverity.LOW, description="Minimum severity to report"
     )
-    output_format: str = Field(
-        "both", description="Output format: markdown, json, both"
-    )
-    challenger_enabled: bool = Field(
-        True, description="Enable challenger loop"
-    )
+    output_format: str = Field("both", description="Output format: markdown, json, both")
+    challenger_enabled: bool = Field(True, description="Enable challenger loop")
     satisfaction_threshold: int = Field(
         50, ge=0, le=100, description="Challenger satisfaction threshold"
     )
@@ -207,9 +188,7 @@ class ReviewOptions(BaseModel):
 class ReviewRequest(BaseModel):
     """Complete review request input."""
 
-    type: str = Field(
-        ..., description="Request type: pr, commit, files, directory"
-    )
+    type: str = Field(..., description="Request type: pr, commit, files, directory")
     source: ReviewRequestSource
     requirements: ReviewRequirements | None = None
     options: ReviewOptions = Field(default_factory=ReviewOptions)

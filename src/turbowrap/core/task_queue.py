@@ -13,6 +13,7 @@ DEFAULT_ZOMBIE_TIMEOUT_SECONDS = 1800
 @dataclass
 class QueuedTask:
     """Task in the queue."""
+
     task_id: str
     task_type: str
     repository_id: str
@@ -127,8 +128,7 @@ class TaskQueue:
                     for t in self._queue
                 ],
                 "processing_tasks": [
-                    {"id": t.task_id, "type": t.task_type}
-                    for t in self._processing.values()
+                    {"id": t.task_id, "type": t.task_type} for t in self._processing.values()
                 ],
             }
 

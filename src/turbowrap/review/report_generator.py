@@ -154,15 +154,9 @@ class ReportGenerator:
             emoji = status_emoji.get(reviewer.status, "")
             issues = reviewer.issues_found if reviewer.status == "completed" else "-"
             duration = (
-                f"{reviewer.duration_seconds:.1f}s"
-                if reviewer.status == "completed"
-                else "-"
+                f"{reviewer.duration_seconds:.1f}s" if reviewer.status == "completed" else "-"
             )
-            iterations = (
-                str(reviewer.iterations)
-                if reviewer.status == "completed"
-                else "-"
-            )
+            iterations = str(reviewer.iterations) if reviewer.status == "completed" else "-"
 
             status_text = reviewer.status.title()
             if reviewer.reason:
@@ -224,9 +218,7 @@ class ReportGenerator:
             f"### [{issue.id}] {issue.title}",
             f"- **Severity**: {emoji} {issue.severity.value}",
             f"- **Category**: {issue.category.value.title()}",
-            f"- **File**: `{issue.file}"
-            + (f":{issue.line}" if issue.line else "")
-            + "`",
+            f"- **File**: `{issue.file}" + (f":{issue.line}" if issue.line else "") + "`",
         ]
 
         if len(issue.flagged_by) > 1:
@@ -271,9 +263,7 @@ class ReportGenerator:
         """Generate report footer."""
         timestamp = report.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        completed_reviewers = [
-            r.name for r in report.reviewers if r.status == "completed"
-        ]
+        completed_reviewers = [r.name for r in report.reviewers if r.status == "completed"]
 
         lines = [
             "---\n",
@@ -284,9 +274,7 @@ class ReportGenerator:
             lines.append(f"*Reviewers: {', '.join(completed_reviewers)}*")
 
         if report.challenger.enabled:
-            lines.append(
-                f"*Challenger: Gemini 3 CLI (threshold: {report.challenger.threshold}%)*"
-            )
+            lines.append(f"*Challenger: Gemini 3 CLI (threshold: {report.challenger.threshold}%)*")
 
         return "\n".join(lines)
 

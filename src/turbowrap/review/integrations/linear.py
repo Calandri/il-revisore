@@ -27,12 +27,10 @@ class LinearClient:
             api_key: Linear API key (uses config/env if not provided)
         """
         settings = get_settings()
-        self.api_key = api_key or getattr(settings.agents, 'linear_api_key', None)
+        self.api_key = api_key or getattr(settings.agents, "linear_api_key", None)
 
         if not self.api_key:
-            raise ValueError(
-                "Linear API key required. Set LINEAR_API_KEY environment variable."
-            )
+            raise ValueError("Linear API key required. Set LINEAR_API_KEY environment variable.")
 
         self.headers = {
             "Authorization": self.api_key,
@@ -183,18 +181,17 @@ class LinearClient:
 
         # Add challenger info
         if report.challenger.enabled:
-            lines.extend([
-                "### Review Quality",
-                f"- Challenger Iterations: {report.challenger.total_iterations}",
-                f"- Final Satisfaction: {report.challenger.final_satisfaction_score:.1f}%",
-                "",
-            ])
+            lines.extend(
+                [
+                    "### Review Quality",
+                    f"- Challenger Iterations: {report.challenger.total_iterations}",
+                    f"- Final Satisfaction: {report.challenger.final_satisfaction_score:.1f}%",
+                    "",
+                ]
+            )
 
         # Add top issues
-        critical_issues = [
-            i for i in report.issues[:5]
-            if i.severity.value in ["CRITICAL", "HIGH"]
-        ]
+        critical_issues = [i for i in report.issues[:5] if i.severity.value in ["CRITICAL", "HIGH"]]
         if critical_issues:
             lines.append("### Critical Issues")
             for issue in critical_issues:
@@ -663,7 +660,6 @@ class LinearClient:
 
         # Filter to active users only
         return [u for u in users if u.get("active", True)]
-
 
     async def get_workflow_states(self, team_id: str) -> list[dict]:
         """

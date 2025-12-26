@@ -145,7 +145,6 @@ def verify_token(token: str) -> dict[str, Any] | None:
             issuer=f"https://cognito-idp.{settings.auth.cognito_region}.amazonaws.com/{settings.auth.cognito_user_pool_id}",
         )
 
-
     except JWTError as e:
         logger.warning(f"Token verification failed: {e}")
         return None

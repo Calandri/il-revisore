@@ -261,9 +261,7 @@ class ClaudeReviewer(BaseReviewer):
 
         # Save thinking to S3 in background
         if thinking_content:
-            asyncio.create_task(
-                self._save_thinking_to_s3(thinking_content, review_id, context)
-            )
+            asyncio.create_task(self._save_thinking_to_s3(thinking_content, review_id, context))
 
         # Parse the response
         review_output = self._parse_response(response_text, context)
@@ -274,8 +272,7 @@ class ClaudeReviewer(BaseReviewer):
         # Save complete review to S3 in background
         asyncio.create_task(
             self._save_review_to_s3(
-                system_prompt, user_prompt, response_text,
-                review_output, review_id, context
+                system_prompt, user_prompt, response_text, review_output, review_id, context
             )
         )
 
@@ -349,9 +346,7 @@ class ClaudeReviewer(BaseReviewer):
 
         # Build refinement prompt
         system_prompt = self._build_system_prompt(context)
-        user_prompt = self._build_refinement_prompt(
-            context, previous_review, feedback
-        )
+        user_prompt = self._build_refinement_prompt(context, previous_review, feedback)
 
         # Stream with extended thinking
         thinking_content, response_text = await asyncio.to_thread(
@@ -363,9 +358,7 @@ class ClaudeReviewer(BaseReviewer):
 
         # Save thinking to S3 in background
         if thinking_content:
-            asyncio.create_task(
-                self._save_thinking_to_s3(thinking_content, review_id, context)
-            )
+            asyncio.create_task(self._save_thinking_to_s3(thinking_content, review_id, context))
 
         # Parse the response
         review_output = self._parse_response(response_text, context)
@@ -376,18 +369,19 @@ class ClaudeReviewer(BaseReviewer):
 
         # Add refinement notes
         review_output.refinement_notes = previous_review.refinement_notes.copy()
-        review_output.refinement_notes.append({
-            "iteration": review_output.iteration,
-            "addressed_challenges": len(feedback.challenges),
-            "added_issues": len(feedback.missed_issues),
-            "satisfaction_before": feedback.satisfaction_score,
-        })
+        review_output.refinement_notes.append(
+            {
+                "iteration": review_output.iteration,
+                "addressed_challenges": len(feedback.challenges),
+                "added_issues": len(feedback.missed_issues),
+                "satisfaction_before": feedback.satisfaction_score,
+            }
+        )
 
         # Save complete refinement to S3 in background
         asyncio.create_task(
             self._save_review_to_s3(
-                system_prompt, user_prompt, response_text,
-                review_output, review_id, context
+                system_prompt, user_prompt, response_text, review_output, review_id, context
             )
         )
 

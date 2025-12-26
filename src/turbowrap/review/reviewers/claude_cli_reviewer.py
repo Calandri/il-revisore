@@ -287,7 +287,9 @@ class ClaudeCLIReviewer(BaseReviewer):
         await self._save_prompt_to_s3(prompt, review_id, context)
 
         # Run Claude CLI with streaming
-        cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
+        cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(
+            prompt, context.repo_path, on_chunk
+        )
 
         # Check if CLI failed
         if cli_result is None:
@@ -308,7 +310,9 @@ class ClaudeCLIReviewer(BaseReviewer):
                     output = file_content
                     logger.info(f"[CLAUDE CLI] Read JSON from file: {len(output)} chars")
                 else:
-                    logger.warning(f"[CLAUDE CLI] File content is not valid JSON: {file_content[:100]}")
+                    logger.warning(
+                        f"[CLAUDE CLI] File content is not valid JSON: {file_content[:100]}"
+                    )
             except Exception as e:
                 logger.warning(f"[CLAUDE CLI] Failed to read output file: {e}")
             finally:
@@ -324,11 +328,15 @@ class ClaudeCLIReviewer(BaseReviewer):
                     # Use the most recently modified file
                     found_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
                     found_file = found_files[0]
-                    logger.warning(f"[CLAUDE CLI] File not at expected path, found at: {found_file}")
+                    logger.warning(
+                        f"[CLAUDE CLI] File not at expected path, found at: {found_file}"
+                    )
                     file_content = found_file.read_text(encoding="utf-8").strip()
                     if file_content.startswith("{") and file_content.endswith("}"):
                         output = file_content
-                        logger.info(f"[CLAUDE CLI] Read JSON from fallback path: {len(output)} chars")
+                        logger.info(
+                            f"[CLAUDE CLI] Read JSON from fallback path: {len(output)} chars"
+                        )
                     # Clean up all found files
                     for f in found_files:
                         with contextlib.suppress(Exception):
@@ -341,12 +349,18 @@ class ClaudeCLIReviewer(BaseReviewer):
             first_brace = cli_result.find("{")
             last_brace = cli_result.rfind("}")
             if first_brace != -1 and last_brace > first_brace:
-                output = cli_result[first_brace:last_brace + 1]
-                logger.info(f"[CLAUDE CLI] Fallback: extracted JSON from stdout: {len(output)} chars")
+                output = cli_result[first_brace : last_brace + 1]
+                logger.info(
+                    f"[CLAUDE CLI] Fallback: extracted JSON from stdout: {len(output)} chars"
+                )
 
         if output is None:
             logger.error(f"[CLAUDE CLI] No valid JSON found. CLI result: {cli_result[:300]}")
-            return None, model_usage, f"Claude CLI did not produce valid JSON. Output: {cli_result[:300]}"
+            return (
+                None,
+                model_usage,
+                f"Claude CLI did not produce valid JSON. Output: {cli_result[:300]}",
+            )
 
         # Save to S3 for checkpointing (regardless of source)
         await self._save_review_to_s3(output, review_id, context)
@@ -501,7 +515,8 @@ This is a **monorepo** review. You MUST only analyze files within the workspace:
         else:
             explore_instruction = "**Explore freely** - you can read other files (imports, dependencies, tests) if needed"
 
-        sections.append(f"""
+        sections.append(
+            f"""
 ## Important Instructions
 
 1. **Read the files** listed above using your file reading capabilities
@@ -511,7 +526,8 @@ This is a **monorepo** review. You MUST only analyze files within the workspace:
 5. **CRITICAL**: Save output to the ABSOLUTE path: `{output_file}`
 
 After writing, confirm with: "Review saved to {output_file}"
-""")
+"""
+        )
 
         return "".join(sections)
 
@@ -554,7 +570,8 @@ After writing, confirm with: "Review saved to {output_file}"
         else:
             output_file = output_filename
 
-        sections.append(f"""
+        sections.append(
+            f"""
 ## Refinement Instructions
 
 1. **Read the files** again to verify the feedback
@@ -569,7 +586,8 @@ After writing, confirm with: "Review saved to {output_file}"
 WRITE the complete refined JSON to this file: `{output_file}`
 
 After writing, confirm with: "Review saved to {output_file}"
-""")
+"""
+        )
 
         return "".join(sections)
 
@@ -609,6 +627,7 @@ After writing, confirm with: "Review saved to {output_file}"
             # Claude CLI crashes when trying to watch .sock files in /var/folders
             import glob
             import tempfile
+
             tmpdir = tempfile.gettempdir()
             vscode_sockets = glob.glob(os.path.join(tmpdir, "vscode-git-*.sock"))
             for sock in vscode_sockets:
@@ -638,7 +657,9 @@ After writing, confirm with: "Review saved to {output_file}"
             # and causes the process to hang indefinitely. Use env var instead.
             if self.settings.thinking.enabled:
                 env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
-                logger.info(f"[CLAUDE CLI] Extended thinking enabled: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}")
+                logger.info(
+                    f"[CLAUDE CLI] Extended thinking enabled: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}"
+                )
 
             logger.info(f"[CLAUDE CLI] Starting subprocess: {' '.join(args)}")
             logger.info(f"[CLAUDE CLI] Working directory: {cwd}")
@@ -722,7 +743,9 @@ After writing, confirm with: "Review saved to {output_file}"
                             decoded = decoder.decode(b"", final=True)
                             if decoded:
                                 output_chunks.append(decoded)
-                            logger.info(f"[CLAUDE CLI] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
+                            logger.info(
+                                f"[CLAUDE CLI] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes"
+                            )
                             break
 
                         chunks_received += 1
@@ -731,7 +754,9 @@ After writing, confirm with: "Review saved to {output_file}"
                         # Log progress every 30 seconds
                         now = time.time()
                         if now - last_log_time > 30:
-                            logger.info(f"[CLAUDE CLI] Streaming... {chunks_received} chunks, {total_bytes} bytes received")
+                            logger.info(
+                                f"[CLAUDE CLI] Streaming... {chunks_received} chunks, {total_bytes} bytes received"
+                            )
                             last_log_time = now
 
                         # Log first chunk
@@ -769,7 +794,9 @@ After writing, confirm with: "Review saved to {output_file}"
                                     except json.JSONDecodeError:
                                         pass  # Skip non-JSON or incomplete lines
             except asyncio.TimeoutError:
-                logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes before timeout")
+                logger.error(
+                    f"[CLAUDE CLI] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes before timeout"
+                )
                 stdin_task.cancel()
                 stderr_task.cancel()
                 process.kill()
@@ -901,7 +928,7 @@ After writing, confirm with: "Review saved to {output_file}"
         if first_brace != -1:
             last_brace = text.rfind("}")
             if last_brace != -1 and last_brace > first_brace:
-                return text[first_brace:last_brace + 1]
+                return text[first_brace : last_brace + 1]
 
         # Fallback: return original text and let JSON parser fail with proper error
         logger.warning("[CLAUDE PARSE] Could not extract JSON, returning raw text")
@@ -941,7 +968,7 @@ After writing, confirm with: "Review saved to {output_file}"
 
         if last_complete > 0:
             # Truncate to last complete structure
-            repaired = repaired[:last_complete + 2]
+            repaired = repaired[: last_complete + 2]
 
         # Now close any remaining open structures
         # Count again after truncation
@@ -987,18 +1014,20 @@ After writing, confirm with: "Review saved to {output_file}"
             # Validate that data is a dict, not a string
             # (json.loads can return a string if input is a JSON string literal)
             if not isinstance(data, dict):
-                logger.error(f"[CLAUDE PARSE] Expected dict, got {type(data).__name__}: {str(data)[:200]}")
+                logger.error(
+                    f"[CLAUDE PARSE] Expected dict, got {type(data).__name__}: {str(data)[:200]}"
+                )
                 raise json.JSONDecodeError(
-                    f"Expected JSON object, got {type(data).__name__}",
-                    json_text,
-                    0
+                    f"Expected JSON object, got {type(data).__name__}", json_text, 0
                 )
 
             # Build ReviewOutput from parsed data
             summary_data = data.get("summary", {})
             # Validate summary is a dict
             if not isinstance(summary_data, dict):
-                logger.warning(f"[CLAUDE PARSE] Invalid summary type: {type(summary_data).__name__}, using defaults")
+                logger.warning(
+                    f"[CLAUDE PARSE] Invalid summary type: {type(summary_data).__name__}, using defaults"
+                )
                 summary_data = {}
 
             # Normalize score: Claude sometimes returns 0-100 instead of 0-10
@@ -1012,7 +1041,9 @@ After writing, confirm with: "Review saved to {output_file}"
             # Handle field name variations (Claude sometimes uses shorter names)
             summary = ReviewSummary(
                 files_reviewed=summary_data.get("files_reviewed", len(file_list)),
-                critical_issues=summary_data.get("critical_issues", summary_data.get("critical", 0)),
+                critical_issues=summary_data.get(
+                    "critical_issues", summary_data.get("critical", 0)
+                ),
                 high_issues=summary_data.get("high_issues", summary_data.get("high", 0)),
                 medium_issues=summary_data.get("medium_issues", summary_data.get("medium", 0)),
                 low_issues=summary_data.get("low_issues", summary_data.get("low", 0)),
@@ -1068,12 +1099,18 @@ After writing, confirm with: "Review saved to {output_file}"
                         references=issue_data.get("references", []),
                         flagged_by=[self.name],
                         # Effort estimation for fix batching (handle field name variations)
-                        estimated_effort=issue_data.get("estimated_effort", issue_data.get("effort")),
-                        estimated_files_count=issue_data.get("estimated_files_count", issue_data.get("estimated_files_to_fix")),
+                        estimated_effort=issue_data.get(
+                            "estimated_effort", issue_data.get("effort")
+                        ),
+                        estimated_files_count=issue_data.get(
+                            "estimated_files_count", issue_data.get("estimated_files_to_fix")
+                        ),
                     )
                     issues.append(issue)
                 except Exception as e:
-                    logger.warning(f"[CLAUDE PARSE] Skipping invalid issue: {e} - data: {issue_data.get('id', 'unknown')}")
+                    logger.warning(
+                        f"[CLAUDE PARSE] Skipping invalid issue: {e} - data: {issue_data.get('id', 'unknown')}"
+                    )
                     continue
 
             # Parse checklists
@@ -1081,7 +1118,9 @@ After writing, confirm with: "Review saved to {output_file}"
             for category, checks in data.get("checklists", {}).items():
                 # Validate checks is a dict (Claude sometimes returns malformed data)
                 if not isinstance(checks, dict):
-                    logger.warning(f"[CLAUDE PARSE] Skipping invalid checklist '{category}': expected dict, got {type(checks).__name__}")
+                    logger.warning(
+                        f"[CLAUDE PARSE] Skipping invalid checklist '{category}': expected dict, got {type(checks).__name__}"
+                    )
                     continue
                 checklists[category] = ChecklistResult(
                     passed=checks.get("passed", 0),

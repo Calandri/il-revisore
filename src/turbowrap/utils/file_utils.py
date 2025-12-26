@@ -24,12 +24,26 @@ def _get_tokenizer() -> tiktoken.Encoding:
     """
     return tiktoken.get_encoding("cl100k_base")
 
+
 # Directories to ignore
 IGNORE_DIRS = {
-    "node_modules", ".git", "__pycache__", ".venv", "venv",
-    "dist", "build", ".next", "coverage", ".pytest_cache",
-    "eggs", "*.egg-info", ".tox", ".mypy_cache", ".reviews",
-    ".turbowrap", "STRUCTURE.md"
+    "node_modules",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    ".pytest_cache",
+    "eggs",
+    "*.egg-info",
+    ".tox",
+    ".mypy_cache",
+    ".reviews",
+    ".turbowrap",
+    "STRUCTURE.md",
 }
 
 # Files to ignore
@@ -39,6 +53,7 @@ IGNORE_FILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
 @dataclass
 class FileInfo:
     """Information about a discovered file."""
+
     path: Path
     type: Literal["be", "fe"]
     content: str = ""

@@ -195,17 +195,19 @@ class FixRequest(BaseModel):
 
     # Branch handling - allows continuing on existing branch instead of creating new one
     use_existing_branch: bool = Field(
-        default=False, description="If True, use existing branch instead of creating new one from main"
+        default=False,
+        description="If True, use existing branch instead of creating new one from main",
     )
     existing_branch_name: str | None = Field(
-        default=None, description="Name of existing branch to use (required if use_existing_branch=True)"
+        default=None,
+        description="Name of existing branch to use (required if use_existing_branch=True)",
     )
 
     # Monorepo workspace scope - limits fix operations to a subfolder
     workspace_path: str | None = Field(
         default=None,
         description="Relative path within repo to limit fixes (e.g., 'packages/frontend'). "
-        "If set, fixes outside this path will be rejected and reverted."
+        "If set, fixes outside this path will be rejected and reverted.",
     )
 
 
@@ -265,9 +267,13 @@ class IssueFixResult(BaseModel):
     error: str | None = Field(default=None, description="Error message if failed")
 
     # Fix result fields (for DB storage)
-    fix_code: str | None = Field(default=None, description="Snippet of fixed code (max 500 chars for display)")
+    fix_code: str | None = Field(
+        default=None, description="Snippet of fixed code (max 500 chars for display)"
+    )
     fix_explanation: str | None = Field(default=None, description="PR-style explanation of the fix")
-    fix_files_modified: list[str] = Field(default_factory=list, description="List of modified files")
+    fix_files_modified: list[str] = Field(
+        default_factory=list, description="List of modified files"
+    )
 
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
@@ -312,7 +318,9 @@ class FixProgressEvent(BaseModel):
     total_issues: int | None = Field(default=None)
 
     # Batch info (for per-batch challenger events)
-    issue_ids: list[str] | None = Field(default=None, description="Issue IDs in batch (for batch events)")
+    issue_ids: list[str] | None = Field(
+        default=None, description="Issue IDs in batch (for batch events)"
+    )
     issue_codes: list[str] | None = Field(default=None, description="Issue codes in batch")
 
     # Progress info
@@ -337,7 +345,9 @@ class FixProgressEvent(BaseModel):
     issues_failed: int | None = Field(default=None)
 
     # Quality scores from Gemini review (for FIX_CHALLENGER_RESULT)
-    quality_scores: dict[str, int] | None = Field(default=None, description="Quality dimension scores")
+    quality_scores: dict[str, int] | None = Field(
+        default=None, description="Quality dimension scores"
+    )
 
     def to_sse(self) -> dict[str, str]:
         """Convert to SSE format."""

@@ -9,17 +9,16 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from ..deps import get_db
 from ...config import get_settings
 from ...db.models import Issue, IssueStatus, Repository, Task
 from ...utils.aws_secrets import get_anthropic_api_key
+from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ LINT_FIXER_AGENT = AGENTS_DIR / "lint_fixer.md"
 # Linting types by category
 LINT_TYPES = {
     "FE": ["typescript", "eslint"],  # Frontend linting
-    "BE": ["ruff", "mypy"],          # Backend linting
+    "BE": ["ruff", "mypy"],  # Backend linting
 }
 
 
@@ -49,7 +48,7 @@ def _load_agent(agent_path: Path) -> str:
     if content.startswith("---"):
         end_match = re.search(r"\n---\n", content[3:])
         if end_match:
-            content = content[3 + end_match.end():]
+            content = content[3 + end_match.end() :]
 
     return content.strip()
 
@@ -140,11 +139,13 @@ async def run_lint_analysis(
             # Send start event
             yield {
                 "event": "lint_start",
-                "data": json.dumps({
-                    "message": "Starting lint analysis...",
-                    "task_id": task_id,
-                    "repository": repo.name,
-                }),
+                "data": json.dumps(
+                    {
+                        "message": "Starting lint analysis...",
+                        "task_id": task_id,
+                        "repository": repo.name,
+                    }
+                ),
             }
 
             # Load agent prompt
@@ -152,9 +153,11 @@ async def run_lint_analysis(
             if not lint_prompt:
                 yield {
                     "event": "lint_error",
-                    "data": json.dumps({
-                        "error": "Linter analyzer agent not found",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "error": "Linter analyzer agent not found",
+                        }
+                    ),
                 }
                 return
 
@@ -173,10 +176,12 @@ async def run_lint_analysis(
 
             yield {
                 "event": "lint_progress",
-                "data": json.dumps({
-                    "message": "Running linting tools with Claude CLI...",
-                    "phase": "analysis",
-                }),
+                "data": json.dumps(
+                    {
+                        "message": "Running linting tools with Claude CLI...",
+                        "phase": "analysis",
+                    }
+                ),
             }
 
             # Run Claude CLI with lint prompt
@@ -204,18 +209,22 @@ async def run_lint_analysis(
                 logger.error(f"Lint analysis failed: {error}")
                 yield {
                     "event": "lint_error",
-                    "data": json.dumps({
-                        "error": f"Linting failed: {error[:500]}",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "error": f"Linting failed: {error[:500]}",
+                        }
+                    ),
                 }
                 return
 
             yield {
                 "event": "lint_progress",
-                "data": json.dumps({
-                    "message": "Parsing linting results...",
-                    "phase": "parsing",
-                }),
+                "data": json.dumps(
+                    {
+                        "message": "Parsing linting results...",
+                        "phase": "parsing",
+                    }
+                ),
             }
 
             # Parse JSON output from Claude
@@ -224,12 +233,14 @@ async def run_lint_analysis(
             if not issues:
                 yield {
                     "event": "lint_complete",
-                    "data": json.dumps({
-                        "message": "No issues found!",
-                        "issues_found": 0,
-                        "issues_created": 0,
-                        "task_id": task_id,
-                    }),
+                    "data": json.dumps(
+                        {
+                            "message": "No issues found!",
+                            "issues_found": 0,
+                            "issues_created": 0,
+                            "task_id": task_id,
+                        }
+                    ),
                 }
                 # Update task status
                 task_obj = db.query(Task).filter(Task.id == task_id).first()
@@ -241,23 +252,29 @@ async def run_lint_analysis(
 
             yield {
                 "event": "lint_progress",
-                "data": json.dumps({
-                    "message": f"Found {len(issues)} issues, creating in database...",
-                    "phase": "creating",
-                    "issues_found": len(issues),
-                }),
+                "data": json.dumps(
+                    {
+                        "message": f"Found {len(issues)} issues, creating in database...",
+                        "phase": "creating",
+                        "issues_found": len(issues),
+                    }
+                ),
             }
 
             # Create issues in database
             for issue_data in issues:
                 # Check for duplicates (same file, line, issue_code)
-                existing = db.query(Issue).filter(
-                    Issue.repository_id == request.repository_id,
-                    Issue.file == issue_data.get("file", ""),
-                    Issue.line == issue_data.get("line"),
-                    Issue.issue_code == issue_data.get("issue_code", ""),
-                    Issue.status.in_(["open", "in_progress"]),
-                ).first()
+                existing = (
+                    db.query(Issue)
+                    .filter(
+                        Issue.repository_id == request.repository_id,
+                        Issue.file == issue_data.get("file", ""),
+                        Issue.line == issue_data.get("line"),
+                        Issue.issue_code == issue_data.get("issue_code", ""),
+                        Issue.status.in_(["open", "in_progress"]),
+                    )
+                    .first()
+                )
 
                 if existing:
                     logger.debug(f"Skipping duplicate issue: {issue_data.get('issue_code')}")
@@ -299,28 +316,34 @@ async def run_lint_analysis(
 
             yield {
                 "event": "lint_complete",
-                "data": json.dumps({
-                    "message": f"Analysis complete! Created {issues_created} issues.",
-                    "issues_found": len(issues),
-                    "issues_created": issues_created,
-                    "task_id": task_id,
-                }),
+                "data": json.dumps(
+                    {
+                        "message": f"Analysis complete! Created {issues_created} issues.",
+                        "issues_found": len(issues),
+                        "issues_created": issues_created,
+                        "task_id": task_id,
+                    }
+                ),
             }
 
         except asyncio.TimeoutError:
             yield {
                 "event": "lint_error",
-                "data": json.dumps({
-                    "error": "Lint analysis timed out after 5 minutes",
-                }),
+                "data": json.dumps(
+                    {
+                        "error": "Lint analysis timed out after 5 minutes",
+                    }
+                ),
             }
         except Exception as e:
             logger.exception("Lint analysis failed")
             yield {
                 "event": "lint_error",
-                "data": json.dumps({
-                    "error": str(e),
-                }),
+                "data": json.dumps(
+                    {
+                        "error": str(e),
+                    }
+                ),
             }
 
     return EventSourceResponse(generate())
@@ -397,7 +420,7 @@ class LintFixRequest(BaseModel):
 
     repository_id: str = Field(..., description="Repository ID")
     category: str = Field(default="all", description="Category to lint: 'FE', 'BE', or 'all'")
-    workspace_path: Optional[str] = Field(default=None, description="Workspace path to scope changes")
+    workspace_path: str | None = Field(default=None, description="Workspace path to scope changes")
 
 
 class LintFixResult(BaseModel):
@@ -407,7 +430,7 @@ class LintFixResult(BaseModel):
     issues_found: int
     issues_fixed: int
     files_modified: list[str]
-    commit_sha: Optional[str] = None
+    commit_sha: str | None = None
     status: str
 
 
@@ -467,11 +490,13 @@ async def run_lint_fix(
         try:
             yield {
                 "event": "lint_fix_start",
-                "data": json.dumps({
-                    "message": f"Starting lint-fix for {request.category}...",
-                    "task_id": task_id,
-                    "lint_types": lint_types,
-                }),
+                "data": json.dumps(
+                    {
+                        "message": f"Starting lint-fix for {request.category}...",
+                        "task_id": task_id,
+                        "lint_types": lint_types,
+                    }
+                ),
             }
 
             # Load agent prompt
@@ -508,11 +533,13 @@ async def run_lint_fix(
             for lint_type in lint_types:
                 yield {
                     "event": "lint_fix_progress",
-                    "data": json.dumps({
-                        "message": f"Running {lint_type} linting and fixing (with extended thinking)...",
-                        "lint_type": lint_type,
-                        "phase": "running",
-                    }),
+                    "data": json.dumps(
+                        {
+                            "message": f"Running {lint_type} linting and fixing (with extended thinking)...",
+                            "lint_type": lint_type,
+                            "phase": "running",
+                        }
+                    ),
                 }
 
                 # Prepare prompt with variables
@@ -526,8 +553,10 @@ async def run_lint_fix(
                     "--print",
                     "--verbose",
                     "--dangerously-skip-permissions",
-                    "--model", model,
-                    "--output-format", "stream-json",
+                    "--model",
+                    model,
+                    "--output-format",
+                    "stream-json",
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -547,19 +576,23 @@ async def run_lint_fix(
                     logger.error(f"Lint-fix failed for {lint_type}: {error}")
                     yield {
                         "event": "lint_fix_progress",
-                        "data": json.dumps({
-                            "message": f"{lint_type}: failed - {error[:200]}",
-                            "lint_type": lint_type,
-                            "phase": "error",
-                        }),
+                        "data": json.dumps(
+                            {
+                                "message": f"{lint_type}: failed - {error[:200]}",
+                                "lint_type": lint_type,
+                                "phase": "error",
+                            }
+                        ),
                     }
-                    results.append(LintFixResult(
-                        lint_type=lint_type,
-                        issues_found=0,
-                        issues_fixed=0,
-                        files_modified=[],
-                        status="failed",
-                    ))
+                    results.append(
+                        LintFixResult(
+                            lint_type=lint_type,
+                            issues_found=0,
+                            issues_fixed=0,
+                            files_modified=[],
+                            status="failed",
+                        )
+                    )
                     continue
 
                 # Parse result from output
@@ -569,19 +602,23 @@ async def run_lint_fix(
 
                 yield {
                     "event": "lint_fix_progress",
-                    "data": json.dumps({
-                        "message": f"{lint_type}: fixed {result.issues_fixed} issues",
-                        "lint_type": lint_type,
-                        "phase": "completed",
-                        "issues_fixed": result.issues_fixed,
-                        "commit_sha": result.commit_sha,
-                    }),
+                    "data": json.dumps(
+                        {
+                            "message": f"{lint_type}: fixed {result.issues_fixed} issues",
+                            "lint_type": lint_type,
+                            "phase": "completed",
+                            "issues_fixed": result.issues_fixed,
+                            "commit_sha": result.commit_sha,
+                        }
+                    ),
                 }
 
                 # Create macro-issue for tracking (marked as RESOLVED)
                 if result.issues_fixed > 0:
                     # Use first modified file or placeholder for the required 'file' field
-                    first_file = result.files_modified[0] if result.files_modified else "(multiple files)"
+                    first_file = (
+                        result.files_modified[0] if result.files_modified else "(multiple files)"
+                    )
                     issue = Issue(
                         id=str(uuid.uuid4()),
                         task_id=task_id,
@@ -592,7 +629,8 @@ async def run_lint_fix(
                         file=first_file,
                         line=1,
                         title=f"[{lint_type}] Fixed {result.issues_fixed} linting issues",
-                        description=f"Automatically fixed {result.issues_fixed} {lint_type} issues.\n\nFiles modified:\n" + "\n".join(f"- {f}" for f in result.files_modified[:20]),
+                        description=f"Automatically fixed {result.issues_fixed} {lint_type} issues.\n\nFiles modified:\n"
+                        + "\n".join(f"- {f}" for f in result.files_modified[:20]),
                         status=IssueStatus.RESOLVED.value,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
@@ -612,12 +650,14 @@ async def run_lint_fix(
 
             yield {
                 "event": "lint_fix_complete",
-                "data": json.dumps({
-                    "message": f"Lint-fix complete! Fixed {total_fixed} issues total.",
-                    "task_id": task_id,
-                    "total_fixed": total_fixed,
-                    "results": [r.model_dump() for r in results],
-                }),
+                "data": json.dumps(
+                    {
+                        "message": f"Lint-fix complete! Fixed {total_fixed} issues total.",
+                        "task_id": task_id,
+                        "total_fixed": total_fixed,
+                        "results": [r.model_dump() for r in results],
+                    }
+                ),
             }
 
         except asyncio.TimeoutError:
@@ -647,7 +687,9 @@ def _parse_lint_fix_output(output: str, lint_type: str) -> LintFixResult:
             if event.get("type") == "result":
                 # Check for errors
                 if event.get("is_error"):
-                    logger.error(f"Claude CLI error for {lint_type}: {event.get('result', 'Unknown error')}")
+                    logger.error(
+                        f"Claude CLI error for {lint_type}: {event.get('result', 'Unknown error')}"
+                    )
                     return LintFixResult(
                         lint_type=lint_type,
                         issues_found=0,

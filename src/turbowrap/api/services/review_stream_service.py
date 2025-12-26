@@ -12,7 +12,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ...db.models import Issue, Repository, ReviewCheckpoint, Task
+from ...db.models import Issue, Repository, Task
 from ...db.session import get_session_local
 from ...review.models.progress import ProgressEvent, ProgressEventType
 from ...review.models.review import (
@@ -225,9 +225,7 @@ class ReviewStreamService:
                 )
 
                 # Save results
-                await self._save_review_results(
-                    review_db, task_id, repository_id, report
-                )
+                await self._save_review_results(review_db, task_id, repository_id, report)
 
             except asyncio.CancelledError:
                 db_task = review_db.query(Task).filter(Task.id == task_id).first()
@@ -292,8 +290,16 @@ class ReviewStreamService:
                 task_id=task_id,
                 repository_id=repository_id,
                 issue_code=issue.id,
-                severity=issue.severity.value if hasattr(issue.severity, "value") else str(issue.severity),
-                category=issue.category.value if hasattr(issue.category, "value") else str(issue.category),
+                severity=(
+                    issue.severity.value
+                    if hasattr(issue.severity, "value")
+                    else str(issue.severity)
+                ),
+                category=(
+                    issue.category.value
+                    if hasattr(issue.category, "value")
+                    else str(issue.category)
+                ),
                 rule=issue.rule,
                 file=issue.file,
                 line=issue.line,

@@ -24,7 +24,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             "repos": repos,
             "active_page": "dashboard",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -40,7 +40,7 @@ async def repos_page(request: Request, db: Session = Depends(get_db)):
             "repos": repos,
             "active_page": "repos",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -54,7 +54,7 @@ async def chat_page(request: Request):
             "request": request,
             "active_page": "chat",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -77,7 +77,7 @@ async def status_page(request: Request):
             "request": request,
             "active_page": "status",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -93,7 +93,7 @@ async def review_page(request: Request, db: Session = Depends(get_db)):
             "repos": repos,
             "active_page": "review",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -107,7 +107,7 @@ async def tasks_page(request: Request):
             "request": request,
             "active_page": "tasks",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -123,7 +123,7 @@ async def issues_page(request: Request, db: Session = Depends(get_db)):
             "repos": repos,
             "active_page": "issues",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -139,7 +139,7 @@ async def linear_page(request: Request, db: Session = Depends(get_db)):
             "repos": repos,
             "active_page": "linear",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -155,7 +155,7 @@ async def files_page(request: Request, db: Session = Depends(get_db)):
             "repos": repos,
             "active_page": "files",
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -187,9 +187,11 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
             # Models: DB value or config default
             "claude_model": claude_model.value if claude_model else config.agents.claude_model,
             "gemini_model": gemini_model.value if gemini_model else config.agents.gemini_model,
-            "gemini_pro_model": gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model,
+            "gemini_pro_model": (
+                gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model
+            ),
             "current_user": get_current_user(request),
-        }
+        },
     )
 
 
@@ -209,7 +211,7 @@ async def users_page(request: Request):
             "request": request,
             "active_page": "users",
             "current_user": current_user,
-        }
+        },
     )
 
 
@@ -226,10 +228,7 @@ async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
     # Get last completed review task with evaluation for each repo
     # Subquery to get max completed_at per repo
     subq = (
-        db.query(
-            Task.repository_id,
-            func.max(Task.completed_at).label("last_completed")
-        )
+        db.query(Task.repository_id, func.max(Task.completed_at).label("last_completed"))
         .filter(Task.type == "review", Task.status == "completed")
         .group_by(Task.repository_id)
         .subquery()
@@ -238,8 +237,11 @@ async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
     # Join to get the actual task records
     last_tasks = (
         db.query(Task)
-        .join(subq, (Task.repository_id == subq.c.repository_id) &
-                    (Task.completed_at == subq.c.last_completed))
+        .join(
+            subq,
+            (Task.repository_id == subq.c.repository_id)
+            & (Task.completed_at == subq.c.last_completed),
+        )
         .filter(Task.type == "review", Task.status == "completed")
         .all()
     )
@@ -263,7 +265,7 @@ async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "components/repo_list.html",
-        {"request": request, "repos": repos, "evaluations": evaluations}
+        {"request": request, "repos": repos, "evaluations": evaluations},
     )
 
 
@@ -293,8 +295,7 @@ async def htmx_add_repo(
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        "components/repo_list.html",
-        {"request": request, "repos": repos}
+        "components/repo_list.html", {"request": request, "repos": repos}
     )
 
 
@@ -318,8 +319,7 @@ async def htmx_delete_repo(request: Request, repo_id: str, db: Session = Depends
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        "components/repo_list.html",
-        {"request": request, "repos": repos}
+        "components/repo_list.html", {"request": request, "repos": repos}
     )
 
 
@@ -339,8 +339,7 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        "components/repo_list.html",
-        {"request": request, "repos": repos}
+        "components/repo_list.html", {"request": request, "repos": repos}
     )
 
 
@@ -379,14 +378,17 @@ async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(g
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
     response = templates.TemplateResponse(
-        "components/repo_list.html",
-        {"request": request, "repos": repos}
+        "components/repo_list.html", {"request": request, "repos": repos}
     )
 
     # Add HX-Trigger header for toast notification
     if push_message:
-        response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": push_message, "type": "success"}})
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": push_message, "type": "success"}}
+        )
     elif push_error:
-        response.headers["HX-Trigger"] = json.dumps({"showToast": {"message": push_error, "type": "error"}})
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": push_error, "type": "error"}}
+        )
 
     return response

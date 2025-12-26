@@ -80,17 +80,21 @@ class MarkdownWriter:
                     lines.append("")
 
                 if func.dependencies:
-                    lines.append(f"**Dipendenze**: {', '.join(f'`{d}`' for d in func.dependencies)}")
+                    lines.append(
+                        f"**Dipendenze**: {', '.join(f'`{d}`' for d in func.dependencies)}"
+                    )
                     lines.append("")
 
                 lines.append("---")
                 lines.append("")
 
         # Footer
-        lines.extend([
-            "",
-            f"*Generato da TurboWrap Auto-Update - ts:{int(time.time())}*",
-        ])
+        lines.extend(
+            [
+                "",
+                f"*Generato da TurboWrap Auto-Update - ts:{int(time.time())}*",
+            ]
+        )
 
         # Write file
         content = "\n".join(lines)

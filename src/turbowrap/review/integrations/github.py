@@ -44,6 +44,7 @@ def with_rate_limit_retry(func: Callable[..., T]) -> Callable[..., T]:
     Returns:
         Wrapped function with retry logic.
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs) -> T:
         last_exception = None
@@ -62,10 +63,7 @@ def with_rate_limit_retry(func: Callable[..., T]) -> Callable[..., T]:
                 if reset_time:
                     wait_seconds = max(0, reset_time - int(time.time()))
                 else:
-                    wait_seconds = min(
-                        BASE_RETRY_DELAY * (2 ** (retry_count - 1)),
-                        MAX_RETRY_DELAY
-                    )
+                    wait_seconds = min(BASE_RETRY_DELAY * (2 ** (retry_count - 1)), MAX_RETRY_DELAY)
 
                 if retry_count <= MAX_RETRIES:
                     logger.warning(
@@ -82,10 +80,7 @@ def with_rate_limit_retry(func: Callable[..., T]) -> Callable[..., T]:
                     last_exception = e
                     retry_count += 1
 
-                    wait_seconds = min(
-                        BASE_RETRY_DELAY * (2 ** (retry_count - 1)),
-                        MAX_RETRY_DELAY
-                    )
+                    wait_seconds = min(BASE_RETRY_DELAY * (2 ** (retry_count - 1)), MAX_RETRY_DELAY)
 
                     if retry_count <= MAX_RETRIES:
                         logger.warning(
@@ -122,12 +117,10 @@ class GitHubClient:
             token: GitHub token (uses config/env if not provided)
         """
         settings = get_settings()
-        self.token = token or getattr(settings.agents, 'github_token', None)
+        self.token = token or getattr(settings.agents, "github_token", None)
 
         if not self.token:
-            raise ValueError(
-                "GitHub token required. Set GITHUB_TOKEN environment variable."
-            )
+            raise ValueError("GitHub token required. Set GITHUB_TOKEN environment variable.")
 
         self.github = Github(self.token)
 
@@ -281,11 +274,13 @@ class GitHubClient:
                 if issue.suggested_fix:
                     comment_body += f"\n\n**Suggested fix:**\n```\n{issue.suggested_fix}\n```"
 
-                comments.append({
-                    "path": issue.file,
-                    "line": issue.line,
-                    "body": comment_body,
-                })
+                comments.append(
+                    {
+                        "path": issue.file,
+                        "line": issue.line,
+                        "body": comment_body,
+                    }
+                )
 
         # Create review
         review_body = self._format_review_summary(report)
@@ -401,11 +396,13 @@ class GitHubClient:
         ]
 
         if report.challenger.enabled:
-            lines.extend([
-                f"*Reviewed with {report.challenger.total_iterations} challenger iterations, "
-                f"{report.challenger.final_satisfaction_score:.1f}% satisfaction*",
-                "",
-            ])
+            lines.extend(
+                [
+                    f"*Reviewed with {report.challenger.total_iterations} challenger iterations, "
+                    f"{report.challenger.final_satisfaction_score:.1f}% satisfaction*",
+                    "",
+                ]
+            )
 
         return "\n".join(lines)
 

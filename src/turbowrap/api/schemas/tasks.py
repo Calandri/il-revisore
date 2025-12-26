@@ -87,6 +87,7 @@ class TaskResponse(BaseModel):
             if self.completed_at:
                 return (self.completed_at - self.started_at).total_seconds()
             from datetime import datetime
+
             return (datetime.utcnow() - self.started_at).total_seconds()
         return None
 
@@ -124,9 +125,5 @@ class TaskQueueStatus(BaseModel):
 
     pending: int = Field(..., ge=0, description="Pending task count")
     processing: int = Field(..., ge=0, description="Running task count")
-    pending_tasks: list[TaskSummary] = Field(
-        default_factory=list, description="Pending tasks"
-    )
-    processing_tasks: list[TaskSummary] = Field(
-        default_factory=list, description="Running tasks"
-    )
+    pending_tasks: list[TaskSummary] = Field(default_factory=list, description="Pending tasks")
+    processing_tasks: list[TaskSummary] = Field(default_factory=list, description="Running tasks")

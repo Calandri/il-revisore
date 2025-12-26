@@ -27,8 +27,10 @@ router = APIRouter(prefix="/repos", tags=["repositories"])
 
 # --- File Management Schemas ---
 
+
 class FileInfo(BaseModel):
     """File information."""
+
     name: str
     path: str
     type: str  # 'file' or 'directory'
@@ -38,6 +40,7 @@ class FileInfo(BaseModel):
 
 class TreeNode(BaseModel):
     """Hierarchical file tree node for VS Code-like explorer."""
+
     name: str
     path: str
     type: Literal["file", "directory"]
@@ -54,6 +57,7 @@ TreeNode.model_rebuild()
 
 class FileDiff(BaseModel):
     """Diff for a single file."""
+
     path: str
     diff: str
     status: str  # 'modified', 'untracked', 'staged'
@@ -61,8 +65,28 @@ class FileDiff(BaseModel):
     deletions: int = 0
 
 
+class SymbolDefinition(BaseModel):
+    """Symbol definition location."""
+
+    symbol: str
+    path: str
+    line: int
+    type: str  # 'function', 'class', 'import', 'variable'
+    preview: str  # Line content preview
+    confidence: float = 1.0  # How confident we are (1.0 = exact match)
+
+
+class SymbolSearchResult(BaseModel):
+    """Result of symbol search."""
+
+    found: bool
+    definitions: list[SymbolDefinition] = []
+    message: str | None = None
+
+
 class FileContent(BaseModel):
     """File content response."""
+
     path: str
     content: str
     size: int
@@ -71,6 +95,7 @@ class FileContent(BaseModel):
 
 class FileWriteRequest(BaseModel):
     """Request to write file content."""
+
     content: str
     commit_message: str | None = None
 
@@ -125,12 +150,12 @@ def list_github_folders(
                 status_code=401,
                 detail="Token GitHub richiesto per repository private. Configuralo nelle Impostazioni.",
             )
-        elif e.status == 404:
+        if e.status == 404:
             raise HTTPException(
                 status_code=404,
                 detail="Repository o percorso non trovato. Verifica l'URL e il branch.",
             )
-        elif e.status == 403:
+        if e.status == 403:
             raise HTTPException(
                 status_code=403,
                 detail="Limite API GitHub raggiunto. Riprova tra qualche minuto.",
@@ -148,10 +173,7 @@ def list_projects(db: Session = Depends(get_db)):
     from ...db.models import Repository
 
     results = (
-        db.query(
-            Repository.project_name,
-            func.count(Repository.id).label("repo_count")
-        )
+        db.query(Repository.project_name, func.count(Repository.id).label("repo_count"))
         .filter(Repository.project_name.isnot(None))
         .filter(Repository.deleted_at.is_(None))
         .group_by(Repository.project_name)
@@ -168,10 +190,7 @@ def list_projects(db: Session = Depends(get_db)):
     )
 
     return {
-        "projects": [
-            {"name": name, "repo_count": count}
-            for name, count in results
-        ],
+        "projects": [{"name": name, "repo_count": count} for name, count in results],
         "unassigned_count": unassigned,
     }
 
@@ -204,6 +223,7 @@ def clone_repo(
 
 class RepoUpdate(BaseModel):
     """Request to update repository metadata."""
+
     project_name: str | None = None
     repo_type: str | None = None
 
@@ -360,10 +380,7 @@ def delete_link(
         raise HTTPException(status_code=404, detail="Link not found")
 
     if link.source_repo_id != repo_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Link does not belong to this repository"
-        )
+        raise HTTPException(status_code=403, detail="Link does not belong to this repository")
 
     try:
         manager.unlink_repositories(link_id)
@@ -374,7 +391,21 @@ def delete_link(
 
 # --- File Management Endpoints ---
 
-ALLOWED_EXTENSIONS = {'.md', '.txt', '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.py', '.js', '.ts', '.html', '.css'}
+ALLOWED_EXTENSIONS = {
+    ".md",
+    ".txt",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".py",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+}
 MAX_FILE_SIZE = 1024 * 1024  # 1MB
 
 
@@ -415,35 +446,41 @@ def list_files(
     files = []
     if target_path.is_file():
         # Single file
-        files.append(FileInfo(
-            name=target_path.name,
-            path=str(target_path.relative_to(repo_path)),
-            type="file",
-            size=target_path.stat().st_size,
-            extension=target_path.suffix,
-        ))
+        files.append(
+            FileInfo(
+                name=target_path.name,
+                path=str(target_path.relative_to(repo_path)),
+                type="file",
+                size=target_path.stat().st_size,
+                extension=target_path.suffix,
+            )
+        )
     else:
         # Directory listing
         for item in sorted(target_path.glob(pattern)):
             # Skip hidden files and .git
-            if item.name.startswith('.'):
+            if item.name.startswith("."):
                 continue
 
             rel_path = str(item.relative_to(repo_path))
             if item.is_dir():
-                files.append(FileInfo(
-                    name=item.name,
-                    path=rel_path,
-                    type="directory",
-                ))
+                files.append(
+                    FileInfo(
+                        name=item.name,
+                        path=rel_path,
+                        type="directory",
+                    )
+                )
             else:
-                files.append(FileInfo(
-                    name=item.name,
-                    path=rel_path,
-                    type="file",
-                    size=item.stat().st_size,
-                    extension=item.suffix,
-                ))
+                files.append(
+                    FileInfo(
+                        name=item.name,
+                        path=rel_path,
+                        type="file",
+                        size=item.stat().st_size,
+                        extension=item.suffix,
+                    )
+                )
 
     return files
 
@@ -464,26 +501,28 @@ def get_file_tree(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     repo_path = Path(repo.local_path)
-    ext_list = [ext.strip() for ext in extensions.split(',')]
+    ext_list = [ext.strip() for ext in extensions.split(",")]
 
     files = []
     for ext in ext_list:
-        if not ext.startswith('.'):
-            ext = '.' + ext
-        for item in repo_path.rglob(f'*{ext}'):
+        if not ext.startswith("."):
+            ext = "." + ext
+        for item in repo_path.rglob(f"*{ext}"):
             rel_path = item.relative_to(repo_path)
             # Skip hidden and .git directories (check relative path, not absolute)
-            if any(part.startswith('.') for part in rel_path.parts):
+            if any(part.startswith(".") for part in rel_path.parts):
                 continue
 
             rel_path = str(rel_path)
-            files.append(FileInfo(
-                name=item.name,
-                path=rel_path,
-                type="file",
-                size=item.stat().st_size,
-                extension=item.suffix,
-            ))
+            files.append(
+                FileInfo(
+                    name=item.name,
+                    path=rel_path,
+                    type="file",
+                    size=item.stat().st_size,
+                    extension=item.suffix,
+                )
+            )
 
     return sorted(files, key=lambda f: f.path)
 
@@ -504,7 +543,7 @@ def _build_tree_from_files(
 
         # Create directory nodes for all parent directories
         current_path = ""
-        for i, part in enumerate(parts[:-1]):
+        for _i, part in enumerate(parts[:-1]):
             parent_path = current_path
             current_path = f"{current_path}/{part}" if current_path else part
 
@@ -561,49 +600,53 @@ def get_file_tree_hierarchy(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     repo_path = Path(repo.local_path)
-    ext_list = [ext.strip() for ext in extensions.split(',')]
+    ext_list = [ext.strip() for ext in extensions.split(",")]
 
     # Get flat file list
     files = []
     seen_paths = set()  # Avoid duplicates when using '*'
 
     # Handle '*' for all files
-    if '*' in ext_list:
-        for item in repo_path.rglob('*'):
+    if "*" in ext_list:
+        for item in repo_path.rglob("*"):
             if not item.is_file():
                 continue
             rel_path = item.relative_to(repo_path)
             # Skip hidden and .git directories
-            if any(part.startswith('.') for part in rel_path.parts):
+            if any(part.startswith(".") for part in rel_path.parts):
                 continue
             rel_path_str = str(rel_path)
             if rel_path_str not in seen_paths:
                 seen_paths.add(rel_path_str)
-                files.append(FileInfo(
-                    name=item.name,
-                    path=rel_path_str,
-                    type="file",
-                    size=item.stat().st_size,
-                    extension=item.suffix,
-                ))
+                files.append(
+                    FileInfo(
+                        name=item.name,
+                        path=rel_path_str,
+                        type="file",
+                        size=item.stat().st_size,
+                        extension=item.suffix,
+                    )
+                )
     else:
         for ext in ext_list:
-            if not ext.startswith('.'):
-                ext = '.' + ext
-            for item in repo_path.rglob(f'*{ext}'):
+            if not ext.startswith("."):
+                ext = "." + ext
+            for item in repo_path.rglob(f"*{ext}"):
                 rel_path = item.relative_to(repo_path)
                 # Skip hidden and .git directories
-                if any(part.startswith('.') for part in rel_path.parts):
+                if any(part.startswith(".") for part in rel_path.parts):
                     continue
 
                 rel_path_str = str(rel_path)
-                files.append(FileInfo(
-                    name=item.name,
-                    path=rel_path_str,
-                    type="file",
-                    size=item.stat().st_size,
-                    extension=item.suffix,
-                ))
+                files.append(
+                    FileInfo(
+                        name=item.name,
+                        path=rel_path_str,
+                        type="file",
+                        size=item.stat().st_size,
+                        extension=item.suffix,
+                    )
+                )
 
     # Get git status if requested
     modified_files: set[str] = set()
@@ -658,10 +701,8 @@ def get_file_diff(
     # Get git status to determine file status
     try:
         git_status = get_git_status(repo_path)
-        is_modified = path in git_status.modified
         is_untracked = path in git_status.untracked
     except Exception:
-        is_modified = False
         is_untracked = False
 
     # Determine status
@@ -680,9 +721,9 @@ def get_file_diff(
     if is_untracked:
         # For untracked files, show full content as additions
         try:
-            content = file_path.read_text(encoding='utf-8')
-            lines = content.split('\n')
-            diff_content = '\n'.join(f'+{line}' for line in lines)
+            content = file_path.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            diff_content = "\n".join(f"+{line}" for line in lines)
             additions = len(lines)
         except Exception:
             diff_content = ""
@@ -703,10 +744,10 @@ def get_file_diff(
             diff_content = result.stdout
 
             # Count additions/deletions
-            for line in diff_content.split('\n'):
-                if line.startswith('+') and not line.startswith('+++'):
+            for line in diff_content.split("\n"):
+                if line.startswith("+") and not line.startswith("+++"):
                     additions += 1
-                elif line.startswith('-') and not line.startswith('---'):
+                elif line.startswith("-") and not line.startswith("---"):
                     deletions += 1
         except Exception:
             diff_content = ""
@@ -738,26 +779,30 @@ def get_structure_files(
     repo_path = Path(repo.local_path)
 
     structure_files = []
-    for item in repo_path.rglob('STRUCTURE.md'):
+    for item in repo_path.rglob("STRUCTURE.md"):
         rel_path = item.relative_to(repo_path)
         # Skip hidden directories (check relative path, not absolute)
-        if any(part.startswith('.') for part in rel_path.parts):
+        if any(part.startswith(".") for part in rel_path.parts):
             continue
 
         rel_path = str(rel_path)
         try:
-            content = item.read_text(encoding='utf-8')
-            structure_files.append({
-                "path": rel_path,
-                "directory": str(item.parent.relative_to(repo_path)) if item.parent != repo_path else "",
-                "content": content,
-                "size": item.stat().st_size,
-            })
+            content = item.read_text(encoding="utf-8")
+            structure_files.append(
+                {
+                    "path": rel_path,
+                    "directory": (
+                        str(item.parent.relative_to(repo_path)) if item.parent != repo_path else ""
+                    ),
+                    "content": content,
+                    "size": item.stat().st_size,
+                }
+            )
         except (UnicodeDecodeError, OSError):
             continue
 
     # Sort by path depth (root first) then alphabetically
-    structure_files.sort(key=lambda f: (f["path"].count('/'), f["path"]))
+    structure_files.sort(key=lambda f: (f["path"].count("/"), f["path"]))
 
     return {
         "repo_id": repo_id,
@@ -803,10 +848,12 @@ def read_file(
     # Check file size
     size = file_path.stat().st_size
     if size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"File too large (max {MAX_FILE_SIZE // 1024}KB)")
+        raise HTTPException(
+            status_code=400, detail=f"File too large (max {MAX_FILE_SIZE // 1024}KB)"
+        )
 
     try:
-        content = file_path.read_text(encoding='utf-8')
+        content = file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="File is not a text file")
 
@@ -851,35 +898,38 @@ def write_file(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"File extension not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+            detail=f"File extension not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
     # Create parent directories if needed
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Check content size
-    if len(data.content.encode('utf-8')) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"Content too large (max {MAX_FILE_SIZE // 1024}KB)")
+    if len(data.content.encode("utf-8")) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400, detail=f"Content too large (max {MAX_FILE_SIZE // 1024}KB)"
+        )
 
     # Write file
     is_new = not file_path.exists()
-    file_path.write_text(data.content, encoding='utf-8')
+    file_path.write_text(data.content, encoding="utf-8")
 
     # Optionally commit
     committed = False
     if data.commit_message:
         import subprocess
+
         try:
             # Stage the file
             subprocess.run(
-                ['git', 'add', str(file_path)],
+                ["git", "add", str(file_path)],
                 cwd=str(repo_path),
                 check=True,
                 capture_output=True,
             )
             # Commit
             subprocess.run(
-                ['git', 'commit', '-m', data.commit_message],
+                ["git", "commit", "-m", data.commit_message],
                 cwd=str(repo_path),
                 check=True,
                 capture_output=True,
@@ -892,6 +942,6 @@ def write_file(
     return {
         "status": "created" if is_new else "updated",
         "path": path,
-        "size": len(data.content.encode('utf-8')),
+        "size": len(data.content.encode("utf-8")),
         "committed": committed,
     }

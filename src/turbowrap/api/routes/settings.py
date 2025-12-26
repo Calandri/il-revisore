@@ -80,7 +80,9 @@ def get_settings(db: Session = Depends(get_db)):
         # Models: DB overrides config defaults
         claude_model=claude_model.value if claude_model else config.agents.claude_model,
         gemini_model=gemini_model.value if gemini_model else config.agents.gemini_model,
-        gemini_pro_model=gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model,
+        gemini_pro_model=(
+            gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model
+        ),
     )
 
 

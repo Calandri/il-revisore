@@ -31,10 +31,10 @@ def get_secrets() -> dict:
         import boto3
         from botocore.exceptions import ClientError, NoCredentialsError
 
-        client = boto3.client('secretsmanager', region_name=AWS_REGION)
+        client = boto3.client("secretsmanager", region_name=AWS_REGION)
 
         response = client.get_secret_value(SecretId=SECRET_NAME)
-        secrets = json.loads(response['SecretString'])
+        secrets = json.loads(response["SecretString"])
 
         _secrets_cache = secrets
         logger.info(f"Successfully fetched secrets from AWS ({SECRET_NAME})")

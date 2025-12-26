@@ -321,8 +321,10 @@ Output ONLY the JSON, no markdown or explanations.
             cmd = [
                 self.cli_path,
                 "prompt",
-                "--file", prompt_file,
-                "--format", "json",
+                "--file",
+                prompt_file,
+                "--format",
+                "json",
             ]
 
             # Add API key if set
@@ -376,20 +378,22 @@ Output ONLY the JSON, no markdown or explanations.
             # Return a default response if SDK not available
             return self._get_fallback_response()
         except Exception as e:
-            return json.dumps({
-                "satisfaction_score": 50,
-                "status": "NEEDS_REFINEMENT",
-                "dimension_scores": {
-                    "completeness": 50,
-                    "accuracy": 50,
-                    "depth": 50,
-                    "actionability": 50,
-                },
-                "missed_issues": [],
-                "challenges": [],
-                "improvements_needed": [f"Challenger API error: {str(e)}"],
-                "positive_feedback": [],
-            })
+            return json.dumps(
+                {
+                    "satisfaction_score": 50,
+                    "status": "NEEDS_REFINEMENT",
+                    "dimension_scores": {
+                        "completeness": 50,
+                        "accuracy": 50,
+                        "depth": 50,
+                        "actionability": 50,
+                    },
+                    "missed_issues": [],
+                    "challenges": [],
+                    "improvements_needed": [f"Challenger API error: {str(e)}"],
+                    "positive_feedback": [],
+                }
+            )
 
     def _parse_response(self, response_text: str, iteration: int) -> ChallengerFeedback:
         """Parse Gemini's response into ChallengerFeedback."""
@@ -424,25 +428,29 @@ Output ONLY the JSON, no markdown or explanations.
             # Parse missed issues
             missed_issues = []
             for mi_data in data.get("missed_issues", []):
-                missed_issues.append(MissedIssue(
-                    type=mi_data.get("type", "unknown"),
-                    description=mi_data.get("description", ""),
-                    file=mi_data.get("file", "unknown"),
-                    lines=mi_data.get("lines"),
-                    why_important=mi_data.get("why_important", ""),
-                    suggested_severity=mi_data.get("suggested_severity"),
-                ))
+                missed_issues.append(
+                    MissedIssue(
+                        type=mi_data.get("type", "unknown"),
+                        description=mi_data.get("description", ""),
+                        file=mi_data.get("file", "unknown"),
+                        lines=mi_data.get("lines"),
+                        why_important=mi_data.get("why_important", ""),
+                        suggested_severity=mi_data.get("suggested_severity"),
+                    )
+                )
 
             # Parse challenges
             challenges = []
             for ch_data in data.get("challenges", []):
-                challenges.append(Challenge(
-                    issue_id=ch_data.get("issue_id", "unknown"),
-                    challenge_type=ch_data.get("challenge_type", "needs_context"),
-                    challenge=ch_data.get("challenge", ""),
-                    reasoning=ch_data.get("reasoning", ""),
-                    suggested_change=ch_data.get("suggested_change"),
-                ))
+                challenges.append(
+                    Challenge(
+                        issue_id=ch_data.get("issue_id", "unknown"),
+                        challenge_type=ch_data.get("challenge_type", "needs_context"),
+                        challenge=ch_data.get("challenge", ""),
+                        reasoning=ch_data.get("reasoning", ""),
+                        suggested_change=ch_data.get("suggested_change"),
+                    )
+                )
 
             # Determine status
             score = data.get("satisfaction_score", dimension_scores.weighted_score)
@@ -482,9 +490,7 @@ Output ONLY the JSON, no markdown or explanations.
                     depth=50,
                     actionability=50,
                 ),
-                improvements_needed=[
-                    f"Failed to parse challenger response: {response_text[:500]}"
-                ],
+                improvements_needed=[f"Failed to parse challenger response: {response_text[:500]}"],
             )
 
     def _score_to_status(self, score: float) -> ChallengerStatus:
@@ -497,19 +503,21 @@ Output ONLY the JSON, no markdown or explanations.
 
     def _get_fallback_response(self) -> str:
         """Get fallback response when API is unavailable."""
-        return json.dumps({
-            "satisfaction_score": 80,
-            "status": "NEEDS_REFINEMENT",
-            "dimension_scores": {
-                "completeness": 80,
-                "accuracy": 80,
-                "depth": 80,
-                "actionability": 80,
-            },
-            "missed_issues": [],
-            "challenges": [],
-            "improvements_needed": [
-                "Gemini API unavailable - using fallback. Manual review recommended."
-            ],
-            "positive_feedback": ["Review structure appears reasonable."],
-        })
+        return json.dumps(
+            {
+                "satisfaction_score": 80,
+                "status": "NEEDS_REFINEMENT",
+                "dimension_scores": {
+                    "completeness": 80,
+                    "accuracy": 80,
+                    "depth": 80,
+                    "actionability": 80,
+                },
+                "missed_issues": [],
+                "challenges": [],
+                "improvements_needed": [
+                    "Gemini API unavailable - using fallback. Manual review recommended."
+                ],
+                "positive_feedback": ["Review structure appears reasonable."],
+            }
+        )

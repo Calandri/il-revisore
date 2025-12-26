@@ -23,8 +23,12 @@ class ReviewTaskConfig(TaskConfig):
 
     batch_size: int = Field(default=3, ge=1, le=10, description="Files per batch")
     max_file_size: int = Field(default=6000, ge=100, description="Max file content chars")
-    include_patterns: list[str] = Field(default_factory=list, description="File patterns to include")
-    exclude_patterns: list[str] = Field(default_factory=list, description="File patterns to exclude")
+    include_patterns: list[str] = Field(
+        default_factory=list, description="File patterns to include"
+    )
+    exclude_patterns: list[str] = Field(
+        default_factory=list, description="File patterns to exclude"
+    )
 
 
 class DevelopTaskConfig(TaskConfig):

@@ -3,6 +3,8 @@
 from .analysis import router as analysis_router
 from .auth import router as auth_router
 from .chat import router as chat_router
+from .cli_chat import router as cli_chat_router
+from .deployments import router as deployments_router
 from .fix import router as fix_router
 from .git import router as git_router
 from .issues import router as issues_router
@@ -15,8 +17,6 @@ from .tasks import router as tasks_router
 from .thinking import router as thinking_router
 from .users import router as users_router
 from .web import router as web_router
-from .cli_chat import router as cli_chat_router
-from .deployments import router as deployments_router
 
 __all__ = [
     "repos_router",

@@ -11,32 +11,30 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sse_starlette.sse import EventSourceResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
 
+from ...chat_cli import (
+    CLIType,
+    get_agent_loader,
+    get_context_for_session,
+    get_mcp_manager,
+    get_process_manager,
+)
+from ...db.models import CLIChatMessage, CLIChatSession
 from ..deps import get_db
 from ..schemas.cli_chat import (
+    AgentListResponse,
+    AgentResponse,
+    CLIMessageCreate,
+    CLIMessageResponse,
     CLISessionCreate,
     CLISessionResponse,
     CLISessionUpdate,
-    CLIMessageCreate,
-    CLIMessageResponse,
-    AgentResponse,
-    AgentListResponse,
-    StreamEvent,
-    MCPServerResponse,
-    MCPServerCreate,
     MCPConfigResponse,
-)
-from ...db.models import CLIChatSession, CLIChatMessage
-from ...chat_cli import (
-    get_agent_loader,
-    get_process_manager,
-    get_mcp_manager,
-    get_cached_context,
-    get_context_for_session,
-    CLIType,
+    MCPServerCreate,
+    MCPServerResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,13 +86,16 @@ Respond with ONLY the title, nothing else."""
             args = [
                 "claude",
                 "--print",
-                "--model", "claude-sonnet-4-20250514",
-                "-p", prompt,
+                "--model",
+                "claude-sonnet-4-20250514",
+                "-p",
+                prompt,
             ]
         else:
             args = [
                 "gemini",
-                "-m", "gemini-2.5-flash",
+                "-m",
+                "gemini-2.5-flash",
                 prompt,
             ]
 
@@ -106,16 +107,13 @@ Respond with ONLY the title, nothing else."""
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(),
-            timeout=timeout
-        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
         title = stdout.decode().strip()
 
         # Clean and limit to 3 words
         # Remove quotes and extra punctuation
-        title = title.strip('"\'`')
+        title = title.strip("\"'`")
         words = title.split()[:3]
         final_title = " ".join(words) if words else None
 
@@ -171,9 +169,7 @@ def create_session(
     """Create a new CLI chat session."""
     # Set default model based on CLI type
     default_model = (
-        "claude-opus-4-5-20251101"
-        if data.cli_type == "claude"
-        else "gemini-3-pro-preview"
+        "claude-opus-4-5-20251101" if data.cli_type == "claude" else "gemini-3-pro-preview"
     )
 
     session = CLIChatSession(
@@ -306,10 +302,9 @@ def get_messages(
     query = db.query(CLIChatMessage).filter(CLIChatMessage.session_id == session_id)
 
     if not include_thinking:
-        query = query.filter(CLIChatMessage.is_thinking == False)
+        query = query.filter(not CLIChatMessage.is_thinking)
 
-    messages = query.order_by(CLIChatMessage.created_at.asc()).limit(limit).all()
-    return messages
+    return query.order_by(CLIChatMessage.created_at.asc()).limit(limit).all()
 
 
 @router.post("/sessions/{session_id}/message")
@@ -385,16 +380,22 @@ async def send_message(
 
                     proc = await manager.spawn_claude(
                         session_id=session_id,
-                        working_dir=Path(session.repository.local_path if session.repository else "."),
+                        working_dir=Path(
+                            session.repository.local_path if session.repository else "."
+                        ),
                         model=session.model or "claude-opus-4-5-20251101",
                         agent_path=agent_path,
-                        thinking_budget=session.thinking_budget if session.thinking_enabled else None,
+                        thinking_budget=(
+                            session.thinking_budget if session.thinking_enabled else None
+                        ),
                         context=context,
                     )
                 else:
                     proc = await manager.spawn_gemini(
                         session_id=session_id,
-                        working_dir=Path(session.repository.local_path if session.repository else "."),
+                        working_dir=Path(
+                            session.repository.local_path if session.repository else "."
+                        ),
                         model=session.model or "gemini-3-pro-preview",
                         reasoning=session.reasoning_enabled,
                         context=context,
@@ -469,7 +470,9 @@ async def send_message(
                             "data": json.dumps({"content": line + "\n"}),
                         }
 
-            logger.info(f"[STREAM] Done. System: {len(system_events)}, Content: {len(''.join(full_content))} chars")
+            logger.info(
+                f"[STREAM] Done. System: {len(system_events)}, Content: {len(''.join(full_content))} chars"
+            )
 
             # Save assistant message
             content = "".join(full_content)
@@ -491,10 +494,12 @@ async def send_message(
             # Done event
             yield {
                 "event": "done",
-                "data": json.dumps({
-                    "message_id": assistant_message.id,
-                    "total_length": len(content),
-                }),
+                "data": json.dumps(
+                    {
+                        "message_id": assistant_message.id,
+                        "total_length": len(content),
+                    }
+                ),
             }
 
             # Generate title for first message
@@ -675,13 +680,15 @@ def list_active_processes():
     for sid in sessions:
         proc = manager.get_process(sid)
         if proc:
-            result.append({
-                "session_id": sid,
-                "cli_type": proc.cli_type.value,
-                "pid": proc.pid,
-                "status": proc.status.value,
-                "started_at": proc.started_at.isoformat(),
-            })
+            result.append(
+                {
+                    "session_id": sid,
+                    "cli_type": proc.cli_type.value,
+                    "pid": proc.pid,
+                    "status": proc.status.value,
+                    "started_at": proc.started_at.isoformat(),
+                }
+            )
 
     return {"active": result, "count": len(result)}
 

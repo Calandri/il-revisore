@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CachedPrompt:
     """Cached prompt with metadata for invalidation."""
+
     content: str
     mtime: float  # File modification time when loaded
     path: Path
@@ -177,11 +178,7 @@ def get_available_prompts() -> list[str]:
     if not settings.agents_dir.exists():
         return []
 
-    return [
-        p.stem
-        for p in settings.agents_dir.glob("*.md")
-        if p.is_file()
-    ]
+    return [p.stem for p in settings.agents_dir.glob("*.md") if p.is_file()]
 
 
 def reload_prompts() -> int:

@@ -104,9 +104,7 @@ class ClaudeClient(BaseAgent):
                 "Consider increasing timeout or reducing prompt size."
             ) from e
         except httpx.ConnectError as e:
-            raise ClaudeError(
-                "Failed to connect to Claude API. Check network connection."
-            ) from e
+            raise ClaudeError("Failed to connect to Claude API. Check network connection.") from e
         except Exception as e:
             raise ClaudeError(f"Claude API error: {e}") from e
 
@@ -144,9 +142,7 @@ class ClaudeClient(BaseAgent):
                 "Consider increasing timeout or reducing prompt size."
             ) from e
         except httpx.ConnectError as e:
-            raise ClaudeError(
-                "Failed to connect to Claude API. Check network connection."
-            ) from e
+            raise ClaudeError("Failed to connect to Claude API. Check network connection.") from e
         except Exception as e:
             raise ClaudeError(f"Claude API error: {e}") from e
 
@@ -172,13 +168,9 @@ class ClaudeClient(BaseAgent):
             ) as stream:
                 yield from stream.text_stream
         except httpx.TimeoutException as e:
-            raise ClaudeError(
-                f"Claude streaming timeout after {self._timeout}s."
-            ) from e
+            raise ClaudeError(f"Claude streaming timeout after {self._timeout}s.") from e
         except httpx.ConnectError as e:
-            raise ClaudeError(
-                "Failed to connect to Claude API. Check network connection."
-            ) from e
+            raise ClaudeError("Failed to connect to Claude API. Check network connection.") from e
         except Exception as e:
             raise ClaudeError(f"Claude streaming error: {e}") from e
 
@@ -205,12 +197,8 @@ class ClaudeClient(BaseAgent):
                 async for text in stream.text_stream:
                     yield text
         except httpx.TimeoutException as e:
-            raise ClaudeError(
-                f"Claude async streaming timeout after {self._timeout}s."
-            ) from e
+            raise ClaudeError(f"Claude async streaming timeout after {self._timeout}s.") from e
         except httpx.ConnectError as e:
-            raise ClaudeError(
-                "Failed to connect to Claude API. Check network connection."
-            ) from e
+            raise ClaudeError("Failed to connect to Claude API. Check network connection.") from e
         except Exception as e:
             raise ClaudeError(f"Claude async streaming error: {e}") from e

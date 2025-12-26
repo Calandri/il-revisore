@@ -35,10 +35,7 @@ async def get_thinking_log(
     settings = get_settings()
 
     if not settings.thinking.enabled:
-        raise HTTPException(
-            status_code=404,
-            detail="Extended thinking is not enabled"
-        )
+        raise HTTPException(status_code=404, detail="Extended thinking is not enabled")
 
     # Search for the thinking file in S3
     # Format: thinking/{YYYY}/{MM}/{DD}/{HHMMSS}/{review_id}_{reviewer_name}.md
@@ -84,8 +81,7 @@ async def get_thinking_log(
 
         if not found_key:
             raise HTTPException(
-                status_code=404,
-                detail=f"Thinking log not found for {reviewer_name}"
+                status_code=404, detail=f"Thinking log not found for {reviewer_name}"
             )
 
         # Get the object content
@@ -108,14 +104,8 @@ async def get_thinking_log(
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "")
         if error_code == "NoSuchBucket":
-            raise HTTPException(
-                status_code=503,
-                detail="Thinking storage not available"
-            )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch thinking log: {str(e)}"
-        )
+            raise HTTPException(status_code=503, detail="Thinking storage not available")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch thinking log: {str(e)}")
 
 
 @router.get("/list/{review_id}")
@@ -156,12 +146,14 @@ async def list_thinking_logs(
                     parts = filename.replace(".md", "").split("_")
                     if len(parts) >= 2:
                         reviewer_name = "_".join(parts[1:])  # Handle reviewer_be etc
-                        logs.append({
-                            "reviewer_name": reviewer_name,
-                            "s3_key": key,
-                            "last_modified": obj["LastModified"].isoformat(),
-                            "size_bytes": obj["Size"],
-                        })
+                        logs.append(
+                            {
+                                "reviewer_name": reviewer_name,
+                                "s3_key": key,
+                                "last_modified": obj["LastModified"].isoformat(),
+                                "size_bytes": obj["Size"],
+                            }
+                        )
 
         return {"review_id": review_id, "logs": logs, "enabled": True}
 

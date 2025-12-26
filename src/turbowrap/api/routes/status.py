@@ -22,6 +22,7 @@ SERVER_START_TIME = datetime.now()
 
 class ServiceStatus(BaseModel):
     """Status of a single service."""
+
     name: str
     status: Literal["ok", "error", "unavailable"]
     message: str | None = None
@@ -31,6 +32,7 @@ class ServiceStatus(BaseModel):
 
 class FullStatus(BaseModel):
     """Complete system status."""
+
     server: dict
     services: list[ServiceStatus]
     database: dict
@@ -78,12 +80,13 @@ def ping_claude():
             name="claude",
             status="unavailable",
             message="API key not configured",
-            model=settings.agents.claude_model
+            model=settings.agents.claude_model,
         )
 
     try:
         start = time.time()
         from ...llm import ClaudeClient
+
         client = ClaudeClient(max_tokens=100)
         response = client.generate("Say 'ok' in one word.")
         latency = (time.time() - start) * 1000
@@ -93,14 +96,11 @@ def ping_claude():
             status="ok",
             message=response[:50] if response else "Empty response",
             latency_ms=round(latency, 2),
-            model=settings.agents.claude_model
+            model=settings.agents.claude_model,
         )
     except Exception as e:
         return ServiceStatus(
-            name="claude",
-            status="error",
-            message=str(e)[:100],
-            model=settings.agents.claude_model
+            name="claude", status="error", message=str(e)[:100], model=settings.agents.claude_model
         )
 
 
@@ -114,12 +114,13 @@ def ping_gemini():
             name="gemini",
             status="unavailable",
             message="API key not configured",
-            model=settings.agents.gemini_model
+            model=settings.agents.gemini_model,
         )
 
     try:
         start = time.time()
         from ...llm import GeminiClient
+
         client = GeminiClient()
         response = client.generate("Say 'ok' in one word.")
         latency = (time.time() - start) * 1000
@@ -129,14 +130,11 @@ def ping_gemini():
             status="ok",
             message=response[:50] if response else "Empty response",
             latency_ms=round(latency, 2),
-            model=settings.agents.gemini_model
+            model=settings.agents.gemini_model,
         )
     except Exception as e:
         return ServiceStatus(
-            name="gemini",
-            status="error",
-            message=str(e)[:100],
-            model=settings.agents.gemini_model
+            name="gemini", status="error", message=str(e)[:100], model=settings.agents.gemini_model
         )
 
 
@@ -154,6 +152,7 @@ def system_status():
     """Get system resource usage."""
     try:
         import psutil
+
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
 
@@ -286,16 +285,17 @@ def live_status():
     # CLI processes (claude/gemini)
     try:
         import psutil
+
         cli_processes = []
         now = time.time()
 
-        for proc in psutil.process_iter(['name', 'memory_percent', 'cpu_percent']):
+        for proc in psutil.process_iter(["name", "memory_percent", "cpu_percent"]):
             try:
-                name = proc.info['name'].lower()
-                if name in ('claude', 'gemini', 'node'):
+                name = proc.info["name"].lower()
+                if name in ("claude", "gemini", "node"):
                     cmdline_list = proc.cmdline()
-                    cmdline = ' '.join(cmdline_list).lower()
-                    if 'claude' in cmdline or 'gemini' in cmdline:
+                    cmdline = " ".join(cmdline_list).lower()
+                    if "claude" in cmdline or "gemini" in cmdline:
                         # Get additional process info
                         cwd = None
                         try:
@@ -322,7 +322,7 @@ def live_status():
                             pass
 
                         # Extract repo name from cwd
-                        repo_name = cwd.rstrip('/').split('/')[-1] if cwd else None
+                        repo_name = cwd.rstrip("/").split("/")[-1] if cwd else None
 
                         # Format elapsed time
                         if elapsed_seconds < 60:
@@ -330,25 +330,29 @@ def live_status():
                         elif elapsed_seconds < 3600:
                             elapsed_str = f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s"
                         else:
-                            elapsed_str = f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
+                            elapsed_str = (
+                                f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
+                            )
 
                         # Extract meaningful cmdline info
-                        cmdline_short = ' '.join(cmdline_list[1:4]) if len(cmdline_list) > 1 else ''
+                        cmdline_short = " ".join(cmdline_list[1:4]) if len(cmdline_list) > 1 else ""
                         if len(cmdline_short) > 60:
-                            cmdline_short = cmdline_short[:57] + '...'
+                            cmdline_short = cmdline_short[:57] + "..."
 
-                        cli_processes.append({
-                            'name': 'claude' if 'claude' in cmdline else 'gemini',
-                            'pid': proc.pid,
-                            'memory_percent': round(proc.info['memory_percent'] or 0, 1),
-                            'cpu_percent': round(cpu, 1),
-                            'status': status,
-                            'cwd': cwd,
-                            'repo_name': repo_name,
-                            'elapsed': elapsed_str,
-                            'elapsed_seconds': elapsed_seconds,
-                            'cmdline': cmdline_short,
-                        })
+                        cli_processes.append(
+                            {
+                                "name": "claude" if "claude" in cmdline else "gemini",
+                                "pid": proc.pid,
+                                "memory_percent": round(proc.info["memory_percent"] or 0, 1),
+                                "cpu_percent": round(cpu, 1),
+                                "status": status,
+                                "cwd": cwd,
+                                "repo_name": repo_name,
+                                "elapsed": elapsed_str,
+                                "elapsed_seconds": elapsed_seconds,
+                                "cmdline": cmdline_short,
+                            }
+                        )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
@@ -362,19 +366,29 @@ def live_status():
     # Docker/Container build processes
     try:
         import psutil
+
         build_processes = []
         now = time.time()
 
-        for proc in psutil.process_iter(['name', 'memory_percent', 'cpu_percent']):
+        for proc in psutil.process_iter(["name", "memory_percent", "cpu_percent"]):
             try:
-                name = proc.info['name'].lower()
+                name = proc.info["name"].lower()
                 # Detect docker, docker-compose, buildx, podman, buildah
-                if name in ('docker', 'docker-compose', 'podman', 'buildah', 'buildx', 'containerd'):
+                if name in (
+                    "docker",
+                    "docker-compose",
+                    "podman",
+                    "buildah",
+                    "buildx",
+                    "containerd",
+                ):
                     cmdline_list = proc.cmdline()
-                    cmdline = ' '.join(cmdline_list).lower()
+                    cmdline = " ".join(cmdline_list).lower()
 
                     # Check if it's a build operation
-                    is_build = any(kw in cmdline for kw in ['build', 'push', 'pull', 'compose up', 'run'])
+                    is_build = any(
+                        kw in cmdline for kw in ["build", "push", "pull", "compose up", "run"]
+                    )
                     if not is_build:
                         continue
 
@@ -404,34 +418,34 @@ def live_status():
                         pass
 
                     # Determine operation type
-                    if 'build' in cmdline:
-                        op_type = 'build'
-                    elif 'push' in cmdline:
-                        op_type = 'push'
-                    elif 'pull' in cmdline:
-                        op_type = 'pull'
-                    elif 'compose up' in cmdline or 'up -d' in cmdline:
-                        op_type = 'up'
-                    elif 'run' in cmdline:
-                        op_type = 'run'
+                    if "build" in cmdline:
+                        op_type = "build"
+                    elif "push" in cmdline:
+                        op_type = "push"
+                    elif "pull" in cmdline:
+                        op_type = "pull"
+                    elif "compose up" in cmdline or "up -d" in cmdline:
+                        op_type = "up"
+                    elif "run" in cmdline:
+                        op_type = "run"
                     else:
-                        op_type = 'other'
+                        op_type = "other"
 
                     # Extract image/service name from cmdline
                     image_name = None
                     # Try to find -t flag for build
-                    if '-t ' in cmdline:
-                        parts = cmdline.split('-t ')
+                    if "-t " in cmdline:
+                        parts = cmdline.split("-t ")
                         if len(parts) > 1:
-                            image_name = parts[1].split()[0].split(':')[0]
+                            image_name = parts[1].split()[0].split(":")[0]
                     # Or look for Dockerfile context
-                    elif '-f ' in cmdline:
-                        parts = cmdline.split('-f ')
+                    elif "-f " in cmdline:
+                        parts = cmdline.split("-f ")
                         if len(parts) > 1:
                             image_name = parts[1].split()[0]
 
                     # Extract repo/project name from cwd
-                    project_name = cwd.rstrip('/').split('/')[-1] if cwd else None
+                    project_name = cwd.rstrip("/").split("/")[-1] if cwd else None
 
                     # Format elapsed time
                     if elapsed_seconds < 60:
@@ -439,27 +453,31 @@ def live_status():
                     elif elapsed_seconds < 3600:
                         elapsed_str = f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s"
                     else:
-                        elapsed_str = f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
+                        elapsed_str = (
+                            f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
+                        )
 
                     # Extract meaningful cmdline info
-                    cmdline_short = ' '.join(cmdline_list[:5]) if cmdline_list else ''
+                    cmdline_short = " ".join(cmdline_list[:5]) if cmdline_list else ""
                     if len(cmdline_short) > 80:
-                        cmdline_short = cmdline_short[:77] + '...'
+                        cmdline_short = cmdline_short[:77] + "..."
 
-                    build_processes.append({
-                        'tool': name,  # docker, podman, etc
-                        'operation': op_type,
-                        'pid': proc.pid,
-                        'memory_percent': round(proc.info['memory_percent'] or 0, 1),
-                        'cpu_percent': round(cpu, 1),
-                        'status': status,
-                        'cwd': cwd,
-                        'project_name': project_name,
-                        'image_name': image_name,
-                        'elapsed': elapsed_str,
-                        'elapsed_seconds': elapsed_seconds,
-                        'cmdline': cmdline_short,
-                    })
+                    build_processes.append(
+                        {
+                            "tool": name,  # docker, podman, etc
+                            "operation": op_type,
+                            "pid": proc.pid,
+                            "memory_percent": round(proc.info["memory_percent"] or 0, 1),
+                            "cpu_percent": round(cpu, 1),
+                            "status": status,
+                            "cwd": cwd,
+                            "project_name": project_name,
+                            "image_name": image_name,
+                            "elapsed": elapsed_str,
+                            "elapsed_seconds": elapsed_seconds,
+                            "cmdline": cmdline_short,
+                        }
+                    )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
@@ -544,33 +562,33 @@ def full_status(db: Session = Depends(get_db)):
 
     # Claude status
     if settings.agents.anthropic_api_key:
-        services.append(ServiceStatus(
-            name="claude",
-            status="ok",
-            message="API key configured",
-            model=settings.agents.claude_model
-        ))
+        services.append(
+            ServiceStatus(
+                name="claude",
+                status="ok",
+                message="API key configured",
+                model=settings.agents.claude_model,
+            )
+        )
     else:
-        services.append(ServiceStatus(
-            name="claude",
-            status="unavailable",
-            message="API key not configured"
-        ))
+        services.append(
+            ServiceStatus(name="claude", status="unavailable", message="API key not configured")
+        )
 
     # Gemini status
     if settings.agents.effective_google_key:
-        services.append(ServiceStatus(
-            name="gemini",
-            status="ok",
-            message="API key configured",
-            model=settings.agents.gemini_model
-        ))
+        services.append(
+            ServiceStatus(
+                name="gemini",
+                status="ok",
+                message="API key configured",
+                model=settings.agents.gemini_model,
+            )
+        )
     else:
-        services.append(ServiceStatus(
-            name="gemini",
-            status="unavailable",
-            message="API key not configured"
-        ))
+        services.append(
+            ServiceStatus(name="gemini", status="unavailable", message="API key not configured")
+        )
 
     # Database stats
     try:
@@ -592,6 +610,7 @@ def full_status(db: Session = Depends(get_db)):
     # System resources
     try:
         import psutil
+
         memory = psutil.virtual_memory()
         system = {
             "platform": platform.system(),
@@ -640,10 +659,9 @@ def get_active_development(db: Session = Depends(get_db)):
     active_issues = []
 
     # Get active Linear issues
-    linear_issues = db.query(LinearIssue).filter(
-        LinearIssue.is_active,
-        LinearIssue.deleted_at.is_(None)
-    ).all()
+    linear_issues = (
+        db.query(LinearIssue).filter(LinearIssue.is_active, LinearIssue.deleted_at.is_(None)).all()
+    )
 
     for li in linear_issues:
         # Get repository names
@@ -652,36 +670,37 @@ def get_active_development(db: Session = Depends(get_db)):
             if link.repository:
                 repo_names.append(link.repository.name)
 
-        active_issues.append({
-            "type": "linear",
-            "id": li.id,
-            "identifier": li.linear_identifier,
-            "title": li.title,
-            "url": li.linear_url,
-            "repository_names": repo_names[:3],  # Max 3
-            "fix_branch": li.fix_branch,
-            "fix_commit_sha": li.fix_commit_sha,
-            "turbowrap_state": li.turbowrap_state,
-        })
+        active_issues.append(
+            {
+                "type": "linear",
+                "id": li.id,
+                "identifier": li.linear_identifier,
+                "title": li.title,
+                "url": li.linear_url,
+                "repository_names": repo_names[:3],  # Max 3
+                "fix_branch": li.fix_branch,
+                "fix_commit_sha": li.fix_commit_sha,
+                "turbowrap_state": li.turbowrap_state,
+            }
+        )
 
     # Get active GitHub issues
-    github_issues = db.query(Issue).filter(
-        Issue.is_active,
-        Issue.deleted_at.is_(None)
-    ).all()
+    github_issues = db.query(Issue).filter(Issue.is_active, Issue.deleted_at.is_(None)).all()
 
     for gi in github_issues:
-        active_issues.append({
-            "type": "github",
-            "id": gi.id,
-            "identifier": gi.issue_code,
-            "title": gi.title,
-            "url": None,  # GitHub issues don't have external URLs
-            "repository_names": [gi.repository.name] if gi.repository else [],
-            "fix_branch": gi.fix_branch,
-            "fix_commit_sha": gi.fix_commit_sha,
-            "status": gi.status,
-            "severity": gi.severity,
-        })
+        active_issues.append(
+            {
+                "type": "github",
+                "id": gi.id,
+                "identifier": gi.issue_code,
+                "title": gi.title,
+                "url": None,  # GitHub issues don't have external URLs
+                "repository_names": [gi.repository.name] if gi.repository else [],
+                "fix_branch": gi.fix_branch,
+                "fix_commit_sha": gi.fix_commit_sha,
+                "status": gi.status,
+                "severity": gi.severity,
+            }
+        )
 
     return active_issues

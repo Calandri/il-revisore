@@ -38,11 +38,7 @@ class CheckpointService:
         Returns:
             List of checkpoints
         """
-        return (
-            self.db.query(ReviewCheckpoint)
-            .filter(ReviewCheckpoint.task_id == task_id)
-            .all()
-        )
+        return self.db.query(ReviewCheckpoint).filter(ReviewCheckpoint.task_id == task_id).all()
 
     def save_checkpoint(
         self,
@@ -134,11 +130,7 @@ class CheckpointService:
         Returns:
             Number of deleted checkpoints
         """
-        count = (
-            self.db.query(ReviewCheckpoint)
-            .filter(ReviewCheckpoint.task_id == task_id)
-            .delete()
-        )
+        count = self.db.query(ReviewCheckpoint).filter(ReviewCheckpoint.task_id == task_id).delete()
         self.db.commit()
         logger.info(f"Deleted {count} checkpoints for task {task_id}")
         return count

@@ -413,16 +413,18 @@ class RepoManager:
             LinkType(link_type)
         except ValueError:
             valid_types = [t.value for t in LinkType]
-            raise RepositoryError(
-                f"Invalid link type: {link_type}. Valid types: {valid_types}"
-            )
+            raise RepositoryError(f"Invalid link type: {link_type}. Valid types: {valid_types}")
 
         # Check for existing link (same type)
-        existing = self.db.query(RepositoryLink).filter(
-            RepositoryLink.source_repo_id == source_id,
-            RepositoryLink.target_repo_id == target_id,
-            RepositoryLink.link_type == link_type,
-        ).first()
+        existing = (
+            self.db.query(RepositoryLink)
+            .filter(
+                RepositoryLink.source_repo_id == source_id,
+                RepositoryLink.target_repo_id == target_id,
+                RepositoryLink.link_type == link_type,
+            )
+            .first()
+        )
 
         if existing:
             raise RepositoryError(
@@ -452,9 +454,7 @@ class RepoManager:
         Raises:
             RepositoryError: If link not found.
         """
-        link = self.db.query(RepositoryLink).filter(
-            RepositoryLink.id == link_id
-        ).first()
+        link = self.db.query(RepositoryLink).filter(RepositoryLink.id == link_id).first()
 
         if not link:
             raise RepositoryError(f"Link not found: {link_id}")
@@ -489,39 +489,39 @@ class RepoManager:
 
         # Outgoing links (this repo is the source)
         if direction is None or direction == "outgoing":
-            query = self.db.query(RepositoryLink).filter(
-                RepositoryLink.source_repo_id == repo_id
-            )
+            query = self.db.query(RepositoryLink).filter(RepositoryLink.source_repo_id == repo_id)
             if link_type:
                 query = query.filter(RepositoryLink.link_type == link_type)
 
             for link in query.all():
-                linked_repos.append({
-                    "id": link.target_repo.id,
-                    "name": link.target_repo.name,
-                    "repo_type": link.target_repo.repo_type,
-                    "link_id": link.id,
-                    "link_type": link.link_type,
-                    "direction": "outgoing",
-                })
+                linked_repos.append(
+                    {
+                        "id": link.target_repo.id,
+                        "name": link.target_repo.name,
+                        "repo_type": link.target_repo.repo_type,
+                        "link_id": link.id,
+                        "link_type": link.link_type,
+                        "direction": "outgoing",
+                    }
+                )
 
         # Incoming links (this repo is the target)
         if direction is None or direction == "incoming":
-            query = self.db.query(RepositoryLink).filter(
-                RepositoryLink.target_repo_id == repo_id
-            )
+            query = self.db.query(RepositoryLink).filter(RepositoryLink.target_repo_id == repo_id)
             if link_type:
                 query = query.filter(RepositoryLink.link_type == link_type)
 
             for link in query.all():
-                linked_repos.append({
-                    "id": link.source_repo.id,
-                    "name": link.source_repo.name,
-                    "repo_type": link.source_repo.repo_type,
-                    "link_id": link.id,
-                    "link_type": link.link_type,
-                    "direction": "incoming",
-                })
+                linked_repos.append(
+                    {
+                        "id": link.source_repo.id,
+                        "name": link.source_repo.name,
+                        "repo_type": link.source_repo.repo_type,
+                        "link_id": link.id,
+                        "link_type": link.link_type,
+                        "direction": "incoming",
+                    }
+                )
 
         return linked_repos
 
@@ -534,6 +534,4 @@ class RepoManager:
         Returns:
             RepositoryLink or None if not found.
         """
-        return self.db.query(RepositoryLink).filter(
-            RepositoryLink.id == link_id
-        ).first()
+        return self.db.query(RepositoryLink).filter(RepositoryLink.id == link_id).first()

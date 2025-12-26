@@ -38,9 +38,6 @@ from turbowrap.review.models.review import (
     ReviewOutput,
     ReviewRequest,
 )
-
-# Type alias for checkpoint data (reviewer_name -> checkpoint dict)
-CheckpointData = dict[str, dict]
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
 from turbowrap.review.utils.file_utils import FileUtils
@@ -49,6 +46,9 @@ from turbowrap.review.utils.repo_detector import RepoDetector
 from turbowrap.tools.structure_generator import StructureGenerator
 
 logger = logging.getLogger(__name__)
+
+# Type alias for checkpoint data (reviewer_name -> checkpoint dict)
+CheckpointData = dict[str, dict]
 
 # Type alias for progress callback
 ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
@@ -116,18 +116,22 @@ class Orchestrator:
         # Helper to emit toast log notifications
         async def emit_log(level: str, message: str):
             """Emit a log event for UI toast notifications."""
-            await emit(ProgressEvent(
-                type=ProgressEventType.REVIEW_LOG,
-                message=message,
-                log_level=level,
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEW_LOG,
+                    message=message,
+                    log_level=level,
+                )
+            )
 
         # Emit review started
-        await emit(ProgressEvent(
-            type=ProgressEventType.REVIEW_STARTED,
-            review_id=report_id,
-            message="Starting code review...",
-        ))
+        await emit(
+            ProgressEvent(
+                type=ProgressEventType.REVIEW_STARTED,
+                review_id=report_id,
+                message="Starting code review...",
+            )
+        )
 
         # Step 1: Prepare context (may auto-generate STRUCTURE.md)
         context = await self._prepare_context(request, emit, report_id)
@@ -163,29 +167,33 @@ class Orchestrator:
 
                     logger.info(f"Skipping {reviewer_name} - restored from checkpoint")
 
-                    await emit(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        iteration=iterations,
-                        satisfaction_score=satisfaction,
-                        issues_found=issues_count,
-                        message=f"⚡ {display_name} restored from checkpoint ({issues_count} issues)",
-                    ))
+                    await emit(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_COMPLETED,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            iteration=iterations,
+                            satisfaction_score=satisfaction,
+                            issues_found=issues_count,
+                            message=f"⚡ {display_name} restored from checkpoint ({issues_count} issues)",
+                        )
+                    )
 
                     await emit_log(
                         "INFO",
-                        f"⚡ {display_name}: restored from checkpoint ({issues_count} issues)"
+                        f"⚡ {display_name}: restored from checkpoint ({issues_count} issues)",
                     )
 
                     return (reviewer_name, "checkpoint", checkpoint)
 
-                await emit(ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STARTED,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                    message=f"Starting {display_name}...",
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STARTED,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        message=f"Starting {display_name}...",
+                    )
+                )
 
                 started_at = datetime.utcnow()
 
@@ -196,21 +204,23 @@ class Orchestrator:
                         emit,
                     )
 
-                    await emit(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        iteration=result.iterations,
-                        satisfaction_score=result.final_satisfaction,
-                        issues_found=len(result.final_review.issues),
-                        message=f"{display_name} completed with {len(result.final_review.issues)} issues",
-                        model_usage=[m.model_dump() for m in result.final_review.model_usage],
-                    ))
+                    await emit(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_COMPLETED,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            iteration=result.iterations,
+                            satisfaction_score=result.final_satisfaction,
+                            issues_found=len(result.final_review.issues),
+                            message=f"{display_name} completed with {len(result.final_review.issues)} issues",
+                            model_usage=[m.model_dump() for m in result.final_review.model_usage],
+                        )
+                    )
 
                     # Toast notification for completed reviewer
                     await emit_log(
                         "INFO",
-                        f"✓ {display_name}: {result.final_satisfaction:.0f}% ({result.iterations} iter, {len(result.final_review.issues)} issues)"
+                        f"✓ {display_name}: {result.final_satisfaction:.0f}% ({result.iterations} iter, {len(result.final_review.issues)} issues)",
                     )
 
                     # SAVE CHECKPOINT on success
@@ -230,13 +240,15 @@ class Orchestrator:
                 except Exception as e:
                     logger.error(f"Reviewer {reviewer_name} failed: {e}")
 
-                    await emit(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_ERROR,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        error=str(e),
-                        message=f"{display_name} failed: {str(e)[:50]}",
-                    ))
+                    await emit(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_ERROR,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            error=str(e),
+                            message=f"{display_name} failed: {str(e)[:50]}",
+                        )
+                    )
 
                     # Toast notification for failed reviewer
                     await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
@@ -276,65 +288,77 @@ class Orchestrator:
                     ]
                     all_issues.extend(restored_issues)
 
-                    reviewer_results.append(ReviewerResult(
-                        name=reviewer_name,
-                        status="completed",  # From user perspective, it's completed
-                        issues_found=len(restored_issues),
-                        iterations=checkpoint.get("iterations", 1),
-                        final_satisfaction=checkpoint.get("final_satisfaction", 0.0),
-                    ))
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="completed",  # From user perspective, it's completed
+                            issues_found=len(restored_issues),
+                            iterations=checkpoint.get("iterations", 1),
+                            final_satisfaction=checkpoint.get("final_satisfaction", 0.0),
+                        )
+                    )
 
                 elif status == "success":
                     loop_result = data
                     loop_results.append(loop_result)
 
-                    reviewer_results.append(ReviewerResult(
-                        name=reviewer_name,
-                        status="completed",
-                        issues_found=len(loop_result.final_review.issues),
-                        duration_seconds=loop_result.final_review.duration_seconds,
-                        iterations=loop_result.iterations,
-                        final_satisfaction=loop_result.final_satisfaction,
-                    ))
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="completed",
+                            issues_found=len(loop_result.final_review.issues),
+                            duration_seconds=loop_result.final_review.duration_seconds,
+                            iterations=loop_result.iterations,
+                            final_satisfaction=loop_result.final_satisfaction,
+                        )
+                    )
 
                     all_issues.extend(loop_result.final_review.issues)
                 else:
-                    reviewer_results.append(ReviewerResult(
-                        name=reviewer_name,
-                        status="error",
-                        error=data,
-                    ))
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="error",
+                            error=data,
+                        )
+                    )
 
         else:
             # Run without challenger pattern (simple mode) - still parallel
             async def run_simple_with_progress(reviewer_name: str):
                 display_name = get_reviewer_display_name(reviewer_name)
 
-                await emit(ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STARTED,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STARTED,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                    )
+                )
 
                 try:
                     result = await self._run_simple_review(context, reviewer_name)
 
-                    await emit(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        issues_found=len(result.issues),
-                        model_usage=[m.model_dump() for m in result.model_usage],
-                    ))
+                    await emit(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_COMPLETED,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            issues_found=len(result.issues),
+                            model_usage=[m.model_dump() for m in result.model_usage],
+                        )
+                    )
 
                     return (reviewer_name, "success", result)
 
                 except Exception as e:
-                    await emit(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_ERROR,
-                        reviewer_name=reviewer_name,
-                        error=str(e),
-                    ))
+                    await emit(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_ERROR,
+                            reviewer_name=reviewer_name,
+                            error=str(e),
+                        )
+                    )
                     return (reviewer_name, "error", str(e))
 
             tasks = [run_simple_with_progress(name) for name in reviewers]
@@ -347,20 +371,24 @@ class Orchestrator:
                 reviewer_name, status, data = result
 
                 if status == "success":
-                    reviewer_results.append(ReviewerResult(
-                        name=reviewer_name,
-                        status="completed",
-                        issues_found=len(data.issues),
-                        duration_seconds=data.duration_seconds,
-                        iterations=1,
-                    ))
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="completed",
+                            issues_found=len(data.issues),
+                            duration_seconds=data.duration_seconds,
+                            iterations=1,
+                        )
+                    )
                     all_issues.extend(data.issues)
                 else:
-                    reviewer_results.append(ReviewerResult(
-                        name=reviewer_name,
-                        status="error",
-                        error=data,
-                    ))
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="error",
+                            error=data,
+                        )
+                    )
 
         # Step 5: Deduplicate and prioritize issues
         deduplicated_issues = self._deduplicate_issues(all_issues)
@@ -374,12 +402,14 @@ class Orchestrator:
             commit_sha=context.commit_sha,
         )
 
-        await emit(ProgressEvent(
-            type=ProgressEventType.REVIEWER_STARTED,
-            reviewer_name="evaluator",
-            reviewer_display_name="Repository Evaluator",
-            message="Running final evaluation...",
-        ))
+        await emit(
+            ProgressEvent(
+                type=ProgressEventType.REVIEWER_STARTED,
+                reviewer_name="evaluator",
+                reviewer_display_name="Repository Evaluator",
+                message="Running final evaluation...",
+            )
+        )
 
         evaluation = await self._run_evaluator(
             context=context,
@@ -391,20 +421,24 @@ class Orchestrator:
         )
 
         if evaluation:
-            await emit(ProgressEvent(
-                type=ProgressEventType.REVIEWER_COMPLETED,
-                reviewer_name="evaluator",
-                reviewer_display_name="Repository Evaluator",
-                message=f"Evaluation complete: {evaluation.overall_score}/100",
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_COMPLETED,
+                    reviewer_name="evaluator",
+                    reviewer_display_name="Repository Evaluator",
+                    message=f"Evaluation complete: {evaluation.overall_score}/100",
+                )
+            )
             await emit_log("INFO", f"✓ Evaluation: {evaluation.overall_score}/100")
         else:
-            await emit(ProgressEvent(
-                type=ProgressEventType.REVIEWER_ERROR,
-                reviewer_name="evaluator",
-                reviewer_display_name="Repository Evaluator",
-                error="Evaluation failed",
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_ERROR,
+                    reviewer_name="evaluator",
+                    reviewer_display_name="Repository Evaluator",
+                    error="Evaluation failed",
+                )
+            )
             await emit_log("WARNING", "⚠ Evaluation skipped")
 
         # Step 6: Build final report
@@ -427,17 +461,19 @@ class Orchestrator:
         )
 
         # Emit review completed
-        await emit(ProgressEvent(
-            type=ProgressEventType.REVIEW_COMPLETED,
-            review_id=report_id,
-            issues_found=report.summary.total_issues,
-            message=f"Review completed with {report.summary.total_issues} issues (score: {report.summary.overall_score:.1f})",
-        ))
+        await emit(
+            ProgressEvent(
+                type=ProgressEventType.REVIEW_COMPLETED,
+                review_id=report_id,
+                issues_found=report.summary.total_issues,
+                message=f"Review completed with {report.summary.total_issues} issues (score: {report.summary.overall_score:.1f})",
+            )
+        )
 
         # Final toast notification
         await emit_log(
             "INFO",
-            f"🎉 Review completata: {report.summary.total_issues} issues, score {report.summary.overall_score:.1f}/10"
+            f"🎉 Review completata: {report.summary.total_issues} issues, score {report.summary.overall_score:.1f}/10",
         )
 
         # Save report to output directory
@@ -536,9 +572,7 @@ class Orchestrator:
                     else:
                         # Scan workspace and prefix paths so they're relative to repo root
                         workspace_files = self._scan_directory(scan_base)
-                        context.files = [
-                            f"{context.workspace_path}/{f}" for f in workspace_files
-                        ]
+                        context.files = [f"{context.workspace_path}/{f}" for f in workspace_files]
                 else:
                     context.files = self._scan_directory(context.repo_path)
 
@@ -583,9 +617,20 @@ class Orchestrator:
         """Scan directory for reviewable files."""
         files = []
         exclude_dirs = {
-            ".git", "node_modules", "__pycache__", ".venv", "venv",
-            ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
-            "coverage", ".tox", "htmlcov", ".reviews",
+            ".git",
+            "node_modules",
+            "__pycache__",
+            ".venv",
+            "venv",
+            ".mypy_cache",
+            ".pytest_cache",
+            "dist",
+            "build",
+            ".next",
+            "coverage",
+            ".tox",
+            "htmlcov",
+            ".reviews",
         }
         # Exclude previous review output files
         exclude_patterns = {".turbowrap_review"}
@@ -627,11 +672,15 @@ class Orchestrator:
             try:
                 content = xml_path.read_text(encoding="utf-8")
                 context.structure_docs["structure.xml"] = content
-                logger.info(f"Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)")
+                logger.info(
+                    f"Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)"
+                )
             except Exception as e:
                 logger.warning(f"Failed to read {xml_path}: {e}")
         else:
-            logger.info(f"No {xml_path.relative_to(context.repo_path)} found - structure docs not available")
+            logger.info(
+                f"No {xml_path.relative_to(context.repo_path)} found - structure docs not available"
+            )
 
     async def _auto_generate_structure(
         self,
@@ -654,18 +703,19 @@ class Orchestrator:
 
         # For monorepo: generate structure.xml only for the workspace
         if context.workspace_path:
-            target_dir = context.repo_path / context.workspace_path
+            context.repo_path / context.workspace_path
             display_name = context.workspace_path
         else:
-            target_dir = context.repo_path
             display_name = context.repo_path.name
 
         # Emit start event
         if emit:
-            await emit(ProgressEvent(
-                type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
-                message=f"Generating structure documentation for {display_name}...",
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
+                    message=f"Generating structure documentation for {display_name}...",
+                )
+            )
 
         try:
             # GeminiClient is REQUIRED for structure generation
@@ -675,7 +725,9 @@ class Orchestrator:
 
             # Create generator with GeminiClient
             # Pass workspace_path for monorepo support
-            logger.info(f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}")
+            logger.info(
+                f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}"
+            )
             generator = StructureGenerator(
                 str(context.repo_path),
                 workspace_path=context.workspace_path,
@@ -685,42 +737,52 @@ class Orchestrator:
 
             # Emit progress update
             if emit:
-                await emit(ProgressEvent(
-                    type=ProgressEventType.STRUCTURE_GENERATION_PROGRESS,
-                    message="Analyzing repository structure with Gemini Flash...",
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.STRUCTURE_GENERATION_PROGRESS,
+                        message="Analyzing repository structure with Gemini Flash...",
+                    )
+                )
 
             # Run generation (sync method, run in executor)
             # Only generate XML format (.llms/structure.xml)
             loop = asyncio.get_event_loop()
             generated_files = await loop.run_in_executor(
-                None,
-                lambda: generator.generate(verbose=True, formats=["xml"])
+                None, lambda: generator.generate(verbose=True, formats=["xml"])
             )
 
             if not generated_files:
-                raise RuntimeError(f"StructureGenerator returned empty list! scan_root={generator.scan_root}")
+                raise RuntimeError(
+                    f"StructureGenerator returned empty list! scan_root={generator.scan_root}"
+                )
 
             # Emit completion
             if emit:
-                await emit(ProgressEvent(
-                    type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
-                    message=f"Generated {len(generated_files)} structure file(s)",
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
+                        message=f"Generated {len(generated_files)} structure file(s)",
+                    )
+                )
 
-            logger.info(f"[ORCHESTRATOR] SUCCESS: Generated {len(generated_files)} structure files: {generated_files}")
+            logger.info(
+                f"[ORCHESTRATOR] SUCCESS: Generated {len(generated_files)} structure files: {generated_files}"
+            )
 
         except Exception as e:
             import traceback
-            logger.error(f"[ORCHESTRATOR] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
+
+            logger.error("[ORCHESTRATOR] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
             logger.error(f"[ORCHESTRATOR] Error: {e}")
             logger.error(f"[ORCHESTRATOR] Traceback:\n{traceback.format_exc()}")
             if emit:
-                await emit(ProgressEvent(
-                    type=ProgressEventType.REVIEW_ERROR,
-                    error=f"CRITICAL: Structure generation failed: {str(e)}",
-                    message="Structure generation FAILED - check logs!",
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEW_ERROR,
+                        error=f"CRITICAL: Structure generation failed: {str(e)}",
+                        message="Structure generation FAILED - check logs!",
+                    )
+                )
             # Re-raise so the error is visible
             raise
 
@@ -766,6 +828,7 @@ class Orchestrator:
                 if "## Metadata" in content and "Repository Type" in content:
                     # Parse repo type from: **Repository Type**: `BACKEND`
                     import re
+
                     match = re.search(
                         r"\*\*Repository Type\*\*:\s*`?(\w+)`?",
                         content,
@@ -835,25 +898,29 @@ class Orchestrator:
 
         # Create iteration callback
         async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
-            await emit(ProgressEvent(
-                type=ProgressEventType.REVIEWER_ITERATION,
-                reviewer_name=reviewer_name,
-                reviewer_display_name=display_name,
-                iteration=iteration,
-                max_iterations=5,
-                satisfaction_score=satisfaction,
-                issues_found=issues_count,
-                message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_ITERATION,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    iteration=iteration,
+                    max_iterations=5,
+                    satisfaction_score=satisfaction,
+                    issues_found=issues_count,
+                    message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
+                )
+            )
 
         # Create streaming callback for token-by-token updates
         async def on_content(content: str):
-            await emit(ProgressEvent(
-                type=ProgressEventType.REVIEWER_STREAMING,
-                reviewer_name=reviewer_name,
-                reviewer_display_name=display_name,
-                content=content,
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STREAMING,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    content=content,
+                )
+            )
 
         loop = ChallengerLoop()
         return await loop.run(
@@ -874,9 +941,7 @@ class Orchestrator:
         reviewer = ClaudeCLIReviewer(name=reviewer_name)
 
         with contextlib.suppress(FileNotFoundError):
-            context.agent_prompt = reviewer.load_agent_prompt(
-                self.settings.agents_dir
-            )
+            context.agent_prompt = reviewer.load_agent_prompt(self.settings.agents_dir)
 
         # CLI reviewer receives file list and explores autonomously
         return await reviewer.review(context, context.files)
@@ -914,6 +979,7 @@ class Orchestrator:
 
     def _prioritize_issues(self, issues: list[Issue]) -> list[Issue]:
         """Sort issues by priority score."""
+
         def priority_score(issue: Issue) -> float:
             severity_scores = {
                 IssueSeverity.CRITICAL: 100,
@@ -969,12 +1035,14 @@ class Orchestrator:
             # Create streaming callback
             async def on_chunk(chunk: str) -> None:
                 if emit:
-                    await emit(ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="evaluator",
-                        reviewer_display_name="Repository Evaluator",
-                        content=chunk,
-                    ))
+                    await emit(
+                        ProgressEvent(
+                            type=ProgressEventType.REVIEWER_STREAMING,
+                            reviewer_name="evaluator",
+                            reviewer_display_name="Repository Evaluator",
+                            content=chunk,
+                        )
+                    )
 
             evaluation = await evaluator.evaluate(
                 structure_docs=context.structure_docs,
@@ -1074,9 +1142,7 @@ class Orchestrator:
             IssueSeverity.LOW: 0.1,
         }
 
-        total_deduction = sum(
-            deductions.get(issue.severity, 0.1) for issue in issues
-        )
+        total_deduction = sum(deductions.get(issue.severity, 0.1) for issue in issues)
 
         return max(0.0, round(10.0 - total_deduction, 1))
 
@@ -1131,27 +1197,33 @@ class Orchestrator:
 
         critical_issues = [i for i in issues if i.severity == IssueSeverity.CRITICAL]
         if critical_issues:
-            steps.append(NextStep(
-                priority=1,
-                action=f"Fix {len(critical_issues)} critical security/logic issues",
-                issues=[i.id for i in critical_issues],
-            ))
+            steps.append(
+                NextStep(
+                    priority=1,
+                    action=f"Fix {len(critical_issues)} critical security/logic issues",
+                    issues=[i.id for i in critical_issues],
+                )
+            )
 
         high_issues = [i for i in issues if i.severity == IssueSeverity.HIGH]
         if high_issues:
-            steps.append(NextStep(
-                priority=2,
-                action=f"Address {len(high_issues)} high priority issues",
-                issues=[i.id for i in high_issues],
-            ))
+            steps.append(
+                NextStep(
+                    priority=2,
+                    action=f"Address {len(high_issues)} high priority issues",
+                    issues=[i.id for i in high_issues],
+                )
+            )
 
         medium_issues = [i for i in issues if i.severity == IssueSeverity.MEDIUM]
         if medium_issues:
-            steps.append(NextStep(
-                priority=3,
-                action=f"Consider {len(medium_issues)} medium priority suggestions",
-                issues=[i.id for i in medium_issues[:5]],  # Limit
-            ))
+            steps.append(
+                NextStep(
+                    priority=3,
+                    action=f"Consider {len(medium_issues)} medium priority suggestions",
+                    issues=[i.id for i in medium_issues[:5]],  # Limit
+                )
+            )
 
         return steps
 
@@ -1191,9 +1263,11 @@ class Orchestrator:
         for structure_file in search_base.rglob("STRUCTURE.md"):
             rel_path = structure_file.relative_to(context.repo_path)
             # Skip ignored directories (use relative path, not absolute)
-            if any(part.startswith(".") or part in {
-                "node_modules", "__pycache__", ".venv", "venv", "dist", "build"
-            } for part in rel_path.parts):
+            if any(
+                part.startswith(".")
+                or part in {"node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
+                for part in rel_path.parts
+            ):
                 continue
 
             try:
@@ -1252,10 +1326,12 @@ class Orchestrator:
 
         # Emit progress event
         if emit:
-            await emit(ProgressEvent(
-                type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
-                message=f"Regenerating {len(stale_dirs)} stale STRUCTURE.md files...",
-            ))
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
+                    message=f"Regenerating {len(stale_dirs)} stale STRUCTURE.md files...",
+                )
+            )
 
         # Use StructureGenerator to regenerate
         try:
@@ -1267,25 +1343,28 @@ class Orchestrator:
             # Run regeneration in executor (sync method)
             loop = asyncio.get_event_loop()
             regenerated = await loop.run_in_executor(
-                None,
-                lambda: generator.regenerate_stale(verbose=True)
+                None, lambda: generator.regenerate_stale(verbose=True)
             )
 
             if emit:
-                await emit(ProgressEvent(
-                    type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
-                    message=f"Regenerated {len(regenerated)} STRUCTURE.md files",
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
+                        message=f"Regenerated {len(regenerated)} STRUCTURE.md files",
+                    )
+                )
 
             logger.info(f"Regenerated {len(regenerated)} STRUCTURE.md files")
 
         except Exception as e:
             logger.error(f"Failed to regenerate STRUCTURE.md files: {e}")
             if emit:
-                await emit(ProgressEvent(
-                    type=ProgressEventType.REVIEW_ERROR,
-                    error=f"Structure refresh failed: {str(e)}",
-                ))
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEW_ERROR,
+                        error=f"Structure refresh failed: {str(e)}",
+                    )
+                )
 
     async def _save_report(self, report: FinalReport, repo_path: Path) -> None:
         """
@@ -1337,11 +1416,12 @@ class Orchestrator:
 
                 try:
                     # Write content
-                    with open(fd, 'w', encoding='utf-8') as f:
+                    with open(fd, "w", encoding="utf-8") as f:
                         f.write(content)
                 except Exception:
                     # Close fd if write fails
                     import os
+
                     os.close(fd)
                     raise
 

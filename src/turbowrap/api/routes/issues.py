@@ -64,12 +64,10 @@ class IssueUpdateRequest(BaseModel):
     """Request to update an issue."""
 
     status: str | None = Field(
-        None,
-        description="New status: open, in_progress, resolved, ignored, duplicate"
+        None, description="New status: open, in_progress, resolved, ignored, duplicate"
     )
     resolution_note: str | None = Field(
-        None,
-        description="Note explaining why issue was resolved/ignored"
+        None, description="Note explaining why issue was resolved/ignored"
     )
 
 
@@ -90,8 +88,12 @@ def list_issues(
     status: str | None = Query(default=None, description="Filter by status"),
     category: str | None = None,
     file: str | None = None,
-    search: str | None = Query(default=None, description="Search in title, description, file, issue_code"),
-    order_by: str | None = Query(default="severity", description="Order by: severity, updated_at, created_at"),
+    search: str | None = Query(
+        default=None, description="Search in title, description, file, issue_code"
+    ),
+    order_by: str | None = Query(
+        default="severity", description="Order by: severity, updated_at, created_at"
+    ),
     limit: int = Query(default=100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -125,10 +127,10 @@ def list_issues(
     if search:
         search_term = f"%{search}%"
         query = query.filter(
-            (Issue.title.ilike(search_term)) |
-            (Issue.description.ilike(search_term)) |
-            (Issue.file.ilike(search_term)) |
-            (Issue.issue_code.ilike(search_term))
+            (Issue.title.ilike(search_term))
+            | (Issue.description.ilike(search_term))
+            | (Issue.file.ilike(search_term))
+            | (Issue.issue_code.ilike(search_term))
         )
 
     # Order by selected criteria
@@ -143,7 +145,7 @@ def list_issues(
             (Issue.severity == "HIGH", 2),
             (Issue.severity == "MEDIUM", 3),
             (Issue.severity == "LOW", 4),
-            else_=5
+            else_=5,
         )
         query = query.order_by(severity_order, Issue.created_at.desc())
 
@@ -227,8 +229,7 @@ def update_issue(
         valid_statuses = [s.value for s in IssueStatus]
         if data.status not in valid_statuses:
             raise HTTPException(
-                status_code=400,
-                detail=f"Invalid status. Must be one of: {valid_statuses}"
+                status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}"
             )
         issue.status = data.status
 
@@ -338,7 +339,7 @@ def get_issue_fix_log(
     if not issue.fix_session_id:
         raise HTTPException(
             status_code=404,
-            detail="No fix log available for this issue (not fixed yet or missing session_id)"
+            detail="No fix log available for this issue (not fixed yet or missing session_id)",
         )
 
     # The S3 key format is: fix-logs/{date}/{session_id}.json
@@ -374,8 +375,7 @@ def get_issue_fix_log(
 
         if not s3_key:
             raise HTTPException(
-                status_code=404,
-                detail=f"Fix log not found in S3 for session {session_id}"
+                status_code=404, detail=f"Fix log not found in S3 for session {session_id}"
             )
 
         # Fetch the log
@@ -396,13 +396,7 @@ def get_issue_fix_log(
 
     except ClientError as e:
         logger.error(f"S3 error fetching fix log: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching fix log from S3: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error fetching fix log from S3: {str(e)}")
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error for fix log: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Fix log file is corrupted"
-        )
+        raise HTTPException(status_code=500, detail="Fix log file is corrupted")

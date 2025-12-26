@@ -6,12 +6,13 @@ Pydantic models for CLI-based chat API endpoints.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Type aliases
 CLITypeEnum = Literal["claude", "gemini"]
-SessionStatusEnum = Literal["idle", "starting", "running", "streaming", "stopping", "error", "completed"]
+SessionStatusEnum = Literal[
+    "idle", "starting", "running", "streaming", "stopping", "error", "completed"
+]
 MessageRoleEnum = Literal["user", "assistant", "system"]
 StreamEventTypeEnum = Literal["start", "chunk", "thinking", "done", "error", "status"]
 

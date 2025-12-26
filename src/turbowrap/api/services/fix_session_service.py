@@ -45,6 +45,7 @@ class IdempotencyStoreProtocol(Protocol):
 
     def remove(self, key: str) -> None: ...
 
+
 from ...db.models import Issue, IssueStatus, LinearIssue, Repository, Setting, Task
 from ...db.session import get_session_local
 from ...fix import (
@@ -168,7 +169,9 @@ class FixSessionService:
                     "message": "Request already processed",
                     "previous_session_id": existing.session_id,
                     "previous_status": existing.status,
-                    "completed_at": existing.completed_at.isoformat() if existing.completed_at else None,
+                    "completed_at": (
+                        existing.completed_at.isoformat() if existing.completed_at else None
+                    ),
                 }
 
         # Verify repository
@@ -214,14 +217,17 @@ class FixSessionService:
             workspace_path=repo.workspace_path,  # Monorepo: restrict fixes to this folder
         )
 
-        return FixSessionInfo(
-            session_id=session_id,
-            repository=repo,
-            task=task,
-            issues=issues,
-            fix_request=fix_request,
-            idempotency_key=idempotency_key,
-        ), None
+        return (
+            FixSessionInfo(
+                session_id=session_id,
+                repository=repo,
+                task=task,
+                issues=issues,
+                fix_request=fix_request,
+                idempotency_key=idempotency_key,
+            ),
+            None,
+        )
 
     async def update_issue_statuses(
         self,
@@ -309,9 +315,7 @@ class FixSessionService:
                 return
 
             # Get Linear client
-            linear_api_key = (
-                db.query(Setting).filter(Setting.key == "linear_api_key").first()
-            )
+            linear_api_key = db.query(Setting).filter(Setting.key == "linear_api_key").first()
 
             if not linear_api_key or not linear_api_key.value:
                 return
@@ -409,9 +413,7 @@ class FixSessionService:
                 )
 
                 # Get commit SHA from first successful result
-                commit_sha = next(
-                    (r.commit_sha for r in result.results if r.commit_sha), None
-                )
+                commit_sha = next((r.commit_sha for r in result.results if r.commit_sha), None)
 
                 # Auto-transition Linear issues to in_review after successful commit
                 if commit_sha and result.branch_name:

@@ -59,12 +59,11 @@ class CreateLinearIssuesStep(BaseStep[Step4Checkpoint]):
         """
         if score >= 80:
             return 1  # Urgent
-        elif score >= 60:
+        if score >= 60:
             return 2  # High
-        elif score >= 40:
+        if score >= 40:
             return 3  # Normal
-        else:
-            return 4  # Low
+        return 4  # Low
 
     def _format_issue_description(self, feature: ProposedFeature) -> str:
         """Format issue description with HITL questions.

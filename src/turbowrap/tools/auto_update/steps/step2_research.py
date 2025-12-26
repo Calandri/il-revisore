@@ -80,7 +80,10 @@ class WebResearchStep(BaseStep[Step2Checkpoint]):
             # Build context from Step 1 if available
             existing_context = ""
             if step1_checkpoint and step1_checkpoint.functionalities:
-                funcs = [f"{f.name}: {f.description[:100]}" for f in step1_checkpoint.functionalities[:10]]
+                funcs = [
+                    f"{f.name}: {f.description[:100]}"
+                    for f in step1_checkpoint.functionalities[:10]
+                ]
                 existing_context = "\n".join(funcs)
 
             # Execute research for each query
@@ -218,10 +221,12 @@ Be specific and factual. Include at least 3-5 relevant results.
         gemini = self._get_gemini_client()
 
         # Build summary of findings
-        findings_text = "\n".join([
-            f"- {r.title} ({r.source}): {r.summary}"
-            for r in results[:20]  # Limit for context window
-        ])
+        findings_text = "\n".join(
+            [
+                f"- {r.title} ({r.source}): {r.summary}"
+                for r in results[:20]  # Limit for context window
+            ]
+        )
 
         prompt = f"""Analyze these research findings about AI developer tools:
 

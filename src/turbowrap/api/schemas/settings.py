@@ -29,7 +29,9 @@ class SettingsResponse(BaseModel):
 
     # Linear Integration
     linear_api_key: str | None = Field(default=None, description="Linear API key (masked)")
-    linear_api_key_set: bool = Field(default=False, description="Whether Linear API key is configured")
+    linear_api_key_set: bool = Field(
+        default=False, description="Whether Linear API key is configured"
+    )
     linear_team_id: str | None = Field(default=None, description="Linear team ID")
 
     # AI Models

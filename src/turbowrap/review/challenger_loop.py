@@ -17,7 +17,9 @@ from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 logger = logging.getLogger(__name__)
 
 # Callback types
-IterationCallback = Callable[[int, float, int], Awaitable[None]]  # iteration, satisfaction, issues_count
+IterationCallback = Callable[
+    [int, float, int], Awaitable[None]
+]  # iteration, satisfaction, issues_count
 ContentCallback = Callable[[str], Awaitable[None]]  # streaming content
 
 
@@ -76,7 +78,9 @@ class ChallengerLoop:
         settings = get_settings()
         challenger_config = settings.challenger
 
-        self.satisfaction_threshold = satisfaction_threshold or challenger_config.satisfaction_threshold
+        self.satisfaction_threshold = (
+            satisfaction_threshold or challenger_config.satisfaction_threshold
+        )
 
         # Apply hard safety cap to max_iterations
         requested_max = max_iterations or challenger_config.max_iterations
@@ -88,9 +92,13 @@ class ChallengerLoop:
                 f"Capped at {self.ABSOLUTE_MAX_ITERATIONS}."
             )
 
-        self.min_improvement_threshold = min_improvement_threshold or challenger_config.min_improvement_threshold
+        self.min_improvement_threshold = (
+            min_improvement_threshold or challenger_config.min_improvement_threshold
+        )
         self.stagnation_window = stagnation_window or challenger_config.stagnation_window
-        self.forced_acceptance_threshold = forced_acceptance_threshold or challenger_config.forced_acceptance_threshold
+        self.forced_acceptance_threshold = (
+            forced_acceptance_threshold or challenger_config.forced_acceptance_threshold
+        )
 
     async def run(
         self,
@@ -122,9 +130,7 @@ class ChallengerLoop:
 
         # Load agent prompt if available
         try:
-            context.agent_prompt = self.reviewer.load_agent_prompt(
-                settings.agents_dir
-            )
+            context.agent_prompt = self.reviewer.load_agent_prompt(settings.agents_dir)
         except FileNotFoundError:
             logger.warning(f"Agent file not found for {reviewer_name}")
 
@@ -166,10 +172,10 @@ class ChallengerLoop:
 
             if current_review is None:
                 logger.info("[LOOP] >> Starting INITIAL review with Claude CLI...")
-                current_review = await self.reviewer.review(
-                    context, file_list, on_content_callback
+                current_review = await self.reviewer.review(context, file_list, on_content_callback)
+                logger.info(
+                    f"[LOOP] << Initial review complete: {len(current_review.issues)} issues found"
                 )
-                logger.info(f"[LOOP] << Initial review complete: {len(current_review.issues)} issues found")
             else:
                 logger.info("[LOOP] >> Starting REFINEMENT with Claude CLI...")
                 current_review = await self.reviewer.refine(
@@ -198,7 +204,9 @@ class ChallengerLoop:
                 f"[LOOP] << Challenge complete: satisfaction={satisfaction_score:.1f}% "
                 f"(threshold={self.satisfaction_threshold}%)"
             )
-            logger.info(f"[LOOP] Missed issues: {len(challenger_feedback.missed_issues)}, Challenges: {len(challenger_feedback.challenges)}")
+            logger.info(
+                f"[LOOP] Missed issues: {len(challenger_feedback.missed_issues)}, Challenges: {len(challenger_feedback.challenges)}"
+            )
 
             # Record iteration history
             issues_added = len(challenger_feedback.missed_issues)
@@ -209,12 +217,14 @@ class ChallengerLoop:
                 else 0
             )
 
-            iteration_history.append(IterationHistory(
-                iteration=iteration,
-                satisfaction_score=satisfaction_score,
-                issues_added=issues_added,
-                challenges_resolved=challenges_resolved,
-            ))
+            iteration_history.append(
+                IterationHistory(
+                    iteration=iteration,
+                    satisfaction_score=satisfaction_score,
+                    issues_added=issues_added,
+                    challenges_resolved=challenges_resolved,
+                )
+            )
 
             # Call iteration callback if provided
             if on_iteration_callback:
@@ -227,11 +237,13 @@ class ChallengerLoop:
             # Extract insights from significant issues found
             for missed in challenger_feedback.missed_issues:
                 if missed.suggested_severity in ["CRITICAL", "HIGH"]:
-                    insights.append(ChallengerInsight(
-                        iteration=iteration,
-                        description=f"{missed.type}: {missed.description}",
-                        impact="high" if missed.suggested_severity == "CRITICAL" else "medium",
-                    ))
+                    insights.append(
+                        ChallengerInsight(
+                            iteration=iteration,
+                            description=f"{missed.type}: {missed.description}",
+                            impact="high" if missed.suggested_severity == "CRITICAL" else "medium",
+                        )
+                    )
 
             # Check convergence
             convergence = self._check_convergence(
@@ -284,7 +296,7 @@ class ChallengerLoop:
 
         # Check for stagnation
         if len(history) >= self.stagnation_window:
-            recent = history[-self.stagnation_window:]
+            recent = history[-self.stagnation_window :]
             improvements = [
                 recent[i + 1].satisfaction_score - recent[i].satisfaction_score
                 for i in range(len(recent) - 1)
@@ -312,7 +324,7 @@ class ChallengerLoop:
 
         # Check stagnation
         if len(history) >= self.stagnation_window:
-            recent = history[-self.stagnation_window:]
+            recent = history[-self.stagnation_window :]
             improvements = [
                 recent[i + 1].satisfaction_score - recent[i].satisfaction_score
                 for i in range(len(recent) - 1)

@@ -14,9 +14,9 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Awaitable
 
 from sqlalchemy.orm import Session
 
@@ -88,17 +88,13 @@ class ChatHooks:
         if self._db:
             from ..db.models import CLIChatSession
 
-            session = self._db.query(CLIChatSession).filter(
-                CLIChatSession.id == session_id
-            ).first()
+            session = self._db.query(CLIChatSession).filter(CLIChatSession.id == session_id).first()
 
             if session:
                 session.total_tokens_in += stats["tokens"]
                 session.updated_at = datetime.utcnow()
                 self._db.commit()
-                logger.debug(
-                    f"Session {session_id[:8]}: +{stats['tokens']} input tokens"
-                )
+                logger.debug(f"Session {session_id[:8]}: +{stats['tokens']} input tokens")
 
         return stats
 
@@ -125,11 +121,9 @@ class ChatHooks:
         stats = self.calculate_tokens(content)
 
         if self._db:
-            from ..db.models import CLIChatSession, CLIChatMessage
+            from ..db.models import CLIChatMessage, CLIChatSession
 
-            session = self._db.query(CLIChatSession).filter(
-                CLIChatSession.id == session_id
-            ).first()
+            session = self._db.query(CLIChatSession).filter(CLIChatSession.id == session_id).first()
 
             if session:
                 session.total_tokens_out += stats["tokens"]
@@ -137,9 +131,9 @@ class ChatHooks:
                 session.updated_at = datetime.utcnow()
 
             if message_id:
-                message = self._db.query(CLIChatMessage).filter(
-                    CLIChatMessage.id == message_id
-                ).first()
+                message = (
+                    self._db.query(CLIChatMessage).filter(CLIChatMessage.id == message_id).first()
+                )
 
                 if message:
                     message.tokens_out = stats["tokens"]
@@ -147,9 +141,7 @@ class ChatHooks:
                         message.duration_ms = duration_ms
 
             self._db.commit()
-            logger.debug(
-                f"Session {session_id[:8]}: +{stats['tokens']} output tokens"
-            )
+            logger.debug(f"Session {session_id[:8]}: +{stats['tokens']} output tokens")
 
         return stats
 
@@ -186,7 +178,11 @@ class ChatHooks:
             generator = StructureGenerator(repo_path)
 
             # Check for stale structures
-            stale_dirs = generator.check_stale_structures() if hasattr(generator, "check_stale_structures") else []
+            stale_dirs = (
+                generator.check_stale_structures()
+                if hasattr(generator, "check_stale_structures")
+                else []
+            )
 
             if force_regenerate or stale_dirs:
                 # Regenerate structures
@@ -299,9 +295,7 @@ class ChatHooks:
         if self._db:
             from ..db.models import CLIChatSession
 
-            session = self._db.query(CLIChatSession).filter(
-                CLIChatSession.id == session_id
-            ).first()
+            session = self._db.query(CLIChatSession).filter(CLIChatSession.id == session_id).first()
 
             if session:
                 total = session.total_tokens_in + session.total_tokens_out
@@ -349,7 +343,7 @@ class ChatHooks:
             if structure_file.exists():
                 # File is older than modified file - needs regeneration
                 if structure_file.stat().st_mtime < file_path.stat().st_mtime:
-                    generator = StructureGenerator(repo_path)
+                    StructureGenerator(repo_path)
                     # Would regenerate here
                     result["structure_updated"] = True
                     logger.info(f"Structure update needed for {dir_path}")
@@ -397,10 +391,10 @@ class ChatHooks:
 
                 if proc.returncode != 0 and proc.stdout:
                     import json as json_mod
+
                     issues = json_mod.loads(proc.stdout)
                     result["errors"] = [
-                        f"{i['code']}: {i['message']} (line {i['location']['row']})"
-                        for i in issues
+                        f"{i['code']}: {i['message']} (line {i['location']['row']})" for i in issues
                     ]
                     result["passed"] = len(result["errors"]) == 0
 
@@ -440,18 +434,14 @@ class ChatHooks:
         if self._db:
             from ..db.models import CLIChatSession
 
-            session = self._db.query(CLIChatSession).filter(
-                CLIChatSession.id == session_id
-            ).first()
+            session = self._db.query(CLIChatSession).filter(CLIChatSession.id == session_id).first()
 
             if session and session.last_message_at:
                 idle_since = datetime.utcnow() - session.last_message_at
                 if idle_since > timedelta(minutes=idle_minutes):
                     # Session is idle - could terminate process to save resources
                     result["action_taken"] = "marked_idle"
-                    logger.info(
-                        f"Session {session_id[:8]} idle for {idle_since.seconds // 60}m"
-                    )
+                    logger.info(f"Session {session_id[:8]} idle for {idle_since.seconds // 60}m")
 
         return result
 

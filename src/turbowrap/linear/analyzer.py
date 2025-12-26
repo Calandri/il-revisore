@@ -182,8 +182,11 @@ class LinearIssueAnalyzer:
 
             # Save to S3 for debugging
             await self._save_analysis_to_s3(
-                "phase2", issue.linear_identifier, prompt, output,
-                {"improved_desc": improved_desc, "summary": analysis_summary, "metadata": metadata}
+                "phase2",
+                issue.linear_identifier,
+                prompt,
+                output,
+                {"improved_desc": improved_desc, "summary": analysis_summary, "metadata": metadata},
             )
 
             # Store for later DB update
@@ -199,7 +202,9 @@ class LinearIssueAnalyzer:
                 comment_body,
             )
 
-            logger.info(f"Posted analysis comment {comment_id} to Linear issue {issue.linear_identifier}")
+            logger.info(
+                f"Posted analysis comment {comment_id} to Linear issue {issue.linear_identifier}"
+            )
 
             yield "COMPLETE"
 
@@ -258,10 +263,7 @@ class LinearIssueAnalyzer:
         agent_prompt = self._load_agent_prompt()
 
         # Format user answers
-        answers_text = "\n".join([
-            f"**Q{qid}**: {answer}"
-            for qid, answer in user_answers.items()
-        ])
+        answers_text = "\n".join([f"**Q{qid}**: {answer}" for qid, answer in user_answers.items()])
 
         issue_context = f"""
 # Linear Issue to Analyze
@@ -304,7 +306,7 @@ Be specific with file paths and technical details.
             List of question dicts
         """
         # Look for JSON block with questions
-        json_match = re.search(r'```json\s*(\{.*?\})\s*```', output, re.DOTALL)
+        json_match = re.search(r"```json\s*(\{.*?\})\s*```", output, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
@@ -319,24 +321,28 @@ Be specific with file paths and technical details.
         matches = re.finditer(question_pattern, output, re.MULTILINE)
 
         for match in matches:
-            questions.append({
-                "id": int(match.group(1)),
-                "question": match.group(2),
-                "why": match.group(3),
-            })
+            questions.append(
+                {
+                    "id": int(match.group(1)),
+                    "question": match.group(2),
+                    "why": match.group(3),
+                }
+            )
 
         if not questions:
             # Last resort: extract any question-like sentences
             logger.warning("Could not parse structured questions, extracting from text")
-            lines = output.split('\n')
+            lines = output.split("\n")
             qid = 1
             for line in lines:
-                if '?' in line and len(line.strip()) > 20:
-                    questions.append({
-                        "id": qid,
-                        "question": line.strip(),
-                        "why": "Clarify requirements",
-                    })
+                if "?" in line and len(line.strip()) > 20:
+                    questions.append(
+                        {
+                            "id": qid,
+                            "question": line.strip(),
+                            "why": "Clarify requirements",
+                        }
+                    )
                     qid += 1
                     if qid > 10:
                         break
@@ -358,7 +364,7 @@ Be specific with file paths and technical details.
 
         # Extract Improved Description section
         desc_match = re.search(
-            r'##?\s*Improved Description\s*\n(.*?)(?=##?\s*Analysis Summary|\Z)',
+            r"##?\s*Improved Description\s*\n(.*?)(?=##?\s*Analysis Summary|\Z)",
             output,
             re.DOTALL | re.IGNORECASE,
         )
@@ -367,7 +373,7 @@ Be specific with file paths and technical details.
 
         # Extract Analysis Summary section
         summary_match = re.search(
-            r'##?\s*Analysis Summary\s*\n(.*?)(?=##?\s*[A-Z]|\Z)',
+            r"##?\s*Analysis Summary\s*\n(.*?)(?=##?\s*[A-Z]|\Z)",
             output,
             re.DOTALL | re.IGNORECASE,
         )
@@ -376,21 +382,23 @@ Be specific with file paths and technical details.
 
         # Extract Repository Recommendations
         repo_match = re.search(
-            r'\*\*Repository Recommendations\*\*.*?\n(.*?)(?=\n\*\*|\Z)',
+            r"\*\*Repository Recommendations\*\*.*?\n(.*?)(?=\n\*\*|\Z)",
             output,
             re.DOTALL,
         )
         if repo_match:
             repo_text = repo_match.group(1)
             # Extract repo names from list items
-            repo_names = re.findall(r'[-*]\s*`?([a-zA-Z0-9_-]+)`?', repo_text)
+            repo_names = re.findall(r"[-*]\s*`?([a-zA-Z0-9_-]+)`?", repo_text)
             metadata["repositories"] = repo_names[:3]  # Max 3
 
         # If sections not found, use entire output
         if not improved_desc:
             improved_desc = output[:2000]  # First 2000 chars
         if not analysis_summary:
-            analysis_summary = output[2000:4000] if len(output) > 2000 else "See improved description"
+            analysis_summary = (
+                output[2000:4000] if len(output) > 2000 else "See improved description"
+            )
 
         return improved_desc, analysis_summary, metadata
 
@@ -431,7 +439,9 @@ Be specific with file paths and technical details.
 
         if not prompt_path.exists():
             logger.warning(f"Agent prompt not found at {prompt_path}, using default")
-            return "You are a Linear issue analyzer. Analyze the issue and provide detailed insights."
+            return (
+                "You are a Linear issue analyzer. Analyze the issue and provide detailed insights."
+            )
 
         return prompt_path.read_text()
 
@@ -474,8 +484,10 @@ Be specific with file paths and technical details.
             "claude",
             "--print",
             "--verbose",
-            "--output-format", "stream-json",
-            "--model", "claude-opus-4-5-20251101",
+            "--output-format",
+            "stream-json",
+            "--model",
+            "claude-opus-4-5-20251101",
         ]
 
         env = os.environ.copy()

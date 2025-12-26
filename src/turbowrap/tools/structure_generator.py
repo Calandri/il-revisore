@@ -43,10 +43,24 @@ FE_EXTENSIONS = {".tsx", ".ts", ".jsx", ".js"}
 
 # Directories to ignore
 IGNORE_DIRS = {
-    "node_modules", ".git", "__pycache__", ".venv", "venv",
-    "dist", "build", ".next", "coverage", ".pytest_cache",
-    "eggs", "*.egg-info", ".tox", ".mypy_cache", ".reviews",
-    ".ruff_cache", "htmlcov", ".eggs",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    ".pytest_cache",
+    "eggs",
+    "*.egg-info",
+    ".tox",
+    ".mypy_cache",
+    ".reviews",
+    ".ruff_cache",
+    "htmlcov",
+    ".eggs",
 }
 
 # Files to ignore
@@ -62,6 +76,7 @@ BE_ELEMENTS = ["Function", "Class", "Decorator", "Constant"]
 @dataclass
 class Dependency:
     """A project dependency."""
+
     name: str
     version: str
     purpose: str = ""  # Filled by Gemini
@@ -70,6 +85,7 @@ class Dependency:
 @dataclass
 class RepoMetadata:
     """Metadata extracted from project files."""
+
     # Tech stack
     language: str = ""
     framework: str = ""
@@ -93,9 +109,9 @@ class RepoMetadata:
 class FileElement:
     """Element extracted from a file (Component, Hook, Function, etc.)."""
 
-    type: str           # "Component", "Hook", "Utils", "Function", "Class"
-    name: str           # Element identifier
-    description: str    # Max 10 words
+    type: str  # "Component", "Hook", "Utils", "Function", "Class"
+    name: str  # Element identifier
+    description: str  # Max 10 words
 
 
 @dataclass
@@ -312,9 +328,7 @@ class StructureGenerator:
             # Dependencies
             deps = data.get("dependencies", {})
             for name, version in list(deps.items())[:15]:
-                self.metadata.dependencies.append(
-                    Dependency(name=name, version=version)
-                )
+                self.metadata.dependencies.append(Dependency(name=name, version=version))
 
             # Detect framework
             if "react" in deps:
@@ -333,9 +347,17 @@ class StructureGenerator:
         Uses scan_root for monorepo workspace support.
         """
         entry_patterns = [
-            "main.py", "app.py", "cli.py", "__main__.py",
-            "index.ts", "index.tsx", "main.ts", "App.tsx",
-            "server.py", "run.py", "manage.py",
+            "main.py",
+            "app.py",
+            "cli.py",
+            "__main__.py",
+            "index.ts",
+            "index.tsx",
+            "main.ts",
+            "App.tsx",
+            "server.py",
+            "run.py",
+            "manage.py",
         ]
 
         for pattern in entry_patterns:
@@ -496,8 +518,7 @@ models: Data models and schemas
                 return None
 
             dir_struct = DirectoryStructure(
-                path=rel_path if str(rel_path) != "." else Path("."),
-                depth=depth
+                path=rel_path if str(rel_path) != "." else Path("."), depth=depth
             )
 
             # Find processable files in current directory
@@ -510,13 +531,9 @@ models: Data models and schemas
                         continue
                     suffix = item.suffix.lower()
                     if suffix in BE_EXTENSIONS:
-                        dir_struct.files.append(
-                            FileStructure(path=rel_file, file_type="be")
-                        )
+                        dir_struct.files.append(FileStructure(path=rel_file, file_type="be"))
                     elif suffix in FE_EXTENSIONS:
-                        dir_struct.files.append(
-                            FileStructure(path=rel_file, file_type="fe")
-                        )
+                        dir_struct.files.append(FileStructure(path=rel_file, file_type="fe"))
             except PermissionError:
                 pass
 
@@ -571,17 +588,11 @@ models: Data models and schemas
 
         # Use Gemini for element extraction if available
         if self.gemini_client:
-            file_struct.elements = self._extract_with_gemini(
-                file_struct, content
-            )
+            file_struct.elements = self._extract_with_gemini(file_struct, content)
 
         return file_struct
 
-    def _extract_with_gemini(
-        self,
-        file_struct: FileStructure,
-        content: str
-    ) -> list[FileElement]:
+    def _extract_with_gemini(self, file_struct: FileStructure, content: str) -> list[FileElement]:
         """Extract elements using Gemini Flash."""
         if file_struct.file_type == "fe":
             elements_to_find = ", ".join(FE_ELEMENTS)
@@ -624,9 +635,7 @@ Be concise. Only list the most important elements (max 10).
             return []
 
     def _parse_elements_response(
-        self,
-        response: str,
-        file_type: Literal["be", "fe"]
+        self, response: str, file_type: Literal["be", "fe"]
     ) -> list[FileElement]:
         """Parse Gemini response into list of FileElement."""
         elements = []
@@ -660,21 +669,16 @@ Be concise. Only list the most important elements (max 10).
                         description = desc_part.strip()[:40]  # Reduced from 80 to save tokens
 
                         if name:  # Only if has valid name
-                            elements.append(FileElement(
-                                type=element_type,
-                                name=name,
-                                description=description
-                            ))
+                            elements.append(
+                                FileElement(type=element_type, name=name, description=description)
+                            )
                 except ValueError:
                     continue
 
         return elements[:10]  # Max 10 elements per file
 
     def _generate_structure_md(
-        self,
-        dir_struct: DirectoryStructure,
-        repo_type: RepoType,
-        is_root: bool = False
+        self, dir_struct: DirectoryStructure, repo_type: RepoType, is_root: bool = False
     ) -> Path:
         """Generate STRUCTURE.md for a single directory."""
         # Directory name for title
@@ -688,26 +692,30 @@ Be concise. Only list the most important elements (max 10).
         # Add repo type metadata only for root STRUCTURE.md
         if is_root:
             generated_at = int(time.time())
-            lines.extend([
-                "## Metadata",
-                "",
-                f"**Repository Type**: `{repo_type.value.upper()}`",
-                f"**Backend Files**: {self.be_file_count}",
-                f"**Frontend Files**: {self.fe_file_count}",
-                f"**Total Tokens**: {self.total_tokens:,}",
-                f"**Total Lines**: {self.total_lines:,}",
-                f"**Generated At**: `{generated_at}`",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Metadata",
+                    "",
+                    f"**Repository Type**: `{repo_type.value.upper()}`",
+                    f"**Backend Files**: {self.be_file_count}",
+                    f"**Frontend Files**: {self.fe_file_count}",
+                    f"**Total Tokens**: {self.total_tokens:,}",
+                    f"**Total Lines**: {self.total_lines:,}",
+                    f"**Generated At**: `{generated_at}`",
+                    "",
+                ]
+            )
 
             # Tech Stack
             if self.metadata.language or self.metadata.framework:
-                lines.extend([
-                    "## Tech Stack",
-                    "",
-                    "| Category | Technology |",
-                    "|----------|------------|",
-                ])
+                lines.extend(
+                    [
+                        "## Tech Stack",
+                        "",
+                        "| Category | Technology |",
+                        "|----------|------------|",
+                    ]
+                )
                 if self.metadata.language:
                     lines.append(f"| Language | {self.metadata.language} |")
                 if self.metadata.framework:
@@ -718,44 +726,52 @@ Be concise. Only list the most important elements (max 10).
 
             # Architecture
             if self.metadata.architecture_pattern:
-                lines.extend([
-                    "## Architecture",
-                    "",
-                    f"**Pattern**: {self.metadata.architecture_pattern}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "## Architecture",
+                        "",
+                        f"**Pattern**: {self.metadata.architecture_pattern}",
+                        "",
+                    ]
+                )
                 if self.metadata.architecture_description:
                     lines.append(self.metadata.architecture_description)
                     lines.append("")
 
             # Entry Points
             if self.metadata.entry_points:
-                lines.extend([
-                    "## Entry Points",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "## Entry Points",
+                        "",
+                    ]
+                )
                 for ep in self.metadata.entry_points:
                     lines.append(f"- `{ep}`")
                 lines.append("")
 
             # Key Dependencies
             if self.metadata.dependencies:
-                lines.extend([
-                    "## Key Dependencies",
-                    "",
-                    "| Package | Version |",
-                    "|---------|---------|",
-                ])
+                lines.extend(
+                    [
+                        "## Key Dependencies",
+                        "",
+                        "| Package | Version |",
+                        "|---------|---------|",
+                    ]
+                )
                 for dep in self.metadata.dependencies[:10]:
                     lines.append(f"| {dep.name} | {dep.version} |")
                 lines.append("")
 
             # Environment Variables
             if self.metadata.env_vars:
-                lines.extend([
-                    "## Environment Variables",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "## Environment Variables",
+                        "",
+                    ]
+                )
                 for var in self.metadata.env_vars:
                     lines.append(f"- `{var}`")
                 lines.append("")
@@ -766,14 +782,16 @@ Be concise. Only list the most important elements (max 10).
             total_tokens = sum(f.tokens for f in dir_struct.files)
             total_lines = sum(f.lines for f in dir_struct.files)
 
-            lines.extend([
-                "## Files",
-                "",
-                f"**Directory Stats:** {len(dir_struct.files)} files, {total_lines:,} lines, {total_tokens:,} tokens",
-                "",
-                "| File | Lines | Tokens |",
-                "|------|------:|-------:|",
-            ])
+            lines.extend(
+                [
+                    "## Files",
+                    "",
+                    f"**Directory Stats:** {len(dir_struct.files)} files, {total_lines:,} lines, {total_tokens:,} tokens",
+                    "",
+                    "| File | Lines | Tokens |",
+                    "|------|------:|-------:|",
+                ]
+            )
 
             for file_struct in sorted(dir_struct.files, key=lambda f: f.path.name):
                 lines.append(
@@ -788,9 +806,7 @@ Be concise. Only list the most important elements (max 10).
                 lines.append(f"### {file_struct.path.name}")
                 lines.append("")
                 for elem in file_struct.elements:
-                    lines.append(
-                        f"- **{elem.type}**: `{elem.name}` - {elem.description}"
-                    )
+                    lines.append(f"- **{elem.type}**: `{elem.name}` - {elem.description}")
                 lines.append("")
 
         # Subdirectories section
@@ -811,7 +827,9 @@ Be concise. Only list the most important elements (max 10).
                         if file_count:
                             desc_parts.append(f"{file_count} file{'s' if file_count > 1 else ''}")
                         if sub_count:
-                            desc_parts.append(f"{sub_count} subfolder{'s' if sub_count > 1 else ''}")
+                            desc_parts.append(
+                                f"{sub_count} subfolder{'s' if sub_count > 1 else ''}"
+                            )
                         desc = ", ".join(desc_parts) if desc_parts else "Empty"
 
                     lines.append(f"- [{sub_name}/]({sub_name}/{STRUCTURE_FILENAME}) - {desc}")
@@ -842,10 +860,12 @@ Be concise. Only list the most important elements (max 10).
                         lines.append("")
 
         # Footer
-        lines.extend([
-            "---",
-            f"*Generated by TurboWrap - {time.strftime('%Y-%m-%d %H:%M')} | ts:{int(time.time())}*",
-        ])
+        lines.extend(
+            [
+                "---",
+                f"*Generated by TurboWrap - {time.strftime('%Y-%m-%d %H:%M')} | ts:{int(time.time())}*",
+            ]
+        )
 
         # Determine output path (in-place in repository)
         if str(dir_struct.path) == ".":
@@ -949,9 +969,9 @@ Be concise. Only list the most important elements (max 10).
                         if elem.description:
                             const_elem.set("desc", elem.description)
 
-        # Pretty print XML
+        # Pretty print XML (xml_string is self-generated, not untrusted input)
         xml_string = ET.tostring(root, encoding="unicode")
-        dom = minidom.parseString(xml_string)
+        dom = minidom.parseString(xml_string)  # noqa: S318
         pretty_xml = dom.toprettyxml(indent="  ", encoding=None)
 
         # Remove extra blank lines and XML declaration (we'll add our own)
@@ -997,12 +1017,16 @@ Be concise. Only list the most important elements (max 10).
 
         # 1. Detect repo type
         repo_type = self.detect_repo_type()
-        logger.info(f"[StructureGenerator] Repo type: {repo_type.value}, BE files: {self.be_file_count}, FE files: {self.fe_file_count}")
+        logger.info(
+            f"[StructureGenerator] Repo type: {repo_type.value}, BE files: {self.be_file_count}, FE files: {self.fe_file_count}"
+        )
 
         # 2. Extract metadata
         logger.info("[StructureGenerator] Extracting metadata...")
         self.extract_metadata()
-        logger.info(f"[StructureGenerator] Language: {self.metadata.language}, Framework: {self.metadata.framework}")
+        logger.info(
+            f"[StructureGenerator] Language: {self.metadata.language}, Framework: {self.metadata.framework}"
+        )
 
         # 3. Discover directories
         logger.info("[StructureGenerator] Discovering directories...")
@@ -1013,7 +1037,9 @@ Be concise. Only list the most important elements (max 10).
             return []
 
         total_files = sum(len(d.files) for d in directories)
-        logger.info(f"[StructureGenerator] Found {len(directories)} directories with {total_files} files")
+        logger.info(
+            f"[StructureGenerator] Found {len(directories)} directories with {total_files} files"
+        )
 
         # 4. Collect all files to process
         all_files: list[FileStructure] = []
@@ -1027,9 +1053,7 @@ Be concise. Only list the most important elements (max 10).
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             futures = {
-                executor.submit(
-                    self._extract_file_elements, file_struct
-                ): file_struct
+                executor.submit(self._extract_file_elements, file_struct): file_struct
                 for file_struct in all_files
             }
 
@@ -1041,16 +1065,16 @@ Be concise. Only list the most important elements (max 10).
                     result = future.result()
                     processed_files[result.path] = result
                     if completed % 20 == 0 or completed == len(all_files):
-                        logger.info(f"[StructureGenerator] Processed {completed}/{len(all_files)} files")
+                        logger.info(
+                            f"[StructureGenerator] Processed {completed}/{len(all_files)} files"
+                        )
                 except Exception as e:
                     logger.error(f"[StructureGenerator] Error processing {original.path}: {e}")
                     processed_files[original.path] = original
 
         # 6. Update directory structures with results
         for dir_struct in directories:
-            dir_struct.files = [
-                processed_files.get(f.path, f) for f in dir_struct.files
-            ]
+            dir_struct.files = [processed_files.get(f.path, f) for f in dir_struct.files]
 
         # 6b. Analyze directory purposes
         if self.gemini_client:
@@ -1063,17 +1087,21 @@ Be concise. Only list the most important elements (max 10).
         # 7a. Generate STRUCTURE.md files (markdown format)
         if "markdown" in formats:
             dirs_to_generate = [d for d in directories if d.depth <= self.max_depth]
-            logger.info(f"[StructureGenerator] Generating {len(dirs_to_generate)} STRUCTURE.md files...")
+            logger.info(
+                f"[StructureGenerator] Generating {len(dirs_to_generate)} STRUCTURE.md files..."
+            )
 
             for _i, dir_struct in enumerate(dirs_to_generate):
                 try:
-                    is_root = (str(dir_struct.path) == ".")
+                    is_root = str(dir_struct.path) == "."
                     output_path = self._generate_structure_md(
                         dir_struct, repo_type, is_root=is_root
                     )
                     generated_files.append(output_path)
                 except Exception as e:
-                    logger.error(f"[StructureGenerator] Error generating STRUCTURE.md for {dir_struct.path}: {e}")
+                    logger.error(
+                        f"[StructureGenerator] Error generating STRUCTURE.md for {dir_struct.path}: {e}"
+                    )
 
         # 7b. Generate .llms/structure.xml (XML format for LLM)
         if "xml" in formats:
@@ -1083,15 +1111,20 @@ Be concise. Only list the most important elements (max 10).
                 xml_path = self._generate_structure_xml(directories, repo_type)
                 generated_files.append(xml_path)
                 xml_size = xml_path.stat().st_size
-                logger.info(f"[StructureGenerator] SUCCESS: Generated {xml_path} ({xml_size:,} bytes)")
+                logger.info(
+                    f"[StructureGenerator] SUCCESS: Generated {xml_path} ({xml_size:,} bytes)"
+                )
             except Exception as e:
                 import traceback
+
                 logger.error(f"[StructureGenerator] FAILED to generate XML: {e}")
                 logger.error(f"[StructureGenerator] Traceback:\n{traceback.format_exc()}")
                 # Re-raise so caller knows it failed!
                 raise RuntimeError(f"Failed to generate structure.xml: {e}") from e
 
-        logger.info(f"[StructureGenerator] Complete! Generated {len(generated_files)} files, {self.total_lines:,} lines, {self.total_tokens:,} tokens")
+        logger.info(
+            f"[StructureGenerator] Complete! Generated {len(generated_files)} files, {self.total_lines:,} lines, {self.total_tokens:,} tokens"
+        )
 
         return generated_files
 
@@ -1191,8 +1224,7 @@ Be concise. Only list the most important elements (max 10).
             full_path = self.repo_path / stale_dir if str(stale_dir) != "." else self.repo_path
 
             dir_struct = DirectoryStructure(
-                path=stale_dir,
-                depth=len(stale_dir.parts) + 1 if str(stale_dir) != "." else 1
+                path=stale_dir, depth=len(stale_dir.parts) + 1 if str(stale_dir) != "." else 1
             )
 
             # Find files in directory
@@ -1202,13 +1234,9 @@ Be concise. Only list the most important elements (max 10).
                         suffix = item.suffix.lower()
                         rel_file = item.relative_to(self.repo_path)
                         if suffix in BE_EXTENSIONS:
-                            dir_struct.files.append(
-                                FileStructure(path=rel_file, file_type="be")
-                            )
+                            dir_struct.files.append(FileStructure(path=rel_file, file_type="be"))
                         elif suffix in FE_EXTENSIONS:
-                            dir_struct.files.append(
-                                FileStructure(path=rel_file, file_type="fe")
-                            )
+                            dir_struct.files.append(FileStructure(path=rel_file, file_type="fe"))
             except PermissionError:
                 continue
 
@@ -1217,10 +1245,7 @@ Be concise. Only list the most important elements (max 10).
                 for item in sorted(full_path.iterdir()):
                     if item.is_dir() and not should_ignore(item):
                         sub_rel = item.relative_to(self.repo_path)
-                        sub_struct = DirectoryStructure(
-                            path=sub_rel,
-                            depth=dir_struct.depth + 1
-                        )
+                        sub_struct = DirectoryStructure(path=sub_rel, depth=dir_struct.depth + 1)
                         # Just count files for link description
                         for sub_item in item.iterdir():
                             if sub_item.is_file() and not should_ignore(sub_item):
@@ -1229,7 +1254,7 @@ Be concise. Only list the most important elements (max 10).
                                     sub_struct.files.append(
                                         FileStructure(
                                             path=sub_item.relative_to(self.repo_path),
-                                            file_type="be" if suffix in BE_EXTENSIONS else "fe"
+                                            file_type="be" if suffix in BE_EXTENSIONS else "fe",
                                         )
                                     )
                         if sub_struct.files:

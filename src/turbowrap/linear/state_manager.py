@@ -89,15 +89,11 @@ class LinearStateManager:
 
             elif new_state == self.STATE_IN_REVIEW:
                 if not issue.fix_commit_sha:
-                    raise ValueError(
-                        "Cannot transition to 'in_review' without fix commit"
-                    )
+                    raise ValueError("Cannot transition to 'in_review' without fix commit")
 
             elif new_state == self.STATE_MERGED:
                 if not issue.fix_commit_sha or not issue.fix_branch:
-                    raise ValueError(
-                        "Cannot transition to 'merged' without fix commit and branch"
-                    )
+                    raise ValueError("Cannot transition to 'merged' without fix commit and branch")
 
         # Update TurboWrap state
         logger.info(
@@ -110,32 +106,24 @@ class LinearStateManager:
             try:
                 linear_state_name = self.LINEAR_STATE_MAPPING.get(new_state)
                 if not linear_state_name:
-                    logger.warning(
-                        f"No Linear state mapping for TurboWrap state '{new_state}'"
-                    )
+                    logger.warning(f"No Linear state mapping for TurboWrap state '{new_state}'")
                     return True
 
                 # Get state ID from cached fields or fetch from Linear
                 state_id = self._get_linear_state_id(issue, linear_state_name)
 
                 if state_id:
-                    success = await self.linear_client.update_issue_state(
-                        issue.linear_id, state_id
-                    )
+                    success = await self.linear_client.update_issue_state(issue.linear_id, state_id)
                     if success:
                         issue.linear_state_name = linear_state_name
                         logger.info(
                             f"Updated Linear state to '{linear_state_name}' for {issue.linear_identifier}"
                         )
                     else:
-                        logger.error(
-                            f"Failed to update Linear state for {issue.linear_identifier}"
-                        )
+                        logger.error(f"Failed to update Linear state for {issue.linear_identifier}")
                         return False
                 else:
-                    logger.warning(
-                        f"Could not find Linear state ID for '{linear_state_name}'"
-                    )
+                    logger.warning(f"Could not find Linear state ID for '{linear_state_name}'")
 
             except Exception as e:
                 logger.error(f"Error updating Linear state: {e}")
@@ -144,9 +132,7 @@ class LinearStateManager:
 
         return True
 
-    def _get_linear_state_id(
-        self, issue: LinearIssue, state_name: str
-    ) -> str | None:
+    def _get_linear_state_id(self, issue: LinearIssue, state_name: str) -> str | None:
         """Get Linear state ID from cached fields.
 
         Args:
@@ -224,9 +210,7 @@ class LinearStateManager:
             logger.error(f"Auto-transition failed: {e}")
             return False
 
-    async def auto_transition_after_merge(
-        self, issue: LinearIssue
-    ) -> bool:
+    async def auto_transition_after_merge(self, issue: LinearIssue) -> bool:
         """Automatically transition to merged after successful merge to main.
 
         Args:
@@ -235,9 +219,7 @@ class LinearStateManager:
         Returns:
             True if transition successful
         """
-        logger.info(
-            f"Auto-transitioning {issue.linear_identifier} to 'merged' after merge"
-        )
+        logger.info(f"Auto-transitioning {issue.linear_identifier} to 'merged' after merge")
 
         # Deactivate issue
         issue.is_active = False

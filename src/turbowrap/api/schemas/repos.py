@@ -63,6 +63,7 @@ def _sanitize_local_path(path: str) -> str:
     to avoid exposing usernames or system structure in API responses.
     """
     import os
+
     home = os.path.expanduser("~")
     if path.startswith(home):
         return path.replace(home, "~", 1)
@@ -90,10 +91,7 @@ class RepoResponse(BaseModel):
         default=None, description="Monorepo workspace path (e.g., 'packages/frontend')"
     )
     last_synced_at: datetime | None = Field(default=None, description="Last sync timestamp")
-    metadata: dict[str, Any] | None = Field(
-        default=None,
-        description="Additional metadata"
-    )
+    metadata: dict[str, Any] | None = Field(default=None, description="Additional metadata")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 

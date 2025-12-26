@@ -59,9 +59,7 @@ class AgentSettings(BaseSettings):
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
     github_token: str | None = Field(
-        default=None,
-        alias="GITHUB_TOKEN",
-        description="GitHub token for private repositories"
+        default=None, alias="GITHUB_TOKEN", description="GitHub token for private repositories"
     )
 
     @property
@@ -113,8 +111,12 @@ class AuthSettings(BaseSettings):
     cognito_user_pool_id: str = Field(default="", description="Cognito User Pool ID")
     cognito_app_client_id: str = Field(default="", description="Cognito App Client ID")
     session_cookie_name: str = Field(default="turbowrap_session", description="Session cookie name")
-    session_max_age: int = Field(default=86400 * 7, description="Session max age in seconds (7 days)")
-    secure_cookies: bool = Field(default=True, description="Use secure cookies (HTTPS only). Set to False for localhost dev.")
+    session_max_age: int = Field(
+        default=86400 * 7, description="Session max age in seconds (7 days)"
+    )
+    secure_cookies: bool = Field(
+        default=True, description="Use secure cookies (HTTPS only). Set to False for localhost dev."
+    )
 
 
 class ChallengerSettings(BaseSettings):
@@ -124,32 +126,23 @@ class ChallengerSettings(BaseSettings):
 
     enabled: bool = Field(default=True, description="Enable challenger loop")
     reviewer_model: str = Field(
-        default="claude-opus-4-5-20251101",
-        description="Model for the primary reviewer"
+        default="claude-opus-4-5-20251101", description="Model for the primary reviewer"
     )
     challenger_model: str = Field(
-        default="gemini-3-flash-preview",
-        description="Model for the challenger"
+        default="gemini-3-flash-preview", description="Model for the challenger"
     )
     satisfaction_threshold: float = Field(
-        default=50.0, ge=0, le=100,
-        description="Required satisfaction score (0-100)"
+        default=50.0, ge=0, le=100, description="Required satisfaction score (0-100)"
     )
-    max_iterations: int = Field(
-        default=3, ge=1, le=10,
-        description="Maximum challenger iterations"
-    )
+    max_iterations: int = Field(default=3, ge=1, le=10, description="Maximum challenger iterations")
     min_improvement_threshold: float = Field(
-        default=2.0, ge=0, le=100,
-        description="Minimum % improvement per iteration"
+        default=2.0, ge=0, le=100, description="Minimum % improvement per iteration"
     )
     stagnation_window: int = Field(
-        default=2, ge=1, le=5,
-        description="Iterations to detect stagnation"
+        default=2, ge=1, le=5, description="Iterations to detect stagnation"
     )
     forced_acceptance_threshold: float = Field(
-        default=90.0, ge=0, le=100,
-        description="Accept if above this after max iterations"
+        default=90.0, ge=0, le=100, description="Accept if above this after max iterations"
     )
 
 
@@ -161,19 +154,19 @@ class FixChallengerSettings(BaseSettings):
     enabled: bool = Field(default=True, description="Enable fix challenger")
     model: str = Field(
         default="gemini-3-pro-preview",
-        description="Model for fix evaluation (Pro for better reasoning)"
+        description="Model for fix evaluation (Pro for better reasoning)",
     )
     satisfaction_threshold: float = Field(
-        default=95.0, ge=0, le=100,
-        description="Required satisfaction score to approve fix (0-100)"
+        default=95.0, ge=0, le=100, description="Required satisfaction score to approve fix (0-100)"
     )
     max_iterations: int = Field(
-        default=2, ge=1, le=5,
-        description="Maximum fix refinement iterations"
+        default=2, ge=1, le=5, description="Maximum fix refinement iterations"
     )
     thinking_budget: int = Field(
-        default=10000, ge=0, le=24576,
-        description="Token budget for Gemini thinking mode (0 to disable)"
+        default=10000,
+        ge=0,
+        le=24576,
+        description="Token budget for Gemini thinking mode (0 to disable)",
     )
 
 
@@ -184,20 +177,18 @@ class ThinkingSettings(BaseSettings):
 
     enabled: bool = Field(default=True, description="Enable extended thinking")
     budget_tokens: int = Field(
-        default=8000, ge=1000, le=50000,
-        description="Base token budget for thinking (1k-50k). Orchestrator increases for heavy issues."
+        default=8000,
+        ge=1000,
+        le=50000,
+        description="Base token budget for thinking (1k-50k). Orchestrator increases for heavy issues.",
     )
     s3_bucket: str = Field(
         default="turbowrap-thinking",
-        description="S3 bucket for storing thinking logs and review checkpoints (10-day retention)"
+        description="S3 bucket for storing thinking logs and review checkpoints (10-day retention)",
     )
-    s3_region: str = Field(
-        default="eu-west-3",
-        description="AWS region for S3 bucket"
-    )
+    s3_region: str = Field(default="eu-west-3", description="AWS region for S3 bucket")
     stream_to_websocket: bool = Field(
-        default=True,
-        description="Stream thinking to WebSocket clients"
+        default=True, description="Stream thinking to WebSocket clients"
     )
 
 
@@ -205,9 +196,7 @@ class Settings(BaseSettings):
     """Main TurboWrap settings."""
 
     model_config = SettingsConfigDict(
-        env_prefix="TURBOWRAP_",
-        env_nested_delimiter="__",
-        extra="ignore"
+        env_prefix="TURBOWRAP_", env_nested_delimiter="__", extra="ignore"
     )
 
     # Sub-settings
@@ -223,17 +212,16 @@ class Settings(BaseSettings):
     # Paths
     repos_dir: Path = Field(
         default=Path.home() / ".turbowrap" / "repos",
-        description="Directory for cloned repositories"
+        description="Directory for cloned repositories",
     )
     agents_dir: Path = Field(
         default=Path(__file__).parent.parent.parent / "agents",
-        description="Directory for agent prompt files"
+        description="Directory for agent prompt files",
     )
 
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
-        default="INFO",
-        description="Logging level"
+        default="INFO", description="Logging level"
     )
 
     def ensure_dirs(self) -> None:

@@ -19,6 +19,7 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
+from turbowrap.chat_cli.context_generator import load_structure_documentation
 from turbowrap.config import get_settings
 from turbowrap.db.models import Issue
 from turbowrap.fix.models import (
@@ -31,7 +32,6 @@ from turbowrap.fix.models import (
     ScopeValidationError,
 )
 from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_google_api_key
-from turbowrap.chat_cli.context_generator import load_structure_documentation
 
 # S3 bucket for fix logs (same as thinking logs)
 S3_BUCKET = "turbowrap-thinking"
@@ -196,7 +196,11 @@ class FixOrchestrator:
         """
         if issue.current_code:
             # Already have the code, return it with line info
-            line_info = f"(lines {issue.line}-{issue.end_line})" if issue.line and issue.end_line else f"(line {issue.line})" if issue.line else ""
+            line_info = (
+                f"(lines {issue.line}-{issue.end_line})"
+                if issue.line and issue.end_line
+                else f"(line {issue.line})" if issue.line else ""
+            )
             return f"{line_info}\n{issue.current_code}"
 
         if not issue.line:
@@ -216,7 +220,9 @@ class FixOrchestrator:
             snippet_lines = []
             for i in range(start_line - 1, end_line):
                 line_num = i + 1
-                marker = ">>>" if issue.line <= line_num <= (issue.end_line or issue.line) else "   "
+                marker = (
+                    ">>>" if issue.line <= line_num <= (issue.end_line or issue.line) else "   "
+                )
                 snippet_lines.append(f"{marker} {line_num:4d} | {lines[i].rstrip()}")
 
             return "\n".join(snippet_lines)
@@ -302,7 +308,9 @@ class FixOrchestrator:
                 )
                 # Simple checkout - no need for full agent
                 proc = await asyncio.create_subprocess_exec(
-                    "git", "checkout", branch_name,
+                    "git",
+                    "checkout",
+                    branch_name,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=str(self.repo_path),
@@ -362,9 +370,19 @@ class FixOrchestrator:
             # Key: "BE-1", "FE-2", etc. Value: {"passed": bool, "score": float, "failed_issues": list}
             batch_results: dict[str, dict] = {}
             for idx in range(len(all_be_batches)):
-                batch_results[f"BE-{idx+1}"] = {"passed": False, "score": 0.0, "failed_issues": [], "issues": all_be_batches[idx]}
+                batch_results[f"BE-{idx+1}"] = {
+                    "passed": False,
+                    "score": 0.0,
+                    "failed_issues": [],
+                    "issues": all_be_batches[idx],
+                }
             for idx in range(len(all_fe_batches)):
-                batch_results[f"FE-{idx+1}"] = {"passed": False, "score": 0.0, "failed_issues": [], "issues": all_fe_batches[idx]}
+                batch_results[f"FE-{idx+1}"] = {
+                    "passed": False,
+                    "score": 0.0,
+                    "failed_issues": [],
+                    "issues": all_fe_batches[idx],
+                }
 
             # Track all issues that have been successfully fixed
             successful_issues: list[Issue] = []
@@ -378,7 +396,8 @@ class FixOrchestrator:
                 else:
                     # Subsequent iterations: only retry FAILED batches
                     batches_to_process = [
-                        batch_id for batch_id, result in batch_results.items()
+                        batch_id
+                        for batch_id, result in batch_results.items()
                         if not result["passed"]
                     ]
 
@@ -391,9 +410,13 @@ class FixOrchestrator:
                 fe_retry = [b for b in batches_to_process if b.startswith("FE")]
                 plan_parts = []
                 if be_retry:
-                    plan_parts.append(f"{len(be_retry)} BE batch{'es' if len(be_retry) > 1 else ''}")
+                    plan_parts.append(
+                        f"{len(be_retry)} BE batch{'es' if len(be_retry) > 1 else ''}"
+                    )
                 if fe_retry:
-                    plan_parts.append(f"{len(fe_retry)} FE batch{'es' if len(fe_retry) > 1 else ''}")
+                    plan_parts.append(
+                        f"{len(fe_retry)} FE batch{'es' if len(fe_retry) > 1 else ''}"
+                    )
                 plan_msg = " + ".join(plan_parts) if plan_parts else "No batches"
 
                 if iteration > 1:
@@ -458,14 +481,18 @@ class FixOrchestrator:
                     )
 
                     # Step 1: Run Claude CLI for this batch
-                    prompt = self._build_fix_prompt(batch, batch_type.lower(), feedback, iteration, request.workspace_path)
+                    prompt = self._build_fix_prompt(
+                        batch, batch_type.lower(), feedback, iteration, request.workspace_path
+                    )
                     if iteration == 1:
-                        claude_prompts.append({
-                            "type": batch_type.lower(),
-                            "batch": batch_idx,
-                            "issues": [i.issue_code for i in batch],
-                            "prompt": prompt,
-                        })
+                        claude_prompts.append(
+                            {
+                                "type": batch_type.lower(),
+                                "batch": batch_idx,
+                                "issues": [i.issue_code for i in batch],
+                                "prompt": prompt,
+                            }
+                        )
 
                     # Calculate thinking budget based on workload
                     # Heavy batches (workload > 10) get more thinking budget for complex reasoning
@@ -474,11 +501,17 @@ class FixOrchestrator:
                         # Scale: base 8k + 1k per workload point above 10, max 16k
                         base_budget = self.settings.thinking.budget_tokens
                         thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
-                        logger.info(f"Heavy batch (workload={batch_workload}), thinking budget: {thinking_budget}")
-                        await emit_log("INFO", f"Heavy batch: thinking budget {thinking_budget} tokens")
+                        logger.info(
+                            f"Heavy batch (workload={batch_workload}), thinking budget: {thinking_budget}"
+                        )
+                        await emit_log(
+                            "INFO", f"Heavy batch: thinking budget {thinking_budget} tokens"
+                        )
 
                     try:
-                        output = await self._run_claude_cli(prompt, on_chunk=on_chunk_claude, thinking_budget=thinking_budget)
+                        output = await self._run_claude_cli(
+                            prompt, on_chunk=on_chunk_claude, thinking_budget=thinking_budget
+                        )
                         if output is None:
                             logger.error(f"Claude CLI ({batch_id}) failed: returned None")
                             await emit_log("ERROR", f"Claude CLI failed for {batch_id}")
@@ -536,29 +569,41 @@ class FixOrchestrator:
                         )
                     )
 
-                    review_prompt = self._build_review_prompt_per_batch(batch, batch_type, batch_idx, request.workspace_path)
+                    review_prompt = self._build_review_prompt_per_batch(
+                        batch, batch_type, batch_idx, request.workspace_path
+                    )
                     if iteration == 1 and completed_batches == 1:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
-                    gemini_output = await self._run_gemini_cli(review_prompt, on_chunk=on_chunk_gemini)
+                    gemini_output = await self._run_gemini_cli(
+                        review_prompt, on_chunk=on_chunk_gemini
+                    )
                     last_gemini_output = gemini_output
 
                     if gemini_output is None:
-                        logger.warning(f"Gemini CLI failed for {batch_id}, accepting fix without review")
-                        await emit_log("WARNING", f"Gemini review failed for {batch_id}, accepting fix")
+                        logger.warning(
+                            f"Gemini CLI failed for {batch_id}, accepting fix without review"
+                        )
+                        await emit_log(
+                            "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
+                        )
                         batch_results[batch_id]["passed"] = True
                         batch_results[batch_id]["score"] = 100.0
                         successful_issues.extend(batch)
                         continue
 
                     # Parse per-batch review
-                    score, failed_issue_codes, per_issue_scores, quality_scores = self._parse_batch_review(gemini_output, batch)
+                    score, failed_issue_codes, per_issue_scores, quality_scores = (
+                        self._parse_batch_review(gemini_output, batch)
+                    )
                     batch_results[batch_id]["score"] = score
                     batch_results[batch_id]["failed_issues"] = failed_issue_codes
 
                     # Show per-issue scores and quality scores
                     if per_issue_scores:
-                        scores_summary = " | ".join([f"{code}: {int(s)}" for code, s in per_issue_scores.items()])
+                        scores_summary = " | ".join(
+                            [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
+                        )
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_CHALLENGER_RESULT,
@@ -594,13 +639,20 @@ class FixOrchestrator:
                     else:
                         batch_results[batch_id]["passed"] = False
                         all_passed_this_iteration = False
-                        await emit_log("WARNING", f"{batch_id} needs retry (score {score} < {self.satisfaction_threshold})")
+                        await emit_log(
+                            "WARNING",
+                            f"{batch_id} needs retry (score {score} < {self.satisfaction_threshold})",
+                        )
                         # Store feedback for retry
                         if batch_type == "BE":
                             feedback_be = gemini_output
                         else:
                             feedback_fe = gemini_output
-                        failed_msg = f", failed issues: {', '.join(failed_issue_codes)}" if failed_issue_codes else ""
+                        failed_msg = (
+                            f", failed issues: {', '.join(failed_issue_codes)}"
+                            if failed_issue_codes
+                            else ""
+                        )
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_REGENERATING,
@@ -624,8 +676,12 @@ class FixOrchestrator:
                 # ========== INCREMENTAL S3 SAVE ==========
                 # Save logs after each iteration so we have partial data if session crashes
                 await self._save_fix_log_to_s3(
-                    session_id, result, issues, last_gemini_output,
-                    claude_prompts=claude_prompts, gemini_prompt=gemini_prompt,
+                    session_id,
+                    result,
+                    issues,
+                    last_gemini_output,
+                    claude_prompts=claude_prompts,
+                    gemini_prompt=gemini_prompt,
                     batch_results=batch_results,
                     current_iteration=iteration,
                     is_partial=True,  # Still in progress
@@ -664,12 +720,16 @@ class FixOrchestrator:
                 logger.info(f"Uncommitted files: {uncommitted_files}")
 
                 # Check for violations
-                violations = self._validate_workspace_scope(uncommitted_files, request.workspace_path)
+                violations = self._validate_workspace_scope(
+                    uncommitted_files, request.workspace_path
+                )
 
                 if violations:
                     # CRITICAL: Files modified outside workspace!
                     # Revert ALL changes and raise error
-                    logger.error(f"Workspace scope violation! Files outside '{request.workspace_path}': {violations}")
+                    logger.error(
+                        f"Workspace scope violation! Files outside '{request.workspace_path}': {violations}"
+                    )
 
                     await safe_emit(
                         FixProgressEvent(
@@ -731,7 +791,9 @@ class FixOrchestrator:
             actually_fixed_count = len(successful_issues)
             failed_count = len(failed_issues)
 
-            logger.info(f"Fix results: {actually_fixed_count} successful, {failed_count} failed (based on batch_results)")
+            logger.info(
+                f"Fix results: {actually_fixed_count} successful, {failed_count} failed (based on batch_results)"
+            )
             logger.info(f"Modified files in commit: {modified_files}")
 
             # Create IssueFixResult for SUCCESSFUL issues (from passed batches)
@@ -787,15 +849,20 @@ class FixOrchestrator:
                     branch_name=branch_name,
                     issues_fixed=result.issues_fixed,
                     issues_failed=result.issues_failed,
-                    message=f"Fixed {actually_fixed_count}/{len(issues)} issues" + (f" ({failed_count} failed Gemini review)" if failed_count > 0 else ""),
+                    message=f"Fixed {actually_fixed_count}/{len(issues)} issues"
+                    + (f" ({failed_count} failed Gemini review)" if failed_count > 0 else ""),
                 )
             )
 
             # Save fix log to S3 for debugging (10 day retention)
             # Final save with is_partial=False (session completed)
             await self._save_fix_log_to_s3(
-                session_id, result, issues, last_gemini_output,
-                claude_prompts=claude_prompts, gemini_prompt=gemini_prompt,
+                session_id,
+                result,
+                issues,
+                last_gemini_output,
+                claude_prompts=claude_prompts,
+                gemini_prompt=gemini_prompt,
                 batch_results=batch_results,
                 current_iteration=None,  # Completed
                 is_partial=False,  # Session complete
@@ -901,7 +968,9 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         return f"{agent_prompt}\n\n---\n\n{task}"
 
-    def _parse_batch_review(self, output: str, issues: list[Issue]) -> tuple[float, list[str], dict[str, float], dict[str, int]]:
+    def _parse_batch_review(
+        self, output: str, issues: list[Issue]
+    ) -> tuple[float, list[str], dict[str, float], dict[str, int]]:
         """Parse Gemini's per-batch review output.
 
         Args:
@@ -969,7 +1038,8 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         # If no explicit FAILED_ISSUES, derive from per_issue_scores
         if not failed_issues and per_issue_scores:
             failed_issues = [
-                code for code, score in per_issue_scores.items()
+                code
+                for code, score in per_issue_scores.items()
                 if score < self.satisfaction_threshold
             ]
             if failed_issues:
@@ -1019,7 +1089,8 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         if structure_doc:
             # Wrap XML in semantic tags for better LLM parsing
             if structure_doc.strip().startswith("<?xml"):
-                task_parts.append(f"""
+                task_parts.append(
+                    f"""
 ## Repository Structure
 
 Use this structure documentation to understand the codebase architecture:
@@ -1029,9 +1100,11 @@ Use this structure documentation to understand the codebase architecture:
 </repository-structure>
 
 ---
-""")
+"""
+                )
             else:
-                task_parts.append(f"""
+                task_parts.append(
+                    f"""
 ## Repository Structure
 
 Use this structure documentation to understand the codebase architecture:
@@ -1039,11 +1112,13 @@ Use this structure documentation to understand the codebase architecture:
 {structure_doc}
 
 ---
-""")
+"""
+                )
 
         # Add workspace scope restriction if set
         if workspace_path:
-            task_parts.append(f"""
+            task_parts.append(
+                f"""
 ## ⚠️ WORKSPACE SCOPE RESTRICTION
 
 **CRITICAL**: This is a MONOREPO. You are ONLY allowed to modify files within:
@@ -1057,7 +1132,8 @@ DO NOT modify any files outside this folder. If a fix requires changes outside t
 3. The system will BLOCK and REVERT any changes outside the workspace
 
 ---
-""")
+"""
+            )
 
         for i, issue in enumerate(issues, 1):
             # Get code snippet with context (marks problematic lines with >>>)
@@ -1071,7 +1147,8 @@ DO NOT modify any files outside this folder. If a fix requires changes outside t
             else:
                 location = "Location not specified"
 
-            task_parts.append(f"""
+            task_parts.append(
+                f"""
 ## Issue {i}: {issue.issue_code}
 **Title**: {issue.title}
 **Severity**: {issue.severity}
@@ -1091,23 +1168,28 @@ DO NOT modify any files outside this folder. If a fix requires changes outside t
 {issue.suggested_fix or "Use your best judgment based on the issue description"}
 
 ---
-""")
+"""
+            )
 
-        task_parts.append("""
+        task_parts.append(
+            """
 ## Instructions
 1. Read the files to understand context
 2. Make the fixes - one by one
 3. Keep changes minimal
 4. Do NOT commit - just fix the code
-""")
+"""
+        )
 
         if feedback and iteration > 1:
-            task_parts.append(f"""
+            task_parts.append(
+                f"""
 ## Feedback from Previous Attempt (Iteration {iteration})
 The reviewer found issues with the previous fix. Address this feedback:
 
 {feedback}
-""")
+"""
+            )
 
         task = "\n".join(task_parts)
 
@@ -1138,7 +1220,9 @@ The reviewer found issues with the previous fix. Address this feedback:
             return score
 
         # Default to 70 if can't parse
-        logger.warning(f"Could not parse score from Gemini output, defaulting to 70. Output: {output[:500]}")
+        logger.warning(
+            f"Could not parse score from Gemini output, defaulting to 70. Output: {output[:500]}"
+        )
         return 70.0
 
     async def _run_claude_cli(
@@ -1273,14 +1357,18 @@ The reviewer found issues with the previous fix. Address this feedback:
                                 output_chunks.append(decoded)
                                 if on_chunk:
                                     await on_chunk(decoded)
-                            logger.info(f"[CLAUDE CLI FIX] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
+                            logger.info(
+                                f"[CLAUDE CLI FIX] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes"
+                            )
                             break
 
                         chunks_received += 1
                         total_bytes += len(chunk)
 
                         if chunks_received == 1:
-                            logger.info(f"[CLAUDE CLI FIX] First chunk received! ({len(chunk)} bytes)")
+                            logger.info(
+                                f"[CLAUDE CLI FIX] First chunk received! ({len(chunk)} bytes)"
+                            )
 
                         # Incremental decode - handles partial multi-byte chars
                         decoded = decoder.decode(chunk)
@@ -1291,7 +1379,9 @@ The reviewer found issues with the previous fix. Address this feedback:
                                 await on_chunk(decoded)
 
             except asyncio.TimeoutError:
-                logger.error(f"[CLAUDE CLI FIX] TIMEOUT after {timeout}s! Received {chunks_received} chunks, {total_bytes} bytes")
+                logger.error(
+                    f"[CLAUDE CLI FIX] TIMEOUT after {timeout}s! Received {chunks_received} chunks, {total_bytes} bytes"
+                )
                 stdin_task.cancel()
                 stderr_task.cancel()
                 process.kill()
@@ -1461,7 +1551,9 @@ The reviewer found issues with the previous fix. Address this feedback:
         try:
             # Get commit SHA
             proc = await asyncio.create_subprocess_exec(
-                "git", "rev-parse", "HEAD",
+                "git",
+                "rev-parse",
+                "HEAD",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1472,18 +1564,29 @@ The reviewer found issues with the previous fix. Address this feedback:
 
             # Get modified files from last commit
             proc = await asyncio.create_subprocess_exec(
-                "git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD",
+                "git",
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                "HEAD",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
             )
             stdout, _ = await proc.communicate()
             if proc.returncode == 0:
-                modified_files = [f.strip() for f in stdout.decode().strip().split("\n") if f.strip()]
+                modified_files = [
+                    f.strip() for f in stdout.decode().strip().split("\n") if f.strip()
+                ]
 
             # Get diff of last commit (limited to 2000 chars)
             proc = await asyncio.create_subprocess_exec(
-                "git", "show", "--stat", "--format=", "HEAD",
+                "git",
+                "show",
+                "--stat",
+                "--format=",
+                "HEAD",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1505,7 +1608,12 @@ The reviewer found issues with the previous fix. Address this feedback:
         """
         try:
             proc = await asyncio.create_subprocess_exec(
-                "git", "show", "--format=", "HEAD", "--", file_path,
+                "git",
+                "show",
+                "--format=",
+                "HEAD",
+                "--",
+                file_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1515,7 +1623,8 @@ The reviewer found issues with the previous fix. Address this feedback:
                 diff = stdout.decode()
                 # Extract just the added lines (+ prefix)
                 added_lines = [
-                    line[1:] for line in diff.split("\n")
+                    line[1:]
+                    for line in diff.split("\n")
                     if line.startswith("+") and not line.startswith("+++")
                 ]
                 # Return first 500 chars of added code
@@ -1537,7 +1646,10 @@ The reviewer found issues with the previous fix. Address this feedback:
         try:
             # 1. Staged files (git diff --cached --name-only)
             proc = await asyncio.create_subprocess_exec(
-                "git", "diff", "--cached", "--name-only",
+                "git",
+                "diff",
+                "--cached",
+                "--name-only",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1551,7 +1663,9 @@ The reviewer found issues with the previous fix. Address this feedback:
 
             # 2. Unstaged modified files (git diff --name-only)
             proc = await asyncio.create_subprocess_exec(
-                "git", "diff", "--name-only",
+                "git",
+                "diff",
+                "--name-only",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1565,7 +1679,10 @@ The reviewer found issues with the previous fix. Address this feedback:
 
             # 3. Untracked files (git ls-files --others --exclude-standard)
             proc = await asyncio.create_subprocess_exec(
-                "git", "ls-files", "--others", "--exclude-standard",
+                "git",
+                "ls-files",
+                "--others",
+                "--exclude-standard",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1609,7 +1726,9 @@ The reviewer found issues with the previous fix. Address this feedback:
             # File must start with workspace path (e.g., "packages/frontend/src/...")
             if not file_path.startswith(workspace + "/") and file_path != workspace:
                 violations.append(file_path)
-                logger.warning(f"File outside workspace scope: {file_path} (workspace: {workspace})")
+                logger.warning(
+                    f"File outside workspace scope: {file_path} (workspace: {workspace})"
+                )
 
         return violations
 
@@ -1627,7 +1746,11 @@ The reviewer found issues with the previous fix. Address this feedback:
         try:
             # 1. Unstage all staged changes
             proc = await asyncio.create_subprocess_exec(
-                "git", "reset", "HEAD", "--", ".",
+                "git",
+                "reset",
+                "HEAD",
+                "--",
+                ".",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1637,7 +1760,10 @@ The reviewer found issues with the previous fix. Address this feedback:
 
             # 2. Discard all modifications to tracked files
             proc = await asyncio.create_subprocess_exec(
-                "git", "checkout", "--", ".",
+                "git",
+                "checkout",
+                "--",
+                ".",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1647,7 +1773,9 @@ The reviewer found issues with the previous fix. Address this feedback:
 
             # 3. Remove untracked files and directories
             proc = await asyncio.create_subprocess_exec(
-                "git", "clean", "-fd",
+                "git",
+                "clean",
+                "-fd",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.repo_path),
@@ -1772,15 +1900,19 @@ The reviewer found issues with the previous fix. Address this feedback:
                 "claude_prompts": claude_prompts or [],
                 "gemini_prompt": gemini_prompt,
                 # Batch results for incremental saves (shows per-batch status)
-                "batch_results": {
-                    batch_id: {
-                        "passed": data["passed"],
-                        "score": data["score"],
-                        "failed_issues": data.get("failed_issues", []),
-                        "issue_codes": [i.issue_code for i in data.get("issues", [])],
+                "batch_results": (
+                    {
+                        batch_id: {
+                            "passed": data["passed"],
+                            "score": data["score"],
+                            "failed_issues": data.get("failed_issues", []),
+                            "issue_codes": [i.issue_code for i in data.get("issues", [])],
+                        }
+                        for batch_id, data in (batch_results or {}).items()
                     }
-                    for batch_id, data in (batch_results or {}).items()
-                } if batch_results else None,
+                    if batch_results
+                    else None
+                ),
             }
 
             # Upload to S3

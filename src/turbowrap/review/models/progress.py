@@ -47,7 +47,9 @@ class ProgressEvent(BaseModel):
     # Reviewer-level info
     reviewer_name: str | None = Field(default=None, description="Reviewer name")
     reviewer_display_name: str | None = Field(default=None, description="Human-readable name")
-    model: str | None = Field(default=None, description="Model used (e.g., claude-opus-4-5, gemini-flash)")
+    model: str | None = Field(
+        default=None, description="Model used (e.g., claude-opus-4-5, gemini-flash)"
+    )
 
     # Iteration info
     iteration: int | None = Field(default=None, description="Current iteration")

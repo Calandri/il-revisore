@@ -120,9 +120,7 @@ def send_message(
         )
         previous.reverse()
 
-        context = "\n".join([
-            f"{m.role}: {m.content}" for m in previous
-        ])
+        context = "\n".join([f"{m.role}: {m.content}" for m in previous])
 
         prompt = f"""Previous conversation:
 {context}
@@ -212,18 +210,12 @@ Respond helpfully as an AI assistant for code development."""
 
         try:
             # Stream event: start
-            yield {
-                "event": "start",
-                "data": json.dumps({"session_id": session_id})
-            }
+            yield {"event": "start", "data": json.dumps({"session_id": session_id})}
 
             # Stream tokens
             async for chunk in claude.astream(prompt):
                 full_response += chunk
-                yield {
-                    "event": "token",
-                    "data": json.dumps({"content": chunk})
-                }
+                yield {"event": "token", "data": json.dumps({"content": chunk})}
 
             # Save complete response
             assistant_message = ChatMessage(
@@ -237,16 +229,12 @@ Respond helpfully as an AI assistant for code development."""
             # Stream event: done
             yield {
                 "event": "done",
-                "data": json.dumps({
-                    "message_id": assistant_message.id,
-                    "total_length": len(full_response)
-                })
+                "data": json.dumps(
+                    {"message_id": assistant_message.id, "total_length": len(full_response)}
+                ),
             }
 
         except Exception as e:
-            yield {
-                "event": "error",
-                "data": json.dumps({"error": str(e)})
-            }
+            yield {"event": "error", "data": json.dumps({"error": str(e)})}
 
     return EventSourceResponse(generate())

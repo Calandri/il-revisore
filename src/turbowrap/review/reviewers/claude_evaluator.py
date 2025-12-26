@@ -204,7 +204,9 @@ class ClaudeEvaluator:
         if output is None:
             logger.error("Evaluator CLI returned None")
             # Save failed attempt to S3 for debugging
-            await self._save_evaluation_to_s3(prompt, "CLI returned None", None, repo_info.name, review_id)
+            await self._save_evaluation_to_s3(
+                prompt, "CLI returned None", None, repo_info.name, review_id
+            )
             return None
 
         evaluation = self._parse_response(output)
@@ -257,7 +259,9 @@ class ClaudeEvaluator:
         sections.append("\n## Issues Found\n")
         severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
         for issue in issues:
-            severity = issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity)
+            severity = (
+                issue.severity.value if hasattr(issue.severity, "value") else str(issue.severity)
+            )
             if severity in severity_counts:
                 severity_counts[severity] += 1
 
@@ -271,11 +275,18 @@ class ClaudeEvaluator:
         if issues:
             sections.append("\n### Issue Details\n")
             for _i, issue in enumerate(issues[:30]):
-                severity = issue.severity.value if hasattr(issue.severity, 'value') else str(issue.severity)
-                category = issue.category.value if hasattr(issue.category, 'value') else str(issue.category)
+                severity = (
+                    issue.severity.value
+                    if hasattr(issue.severity, "value")
+                    else str(issue.severity)
+                )
+                category = (
+                    issue.category.value
+                    if hasattr(issue.category, "value")
+                    else str(issue.category)
+                )
                 sections.append(
-                    f"- **[{severity}]** `{issue.file}`: {issue.title} "
-                    f"({category})\n"
+                    f"- **[{severity}]** `{issue.file}`: {issue.title} " f"({category})\n"
                 )
             if len(issues) > 30:
                 sections.append(f"... and {len(issues) - 30} more issues\n")
@@ -344,7 +355,9 @@ class ClaudeEvaluator:
             # Extended thinking via env var (--settings flag is buggy)
             if self.settings.thinking.enabled:
                 env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
-                logger.info(f"[EVALUATOR] Extended thinking: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}")
+                logger.info(
+                    f"[EVALUATOR] Extended thinking: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}"
+                )
 
             logger.info(f"[EVALUATOR] Starting CLI: {' '.join(args)}")
             logger.info(f"[EVALUATOR] Working dir: {cwd}")
@@ -445,7 +458,9 @@ class ClaudeEvaluator:
                                 output_chunks.append(decoded)
                                 if on_chunk:
                                     await on_chunk(decoded)
-                            logger.info(f"[EVALUATOR] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
+                            logger.info(
+                                f"[EVALUATOR] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes"
+                            )
                             break
 
                         chunks_received += 1
@@ -454,7 +469,9 @@ class ClaudeEvaluator:
                         # Progress log every 30 seconds
                         now = time.time()
                         if now - last_log_time > 30:
-                            logger.info(f"[EVALUATOR] Streaming... {chunks_received} chunks, {total_bytes} bytes")
+                            logger.info(
+                                f"[EVALUATOR] Streaming... {chunks_received} chunks, {total_bytes} bytes"
+                            )
                             last_log_time = now
 
                         # Log first chunk (confirms CLI is responding)
@@ -468,7 +485,9 @@ class ClaudeEvaluator:
                                 await on_chunk(decoded)
 
             except asyncio.TimeoutError:
-                logger.error(f"[EVALUATOR] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes")
+                logger.error(
+                    f"[EVALUATOR] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes"
+                )
                 stdin_task.cancel()
                 stderr_task.cancel()
                 process.kill()
@@ -591,6 +610,6 @@ class ClaudeEvaluator:
         if first_brace != -1:
             last_brace = text.rfind("}")
             if last_brace > first_brace:
-                return text[first_brace:last_brace + 1]
+                return text[first_brace : last_brace + 1]
 
         return text

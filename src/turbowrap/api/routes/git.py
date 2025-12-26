@@ -18,6 +18,7 @@ router = APIRouter(prefix="/git", tags=["git"])
 
 class CommitInfo(BaseModel):
     """Git commit information."""
+
     sha: str
     message: str
     author: str
@@ -26,11 +27,13 @@ class CommitInfo(BaseModel):
 
 class BranchInfo(BaseModel):
     """Current branch information."""
+
     branch: str
 
 
 class CommitDiff(BaseModel):
     """Commit diff content."""
+
     diff: str
 
 
@@ -49,45 +52,37 @@ def run_git_command(repo_path: Path, command: list[str]) -> str:
     """
     try:
         result = subprocess.run(
-            ['git'] + command,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10
+            ["git"] + command, cwd=repo_path, capture_output=True, text=True, check=True, timeout=10
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Git command failed: {e.stderr}"
-        )
+        raise HTTPException(status_code=500, detail=f"Git command failed: {e.stderr}")
     except subprocess.TimeoutExpired:
-        raise HTTPException(
-            status_code=500,
-            detail="Git command timed out"
-        )
+        raise HTTPException(status_code=500, detail="Git command timed out")
 
 
 @router.get("/repositories")
 def list_repositories(db: Session = Depends(get_db)):
     """List all active repositories with basic info."""
-    repos = db.query(Repository).filter(
-        Repository.deleted_at.is_(None),
-        Repository.status == "active"
-    ).all()
+    repos = (
+        db.query(Repository)
+        .filter(Repository.deleted_at.is_(None), Repository.status == "active")
+        .all()
+    )
 
     result = []
     for repo in repos:
         path = repo.local_path
         path_exists = Path(path).exists() if path else False
         logger.debug(f"[git/repos] {repo.name}: path={path}, exists={path_exists}")
-        result.append({
-            "id": repo.id,
-            "name": repo.name,
-            "path": str(path) if path else None,
-            "path_exists": path_exists
-        })
+        result.append(
+            {
+                "id": repo.id,
+                "name": repo.name,
+                "path": str(path) if path else None,
+                "path_exists": path_exists,
+            }
+        )
 
     return result
 
@@ -106,7 +101,7 @@ def get_current_branch(repo_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Repository path not found: {repo.local_path}")
 
     try:
-        branch = run_git_command(repo_path, ['branch', '--show-current'])
+        branch = run_git_command(repo_path, ["branch", "--show-current"])
         return BranchInfo(branch=branch or "HEAD")
     except HTTPException as e:
         logger.error(f"[git/branch] Git command failed for {repo.name}: {e.detail}")
@@ -115,9 +110,7 @@ def get_current_branch(repo_id: str, db: Session = Depends(get_db)):
 
 @router.get("/repositories/{repo_id}/commits", response_model=list[CommitInfo])
 def get_commits(
-    repo_id: str,
-    limit: int = Query(default=5, ge=1, le=50),
-    db: Session = Depends(get_db)
+    repo_id: str, limit: int = Query(default=5, ge=1, le=50), db: Session = Depends(get_db)
 ):
     """Get recent commits for a repository.
 
@@ -137,25 +130,19 @@ def get_commits(
 
     try:
         # Get commits with format: sha|message|author|date
-        git_log_format = '--pretty=format:%H|%s|%an|%aI'
-        output = run_git_command(
-            repo_path,
-            ['log', git_log_format, f'-n{limit}']
-        )
+        git_log_format = "--pretty=format:%H|%s|%an|%aI"
+        output = run_git_command(repo_path, ["log", git_log_format, f"-n{limit}"])
 
         commits = []
-        for line in output.split('\n'):
+        for line in output.split("\n"):
             if not line:
                 continue
 
-            parts = line.split('|', 3)
+            parts = line.split("|", 3)
             if len(parts) == 4:
-                commits.append(CommitInfo(
-                    sha=parts[0],
-                    message=parts[1],
-                    author=parts[2],
-                    date=parts[3]
-                ))
+                commits.append(
+                    CommitInfo(sha=parts[0], message=parts[1], author=parts[2], date=parts[3])
+                )
 
         return commits
     except HTTPException as e:
@@ -180,15 +167,9 @@ def get_commit_diff(repo_id: str, sha: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Repository path not found")
 
     # Get the diff for this commit
-    run_git_command(
-        repo_path,
-        ['show', '--pretty=format:', '--stat', sha]
-    )
+    run_git_command(repo_path, ["show", "--pretty=format:", "--stat", sha])
 
     # Also get the full diff with changes
-    full_diff = run_git_command(
-        repo_path,
-        ['show', sha]
-    )
+    full_diff = run_git_command(repo_path, ["show", sha])
 
     return CommitDiff(diff=full_diff)

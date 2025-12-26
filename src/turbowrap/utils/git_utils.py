@@ -400,7 +400,9 @@ Important: Output ONLY the commands you ran and a brief summary. No explanations
             text=True,
         )
 
-        result["message"] = "Push successful" + (" (conflicts resolved)" if result["claude_resolved"] else "")
+        result["message"] = "Push successful" + (
+            " (conflicts resolved)" if result["claude_resolved"] else ""
+        )
         return result
 
     except subprocess.CalledProcessError as e:

@@ -179,9 +179,9 @@ class ReviewTask(BaseTask):
                 "enabled": report.challenger.enabled,
                 "total_iterations": report.challenger.total_iterations,
                 "average_satisfaction": report.challenger.final_satisfaction_score,
-                "convergence_status": report.challenger.convergence.value
-                if report.challenger.convergence
-                else None,
+                "convergence_status": (
+                    report.challenger.convergence.value if report.challenger.convergence else None
+                ),
             },
             "issues": [
                 {
@@ -272,92 +272,111 @@ class ReviewTask(BaseTask):
 
         # Reviewers section
         if data.get("reviewers"):
-            lines.extend([
-                "## Reviewers",
-                "",
-            ])
-            for reviewer in data["reviewers"]:
-                lines.extend([
-                    f"### {reviewer['name']}",
-                    f"- Status: {reviewer['status']}",
-                    f"- Issues found: {reviewer['issues_found']}",
-                    f"- Iterations: {reviewer.get('iterations', 1)}",
-                    f"- Satisfaction: {reviewer.get('satisfaction_score', 'N/A')}%",
+            lines.extend(
+                [
+                    "## Reviewers",
                     "",
-                ])
+                ]
+            )
+            for reviewer in data["reviewers"]:
+                lines.extend(
+                    [
+                        f"### {reviewer['name']}",
+                        f"- Status: {reviewer['status']}",
+                        f"- Issues found: {reviewer['issues_found']}",
+                        f"- Iterations: {reviewer.get('iterations', 1)}",
+                        f"- Satisfaction: {reviewer.get('satisfaction_score', 'N/A')}%",
+                        "",
+                    ]
+                )
 
         # Challenger section
         challenger = data.get("challenger", {})
         if challenger.get("enabled"):
-            lines.extend([
-                "## Challenger Loop",
-                "",
-                f"- **Total iterations:** {challenger.get('total_iterations', 0)}",
-                f"- **Average satisfaction:** {challenger.get('average_satisfaction', 0):.1f}%",
-                f"- **Convergence:** {challenger.get('convergence_status', 'N/A')}",
-                "",
-                "---",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Challenger Loop",
+                    "",
+                    f"- **Total iterations:** {challenger.get('total_iterations', 0)}",
+                    f"- **Average satisfaction:** {challenger.get('average_satisfaction', 0):.1f}%",
+                    f"- **Convergence:** {challenger.get('convergence_status', 'N/A')}",
+                    "",
+                    "---",
+                    "",
+                ]
+            )
 
         # Issues section
         issues = data.get("issues", [])
         if issues:
-            lines.extend([
-                "## Issues",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Issues",
+                    "",
+                ]
+            )
 
             # Group by severity
             for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
                 severity_issues = [i for i in issues if i["severity"] == severity]
                 if severity_issues:
-                    lines.extend([
-                        f"### {severity} ({len(severity_issues)})",
-                        "",
-                    ])
+                    lines.extend(
+                        [
+                            f"### {severity} ({len(severity_issues)})",
+                            "",
+                        ]
+                    )
                     for issue in severity_issues:
-                        lines.extend([
-                            f"#### [{issue['id']}] {issue['title']}",
-                            f"**File:** `{issue['file']}`" + (f" (line {issue['line']})" if issue.get('line') else ""),
-                            f"**Category:** {issue['category']}",
-                            "",
-                            issue['description'],
-                            "",
-                        ])
-                        if issue.get('suggested_fix'):
-                            lines.extend([
-                                "**Suggested fix:**",
-                                "```",
-                                issue['suggested_fix'],
-                                "```",
+                        lines.extend(
+                            [
+                                f"#### [{issue['id']}] {issue['title']}",
+                                f"**File:** `{issue['file']}`"
+                                + (f" (line {issue['line']})" if issue.get("line") else ""),
+                                f"**Category:** {issue['category']}",
                                 "",
-                            ])
-                        if issue.get('flagged_by'):
+                                issue["description"],
+                                "",
+                            ]
+                        )
+                        if issue.get("suggested_fix"):
+                            lines.extend(
+                                [
+                                    "**Suggested fix:**",
+                                    "```",
+                                    issue["suggested_fix"],
+                                    "```",
+                                    "",
+                                ]
+                            )
+                        if issue.get("flagged_by"):
                             lines.append(f"*Flagged by: {', '.join(issue['flagged_by'])}*")
                             lines.append("")
 
         # Next steps section
         next_steps = data.get("next_steps", [])
         if next_steps:
-            lines.extend([
-                "---",
-                "",
-                "## Next Steps",
-                "",
-            ])
+            lines.extend(
+                [
+                    "---",
+                    "",
+                    "## Next Steps",
+                    "",
+                ]
+            )
             for step in next_steps:
                 lines.append(f"{step['priority']}. {step['action']}")
             lines.append("")
 
         # Footer
-        lines.extend([
-            "---",
-            "",
-            f"*Review completed in {result.duration_seconds:.2f} seconds*",
-            "",
-            "*Generated with TurboWrap - 5 Specialized Reviewers + Challenger Loop*",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                f"*Review completed in {result.duration_seconds:.2f} seconds*",
+                "",
+                "*Generated with TurboWrap - 5 Specialized Reviewers + Challenger Loop*",
+            ]
+        )
 
         output_file = output_dir / "REVIEW_REPORT.md"
         output_file.write_text("\n".join(lines), encoding="utf-8")

@@ -19,48 +19,36 @@ class RepositoryEvaluation(BaseModel):
 
     # Core metrics (0-100)
     functionality: int = Field(
-        ..., ge=0, le=100,
-        description="Completeness of features, coverage of requirements"
+        ..., ge=0, le=100, description="Completeness of features, coverage of requirements"
     )
     code_quality: int = Field(
-        ..., ge=0, le=100,
-        description="Code cleanliness, naming, structure, readability"
+        ..., ge=0, le=100, description="Code cleanliness, naming, structure, readability"
     )
     comment_quality: int = Field(
-        ..., ge=0, le=100,
-        description="Documentation, docstrings, useful comments"
+        ..., ge=0, le=100, description="Documentation, docstrings, useful comments"
     )
     architecture_quality: int = Field(
-        ..., ge=0, le=100,
-        description="Design patterns, layer separation, SOLID principles"
+        ..., ge=0, le=100, description="Design patterns, layer separation, SOLID principles"
     )
     effectiveness: int = Field(
-        ..., ge=0, le=100,
-        description="Performance, efficiency, resource usage"
+        ..., ge=0, le=100, description="Performance, efficiency, resource usage"
     )
     code_duplication: int = Field(
-        ..., ge=0, le=100,
-        description="DRY compliance, code reuse (100 = no duplication)"
+        ..., ge=0, le=100, description="DRY compliance, code reuse (100 = no duplication)"
     )
 
     # Calculated overall score
-    overall_score: int = Field(
-        ..., ge=0, le=100,
-        description="Weighted average of all metrics"
-    )
+    overall_score: int = Field(..., ge=0, le=100, description="Weighted average of all metrics")
 
     # Summary and insights
     summary: str = Field(
-        ..., min_length=10, max_length=500,
-        description="2-3 sentence executive summary"
+        ..., min_length=10, max_length=500, description="2-3 sentence executive summary"
     )
     strengths: list[str] = Field(
-        default_factory=list,
-        description="Top 3-5 strengths of the codebase"
+        default_factory=list, description="Top 3-5 strengths of the codebase"
     )
     weaknesses: list[str] = Field(
-        default_factory=list,
-        description="Top 3-5 areas needing improvement"
+        default_factory=list, description="Top 3-5 areas needing improvement"
     )
 
     # Metadata
@@ -95,12 +83,12 @@ class RepositoryEvaluation(BaseModel):
         - code_duplication: 10%
         """
         return round(
-            architecture_quality * 0.25 +
-            code_quality * 0.25 +
-            functionality * 0.15 +
-            effectiveness * 0.15 +
-            comment_quality * 0.10 +
-            code_duplication * 0.10
+            architecture_quality * 0.25
+            + code_quality * 0.25
+            + functionality * 0.15
+            + effectiveness * 0.15
+            + comment_quality * 0.10
+            + code_duplication * 0.10
         )
 
     def get_color(self, score: int) -> str:
@@ -114,13 +102,34 @@ class RepositoryEvaluation(BaseModel):
     def to_dict_with_colors(self) -> dict:
         """Return metrics with color indicators for UI."""
         return {
-            "functionality": {"score": self.functionality, "color": self.get_color(self.functionality)},
-            "code_quality": {"score": self.code_quality, "color": self.get_color(self.code_quality)},
-            "comment_quality": {"score": self.comment_quality, "color": self.get_color(self.comment_quality)},
-            "architecture_quality": {"score": self.architecture_quality, "color": self.get_color(self.architecture_quality)},
-            "effectiveness": {"score": self.effectiveness, "color": self.get_color(self.effectiveness)},
-            "code_duplication": {"score": self.code_duplication, "color": self.get_color(self.code_duplication)},
-            "overall_score": {"score": self.overall_score, "color": self.get_color(self.overall_score)},
+            "functionality": {
+                "score": self.functionality,
+                "color": self.get_color(self.functionality),
+            },
+            "code_quality": {
+                "score": self.code_quality,
+                "color": self.get_color(self.code_quality),
+            },
+            "comment_quality": {
+                "score": self.comment_quality,
+                "color": self.get_color(self.comment_quality),
+            },
+            "architecture_quality": {
+                "score": self.architecture_quality,
+                "color": self.get_color(self.architecture_quality),
+            },
+            "effectiveness": {
+                "score": self.effectiveness,
+                "color": self.get_color(self.effectiveness),
+            },
+            "code_duplication": {
+                "score": self.code_duplication,
+                "color": self.get_color(self.code_duplication),
+            },
+            "overall_score": {
+                "score": self.overall_score,
+                "color": self.get_color(self.overall_score),
+            },
             "summary": self.summary,
             "strengths": self.strengths,
             "weaknesses": self.weaknesses,

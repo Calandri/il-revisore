@@ -1,6 +1,5 @@
 """Task registry for task lookup."""
 
-
 from .base import BaseTask
 from .develop import DevelopTask
 from .review import ReviewTask
@@ -61,10 +60,12 @@ class TaskRegistry:
         result = []
         for _name, task_class in self._tasks.items():
             instance = task_class()
-            result.append({
-                "name": instance.name,
-                "description": instance.description,
-            })
+            result.append(
+                {
+                    "name": instance.name,
+                    "description": instance.description,
+                }
+            )
         return result
 
     @property

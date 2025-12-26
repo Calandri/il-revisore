@@ -37,13 +37,15 @@ with file statistics, extracted elements, and repository type detection.
         help="Path to repository to analyze",
     )
     struct_parser.add_argument(
-        "--depth", "-d",
+        "--depth",
+        "-d",
         type=int,
         default=3,
         help="Maximum directory depth (default: 3)",
     )
     struct_parser.add_argument(
-        "--workers", "-w",
+        "--workers",
+        "-w",
         type=int,
         default=5,
         help="Number of parallel workers (default: 5)",

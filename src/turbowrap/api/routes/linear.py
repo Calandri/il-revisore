@@ -25,8 +25,10 @@ router = APIRouter(prefix="/linear", tags=["linear"])
 
 # --- Schemas ---
 
+
 class LinearIssueResponse(BaseModel):
     """Linear issue response."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -57,23 +59,27 @@ class LinearIssueResponse(BaseModel):
 
 class LinearSyncRequest(BaseModel):
     """Request to sync issues from Linear."""
+
     team_id: str | None = Field(None, description="Team ID (uses settings if not provided)")
     limit: int = Field(100, ge=1, le=500)
 
 
 class ImproveIssueRequest(BaseModel):
     """Request to improve issue with Claude."""
+
     issue_id: str
 
 
 class ImproveIssuePhase2Request(BaseModel):
     """Request for Phase 2 analysis with user answers."""
+
     issue_id: str
     answers: dict[int, str] = Field(..., description="User answers keyed by question ID")
 
 
 class LinkRepositoryRequest(BaseModel):
     """Request to link repository to issue."""
+
     issue_id: str
     repository_id: str
     link_source: str = "manual"
@@ -81,6 +87,7 @@ class LinkRepositoryRequest(BaseModel):
 
 class FinalizeIssueRequest(BaseModel):
     """Request to finalize issue creation."""
+
     title: str
     description: str
     figma_link: str | None = None
@@ -95,6 +102,7 @@ class FinalizeIssueRequest(BaseModel):
 
 
 # --- Helper Functions ---
+
 
 def _get_linear_client(db: Session) -> LinearClient:
     """Get Linear client from settings."""
@@ -113,7 +121,7 @@ def _get_team_id(db: Session, provided: str | None = None) -> str:
         if not setting or not setting.value:
             raise HTTPException(
                 status_code=400,
-                detail="Linear team ID not configured. Please go to Settings and configure your Linear Team ID (UUID format)."
+                detail="Linear team ID not configured. Please go to Settings and configure your Linear Team ID (UUID format).",
             )
         team_id = setting.value
 
@@ -122,7 +130,7 @@ def _get_team_id(db: Session, provided: str | None = None) -> str:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid Team ID format: '{team_id}'. Team ID must be a UUID (e.g., 'a1b2c3d4-...'). "
-                   f"You can find it in Linear Settings or by clicking on your team name."
+            f"You can find it in Linear Settings or by clicking on your team name.",
         )
 
     return team_id
@@ -160,6 +168,7 @@ def _map_linear_state_to_turbowrap(state_name: str) -> str:
 
 # --- Routes ---
 
+
 @router.get("/issues", response_model=list[LinearIssueResponse])
 def list_linear_issues(
     state: str | None = Query(None, description="Filter by TurboWrap state"),
@@ -185,9 +194,11 @@ def list_linear_issues(
     result = []
     for issue in issues:
         # Get linked repositories
-        links = db.query(LinearIssueRepositoryLink).filter(
-            LinearIssueRepositoryLink.linear_issue_id == issue.id
-        ).all()
+        links = (
+            db.query(LinearIssueRepositoryLink)
+            .filter(LinearIssueRepositoryLink.linear_issue_id == issue.id)
+            .all()
+        )
 
         repo_ids = [link.repository_id for link in links]
         repos = db.query(Repository).filter(Repository.id.in_(repo_ids)).all() if repo_ids else []
@@ -223,7 +234,7 @@ async def sync_linear_issues(
             logger.error(f"Failed to fetch issues from Linear: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to fetch issues from Linear API: {str(e)}. Check your API key and Team ID."
+                detail=f"Failed to fetch issues from Linear API: {str(e)}. Check your API key and Team ID.",
             )
 
         synced_count = 0
@@ -231,7 +242,9 @@ async def sync_linear_issues(
         converted_count = 0  # To Do → Triage conversions
 
         # Get cached state IDs from settings
-        triage_state_setting = db.query(Setting).filter(Setting.key == "linear_state_triage_id").first()
+        triage_state_setting = (
+            db.query(Setting).filter(Setting.key == "linear_state_triage_id").first()
+        )
         triage_state_id = triage_state_setting.value if triage_state_setting else None
 
         for linear_issue in issues:
@@ -244,13 +257,13 @@ async def sync_linear_issues(
             # Filter: Only import Triage and To Do, ignore In Progress
             # Handle both "To Do" (with space) and "Todo" (without space)
             if state_name.lower() not in ["triage", "to do", "todo"]:
-                logger.info(f"⏭️  Skipping issue {linear_issue['identifier']} - state '{state_name}' not in [Triage, To Do, Todo]")
+                logger.info(
+                    f"⏭️  Skipping issue {linear_issue['identifier']} - state '{state_name}' not in [Triage, To Do, Todo]"
+                )
                 continue
 
             # Check if already exists
-            existing = db.query(LinearIssue).filter(
-                LinearIssue.linear_id == linear_id
-            ).first()
+            existing = db.query(LinearIssue).filter(LinearIssue.linear_id == linear_id).first()
 
             # Extract labels
             labels_data = linear_issue.get("labels") or {}
@@ -313,18 +326,22 @@ async def sync_linear_issues(
                 linked_count = 0
                 for repo_name in repo_label_names[:3]:  # Max 3 repos
                     # Find repository by name (partial match)
-                    repo = db.query(Repository).filter(
-                        Repository.name.ilike(f"%{repo_name}%")
-                    ).first()
+                    repo = (
+                        db.query(Repository).filter(Repository.name.ilike(f"%{repo_name}%")).first()
+                    )
 
                     if repo:
                         # Create link if doesn't exist
-                        existing_link = db.query(LinearIssueRepositoryLink).filter(
-                            and_(
-                                LinearIssueRepositoryLink.linear_issue_id == issue_obj.id,
-                                LinearIssueRepositoryLink.repository_id == repo.id,
+                        existing_link = (
+                            db.query(LinearIssueRepositoryLink)
+                            .filter(
+                                and_(
+                                    LinearIssueRepositoryLink.linear_issue_id == issue_obj.id,
+                                    LinearIssueRepositoryLink.repository_id == repo.id,
+                                )
                             )
-                        ).first()
+                            .first()
+                        )
 
                         if not existing_link:
                             link = LinearIssueRepositoryLink(
@@ -337,7 +354,9 @@ async def sync_linear_issues(
                             linked_count += 1
 
                 if linked_count > 0:
-                    logger.info(f"Linked {linked_count} repositories to {linear_issue['identifier']}")
+                    logger.info(
+                        f"Linked {linked_count} repositories to {linear_issue['identifier']}"
+                    )
 
         db.commit()
 
@@ -354,10 +373,7 @@ async def sync_linear_issues(
         raise
     except Exception as e:
         logger.error(f"Unexpected error during sync: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Sync failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
 
 @router.post("/improve/phase1")
@@ -374,7 +390,7 @@ async def improve_issue_phase1(
     if issue.turbowrap_state not in ["analysis", "repo_link"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Issue must be in 'analysis' or 'repo_link' state, currently in '{issue.turbowrap_state}'"
+            detail=f"Issue must be in 'analysis' or 'repo_link' state, currently in '{issue.turbowrap_state}'",
         )
 
     client = _get_linear_client(db)
@@ -402,7 +418,7 @@ async def improve_issue_phase2(
     if issue.turbowrap_state not in ["analysis", "repo_link"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Issue must be in 'analysis' or 'repo_link' state, currently in '{issue.turbowrap_state}'"
+            detail=f"Issue must be in 'analysis' or 'repo_link' state, currently in '{issue.turbowrap_state}'",
         )
 
     client = _get_linear_client(db)
@@ -428,16 +444,20 @@ async def improve_issue_phase2(
                     db.commit()
 
                     # Update Linear state: Triage → To Do
-                    todo_state_setting = db.query(Setting).filter(
-                        Setting.key == "linear_state_todo_id"
-                    ).first()
+                    todo_state_setting = (
+                        db.query(Setting).filter(Setting.key == "linear_state_todo_id").first()
+                    )
 
                     if todo_state_setting and todo_state_setting.value:
                         try:
-                            await client.update_issue_state(issue.linear_id, todo_state_setting.value)
+                            await client.update_issue_state(
+                                issue.linear_id, todo_state_setting.value
+                            )
                             issue.linear_state_name = "To Do"
                             db.commit()
-                            logger.info(f"Updated Linear state to To Do for {issue.linear_identifier}")
+                            logger.info(
+                                f"Updated Linear state to To Do for {issue.linear_identifier}"
+                            )
                         except Exception as e:
                             logger.error(f"Failed to update Linear state: {e}")
 
@@ -446,24 +466,34 @@ async def improve_issue_phase2(
                         linked_count = 0
                         for repo_name in analyzer.last_repository_recommendations[:3]:
                             # Find repository by name (partial match)
-                            repo = db.query(Repository).filter(
-                                Repository.name.ilike(f"%{repo_name}%")
-                            ).first()
+                            repo = (
+                                db.query(Repository)
+                                .filter(Repository.name.ilike(f"%{repo_name}%"))
+                                .first()
+                            )
 
                             if repo:
                                 # Create link if doesn't exist
-                                existing_link = db.query(LinearIssueRepositoryLink).filter(
-                                    and_(
-                                        LinearIssueRepositoryLink.linear_issue_id == issue.id,
-                                        LinearIssueRepositoryLink.repository_id == repo.id,
+                                existing_link = (
+                                    db.query(LinearIssueRepositoryLink)
+                                    .filter(
+                                        and_(
+                                            LinearIssueRepositoryLink.linear_issue_id == issue.id,
+                                            LinearIssueRepositoryLink.repository_id == repo.id,
+                                        )
                                     )
-                                ).first()
+                                    .first()
+                                )
 
                                 if not existing_link:
                                     # Check max 3 repos constraint
-                                    current_count = db.query(LinearIssueRepositoryLink).filter(
-                                        LinearIssueRepositoryLink.linear_issue_id == issue.id
-                                    ).count()
+                                    current_count = (
+                                        db.query(LinearIssueRepositoryLink)
+                                        .filter(
+                                            LinearIssueRepositoryLink.linear_issue_id == issue.id
+                                        )
+                                        .count()
+                                    )
 
                                     if current_count < 3:
                                         link = LinearIssueRepositoryLink(
@@ -477,29 +507,29 @@ async def improve_issue_phase2(
                                         db.commit()
 
                         if linked_count > 0:
-                            logger.info(f"Auto-linked {linked_count} repositories from Claude analysis")
+                            logger.info(
+                                f"Auto-linked {linked_count} repositories from Claude analysis"
+                            )
 
                     yield {
                         "event": "complete",
-                        "data": json.dumps({
-                            "status": "complete",
-                            "improved_description": analyzer.last_improved_description[:500],  # Preview
-                            "repository_count": len(analyzer.last_repository_recommendations),
-                        })
+                        "data": json.dumps(
+                            {
+                                "status": "complete",
+                                "improved_description": analyzer.last_improved_description[
+                                    :500
+                                ],  # Preview
+                                "repository_count": len(analyzer.last_repository_recommendations),
+                            }
+                        ),
                     }
                 else:
                     # Progress message
-                    yield {
-                        "event": "progress",
-                        "data": json.dumps({"message": message})
-                    }
+                    yield {"event": "progress", "data": json.dumps({"message": message})}
 
         except Exception as e:
             logger.error(f"Phase 2 analysis failed: {e}")
-            yield {
-                "event": "error",
-                "data": json.dumps({"error": str(e)})
-            }
+            yield {"event": "error", "data": json.dumps({"error": str(e)})}
 
     return EventSourceResponse(event_generator())
 
@@ -519,25 +549,31 @@ def link_repository(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     # Check if link exists
-    existing = db.query(LinearIssueRepositoryLink).filter(
-        and_(
-            LinearIssueRepositoryLink.linear_issue_id == issue.id,
-            LinearIssueRepositoryLink.repository_id == repo.id,
+    existing = (
+        db.query(LinearIssueRepositoryLink)
+        .filter(
+            and_(
+                LinearIssueRepositoryLink.linear_issue_id == issue.id,
+                LinearIssueRepositoryLink.repository_id == repo.id,
+            )
         )
-    ).first()
+        .first()
+    )
 
     if existing:
         return {"status": "ok", "message": "Link already exists"}
 
     # Check max 3 repos constraint
-    link_count = db.query(LinearIssueRepositoryLink).filter(
-        LinearIssueRepositoryLink.linear_issue_id == issue.id
-    ).count()
+    link_count = (
+        db.query(LinearIssueRepositoryLink)
+        .filter(LinearIssueRepositoryLink.linear_issue_id == issue.id)
+        .count()
+    )
 
     if link_count >= 3:
         raise HTTPException(
             status_code=400,
-            detail="Maximum 3 repositories per issue. Remove an existing link first."
+            detail="Maximum 3 repositories per issue. Remove an existing link first.",
         )
 
     link = LinearIssueRepositoryLink(
@@ -565,28 +601,34 @@ async def start_development(
         raise HTTPException(status_code=404, detail="Issue not found")
 
     # Check if issue has repository links
-    links = db.query(LinearIssueRepositoryLink).filter(
-        LinearIssueRepositoryLink.linear_issue_id == issue_id
-    ).count()
+    links = (
+        db.query(LinearIssueRepositoryLink)
+        .filter(LinearIssueRepositoryLink.linear_issue_id == issue_id)
+        .count()
+    )
 
     if links == 0:
         raise HTTPException(
             status_code=400,
-            detail="Issue must be linked to at least one repository before development"
+            detail="Issue must be linked to at least one repository before development",
         )
 
     # Check if another issue is active
-    active_issue = db.query(LinearIssue).filter(
-        and_(
-            LinearIssue.is_active,
-            LinearIssue.id != issue_id,
+    active_issue = (
+        db.query(LinearIssue)
+        .filter(
+            and_(
+                LinearIssue.is_active,
+                LinearIssue.id != issue_id,
+            )
         )
-    ).first()
+        .first()
+    )
 
     if active_issue:
         raise HTTPException(
             status_code=409,
-            detail=f"Another issue is already active: {active_issue.linear_identifier}"
+            detail=f"Another issue is already active: {active_issue.linear_identifier}",
         )
 
     # Mark as active and in_progress
@@ -597,9 +639,9 @@ async def start_development(
 
     # Update Linear state to "In Progress"
     client = _get_linear_client(db)
-    inprogress_state_setting = db.query(Setting).filter(
-        Setting.key == "linear_state_inprogress_id"
-    ).first()
+    inprogress_state_setting = (
+        db.query(Setting).filter(Setting.key == "linear_state_inprogress_id").first()
+    )
 
     if inprogress_state_setting and inprogress_state_setting.value:
         try:
@@ -625,10 +667,7 @@ async def get_linear_teams(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch teams: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch teams from Linear: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch teams from Linear: {str(e)}")
 
 
 @router.get("/users")
@@ -646,10 +685,7 @@ async def get_linear_users(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch users: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch users from Linear: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch users from Linear: {str(e)}")
 
 
 @router.get("/settings/states")
@@ -667,6 +703,7 @@ async def get_linear_states(
 
 # --- Issue Creation Workflow ---
 
+
 @router.post("/create/analyze")
 async def analyze_for_creation(
     title: str = Form(...),
@@ -682,7 +719,9 @@ async def analyze_for_creation(
     screenshots_data = []
     for file in screenshots:
         content = await file.read()
-        screenshots_data.append((file.filename or f"screenshot_{len(screenshots_data)}.png", content))
+        screenshots_data.append(
+            (file.filename or f"screenshot_{len(screenshots_data)}.png", content)
+        )
 
     async def event_generator():
         try:
@@ -691,7 +730,10 @@ async def analyze_for_creation(
             temp_dir = Path("/tmp/turbowrap_screenshots") / session_id
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            yield {"event": "log", "data": json.dumps({"message": f"📁 Sessione {session_id[:8]}..."})}
+            yield {
+                "event": "log",
+                "data": json.dumps({"message": f"📁 Sessione {session_id[:8]}..."}),
+            }
 
             # Save screenshots
             screenshot_paths = []
@@ -702,30 +744,53 @@ async def analyze_for_creation(
                 screenshot_paths.append(str(path))
 
             if screenshot_paths:
-                yield {"event": "log", "data": json.dumps({"message": f"💾 Salvati {len(screenshot_paths)} screenshot"})}
+                yield {
+                    "event": "log",
+                    "data": json.dumps(
+                        {"message": f"💾 Salvati {len(screenshot_paths)} screenshot"}
+                    ),
+                }
 
             # Gemini analysis
             gemini_insights = ""
             if screenshot_paths:
-                yield {"event": "log", "data": json.dumps({"message": "🔮 Gemini sta analizzando gli screenshot..."})}
+                yield {
+                    "event": "log",
+                    "data": json.dumps({"message": "🔮 Gemini sta analizzando gli screenshot..."}),
+                }
 
                 try:
                     from ...llm import GeminiProClient
-                    gemini = GeminiProClient()
-                    gemini_insights = gemini.analyze_screenshots(screenshot_paths, {
-                        "title": title,
-                        "description": description,
-                        "figma_link": figma_link or "",
-                        "website_link": website_link or ""
-                    })
 
-                    yield {"event": "log", "data": json.dumps({"message": f"✅ Gemini completato ({len(gemini_insights)} caratteri)"})}
+                    gemini = GeminiProClient()
+                    gemini_insights = gemini.analyze_screenshots(
+                        screenshot_paths,
+                        {
+                            "title": title,
+                            "description": description,
+                            "figma_link": figma_link or "",
+                            "website_link": website_link or "",
+                        },
+                    )
+
+                    yield {
+                        "event": "log",
+                        "data": json.dumps(
+                            {"message": f"✅ Gemini completato ({len(gemini_insights)} caratteri)"}
+                        ),
+                    }
                 except Exception as e:
-                    yield {"event": "log", "data": json.dumps({"message": f"❌ Gemini fallito: {str(e)}"})}
+                    yield {
+                        "event": "log",
+                        "data": json.dumps({"message": f"❌ Gemini fallito: {str(e)}"}),
+                    }
                     gemini_insights = f"Screenshot analysis failed: {str(e)}"
 
             # Claude question generation
-            yield {"event": "log", "data": json.dumps({"message": "🤖 Claude sta generando le domande..."})}
+            yield {
+                "event": "log",
+                "data": json.dumps({"message": "🤖 Claude sta generando le domande..."}),
+            }
 
             prompt_content = f"""Genera 5-10 domande per chiarire questa issue Linear.
 
@@ -746,7 +811,7 @@ Output JSON: {{"questions": [{{"id": 1, "question": "...", "why": "..."}}]}}
                     input=prompt_content,
                     capture_output=True,
                     text=True,
-                    timeout=120
+                    timeout=120,
                 )
 
                 if result.returncode != 0:
@@ -768,17 +833,22 @@ Output JSON: {{"questions": [{{"id": 1, "question": "...", "why": "..."}}]}}
                 questions_data = json.loads(json_str)
                 questions = questions_data.get("questions", [])
 
-                yield {"event": "log", "data": json.dumps({"message": f"✅ Claude generato {len(questions)} domande"})}
+                yield {
+                    "event": "log",
+                    "data": json.dumps({"message": f"✅ Claude generato {len(questions)} domande"}),
+                }
 
                 # Send final result
                 yield {
                     "event": "complete",
-                    "data": json.dumps({
-                        "gemini_insights": gemini_insights,
-                        "questions": questions,
-                        "temp_session_id": session_id,
-                        "screenshot_count": len(screenshot_paths)
-                    })
+                    "data": json.dumps(
+                        {
+                            "gemini_insights": gemini_insights,
+                            "questions": questions,
+                            "temp_session_id": session_id,
+                            "screenshot_count": len(screenshot_paths),
+                        }
+                    ),
                 }
 
             except Exception as e:
@@ -792,10 +862,7 @@ Output JSON: {{"questions": [{{"id": 1, "question": "...", "why": "..."}}]}}
 
 
 @router.post("/create/finalize")
-async def finalize_creation(
-    request: FinalizeIssueRequest,
-    db: Session = Depends(get_db)
-):
+async def finalize_creation(request: FinalizeIssueRequest, db: Session = Depends(get_db)):
     """Step 3: Generate final description + create issue (SSE streaming).
 
     Takes user answers and generates complete issue description with Claude,
@@ -813,7 +880,7 @@ async def finalize_creation(
             logger.info(f"[create/finalize] Starting finalization for '{request.title}'")
             yield {
                 "event": "progress",
-                "data": json.dumps({"message": "Generando descrizione con Claude..."})
+                "data": json.dumps({"message": "Generando descrizione con Claude..."}),
             }
 
             answers_text = "\n".join([f"{k}: {v}" for k, v in request.user_answers.items()])
@@ -845,7 +912,7 @@ Genera descrizione markdown con:
                     input=prompt_content,
                     capture_output=True,
                     text=True,
-                    timeout=180
+                    timeout=180,
                 )
 
                 final_desc = result.stdout.strip()
@@ -855,14 +922,14 @@ Genera descrizione markdown con:
                 logger.error("[create/finalize] Claude finalizer timed out")
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": "Description generation timed out"})
+                    "data": json.dumps({"error": "Description generation timed out"}),
                 }
                 return
             except Exception as e:
                 logger.error(f"[create/finalize] Claude finalizer failed: {e}")
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": f"Description generation failed: {str(e)}"})
+                    "data": json.dumps({"error": f"Description generation failed: {str(e)}"}),
                 }
                 return
 
@@ -876,7 +943,7 @@ Genera descrizione markdown con:
             detected_repo_name = None
             yield {
                 "event": "progress",
-                "data": json.dumps({"message": "Rilevando repository coinvolto..."})
+                "data": json.dumps({"message": "Rilevando repository coinvolto..."}),
             }
 
             try:
@@ -903,22 +970,30 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                         input=detect_prompt,
                         capture_output=True,
                         text=True,
-                        timeout=30
+                        timeout=30,
                     )
 
                     if result.returncode == 0:
                         detected = result.stdout.strip()
                         if detected and detected != "NONE" and detected in repo_names:
                             detected_repo_name = detected
-                            logger.info(f"[create/finalize] Auto-detected repository: {detected_repo_name}")
+                            logger.info(
+                                f"[create/finalize] Auto-detected repository: {detected_repo_name}"
+                            )
                             yield {
                                 "event": "progress",
-                                "data": json.dumps({"message": f"📦 Repository rilevato: {detected_repo_name}"})
+                                "data": json.dumps(
+                                    {"message": f"📦 Repository rilevato: {detected_repo_name}"}
+                                ),
                             }
                         else:
-                            logger.info(f"[create/finalize] No repository detected (response: {detected})")
+                            logger.info(
+                                f"[create/finalize] No repository detected (response: {detected})"
+                            )
                     else:
-                        logger.warning(f"[create/finalize] Repository detection failed: {result.stderr[:200]}")
+                        logger.warning(
+                            f"[create/finalize] Repository detection failed: {result.stderr[:200]}"
+                        )
 
             except Exception as e:
                 logger.warning(f"[create/finalize] Repository auto-detection failed: {e}")
@@ -927,7 +1002,7 @@ Non aggiungere spiegazioni, solo il nome del repository."""
             # Step 2: Create issue on Linear
             yield {
                 "event": "progress",
-                "data": json.dumps({"message": "Creando issue su Linear..."})
+                "data": json.dumps({"message": "Creando issue su Linear..."}),
             }
 
             try:
@@ -940,7 +1015,7 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                     description=final_desc,
                     priority=request.priority,
                     assignee_id=request.assignee_id,
-                    due_date=request.due_date
+                    due_date=request.due_date,
                 )
 
                 logger.info(f"[create/finalize] Issue created: {issue['identifier']}")
@@ -949,15 +1024,12 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 logger.error(f"[create/finalize] Linear issue creation failed: {e}")
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": f"Linear issue creation failed: {str(e)}"})
+                    "data": json.dumps({"error": f"Linear issue creation failed: {str(e)}"}),
                 }
                 return
 
             # Step 3: Save to database
-            yield {
-                "event": "progress",
-                "data": json.dumps({"message": "Salvando in database..."})
-            }
+            yield {"event": "progress", "data": json.dumps({"message": "Salvando in database..."})}
 
             try:
                 db_issue = LinearIssue(
@@ -984,21 +1056,26 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 # Link detected repository
                 if detected_repo_name:
                     try:
-                        repo = db.query(Repository).filter(
-                            Repository.name == detected_repo_name,
-                            not Repository.is_deleted
-                        ).first()
+                        repo = (
+                            db.query(Repository)
+                            .filter(
+                                Repository.name == detected_repo_name, not Repository.is_deleted
+                            )
+                            .first()
+                        )
 
                         if repo:
                             link = LinearIssueRepositoryLink(
                                 linear_issue_id=db_issue.id,
                                 repository_id=repo.id,
                                 link_source="claude_analysis",
-                                confidence_score=95.0  # High confidence from Claude
+                                confidence_score=95.0,  # High confidence from Claude
                             )
                             db.add(link)
                             db.commit()
-                            logger.info(f"[create/finalize] Linked repository: {detected_repo_name}")
+                            logger.info(
+                                f"[create/finalize] Linked repository: {detected_repo_name}"
+                            )
 
                             # Update state to in_progress since repo is linked
                             db_issue.turbowrap_state = "repo_link"
@@ -1006,7 +1083,9 @@ Non aggiungere spiegazioni, solo il nome del repository."""
 
                             yield {
                                 "event": "progress",
-                                "data": json.dumps({"message": f"✅ Repository collegato: {detected_repo_name}"})
+                                "data": json.dumps(
+                                    {"message": f"✅ Repository collegato: {detected_repo_name}"}
+                                ),
                             }
                     except Exception as e:
                         logger.warning(f"[create/finalize] Failed to link repository: {e}")
@@ -1015,13 +1094,14 @@ Non aggiungere spiegazioni, solo il nome del repository."""
             except Exception as e:
                 logger.error(f"[create/finalize] Database save failed: {e}")
                 # Issue was created on Linear but not saved locally - log for manual recovery
-                logger.critical(f"[create/finalize] ORPHANED ISSUE: {issue['identifier']} at {issue['url']}")
+                logger.critical(
+                    f"[create/finalize] ORPHANED ISSUE: {issue['identifier']} at {issue['url']}"
+                )
                 yield {
                     "event": "error",
-                    "data": json.dumps({
-                        "error": f"Database save failed: {str(e)}",
-                        "linear_url": issue["url"]
-                    })
+                    "data": json.dumps(
+                        {"error": f"Database save failed: {str(e)}", "linear_url": issue["url"]}
+                    ),
                 }
                 return
 
@@ -1037,19 +1117,13 @@ Non aggiungere spiegazioni, solo il nome del repository."""
             # Complete
             yield {
                 "event": "complete",
-                "data": json.dumps({
-                    "identifier": issue["identifier"],
-                    "url": issue["url"],
-                    "id": db_issue.id
-                })
+                "data": json.dumps(
+                    {"identifier": issue["identifier"], "url": issue["url"], "id": db_issue.id}
+                ),
             }
 
         except Exception as e:
             logger.error(f"[create/finalize] Unexpected error: {e}")
-            yield {
-                "event": "error",
-                "data": json.dumps({"error": str(e)})
-            }
+            yield {"event": "error", "data": json.dumps({"error": str(e)})}
 
     return EventSourceResponse(event_generator())
-

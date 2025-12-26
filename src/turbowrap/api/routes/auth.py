@@ -13,12 +13,14 @@ router = APIRouter(tags=["auth"])
 
 class LoginRequest(BaseModel):
     """Login request body."""
+
     email: EmailStr
     password: str
 
 
 class UserInfo(BaseModel):
     """User info response."""
+
     email: str | None
     username: str | None
     sub: str | None

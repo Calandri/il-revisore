@@ -56,6 +56,7 @@ def _check_api_keys(require_claude: bool = False, require_gemini: bool = False) 
 # Repository Commands
 # ============================================================================
 
+
 @repo_app.command("clone")
 def repo_clone(
     url: str = typer.Argument(..., help="GitHub repository URL"),
@@ -201,6 +202,7 @@ def repo_remove(
 # Task Commands
 # ============================================================================
 
+
 @app.command("review")
 def run_review(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
@@ -324,7 +326,9 @@ def run_develop(
         result = task.execute(context)
 
         if result.status == "completed":
-            console.print(f"\n[bold green]✓[/] Development completed in {result.duration_seconds:.2f}s")
+            console.print(
+                f"\n[bold green]✓[/] Development completed in {result.duration_seconds:.2f}s"
+            )
 
             # Print result
             if result.data.get("development"):
@@ -341,6 +345,7 @@ def run_develop(
 # ============================================================================
 # Server Command
 # ============================================================================
+
 
 @app.command("serve")
 def serve(
@@ -371,6 +376,7 @@ def serve(
 # ============================================================================
 # Status Command
 # ============================================================================
+
 
 @app.command("status")
 def status():
@@ -410,6 +416,7 @@ def check():
     if settings.agents.effective_google_key:
         try:
             from .llm import GeminiClient
+
             client = GeminiClient()
             client.generate("Say 'ok' if you can hear me.")
             console.print(f"[bold green]✓[/] Gemini: Connected ({settings.agents.gemini_model})")
@@ -422,6 +429,7 @@ def check():
     if settings.agents.anthropic_api_key:
         try:
             from .llm import ClaudeClient
+
             client = ClaudeClient()
             client.generate("Say 'ok' if you can hear me.")
             console.print(f"[bold green]✓[/] Claude: Connected ({settings.agents.claude_model})")
@@ -562,6 +570,7 @@ def autoupdate_list(
 # ============================================================================
 # Main
 # ============================================================================
+
 
 def main():
     """CLI entry point."""

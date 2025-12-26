@@ -186,20 +186,26 @@ class EvaluateFeaturesStep(BaseStep[Step3Checkpoint]):
             Evaluation prompt string.
         """
         # Format existing functionalities
-        existing = "\n".join([
-            f"- **{f.name}** ({f.category}): {f.description}"
-            for f in step1.functionalities
-        ])
+        existing = "\n".join(
+            [f"- **{f.name}** ({f.category}): {f.description}" for f in step1.functionalities]
+        )
 
         # Format research results
-        research = "\n".join([
-            f"- {r.title} ({r.source}): {r.summary}"
-            for r in step2.research_results[:15]
-        ])
+        research = "\n".join(
+            [f"- {r.title} ({r.source}): {r.summary}" for r in step2.research_results[:15]]
+        )
 
         competitors = ", ".join(step2.competitors[:10]) if step2.competitors else "None identified"
-        technologies = ", ".join(step2.emerging_technologies[:10]) if step2.emerging_technologies else "None identified"
-        practices = "\n".join([f"- {p}" for p in step2.best_practices[:10]]) if step2.best_practices else "None identified"
+        technologies = (
+            ", ".join(step2.emerging_technologies[:10])
+            if step2.emerging_technologies
+            else "None identified"
+        )
+        practices = (
+            "\n".join([f"- {p}" for p in step2.best_practices[:10]])
+            if step2.best_practices
+            else "None identified"
+        )
 
         return f"""## Existing Functionalities of TurboWrap
 
