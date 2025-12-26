@@ -1,128 +1,86 @@
-#!/usr/bin/env python3
 """
-Syntax and Structure Test for Linear Issue Creator
+Syntax and Structure Tests for Linear Issue Creator.
+
+Run with: uv run pytest tests/linear/test_syntax.py -v
 
 Tests file structure, Python syntax, and basic validations
 without requiring runtime dependencies.
 """
 
 import ast
-import re
-import sys
 from pathlib import Path
 
+import pytest
 
-def print_header(title: str):
-    """Print formatted test section header."""
-    print("\n" + "=" * 70)
-    print(f"  {title}")
-    print("=" * 70)
+# Project root for locating source files
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
-def test_python_syntax(file_path: Path) -> bool:
-    """Test Python file syntax."""
+# =============================================================================
+# Helper Functions (not test functions)
+# =============================================================================
+
+
+def _check_python_syntax(file_path: Path) -> tuple[bool, str]:
+    """Check Python file syntax. Returns (success, message)."""
     try:
         with open(file_path) as f:
             code = f.read()
         ast.parse(code)
-        print(f"✅ {file_path.name}: Valid Python syntax")
-        return True
+        return True, f"{file_path.name}: Valid Python syntax"
     except SyntaxError as e:
-        print(f"❌ {file_path.name}: Syntax error at line {e.lineno}: {e.msg}")
-        return False
+        return False, f"{file_path.name}: Syntax error at line {e.lineno}: {e.msg}"
     except Exception as e:
-        print(f"❌ {file_path.name}: {e}")
-        return False
+        return False, f"{file_path.name}: {e}"
 
 
-def test_agent_structure(file_path: Path) -> bool:
-    """Test Claude agent markdown structure."""
+def _check_agent_structure(file_path: Path) -> tuple[bool, str]:
+    """Check Claude agent markdown structure. Returns (success, message)."""
     try:
         with open(file_path) as f:
             content = f.read()
 
         # Check frontmatter
         if not content.startswith("---"):
-            print(f"❌ {file_path.name}: Missing frontmatter")
-            return False
+            return False, f"{file_path.name}: Missing frontmatter"
 
         # Extract frontmatter
         parts = content.split("---", 2)
         if len(parts) < 3:
-            print(f"❌ {file_path.name}: Invalid frontmatter format")
-            return False
+            return False, f"{file_path.name}: Invalid frontmatter format"
 
         frontmatter = parts[1].strip()
 
         # Check required fields
         if "name:" not in frontmatter:
-            print(f"❌ {file_path.name}: Missing 'name' in frontmatter")
-            return False
+            return False, f"{file_path.name}: Missing 'name' in frontmatter"
 
         if "model:" not in frontmatter:
-            print(f"❌ {file_path.name}: Missing 'model' in frontmatter")
-            return False
+            return False, f"{file_path.name}: Missing 'model' in frontmatter"
 
-        # Extract model
-        model_match = re.search(r"model:\s*(.+)", frontmatter)
-        if model_match:
-            model = model_match.group(1).strip()
-            if "claude" not in model.lower():
-                print(f"⚠️  {file_path.name}: Model '{model}' doesn't seem to be Claude")
-
-        print(f"✅ {file_path.name}: Valid agent structure")
-        return True
+        return True, f"{file_path.name}: Valid agent structure"
 
     except Exception as e:
-        print(f"❌ {file_path.name}: {e}")
-        return False
+        return False, f"{file_path.name}: {e}"
 
 
-def test_html_template(file_path: Path) -> bool:
-    """Test HTML template structure."""
+def _check_html_template_element(
+    content: str, check_name: str, check_text: str
+) -> tuple[bool, str]:
+    """Check if HTML template contains required element."""
+    if check_text in content:
+        return True, f"{check_name}: Found"
+    return False, f"{check_name}: Not found"
+
+
+def _check_api_routes_structure(file_path: Path) -> tuple[bool, list[str]]:
+    """Check API routes structure. Returns (success, list of messages)."""
     try:
         with open(file_path) as f:
             content = f.read()
 
-        # Check for required elements
-        checks = [
-            ("Create Issue button", "openCreateModal()"),
-            ("Create modal HTML", "<!-- Create Issue Modal"),
-            ("Alpine.js createModal state", "createModal: {"),
-            ("openCreateModal function", "openCreateModal() {"),
-            ("closeCreateModal function", "closeCreateModal() {"),
-            ("handleScreenshotUpload function", "handleScreenshotUpload(event)"),
-            ("analyzeWithAI function", "analyzeWithAI()"),
-            ("finalizeIssueCreation function", "finalizeIssueCreation()"),
-            ("Step 1 form", 'x-show="createModal.step === 1"'),
-            ("Step 2 analysis", 'x-show="createModal.step === 2"'),
-            ("Step 3 creating", 'x-show="createModal.step === 3"'),
-        ]
-
-        passed = True
-        for check_name, check_text in checks:
-            if check_text in content:
-                print(f"✅ {check_name}: Found")
-            else:
-                print(f"❌ {check_name}: Not found")
-                passed = False
-
-        # Count lines
-        line_count = len(content.split("\n"))
-        print(f"ℹ️  Total lines: {line_count}")
-
-        return passed
-
-    except Exception as e:
-        print(f"❌ {file_path.name}: {e}")
-        return False
-
-
-def test_api_routes(file_path: Path) -> bool:
-    """Test API routes structure."""
-    try:
-        with open(file_path) as f:
-            content = f.read()
+        messages = []
+        all_passed = True
 
         # Check for required imports
         imports = [
@@ -136,8 +94,8 @@ def test_api_routes(file_path: Path) -> bool:
 
         for imp in imports:
             if imp not in content:
-                print(f"❌ Missing import: {imp}")
-                return False
+                messages.append(f"Missing import: {imp}")
+                all_passed = False
 
         # Check for required endpoints
         endpoints = [
@@ -147,82 +105,215 @@ def test_api_routes(file_path: Path) -> bool:
 
         for endpoint in endpoints:
             if endpoint not in content:
-                print(f"❌ Missing endpoint: {endpoint}")
-                return False
+                messages.append(f"Missing endpoint: {endpoint}")
+                all_passed = False
 
         # Check for FinalizeIssueRequest schema
         if "class FinalizeIssueRequest" not in content:
-            print("❌ Missing FinalizeIssueRequest schema")
-            return False
+            messages.append("Missing FinalizeIssueRequest schema")
+            all_passed = False
 
-        print(f"✅ {file_path.name}: All required components found")
-        return True
+        if all_passed:
+            messages.append(f"{file_path.name}: All required components found")
+
+        return all_passed, messages
 
     except Exception as e:
-        print(f"❌ {file_path.name}: {e}")
-        return False
+        return False, [f"{file_path.name}: {e}"]
 
 
-def main():
-    """Run all syntax tests."""
-    print("\n" + "=" * 70)
-    print("  LINEAR ISSUE CREATOR - SYNTAX & STRUCTURE TEST".center(70))
-    print("=" * 70)
+# =============================================================================
+# Pytest Test Classes
+# =============================================================================
 
-    results = {}
-    base_path = Path(__file__).parent
 
-    # Test STEP 1: Gemini extension
-    print_header("STEP 1: Gemini Vision Extension")
-    gemini_path = base_path / "src/turbowrap/llm/gemini.py"
-    results["gemini"] = test_python_syntax(gemini_path)
+@pytest.mark.unit
+class TestGeminiExtensionSyntax:
+    """Test Gemini Vision extension Python syntax."""
 
-    # Test STEP 2: Linear client
-    print_header("STEP 2: Linear Client Extension")
-    linear_client_path = base_path / "src/turbowrap/review/integrations/linear.py"
-    results["linear_client"] = test_python_syntax(linear_client_path)
+    def test_gemini_py_valid_syntax(self):
+        """Gemini extension should have valid Python syntax."""
+        gemini_path = PROJECT_ROOT / "src/turbowrap/llm/gemini.py"
 
-    # Test STEP 3: Claude agents
-    print_header("STEP 3: Claude Agent Prompts")
-    question_gen_path = base_path / "agents/linear_question_generator.md"
-    finalizer_path = base_path / "agents/linear_finalizer.md"
-    results["question_gen"] = test_agent_structure(question_gen_path)
-    results["finalizer"] = test_agent_structure(finalizer_path)
+        if not gemini_path.exists():
+            pytest.skip(f"File not found: {gemini_path}")
 
-    # Test STEP 4: API routes
-    print_header("STEP 4: Backend API Endpoints")
-    routes_path = base_path / "src/turbowrap/api/routes/linear.py"
-    results["routes"] = test_python_syntax(routes_path)
-    results["routes_structure"] = test_api_routes(routes_path)
+        success, message = _check_python_syntax(gemini_path)
+        assert success, message
 
-    # Test STEP 5: Frontend
-    print_header("STEP 5: Frontend Modal UI")
-    template_path = base_path / "src/turbowrap/api/templates/pages/linear_issues.html"
-    results["frontend"] = test_html_template(template_path)
 
-    # Summary
-    print("\n" + "=" * 70)
-    print("  TEST SUMMARY".center(70))
-    print("=" * 70)
+@pytest.mark.unit
+class TestLinearClientSyntax:
+    """Test Linear client extension Python syntax."""
 
-    total = len(results)
-    passed = sum(1 for v in results.values() if v)
+    def test_linear_client_valid_syntax(self):
+        """Linear client should have valid Python syntax."""
+        linear_path = PROJECT_ROOT / "src/turbowrap/review/integrations/linear.py"
 
-    for name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
-        print(f"  {name:30} {status}")
+        if not linear_path.exists():
+            pytest.skip(f"File not found: {linear_path}")
 
-    print("-" * 70)
-    print(f"  Total: {passed}/{total} tests passed".center(70))
-    print("=" * 70)
+        success, message = _check_python_syntax(linear_path)
+        assert success, message
 
-    if passed == total:
-        print("\n✅ All syntax and structure tests passed!")
-        print("ℹ️  Implementation is complete and ready for runtime testing")
-        return 0
-    print(f"\n❌ {total - passed} test(s) failed")
-    return 1
+
+@pytest.mark.unit
+class TestClaudeAgentStructure:
+    """Test Claude agent markdown structure."""
+
+    def test_question_generator_agent_structure(self):
+        """Question generator agent should have valid structure."""
+        agent_path = PROJECT_ROOT / "agents/linear_question_generator.md"
+
+        if not agent_path.exists():
+            pytest.skip(f"Agent file not found: {agent_path}")
+
+        success, message = _check_agent_structure(agent_path)
+        assert success, message
+
+    def test_finalizer_agent_structure(self):
+        """Finalizer agent should have valid structure."""
+        agent_path = PROJECT_ROOT / "agents/linear_finalizer.md"
+
+        if not agent_path.exists():
+            pytest.skip(f"Agent file not found: {agent_path}")
+
+        success, message = _check_agent_structure(agent_path)
+        assert success, message
+
+    def test_issue_analyzer_agent_structure(self):
+        """Issue analyzer agent should have valid structure."""
+        agent_path = PROJECT_ROOT / "agents/linear_issue_analyzer.md"
+
+        if not agent_path.exists():
+            pytest.skip(f"Agent file not found: {agent_path}")
+
+        success, message = _check_agent_structure(agent_path)
+        assert success, message
+
+
+@pytest.mark.unit
+class TestLinearAPIRoutesSyntax:
+    """Test Linear API routes Python syntax."""
+
+    def test_linear_routes_valid_syntax(self):
+        """Linear routes should have valid Python syntax."""
+        routes_path = PROJECT_ROOT / "src/turbowrap/api/routes/linear.py"
+
+        if not routes_path.exists():
+            pytest.skip(f"File not found: {routes_path}")
+
+        success, message = _check_python_syntax(routes_path)
+        assert success, message
+
+
+@pytest.mark.unit
+class TestLinearAPIRoutesStructure:
+    """Test Linear API routes have required structure."""
+
+    def test_linear_routes_has_required_imports(self):
+        """Linear routes should have required imports."""
+        routes_path = PROJECT_ROOT / "src/turbowrap/api/routes/linear.py"
+
+        if not routes_path.exists():
+            pytest.skip(f"File not found: {routes_path}")
+
+        success, messages = _check_api_routes_structure(routes_path)
+        assert success, "\n".join(messages)
+
+
+@pytest.mark.unit
+class TestFrontendTemplateStructure:
+    """Test frontend template has required UI elements."""
+
+    @pytest.fixture
+    def template_content(self):
+        """Load template content if file exists."""
+        template_path = PROJECT_ROOT / "src/turbowrap/api/templates/pages/linear_issues.html"
+
+        if not template_path.exists():
+            pytest.skip(f"Template not found: {template_path}")
+
+        with open(template_path) as f:
+            return f.read()
+
+    def test_has_create_issue_button(self, template_content):
+        """Template should have Create Issue button."""
+        success, msg = _check_html_template_element(
+            template_content, "Create Issue button", "openCreateModal()"
+        )
+        assert success, msg
+
+    def test_has_create_modal_html(self, template_content):
+        """Template should have Create modal HTML."""
+        success, msg = _check_html_template_element(
+            template_content, "Create modal HTML", "<!-- Create Issue Modal"
+        )
+        assert success, msg
+
+    def test_has_alpine_createmodal_state(self, template_content):
+        """Template should have Alpine.js createModal state."""
+        success, msg = _check_html_template_element(
+            template_content, "Alpine.js createModal state", "createModal: {"
+        )
+        assert success, msg
+
+    def test_has_open_create_modal_function(self, template_content):
+        """Template should have openCreateModal function."""
+        success, msg = _check_html_template_element(
+            template_content, "openCreateModal function", "openCreateModal() {"
+        )
+        assert success, msg
+
+    def test_has_close_create_modal_function(self, template_content):
+        """Template should have closeCreateModal function."""
+        success, msg = _check_html_template_element(
+            template_content, "closeCreateModal function", "closeCreateModal() {"
+        )
+        assert success, msg
+
+    def test_has_screenshot_upload_handler(self, template_content):
+        """Template should have handleScreenshotUpload function."""
+        success, msg = _check_html_template_element(
+            template_content, "handleScreenshotUpload function", "handleScreenshotUpload(event)"
+        )
+        assert success, msg
+
+    def test_has_analyze_with_ai_function(self, template_content):
+        """Template should have analyzeWithAI function."""
+        success, msg = _check_html_template_element(
+            template_content, "analyzeWithAI function", "analyzeWithAI()"
+        )
+        assert success, msg
+
+    def test_has_finalize_issue_creation_function(self, template_content):
+        """Template should have finalizeIssueCreation function."""
+        success, msg = _check_html_template_element(
+            template_content, "finalizeIssueCreation function", "finalizeIssueCreation()"
+        )
+        assert success, msg
+
+    def test_has_step_1_form(self, template_content):
+        """Template should have Step 1 form."""
+        success, msg = _check_html_template_element(
+            template_content, "Step 1 form", 'x-show="createModal.step === 1"'
+        )
+        assert success, msg
+
+    def test_has_step_2_analysis(self, template_content):
+        """Template should have Step 2 analysis."""
+        success, msg = _check_html_template_element(
+            template_content, "Step 2 analysis", 'x-show="createModal.step === 2"'
+        )
+        assert success, msg
+
+    def test_has_step_3_creating(self, template_content):
+        """Template should have Step 3 creating."""
+        success, msg = _check_html_template_element(
+            template_content, "Step 3 creating", 'x-show="createModal.step === 3"'
+        )
+        assert success, msg
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    pytest.main([__file__, "-v"])

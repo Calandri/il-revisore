@@ -28,10 +28,10 @@ class UserInfo(BaseModel):
     sub: str | None
 
 
-@router.get("/login", response_class=HTMLResponse)
+@router.get("/login", response_class=HTMLResponse, response_model=None)
 async def login_page(
     request: Request, error: str | None = None, next: str | None = None
-) -> HTMLResponse | RedirectResponse:
+) -> Response:
     """Render login page."""
     get_settings()
 

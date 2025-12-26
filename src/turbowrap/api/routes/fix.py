@@ -345,7 +345,7 @@ def update_issue(
     return {"status": "updated", "issue_id": issue_id, "new_status": data.status}
 
 
-@router.post("/start")
+@router.post("/start", response_model=None)
 async def start_fix(
     request: FixStartRequest,
     db: Session = Depends(get_db),
