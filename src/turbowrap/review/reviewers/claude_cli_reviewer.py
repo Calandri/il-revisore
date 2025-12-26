@@ -3,21 +3,17 @@ Claude CLI-based reviewer implementation.
 
 Uses Claude CLI subprocess instead of SDK, allowing the model to autonomously
 explore the codebase via its own file reading capabilities.
+
+Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
 """
 
-import asyncio
-import codecs
 import contextlib
 import json
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-
-import boto3
-from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.challenger import ChallengerFeedback
@@ -32,7 +28,7 @@ from turbowrap.review.models.review import (
     ReviewSummary,
 )
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
-from turbowrap.utils.aws_secrets import get_anthropic_api_key
+from turbowrap.utils.claude_cli import ClaudeCLI, ModelUsage
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +45,13 @@ class ClaudeCLIReviewer(BaseReviewer):
     2. Passes a list of files to analyze
     3. Runs Claude CLI with cwd=repo_path
     4. Claude CLI reads files autonomously and can explore beyond the initial list
+
+    Uses the centralized ClaudeCLI utility for Claude CLI execution.
     """
 
     def __init__(
         self,
         name: str = "reviewer_be",
-        cli_path: str = "claude",
         timeout: int = CLAUDE_CLI_TIMEOUT,
     ):
         """
@@ -62,185 +59,35 @@ class ClaudeCLIReviewer(BaseReviewer):
 
         Args:
             name: Reviewer identifier (reviewer_be_architecture, etc.)
-            cli_path: Path to Claude CLI executable
             timeout: Timeout in seconds for CLI execution
         """
         super().__init__(name, model="claude-cli")
 
         self.settings = get_settings()
-        self.cli_path = cli_path
         self.timeout = timeout
 
-        # S3 configuration for thinking logs
-        self.s3_bucket = self.settings.thinking.s3_bucket
-        self.s3_region = self.settings.thinking.s3_region
-        self._s3_client = None
+    def _get_claude_cli(self, context: ReviewContext) -> ClaudeCLI:
+        """Create ClaudeCLI instance for this review context."""
+        return ClaudeCLI(
+            working_dir=context.repo_path,
+            model="opus",  # Use Opus for comprehensive reviews
+            timeout=self.timeout,
+            s3_prefix=f"reviews/{self.name}",
+        )
 
-    @property
-    def s3_client(self):
-        """Lazy-load S3 client."""
-        if self._s3_client is None:
-            self._s3_client = boto3.client("s3", region_name=self.s3_region)
-        return self._s3_client
-
-    async def _save_thinking_to_s3(
-        self,
-        thinking_content: str,
-        review_id: str,
-        context: ReviewContext,
-    ) -> str | None:
-        """
-        Save thinking content to S3.
-
-        Args:
-            thinking_content: The thinking text to save
-            review_id: Unique identifier for this review
-            context: Review context for metadata
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not thinking_content or not self.s3_bucket:
-            return None
-
-        try:
-            # Create S3 key with timestamp
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"thinking/{timestamp}/{review_id}_{self.name}.md"
-
-            # Create markdown content with metadata
-            model = self.settings.agents.claude_model
-            content = f"""# Extended Thinking - {self.name}
-
-**Review ID**: {review_id}
-**Timestamp**: {datetime.utcnow().isoformat()}
-**Model**: {model}
-**Files Reviewed**: {len(context.files) if context.files else 0}
-
----
-
-## Thinking Process
-
-{thinking_content}
-"""
-
-            # Upload to S3
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=content.encode("utf-8"),
-                ContentType="text/markdown",
+    def _convert_model_usage(self, usage_list: list[ModelUsage]) -> list[ModelUsageInfo]:
+        """Convert ClaudeCLI ModelUsage to review ModelUsageInfo."""
+        return [
+            ModelUsageInfo(
+                model=u.model,
+                input_tokens=u.input_tokens,
+                output_tokens=u.output_tokens,
+                cache_read_tokens=u.cache_read_tokens,
+                cache_creation_tokens=u.cache_creation_tokens,
+                cost_usd=u.cost_usd,
             )
-
-            return f"s3://{self.s3_bucket}/{s3_key}"
-
-        except ClientError as e:
-            logger.warning(f"Failed to save thinking to S3: {e}")
-            return None
-
-    async def _save_review_to_s3(
-        self,
-        review_json: str,
-        review_id: str,
-        context: ReviewContext,
-    ) -> str | None:
-        """
-        Save review JSON to S3 for checkpointing/resumability.
-
-        Args:
-            review_json: The review output JSON string
-            review_id: Unique identifier for this review
-            context: Review context for metadata
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not review_json or not self.s3_bucket:
-            return None
-
-        try:
-            # Create S3 key with timestamp
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"reviews/{timestamp}/{review_id}_{self.name}.json"
-
-            # Upload to S3
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=review_json.encode("utf-8"),
-                ContentType="application/json",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[CLAUDE CLI] Review saved to S3: {s3_url}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save review to S3: {e}")
-            return None
-
-    async def _save_prompt_to_s3(
-        self,
-        prompt: str,
-        review_id: str,
-        context: ReviewContext,
-    ) -> str | None:
-        """
-        Save the complete prompt to S3 for debugging.
-
-        Args:
-            prompt: The complete prompt sent to Claude CLI
-            review_id: Unique identifier for this review
-            context: Review context for metadata
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not prompt or not self.s3_bucket:
-            return None
-
-        try:
-            # Create S3 key with timestamp
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"prompts/{timestamp}/{review_id}_{self.name}.md"
-
-            # Create markdown content with metadata
-            model = self.settings.agents.claude_model
-            content = f"""# Review Prompt - {self.name}
-
-**Review ID**: {review_id}
-**Timestamp**: {datetime.utcnow().isoformat()}
-**Model**: {model}
-**Reviewer**: {self.name}
-**Files to Review**: {len(context.files) if context.files else 0}
-**Workspace Path**: {context.workspace_path or 'N/A'}
-**Has Structure Docs**: {bool(context.structure_docs)}
-
----
-
-## Complete Prompt
-
-{prompt}
-"""
-
-            # Upload to S3
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[CLAUDE CLI] Prompt saved to S3: {s3_url}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save prompt to S3: {e}")
-            return None
+            for u in usage_list
+        ]
 
     async def _run_cli_and_read_output(
         self,
@@ -251,10 +98,11 @@ class ClaudeCLIReviewer(BaseReviewer):
         """
         Run Claude CLI and read output from file (with stdout fallback).
 
+        Uses the centralized ClaudeCLI utility for execution and S3 logging.
+
         Strategy:
         1. Ask Claude to write JSON to file (most reliable)
         2. If file doesn't exist or is invalid, fallback to extracting from stdout
-        3. Save result to S3 for checkpointing
 
         Args:
             prompt: The prompt to send to Claude CLI
@@ -280,28 +128,29 @@ class ClaudeCLIReviewer(BaseReviewer):
             with contextlib.suppress(Exception):
                 output_file.unlink()
 
-        # Get review_id for S3 logging (before running CLI so we can log prompt even if it fails)
+        # Get review_id for S3 logging
         review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
 
-        # Save prompt to S3 for debugging
-        await self._save_prompt_to_s3(prompt, review_id, context)
-
-        # Run Claude CLI with streaming
-        cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(
-            prompt, context.repo_path, on_chunk
+        # Run Claude CLI with centralized utility
+        cli = self._get_claude_cli(context)
+        result = await cli.run(
+            prompt,
+            context_id=f"{review_id}_{self.name}",
+            save_prompt=True,
+            save_output=True,
+            save_thinking=True,
+            on_chunk=on_chunk,
         )
 
         # Check if CLI failed
-        if cli_result is None:
-            return None, model_usage, "Claude CLI failed to execute"
+        if not result.success:
+            return None, [], result.error or "Claude CLI failed to execute"
 
-        # Save thinking to S3 if available
-        if thinking_content:
-            await self._save_thinking_to_s3(thinking_content, review_id, context)
+        # Convert model usage
+        model_usage = self._convert_model_usage(result.model_usage)
 
         # Strategy 1: Read from file at expected path (Claude should have written it)
         output = None
-        output_filename = f".turbowrap_review_{self.name}.json"
         if output_file.exists():
             try:
                 file_content = output_file.read_text(encoding="utf-8").strip()
@@ -345,25 +194,22 @@ class ClaudeCLIReviewer(BaseReviewer):
                 logger.warning(f"[CLAUDE CLI] Recursive file search failed: {e}")
 
         # Strategy 2: Fallback to extracting from stdout
-        if output is None and cli_result and "{" in cli_result:
-            first_brace = cli_result.find("{")
-            last_brace = cli_result.rfind("}")
+        if output is None and result.output and "{" in result.output:
+            first_brace = result.output.find("{")
+            last_brace = result.output.rfind("}")
             if first_brace != -1 and last_brace > first_brace:
-                output = cli_result[first_brace : last_brace + 1]
+                output = result.output[first_brace : last_brace + 1]
                 logger.info(
                     f"[CLAUDE CLI] Fallback: extracted JSON from stdout: {len(output)} chars"
                 )
 
         if output is None:
-            logger.error(f"[CLAUDE CLI] No valid JSON found. CLI result: {cli_result[:300]}")
+            logger.error(f"[CLAUDE CLI] No valid JSON found. CLI result: {result.output[:300]}")
             return (
                 None,
                 model_usage,
-                f"Claude CLI did not produce valid JSON. Output: {cli_result[:300]}",
+                f"Claude CLI did not produce valid JSON. Output: {result.output[:300]}",
             )
-
-        # Save to S3 for checkpointing (regardless of source)
-        await self._save_review_to_s3(output, review_id, context)
 
         return output, model_usage, None
 
@@ -590,302 +436,6 @@ After writing, confirm with: "Review saved to {output_file}"
         )
 
         return "".join(sections)
-
-    async def _run_claude_cli(
-        self,
-        prompt: str,
-        repo_path: Path | None,
-        on_chunk: Callable[[str], Awaitable[None]] | None = None,
-    ) -> tuple[str | None, list[ModelUsageInfo], str, str]:
-        """
-        Run Claude CLI with the prompt, streaming output.
-
-        Args:
-            prompt: The full prompt to send
-            repo_path: Working directory for the CLI
-            on_chunk: Optional callback for streaming chunks
-
-        Returns:
-            Tuple of (CLI output or None if failed, list of model usage info, thinking content, raw NDJSON output)
-        """
-        cwd = str(repo_path) if repo_path else None
-
-        try:
-            # Build environment with API key from AWS Secrets Manager
-            env = os.environ.copy()
-            api_key = get_anthropic_api_key()
-            if api_key:
-                env["ANTHROPIC_API_KEY"] = api_key
-            else:
-                logger.warning("ANTHROPIC_API_KEY not found in AWS - using environment")
-
-            # Workaround: Bun file watcher bug on macOS /var/folders
-            # Force TMPDIR to /tmp to avoid EOPNOTSUPP errors
-            env["TMPDIR"] = "/tmp"
-
-            # Workaround: Remove VSCode git socket files that crash Claude CLI
-            # Claude CLI crashes when trying to watch .sock files in /var/folders
-            import glob
-            import tempfile
-
-            tmpdir = tempfile.gettempdir()
-            vscode_sockets = glob.glob(os.path.join(tmpdir, "vscode-git-*.sock"))
-            for sock in vscode_sockets:
-                try:
-                    os.remove(sock)
-                except OSError:
-                    pass  # Socket may be in use
-
-            # Use model from settings
-            model = self.settings.agents.claude_model
-
-            # Build CLI arguments with stream-json for real-time streaming
-            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
-            args = [
-                self.cli_path,
-                "--print",
-                "--verbose",
-                "--dangerously-skip-permissions",
-                "--model",
-                model,
-                "--output-format",
-                "stream-json",
-            ]
-
-            # Extended thinking via MAX_THINKING_TOKENS env var
-            # NOTE: --settings {"alwaysThinkingEnabled": true} is BUGGY in Claude CLI v2.0.64+
-            # and causes the process to hang indefinitely. Use env var instead.
-            if self.settings.thinking.enabled:
-                env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
-                logger.info(
-                    f"[CLAUDE CLI] Extended thinking enabled: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}"
-                )
-
-            logger.info(f"[CLAUDE CLI] Starting subprocess: {' '.join(args)}")
-            logger.info(f"[CLAUDE CLI] Working directory: {cwd}")
-            logger.info(f"[CLAUDE CLI] Prompt length: {len(prompt)} chars")
-
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-            )
-
-            logger.info(f"[CLAUDE CLI] Process started with PID: {process.pid}")
-
-            # Write prompt to stdin in background task (avoids blocking on large prompts)
-            # The pipe buffer is ~64KB, so large prompts would block drain() if we don't
-            # read stdout concurrently
-            prompt_bytes = prompt.encode()
-            stdin_error = None
-
-            async def write_stdin():
-                nonlocal stdin_error
-                try:
-                    logger.info(f"[CLAUDE CLI] Writing {len(prompt_bytes)} bytes to stdin...")
-                    process.stdin.write(prompt_bytes)
-                    await process.stdin.drain()
-                    process.stdin.close()
-                    # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
-                    # Without this, Claude CLI hangs waiting for more input!
-                    await process.stdin.wait_closed()
-                    logger.info("[CLAUDE CLI] Stdin closed successfully (EOF sent)")
-                except BrokenPipeError as e:
-                    stdin_error = f"BrokenPipe: {e}"
-                    logger.error(f"[CLAUDE CLI] Stdin BrokenPipe: {e}")
-                except Exception as e:
-                    stdin_error = str(e)
-                    logger.error(f"[CLAUDE CLI] Stdin error: {e}")
-
-            # Start stdin writer as background task
-            stdin_task = asyncio.create_task(write_stdin())
-
-            # Stderr streaming task - logs --verbose output in real-time
-            stderr_chunks = []
-
-            async def read_stderr():
-                stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-                while True:
-                    chunk = await process.stderr.read(1024)
-                    if not chunk:
-                        final = stderr_decoder.decode(b"", final=True)
-                        if final:
-                            stderr_chunks.append(final)
-                            print(f"[CLAUDE STDERR] {final}", flush=True)
-                        break
-                    decoded = stderr_decoder.decode(chunk)
-                    if decoded:
-                        stderr_chunks.append(decoded)
-                        # Print each line separately for better visibility
-                        for line in decoded.split("\n"):
-                            if line.strip():
-                                print(f"[CLAUDE STDERR] {line}", flush=True)
-
-            stderr_task = asyncio.create_task(read_stderr())
-
-            # Read stdout in streaming mode with incremental UTF-8 decoder
-            # This handles multi-byte UTF-8 characters split across chunk boundaries
-            output_chunks = []
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            chunks_received = 0
-            total_bytes = 0
-            last_log_time = time.time()
-            line_buffer = ""  # Buffer for incomplete JSON lines
-            try:
-                async with asyncio.timeout(self.timeout):
-                    while True:
-                        chunk = await process.stdout.read(1024)
-                        if not chunk:
-                            # Flush remaining bytes
-                            decoded = decoder.decode(b"", final=True)
-                            if decoded:
-                                output_chunks.append(decoded)
-                            logger.info(
-                                f"[CLAUDE CLI] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes"
-                            )
-                            break
-
-                        chunks_received += 1
-                        total_bytes += len(chunk)
-
-                        # Log progress every 30 seconds
-                        now = time.time()
-                        if now - last_log_time > 30:
-                            logger.info(
-                                f"[CLAUDE CLI] Streaming... {chunks_received} chunks, {total_bytes} bytes received"
-                            )
-                            last_log_time = now
-
-                        # Log first chunk
-                        if chunks_received == 1:
-                            logger.info(f"[CLAUDE CLI] First chunk received! ({len(chunk)} bytes)")
-
-                        # Incremental decode - handles partial multi-byte chars
-                        decoded = decoder.decode(chunk)
-                        if decoded:
-                            output_chunks.append(decoded)
-
-                            # Parse stream-json and extract text for streaming callback
-                            if on_chunk:
-                                line_buffer += decoded
-                                while "\n" in line_buffer:
-                                    line, line_buffer = line_buffer.split("\n", 1)
-                                    if not line.strip():
-                                        continue
-                                    try:
-                                        event = json.loads(line)
-                                        # Extract text from content_block_delta events
-                                        if event.get("type") == "content_block_delta":
-                                            delta = event.get("delta", {})
-                                            text = delta.get("text", "")
-                                            if text:
-                                                await on_chunk(text)
-                                        # Also handle assistant message content
-                                        elif event.get("type") == "assistant":
-                                            message = event.get("message", {})
-                                            for block in message.get("content", []):
-                                                if block.get("type") == "text":
-                                                    text = block.get("text", "")
-                                                    if text:
-                                                        await on_chunk(text)
-                                    except json.JSONDecodeError:
-                                        pass  # Skip non-JSON or incomplete lines
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"[CLAUDE CLI] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes before timeout"
-                )
-                stdin_task.cancel()
-                stderr_task.cancel()
-                process.kill()
-                return None, [], "", ""
-
-            # Wait for stdin and stderr tasks to complete
-            await stdin_task
-            await stderr_task
-            if stdin_error:
-                logger.error(f"[CLAUDE CLI] Stdin failed: {stdin_error}")
-                # Don't return error if we got output anyway
-
-            logger.info("[CLAUDE CLI] Waiting for process to exit...")
-            await process.wait()
-            logger.info(f"[CLAUDE CLI] Process exited with code {process.returncode}")
-
-            # Get collected stderr from streaming task
-            stderr_text = "".join(stderr_chunks)
-
-            if stderr_text:
-                logger.warning(f"[CLAUDE CLI] STDERR total: {len(stderr_text)} chars")
-
-            if process.returncode != 0:
-                logger.error(f"[CLAUDE CLI] FAILED with code {process.returncode}")
-                logger.error(f"[CLAUDE CLI] Full stderr: {stderr_text[:2000]}")
-                return None, [], "", ""
-
-            raw_output = "".join(output_chunks)
-            model_usage_list: list[ModelUsageInfo] = []
-            output = ""
-            thinking_chunks: list[str] = []  # Collect thinking content
-
-            # Parse stream-json output (NDJSON - one JSON per line)
-            # Look for the "result" type line which contains final output and costs
-            for line in raw_output.strip().split("\n"):
-                if not line.strip():
-                    continue
-                try:
-                    event = json.loads(line)
-                    event_type = event.get("type")
-
-                    # Capture thinking content from assistant messages
-                    if event_type == "assistant":
-                        message = event.get("message", {})
-                        content_blocks = message.get("content", [])
-                        for block in content_blocks:
-                            if block.get("type") == "thinking":
-                                thinking_text = block.get("thinking", "")
-                                if thinking_text:
-                                    thinking_chunks.append(thinking_text)
-
-                    if event_type == "result":
-                        # Final result with content and model usage
-                        output = event.get("result", "")
-
-                        # Extract model usage
-                        model_usage = event.get("modelUsage", {})
-                        if model_usage:
-                            for model_name, usage in model_usage.items():
-                                info = ModelUsageInfo(
-                                    model=model_name,
-                                    input_tokens=usage.get("inputTokens", 0),
-                                    output_tokens=usage.get("outputTokens", 0),
-                                    cache_read_tokens=usage.get("cacheReadInputTokens", 0),
-                                    cache_creation_tokens=usage.get("cacheCreationInputTokens", 0),
-                                    cost_usd=usage.get("costUSD", 0.0),
-                                )
-                                model_usage_list.append(info)
-
-                except json.JSONDecodeError:
-                    # Skip non-JSON lines
-                    continue
-
-            # Combine thinking chunks
-            thinking_content = "\n\n".join(thinking_chunks)
-
-            # Fallback if no result found
-            if not output:
-                logger.warning("No result found in stream-json output, using raw")
-                output = raw_output
-
-            return output, model_usage_list, thinking_content, raw_output
-
-        except FileNotFoundError:
-            logger.error(f"[CLAUDE CLI] NOT FOUND at: {self.cli_path}")
-            return None, [], "", ""
-        except Exception as e:
-            logger.exception(f"[CLAUDE CLI] EXCEPTION: {e}")
-            return None, [], "", ""
 
     def _extract_json_from_response(self, response_text: str) -> str:
         """

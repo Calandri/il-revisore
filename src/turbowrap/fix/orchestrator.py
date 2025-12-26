@@ -3,6 +3,8 @@ Fix Orchestrator for TurboWrap.
 
 Coordinates Claude CLI (fixer) and Gemini CLI (reviewer).
 Both CLIs have full access to the system - they do ALL the work.
+
+Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
 """
 
 import asyncio
@@ -31,7 +33,8 @@ from turbowrap.fix.models import (
     IssueFixResult,
     ScopeValidationError,
 )
-from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_google_api_key
+from turbowrap.utils.aws_secrets import get_google_api_key
+from turbowrap.utils.claude_cli import ClaudeCLI
 
 # S3 bucket for fix logs (same as thinking logs)
 S3_BUCKET = "turbowrap-thinking"
@@ -1250,6 +1253,15 @@ The reviewer found issues with the previous fix. Address this feedback:
         )
         return 70.0
 
+    def _get_claude_cli(self, timeout: int = CLAUDE_CLI_TIMEOUT) -> ClaudeCLI:
+        """Create ClaudeCLI instance for fix operations."""
+        return ClaudeCLI(
+            working_dir=self.repo_path,
+            model="opus",  # Use Opus for comprehensive fixes
+            timeout=timeout,
+            s3_prefix="fix",
+        )
+
     async def _run_claude_cli(
         self,
         prompt: str,
@@ -1259,233 +1271,61 @@ The reviewer found issues with the previous fix. Address this feedback:
     ) -> str | None:
         """Run Claude CLI with prompt and optional streaming callback.
 
+        Uses the centralized ClaudeCLI utility for execution.
+
         Args:
             prompt: The prompt to send to Claude
             timeout: Timeout in seconds
             on_chunk: Callback for streaming chunks
             thinking_budget: Override thinking budget (None = use default from config)
         """
-        try:
-            # Build environment with API key from AWS Secrets Manager
-            env = os.environ.copy()
-            api_key = get_anthropic_api_key()
-            if api_key:
-                env["ANTHROPIC_API_KEY"] = api_key
-            # Workaround: Bun file watcher bug on macOS /var/folders
-            env["TMPDIR"] = "/tmp"
+        # Create ClaudeCLI with appropriate timeout
+        cli = self._get_claude_cli(timeout)
 
-            # Set thinking budget via environment variable
-            # This controls how many tokens Claude can use for internal reasoning
-            if self.settings.thinking.enabled:
-                budget = thinking_budget or self.settings.thinking.budget_tokens
-                env["MAX_THINKING_TOKENS"] = str(budget)
-                logger.info(f"Extended thinking enabled with budget: {budget} tokens")
+        # Wrap on_chunk to add stderr prefix for stderr streaming
+        async def on_stderr(line: str) -> None:
+            if on_chunk:
+                print(f"[CLAUDE FIX STDERR] {line}", flush=True)
+                await on_chunk(f"[stderr] {line}\n")
 
-            # Use Opus model from settings
-            model = self.settings.agents.claude_model
+        # Run with the centralized utility
+        result = await cli.run(
+            prompt,
+            context_id=f"fix_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            thinking_budget=thinking_budget,
+            save_prompt=True,
+            save_output=True,
+            save_thinking=True,
+            on_chunk=on_chunk,
+            on_stderr=on_stderr,
+        )
 
-            # Build CLI arguments with stream-json for real-time streaming
-            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
-            args = [
-                "claude",
-                "--print",
-                "--verbose",
-                "--dangerously-skip-permissions",
-                "--model",
-                model,
-                "--output-format",
-                "stream-json",
-            ]
+        if not result.success:
+            # Check for billing errors
+            if result.error:
+                billing_keywords = [
+                    "credit balance",
+                    "billing",
+                    "payment",
+                    "insufficient funds",
+                    "quota exceeded",
+                    "rate limit",
+                ]
+                if any(kw in result.error.lower() for kw in billing_keywords):
+                    logger.error(f"Claude CLI billing error: {result.error}")
+                    raise BillingError(result.error)
 
-            # NOTE: DO NOT use --settings {"alwaysThinkingEnabled": true} here!
-            # It's BUGGY in Claude CLI v2.0.64+ and causes the process to hang indefinitely.
-            # Extended thinking is enabled via MAX_THINKING_TOKENS env var (set above).
-            # See: docs/BUG_NOTI/claude-cli-extended-thinking.md
+            logger.error(f"Claude CLI failed: {result.error}")
+            return None
 
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.repo_path),
-                env=env,
+        # Log model usage
+        for usage in result.model_usage:
+            logger.info(
+                f"  {usage.model}: in={usage.input_tokens}, "
+                f"out={usage.output_tokens}, cost=${usage.cost_usd:.4f}"
             )
 
-            logger.info(f"[CLAUDE CLI FIX] Process started with PID: {process.pid}")
-
-            # Write prompt to stdin in background task
-            prompt_bytes = prompt.encode()
-            stdin_error = None
-
-            async def write_stdin():
-                nonlocal stdin_error
-                try:
-                    logger.info(f"[CLAUDE CLI FIX] Writing {len(prompt_bytes)} bytes to stdin...")
-                    process.stdin.write(prompt_bytes)
-                    await process.stdin.drain()
-                    process.stdin.close()
-                    # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
-                    await process.stdin.wait_closed()
-                    logger.info("[CLAUDE CLI FIX] Stdin closed successfully (EOF sent)")
-                except BrokenPipeError as e:
-                    stdin_error = f"BrokenPipe: {e}"
-                    logger.error(f"[CLAUDE CLI FIX] Stdin BrokenPipe: {e}")
-                except Exception as e:
-                    stdin_error = str(e)
-                    logger.error(f"[CLAUDE CLI FIX] Stdin error: {e}")
-
-            stdin_task = asyncio.create_task(write_stdin())
-
-            # Stderr streaming task - logs --verbose output in real-time AND to frontend
-            stderr_chunks = []
-
-            async def read_stderr():
-                stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-                while True:
-                    chunk = await process.stderr.read(1024)
-                    if not chunk:
-                        final = stderr_decoder.decode(b"", final=True)
-                        if final:
-                            stderr_chunks.append(final)
-                            print(f"[CLAUDE FIX STDERR] {final}", flush=True)
-                            # Also emit to frontend
-                            if on_chunk:
-                                await on_chunk(f"[stderr] {final}\n")
-                        break
-                    decoded = stderr_decoder.decode(chunk)
-                    if decoded:
-                        stderr_chunks.append(decoded)
-                        for line in decoded.split("\n"):
-                            if line.strip():
-                                print(f"[CLAUDE FIX STDERR] {line}", flush=True)
-                                # Emit each line to frontend for real-time visibility
-                                if on_chunk:
-                                    await on_chunk(f"[stderr] {line}\n")
-
-            stderr_task = asyncio.create_task(read_stderr())
-
-            # Read stdout in streaming mode with incremental UTF-8 decoder
-            # This handles multi-byte UTF-8 characters split across chunk boundaries
-            output_chunks: list[str] = []
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            chunks_received = 0
-            total_bytes = 0
-
-            try:
-                async with asyncio.timeout(timeout):
-                    while True:
-                        chunk = await process.stdout.read(1024)
-                        if not chunk:
-                            # Flush remaining bytes
-                            decoded = decoder.decode(b"", final=True)
-                            if decoded:
-                                output_chunks.append(decoded)
-                                if on_chunk:
-                                    await on_chunk(decoded)
-                            logger.info(
-                                f"[CLAUDE CLI FIX] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes"
-                            )
-                            break
-
-                        chunks_received += 1
-                        total_bytes += len(chunk)
-
-                        if chunks_received == 1:
-                            logger.info(
-                                f"[CLAUDE CLI FIX] First chunk received! ({len(chunk)} bytes)"
-                            )
-
-                        # Incremental decode - handles partial multi-byte chars
-                        decoded = decoder.decode(chunk)
-                        if decoded:
-                            output_chunks.append(decoded)
-                            # Emit chunk for streaming
-                            if on_chunk:
-                                await on_chunk(decoded)
-
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"[CLAUDE CLI FIX] TIMEOUT after {timeout}s! Received {chunks_received} chunks, {total_bytes} bytes"
-                )
-                stdin_task.cancel()
-                stderr_task.cancel()
-                process.kill()
-                return None
-
-            # Wait for stdin and stderr tasks
-            await stdin_task
-            await stderr_task
-            if stdin_error:
-                logger.error(f"[CLAUDE CLI FIX] Stdin failed: {stdin_error}")
-
-            logger.info("[CLAUDE CLI FIX] Waiting for process to exit...")
-            await process.wait()
-            logger.info(f"[CLAUDE CLI FIX] Process exited with code {process.returncode}")
-
-            stderr_text = "".join(stderr_chunks)
-            if stderr_text:
-                logger.info(f"[CLAUDE CLI FIX] STDERR total: {len(stderr_text)} chars")
-
-            if process.returncode != 0:
-                logger.error(f"[CLAUDE CLI FIX] FAILED with code {process.returncode}")
-                logger.error(f"[CLAUDE CLI FIX] Full stderr: {stderr_text[:2000]}")
-                raw = "".join(output_chunks)
-                if raw:
-                    logger.error(f"[CLAUDE CLI FIX] stdout (first 1000 chars): {raw[:1000]}")
-                return None
-
-            # Parse stream-json output (NDJSON)
-            raw_output = "".join(output_chunks)
-            for line in raw_output.strip().split("\n"):
-                if not line.strip():
-                    continue
-                try:
-                    event = json.loads(line)
-                    if event.get("type") == "result":
-                        # Check for billing/API errors
-                        if event.get("is_error"):
-                            error_msg = event.get("result", "Unknown error")
-                            # Detect billing-related errors
-                            billing_keywords = [
-                                "credit balance",
-                                "billing",
-                                "payment",
-                                "insufficient funds",
-                                "quota exceeded",
-                                "rate limit",
-                            ]
-                            if any(kw in error_msg.lower() for kw in billing_keywords):
-                                logger.error(f"Claude CLI billing error: {error_msg}")
-                                raise BillingError(error_msg)
-                            # Other API errors
-                            logger.error(f"Claude CLI API error: {error_msg}")
-                            return None
-
-                        # Log model usage
-                        model_usage = event.get("modelUsage", {})
-                        if model_usage:
-                            for model_name, usage in model_usage.items():
-                                logger.info(
-                                    f"  {model_name}: in={usage.get('inputTokens', 0)}, "
-                                    f"out={usage.get('outputTokens', 0)}, "
-                                    f"cost=${usage.get('costUSD', 0):.4f}"
-                                )
-                        total_cost = event.get("total_cost_usd", 0)
-                        logger.info(f"Claude CLI total cost: ${total_cost:.4f}")
-                        return event.get("result", "")
-                except json.JSONDecodeError:
-                    continue
-
-            # Fallback to raw output
-            logger.warning("No result found in stream-json, using raw output")
-            return raw_output
-
-        except asyncio.TimeoutError:
-            logger.error(f"Claude CLI timed out after {timeout}s")
-            return None
-        except Exception:
-            logger.exception("Claude CLI error")
-            return None
+        return result.output
 
     async def _run_gemini_cli(
         self,

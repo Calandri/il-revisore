@@ -210,10 +210,15 @@ class ClaudeCLI:
         duration_ms = int((time.time() - start_time) * 1000)
 
         if error:
+            # For API errors (is_error=true), we still have output with the error message
+            # Return success=False but include the output so caller can inspect error details
             return ClaudeCLIResult(
                 success=False,
-                output="",
+                output=output or "",
                 error=error,
+                thinking=thinking,
+                raw_output=raw_output,
+                model_usage=model_usage,
                 duration_ms=duration_ms,
                 model=self.model,
                 s3_prompt_url=s3_prompt_url,
@@ -489,7 +494,11 @@ class ClaudeCLI:
 
             # Parse stream-json output
             raw_output = "".join(output_chunks)
-            output, model_usage, thinking = self._parse_stream_json(raw_output)
+            output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
+
+            # Return API error as the error field if present
+            if api_error:
+                return output, model_usage, thinking, raw_output, api_error
 
             return output, model_usage, thinking, raw_output, None
 
@@ -501,15 +510,16 @@ class ClaudeCLI:
 
     def _parse_stream_json(
         self, raw_output: str
-    ) -> tuple[str, list[ModelUsage], str | None]:
+    ) -> tuple[str, list[ModelUsage], str | None, str | None]:
         """Parse stream-json NDJSON output.
 
         Returns:
-            Tuple of (output, model_usage, thinking)
+            Tuple of (output, model_usage, thinking, api_error)
         """
         output = ""
         model_usage_list = []
         thinking_chunks = []
+        api_error = None
 
         for line in raw_output.strip().split("\n"):
             if not line.strip():
@@ -530,8 +540,9 @@ class ClaudeCLI:
                 if event_type == "result":
                     output = event.get("result", "")
 
-                    # Check for API errors
+                    # Check for API errors (billing, rate limits, etc.)
                     if event.get("is_error"):
+                        api_error = output
                         logger.error(f"[CLAUDE CLI] API error: {output}")
 
                     # Extract model usage
@@ -554,11 +565,11 @@ class ClaudeCLI:
         thinking = "\n\n".join(thinking_chunks) if thinking_chunks else None
 
         # Fallback if no result found
-        if not output:
+        if not output and not api_error:
             logger.warning("[CLAUDE CLI] No result in stream-json, using raw output")
             output = raw_output
 
-        return output, model_usage_list, thinking
+        return output, model_usage_list, thinking, api_error
 
     async def _save_to_s3(
         self,
