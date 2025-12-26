@@ -39,6 +39,9 @@ class ReviewContext:
     # Structure documentation (STRUCTURE.md files found in repo)
     structure_docs: dict[str, str] = field(default_factory=dict)
 
+    # Business context (extracted from structure.xml or provided)
+    business_context: str | None = None
+
     # Previous review (for refinement)
     previous_review: ReviewOutput | None = None
     challenger_feedback: ChallengerFeedback | None = None

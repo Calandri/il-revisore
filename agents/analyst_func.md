@@ -1,6 +1,6 @@
 ---
 name: analyst-func
-description: Use this agent to perform functional analysis of code changes. It verifies that implementations match requirements, validates business logic correc...
+description: Use this agent to perform functional analysis of code changes. It verifies that implementations match requirements, validates business logic correctly, and ensures edge cases are handled.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -15,6 +15,29 @@ Unlike code reviewers who focus on HOW code is written, you focus on WHAT the co
 - Does it handle all business scenarios?
 - Are edge cases covered?
 - Will users get the expected experience?
+
+## IMPORTANT: File Scope Rules
+
+**Priority Files** (analyze in depth):
+- Source code files (`.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.go`, `.rs`, etc.)
+- Test files (`*_test.py`, `*.spec.ts`, `test_*.py`)
+- API route/handler files
+- Database models and migrations
+- Business logic modules
+
+**Context Files** (read-only, reference when needed):
+- Shared libraries/utilities from other workspaces
+- Type definitions and interfaces
+- Configuration schemas
+
+**EXCLUDE from analysis** (do NOT flag issues in these):
+- `.reviews/` - Old review outputs
+- `.github/workflows/` - CI/CD configs
+- Root config files (`pyproject.toml`, `tsconfig.json`, `package.json`, etc.)
+- Lock files (`poetry.lock`, `pnpm-lock.yaml`, `package-lock.json`)
+- Generated files (`*.d.ts`, `__pycache__/`, `.next/`, `dist/`)
+- IDE/editor configs (`.vscode/`, `.idea/`)
+- Documentation files (`README.md`, `CHANGELOG.md`) unless specifically reviewing docs
 
 ## Analysis Output Format
 

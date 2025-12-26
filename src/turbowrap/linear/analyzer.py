@@ -12,7 +12,7 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
-from turbowrap.config import settings
+from turbowrap.config import get_settings
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
 
@@ -38,8 +38,9 @@ class LinearIssueAnalyzer:
         self.last_repository_recommendations: list[str] = []
 
         # S3 config
-        self.s3_bucket = settings.thinking.s3_bucket
-        self.s3_region = settings.thinking.s3_region
+        _settings = get_settings()
+        self.s3_bucket = _settings.thinking.s3_bucket
+        self.s3_region = _settings.thinking.s3_region
         self._s3_client = None
 
     @property
