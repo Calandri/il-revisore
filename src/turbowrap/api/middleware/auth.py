@@ -62,22 +62,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not access_token:
             # No access token - try refresh if available
             if refresh_token:
-                new_tokens = refresh_access_token(refresh_token)
-                if new_tokens and new_tokens.get("access_token"):
-                    logger.info(f"Refreshed expired token for path: {path}")
-                    # Store new token in request state for downstream handlers
-                    request.state.refreshed_access_token = new_tokens["access_token"]
-                    # Proceed with request and set new cookie in response
-                    response = await call_next(request)
-                    response.set_cookie(
-                        key=settings.auth.session_cookie_name,
-                        value=new_tokens["access_token"],
-                        max_age=settings.auth.session_max_age,
-                        httponly=True,
-                        secure=settings.auth.secure_cookies,
-                        samesite="lax",
-                    )
-                    return response
+                try:
+                    new_tokens = refresh_access_token(refresh_token)
+                    if new_tokens and new_tokens.get("access_token"):
+                        logger.info(f"Refreshed expired token for path: {path}")
+                        # Store new token in request state for downstream handlers
+                        request.state.refreshed_access_token = new_tokens["access_token"]
+                        # Proceed with request and set new cookie in response
+                        response = await call_next(request)
+                        response.set_cookie(
+                            key=settings.auth.session_cookie_name,
+                            value=new_tokens["access_token"],
+                            max_age=settings.auth.session_max_age,
+                            httponly=True,
+                            secure=settings.auth.secure_cookies,
+                            samesite="lax",
+                        )
+                        return response
+                except Exception as e:
+                    logger.error(f"Token refresh error: {e}")
             return self._redirect_to_login(request)
 
         # Verify token
@@ -85,22 +88,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not claims:
             # Token invalid/expired - try refresh
             if refresh_token:
-                new_tokens = refresh_access_token(refresh_token)
-                if new_tokens and new_tokens.get("access_token"):
-                    logger.info(f"Refreshed invalid token for path: {path}")
-                    # Store new token in request state for downstream handlers
-                    request.state.refreshed_access_token = new_tokens["access_token"]
-                    # Proceed with request and set new cookie in response
-                    response = await call_next(request)
-                    response.set_cookie(
-                        key=settings.auth.session_cookie_name,
-                        value=new_tokens["access_token"],
-                        max_age=settings.auth.session_max_age,
-                        httponly=True,
-                        secure=settings.auth.secure_cookies,
-                        samesite="lax",
-                    )
-                    return response
+                try:
+                    new_tokens = refresh_access_token(refresh_token)
+                    if new_tokens and new_tokens.get("access_token"):
+                        logger.info(f"Refreshed invalid token for path: {path}")
+                        # Store new token in request state for downstream handlers
+                        request.state.refreshed_access_token = new_tokens["access_token"]
+                        # Proceed with request and set new cookie in response
+                        response = await call_next(request)
+                        response.set_cookie(
+                            key=settings.auth.session_cookie_name,
+                            value=new_tokens["access_token"],
+                            max_age=settings.auth.session_max_age,
+                            httponly=True,
+                            secure=settings.auth.secure_cookies,
+                            samesite="lax",
+                        )
+                        return response
+                except Exception as e:
+                    logger.error(f"Token refresh error: {e}")
             logger.warning(f"Invalid token for path: {path}")
             return self._redirect_to_login(request)
 
