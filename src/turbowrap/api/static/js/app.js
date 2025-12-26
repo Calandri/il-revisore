@@ -39,9 +39,6 @@ function systemMonitor() {
         cliCount: 0,
         processes: [],
         showProcesses: false,
-        buildCount: 0,
-        buildProcesses: [],
-        showBuilds: false,
         // Deployments
         showDeploys: false,
         deployments: [],
@@ -83,8 +80,6 @@ function systemMonitor() {
                 this.ram = data.system?.memory_percent || 0;
                 this.cliCount = data.cli_processes?.count || 0;
                 this.processes = data.cli_processes?.processes || [];
-                this.buildCount = data.build_processes?.count || 0;
-                this.buildProcesses = data.build_processes?.processes || [];
                 this.loading = false;
             } catch (e) {
                 console.error('System monitor error:', e);
