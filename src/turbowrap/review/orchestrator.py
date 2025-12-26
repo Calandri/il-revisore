@@ -721,7 +721,8 @@ class Orchestrator:
         """
         reviewers = []
 
-        if repo_type in [RepoType.BACKEND, RepoType.FULLSTACK]:
+        if repo_type in [RepoType.BACKEND, RepoType.FULLSTACK, RepoType.UNKNOWN]:
+            # For UNKNOWN, assume backend as default since most repos have backend code
             reviewers.append("reviewer_be_architecture")
             reviewers.append("reviewer_be_quality")
 
@@ -730,7 +731,8 @@ class Orchestrator:
             reviewers.append("reviewer_fe_quality")
 
         # ALWAYS launch analyst_func - business logic is critical
-        reviewers.append("analyst_func")
+        if include_functional:
+            reviewers.append("analyst_func")
 
         return reviewers
 
