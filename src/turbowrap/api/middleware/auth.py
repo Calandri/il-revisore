@@ -23,6 +23,7 @@ PUBLIC_PATHS = {
     "/api/health",
     "/api/status",  # ALB health check
     "/api/deployments/status",  # Deployment status (public GitHub data)
+    "/api/deployments/staging/status",  # Staging status (for promote button)
 }
 
 # Path prefixes that don't require authentication

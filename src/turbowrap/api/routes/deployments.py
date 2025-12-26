@@ -6,7 +6,6 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
-import boto3
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,10 +13,6 @@ from pydantic import BaseModel
 from ...config import get_settings
 
 logger = logging.getLogger(__name__)
-
-# AWS SSM config
-AWS_REGION = "eu-west-3"
-EC2_INSTANCE_ID = "i-02cac4811086c1f92"
 
 router = APIRouter(prefix="/deployments", tags=["deployments"])
 
@@ -294,42 +289,72 @@ async def rollback_to_commit(commit_sha: str) -> dict[str, str]:
         )
 
 
-async def _run_ssm_command(commands: list[str], timeout_seconds: int = 30) -> dict[str, Any]:
-    """Run commands on EC2 via SSM and wait for result."""
-    loop = asyncio.get_event_loop()
+async def _run_local_command(
+    command: list[str],
+    timeout_seconds: int = 30,
+) -> dict[str, Any]:
+    """Run a command locally and wait for result.
 
-    def _execute():
-        ssm = boto3.client("ssm", region_name=AWS_REGION)
+    Args:
+        command: Command as list of strings (no shell interpretation)
+        timeout_seconds: Maximum execution time
 
-        # Send command
-        response = ssm.send_command(
-            InstanceIds=[EC2_INSTANCE_ID],
-            DocumentName="AWS-RunShellScript",
-            Parameters={"commands": commands},
+    Returns:
+        dict with status, stdout, stderr
+    """
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        command_id = response["Command"]["CommandId"]
 
-        # Wait for completion
-        for _ in range(timeout_seconds):
-            time.sleep(1)
-            try:
-                result = ssm.get_command_invocation(
-                    CommandId=command_id,
-                    InstanceId=EC2_INSTANCE_ID,
-                )
-                status = result["Status"]
-                if status in ("Success", "Failed", "Cancelled", "TimedOut"):
-                    return {
-                        "status": status,
-                        "stdout": result.get("StandardOutputContent", ""),
-                        "stderr": result.get("StandardErrorContent", ""),
-                    }
-            except ssm.exceptions.InvocationDoesNotExist:
-                continue
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return {
+                "status": "Timeout",
+                "stdout": "",
+                "stderr": f"Command timed out after {timeout_seconds}s",
+            }
 
-        return {"status": "Timeout", "stdout": "", "stderr": "Command timed out"}
+        return {
+            "status": "Success" if process.returncode == 0 else "Failed",
+            "returncode": process.returncode,
+            "stdout": stdout.decode("utf-8", errors="replace"),
+            "stderr": stderr.decode("utf-8", errors="replace"),
+        }
 
-    return await loop.run_in_executor(None, _execute)
+    except Exception as e:
+        return {
+            "status": "Error",
+            "stdout": "",
+            "stderr": str(e),
+        }
+
+
+async def _get_deployment_secrets() -> dict[str, str]:
+    """Get secrets for Docker container deployment.
+
+    Returns environment variables dict for docker run.
+    """
+    from ...utils.aws_secrets import get_secrets
+
+    loop = asyncio.get_event_loop()
+    secrets = await loop.run_in_executor(None, get_secrets)
+
+    return {
+        "ANTHROPIC_API_KEY": secrets.get("ANTHROPIC_API_KEY", ""),
+        "TURBOWRAP_DB_URL": secrets.get("TURBOWRAP_DB_URL", ""),
+        "GOOGLE_API_KEY": secrets.get("GOOGLE_API_KEY", ""),
+        "GEMINI_API_KEY": secrets.get("GEMINI_API_KEY", ""),
+        "GITHUB_TOKEN": secrets.get("GITHUB_TOKEN", ""),
+    }
 
 
 class StagingStatus(BaseModel):
@@ -365,10 +390,11 @@ async def get_staging_status() -> StagingStatus:
 
 @router.post("/promote")
 async def promote_to_production() -> dict[str, str]:
-    """Switch staging to production via SSM.
+    """Switch staging to production.
 
     This stops the current production container and starts a new one
-    from the latest ECR image (same as staging).
+    from the latest ECR image (same as staging). Runs locally since
+    TurboWrap API is on the same EC2 instance.
     """
     # First verify staging is running
     staging_status = await get_staging_status()
@@ -380,54 +406,92 @@ async def promote_to_production() -> dict[str, str]:
 
     logger.info("Promoting staging to production...")
 
-    # Commands to switch - get secrets and start new production container
-    commands = [
-        "set -e",
-        "echo === PROMOTING STAGING TO PRODUCTION ===",
-        # Get secrets
-        "SECRETS=$(aws secretsmanager get-secret-value --secret-id agent-zero/global/api-keys --region eu-west-3 --query SecretString --output text)",
-        'ANTHROPIC_KEY=$(echo $SECRETS | jq -r .ANTHROPIC_API_KEY)',
-        'DB_URL=$(echo $SECRETS | jq -r .TURBOWRAP_DB_URL)',
-        'GOOGLE_KEY=$(echo $SECRETS | jq -r .GOOGLE_API_KEY)',
-        'GEMINI_KEY=$(echo $SECRETS | jq -r .GEMINI_API_KEY)',
-        'GITHUB_TOKEN=$(echo $SECRETS | jq -r .GITHUB_TOKEN)',
-        # Stop old production
-        "echo Stopping old production...",
-        "docker stop turbowrap 2>/dev/null || true",
-        "docker rm turbowrap 2>/dev/null || true",
-        # Start new production from latest image
-        "echo Starting new production...",
-        'docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /mnt/repos:/data/repos -e TURBOWRAP_DB_URL="$DB_URL" -e ANTHROPIC_API_KEY="$ANTHROPIC_KEY" -e GOOGLE_API_KEY="$GOOGLE_KEY" -e GEMINI_API_KEY="$GEMINI_KEY" -e GITHUB_TOKEN="$GITHUB_TOKEN" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest',
-        # Cleanup staging
-        "echo Cleaning up staging...",
-        "docker stop turbowrap-staging 2>/dev/null || true",
-        "docker rm turbowrap-staging 2>/dev/null || true",
-        # Verify
-        "echo Verifying...",
-        "sleep 3",
-        "docker ps | grep turbowrap",
-        "echo === PROMOTION COMPLETE ===",
-    ]
-
     try:
-        result = await _run_ssm_command(commands, timeout_seconds=60)
+        # Step 1: Get secrets from AWS Secrets Manager
+        logger.info("[PROMOTE] Fetching secrets...")
+        secrets = await _get_deployment_secrets()
 
-        if result["status"] == "Success":
-            logger.info("Promotion successful")
-            # Clear deployment cache to force refresh
-            _cache["data"] = None
-            _cache["timestamp"] = 0
-            return {
-                "status": "ok",
-                "message": "Production updated successfully",
-                "output": result["stdout"],
-            }
-        else:
-            logger.error(f"Promotion failed: {result}")
+        if not secrets.get("TURBOWRAP_DB_URL"):
             raise HTTPException(
                 status_code=500,
-                detail=f"Promotion failed: {result['stderr'] or result['stdout']}",
+                detail="Failed to retrieve database URL from secrets",
             )
+
+        # Step 2: Stop old production container
+        logger.info("[PROMOTE] Stopping old production container...")
+        result = await _run_local_command(
+            ["docker", "stop", "turbowrap"],
+            timeout_seconds=30,
+        )
+        logger.debug(f"docker stop turbowrap: {result['status']}")
+
+        # Step 3: Remove old production container
+        result = await _run_local_command(
+            ["docker", "rm", "turbowrap"],
+            timeout_seconds=10,
+        )
+        logger.debug(f"docker rm turbowrap: {result['status']}")
+
+        # Step 4: Start new production container
+        logger.info("[PROMOTE] Starting new production container...")
+        docker_run_cmd = [
+            "docker", "run", "-d",
+            "--name", "turbowrap",
+            "-p", "8000:8000",
+            "-v", "/data:/data",
+            "-v", "/mnt/repos:/data/repos",
+            "-e", f"TURBOWRAP_DB_URL={secrets['TURBOWRAP_DB_URL']}",
+            "-e", f"ANTHROPIC_API_KEY={secrets['ANTHROPIC_API_KEY']}",
+            "-e", f"GOOGLE_API_KEY={secrets['GOOGLE_API_KEY']}",
+            "-e", f"GEMINI_API_KEY={secrets['GEMINI_API_KEY']}",
+            "-e", f"GITHUB_TOKEN={secrets['GITHUB_TOKEN']}",
+            "-e", "TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3",
+            "-e", "TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp",
+            "-e", "TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75",
+            "--restart", "unless-stopped",
+            "198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
+        ]
+
+        result = await _run_local_command(docker_run_cmd, timeout_seconds=60)
+
+        if result["status"] != "Success":
+            logger.error(f"[PROMOTE] Failed to start container: {result}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to start production container: {result['stderr']}",
+            )
+
+        # Step 5: Cleanup staging container
+        logger.info("[PROMOTE] Cleaning up staging container...")
+        await _run_local_command(["docker", "stop", "turbowrap-staging"], timeout_seconds=30)
+        await _run_local_command(["docker", "rm", "turbowrap-staging"], timeout_seconds=10)
+
+        # Step 6: Verify production is running
+        logger.info("[PROMOTE] Verifying production container...")
+        await asyncio.sleep(3)  # Give container time to start
+
+        result = await _run_local_command(
+            ["docker", "ps", "--filter", "name=turbowrap", "--format", "{{.Names}}"],
+            timeout_seconds=10,
+        )
+
+        if "turbowrap" not in result["stdout"]:
+            raise HTTPException(
+                status_code=500,
+                detail="Production container failed to start",
+            )
+
+        logger.info("[PROMOTE] Promotion successful")
+
+        # Clear deployment cache to force refresh
+        _cache["data"] = None
+        _cache["timestamp"] = 0
+
+        return {
+            "status": "ok",
+            "message": "Production updated successfully",
+            "output": "Container turbowrap started successfully",
+        }
 
     except HTTPException:
         raise
