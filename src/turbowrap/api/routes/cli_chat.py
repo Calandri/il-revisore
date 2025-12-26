@@ -274,6 +274,98 @@ def delete_session(
     return {"status": "deleted", "session_id": session_id}
 
 
+@router.post("/sessions/{session_id}/fork", response_model=CLISessionResponse)
+def fork_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+):
+    """Fork a CLI chat session with all messages.
+
+    Creates a new session with:
+    - Same settings (model, agent, thinking, etc.)
+    - Copy of all messages
+    - For Claude: shares claude_session_id for --resume support
+
+    Returns the new forked session.
+    """
+    original = (
+        db.query(CLIChatSession)
+        .filter(
+            CLIChatSession.id == session_id,
+            CLIChatSession.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not original:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Create new session with same settings
+    forked = CLIChatSession(
+        display_name=f"{original.display_name or 'Chat'} (fork)",
+        cli_type=original.cli_type,
+        model=original.model,
+        agent_name=original.agent_name,
+        thinking_enabled=original.thinking_enabled,
+        thinking_budget=original.thinking_budget,
+        reasoning_enabled=original.reasoning_enabled,
+        mcp_servers=original.mcp_servers,
+        repository_id=original.repository_id,
+        icon=original.icon,
+        color=original.color,
+        status="idle",
+        total_messages=0,
+        total_tokens_in=0,
+        total_tokens_out=0,
+    )
+    db.add(forked)
+    db.flush()  # Get ID before adding messages
+
+    # Copy all messages
+    message_count = 0
+    for msg in original.messages:
+        forked_msg = CLIChatMessage(
+            session_id=forked.id,
+            role=msg.role,
+            content=msg.content,
+            tokens_in=msg.tokens_in,
+            tokens_out=msg.tokens_out,
+            model_used=msg.model_used,
+            agent_used=msg.agent_used,
+            is_thinking=msg.is_thinking,
+            duration_ms=msg.duration_ms,
+        )
+        db.add(forked_msg)
+        message_count += 1
+
+        # Accumulate token counts
+        forked.total_tokens_in += msg.tokens_in or 0
+        forked.total_tokens_out += msg.tokens_out or 0
+
+    forked.total_messages = message_count
+
+    db.commit()
+    db.refresh(forked)
+
+    # For Claude: store shared claude_session_id for --resume
+    manager = get_process_manager()
+    original_proc = manager.get_process(session_id)
+    if original_proc and original_proc.cli_type == CLIType.CLAUDE:
+        # Store in a way that spawn_claude can access
+        manager.set_shared_resume_id(forked.id, original_proc.claude_session_id)
+        logger.info(
+            f"[FORK] Sharing claude_session_id {original_proc.claude_session_id} "
+            f"from {session_id} to {forked.id}"
+        )
+
+    logger.info(
+        f"[FORK] Created fork {forked.id} from {session_id} "
+        f"with {message_count} messages"
+    )
+
+    return forked
+
+
 # ============================================================================
 # Messages
 # ============================================================================

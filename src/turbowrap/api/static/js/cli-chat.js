@@ -30,6 +30,9 @@ function chatSidebar() {
         systemInfo: [],
         eventSource: null,
         abortController: null,
+        // Queue and Fork functionality
+        pendingMessage: null,   // Message queued to send after current stream
+        forkInProgress: false,  // Prevents double-fork
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -215,6 +218,9 @@ function chatSidebar() {
                 this.eventSource = null;
             }
 
+            // Clear pending message (user stopped, so don't auto-send)
+            this.pendingMessage = null;
+
             // If we have partial content, save it as a message
             if (this.streamContent.trim()) {
                 this.messages.push({
@@ -228,6 +234,65 @@ function chatSidebar() {
             this.streamContent = '';
             this.streaming = false;
             this.showToast('Risposta interrotta', 'info');
+        },
+
+        /**
+         * Queue a message to send after current stream completes (ACCODA)
+         */
+        queueMessage(message) {
+            if (!message || !message.trim()) return;
+            this.pendingMessage = message.trim();
+            this.inputMessage = '';  // Clear input
+            this.showToast('Messaggio in coda - sarà inviato al termine', 'info');
+        },
+
+        /**
+         * Fork session and send message immediately (DUPLICA)
+         */
+        async forkAndSend(message) {
+            if (!message || !message.trim() || !this.activeSession || this.forkInProgress) return;
+
+            this.forkInProgress = true;
+            const msgContent = message.trim();
+            this.inputMessage = '';  // Clear input immediately
+
+            try {
+                // 1. Call API to fork session
+                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/fork`, {
+                    method: 'POST'
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Fork failed: ${res.status}`);
+                }
+
+                const forkedSession = await res.json();
+                console.log('[FORK] Created forked session:', forkedSession.id);
+
+                // 2. Add to sessions list
+                this.sessions.unshift(forkedSession);
+
+                // 3. Switch to forked session
+                this.activeSession = forkedSession;
+
+                // 4. Load messages from forked session (copied from original)
+                const messagesRes = await fetch(`/api/cli-chat/sessions/${forkedSession.id}/messages`);
+                if (messagesRes.ok) {
+                    this.messages = await messagesRes.json();
+                }
+
+                this.showToast('Sessione duplicata - invio in corso...', 'success');
+
+                // 5. Send the message in the forked session
+                this.inputMessage = msgContent;
+                await this.sendMessage();
+
+            } catch (e) {
+                console.error('[FORK] Error:', e);
+                this.showToast('Errore fork: ' + e.message, 'error');
+            } finally {
+                this.forkInProgress = false;
+            }
         },
 
         /**
@@ -328,6 +393,18 @@ function chatSidebar() {
                                     });
                                     this.streamContent = '';
                                     this.streaming = false;
+
+                                    // Check for queued message (ACCODA functionality)
+                                    if (this.pendingMessage) {
+                                        const queuedMsg = this.pendingMessage;
+                                        this.pendingMessage = null;
+                                        console.log('[chatSidebar] Sending queued message:', queuedMsg.substring(0, 50));
+                                        // Use setTimeout to let the UI update first
+                                        setTimeout(() => {
+                                            this.inputMessage = queuedMsg;
+                                            this.sendMessage();
+                                        }, 100);
+                                    }
                                 }
 
                                 // Handle total_length (done event)

@@ -108,6 +108,32 @@ class CLIProcessManager:
         self._processes: dict[str, CLIProcess] = {}
         self._lock = asyncio.Lock()
         self._max_processes = max_processes
+        # Shared resume IDs for forked sessions (session_id -> claude_session_id)
+        self._shared_resume_ids: dict[str, str] = {}
+
+    def set_shared_resume_id(self, session_id: str, claude_session_id: str) -> None:
+        """Store a shared claude_session_id for a forked session.
+
+        When a session is forked, the forked session can share the
+        claude_session_id to use --resume and access the conversation history.
+
+        Args:
+            session_id: The forked session ID
+            claude_session_id: The original session's claude_session_id
+        """
+        self._shared_resume_ids[session_id] = claude_session_id
+        logger.info(f"[FORK] Stored shared resume ID for {session_id}: {claude_session_id}")
+
+    def get_shared_resume_id(self, session_id: str) -> str | None:
+        """Get and consume a shared resume ID for a session.
+
+        Args:
+            session_id: Session to check for shared resume ID
+
+        Returns:
+            claude_session_id if available, None otherwise
+        """
+        return self._shared_resume_ids.pop(session_id, None)
 
     def _validate_working_dir(self, working_dir: Path) -> Path:
         """Validate working directory is within allowed paths.
@@ -182,23 +208,39 @@ class CLIProcessManager:
             env["MAX_THINKING_TOKENS"] = str(thinking_budget)
             logger.info(f"[CLAUDE] Extended thinking: {thinking_budget} tokens")
 
-        # Generate a unique session ID for Claude CLI (for --resume support)
-        claude_session_id = str(uuid.uuid4())
+        # Check if this is a forked session with shared resume ID
+        shared_resume_id = self.get_shared_resume_id(session_id)
+        use_resume = shared_resume_id is not None
+
+        if use_resume:
+            # Forked session: use --resume to access original conversation
+            claude_session_id = shared_resume_id
+            logger.info(f"[CLAUDE] Using shared resume ID: {claude_session_id}")
+        else:
+            # New session: generate fresh session ID
+            claude_session_id = str(uuid.uuid4())
 
         # Build CLI arguments
         # Using --print mode for non-interactive chat
         args = [
             "claude",
             "--print",
-            "--session-id",
-            claude_session_id,  # Set session ID for later --resume
+        ]
+
+        # Use --resume for forked sessions, --session-id for new ones
+        if use_resume:
+            args.extend(["--resume", claude_session_id])
+        else:
+            args.extend(["--session-id", claude_session_id])
+
+        args.extend([
             "--verbose",
             "--dangerously-skip-permissions",
             "--model",
             model,
             "--output-format",
             "stream-json",
-        ]
+        ])
 
         # Create system prompt file combining context and agent
         temp_prompt_file = None
