@@ -467,13 +467,6 @@ def get_repo_status(repo_path: Path) -> GitStatus:
             if line:
                 status = line[:2]
                 filepath = line[3:]
-                # Skip directories (git status shows them with trailing /)
-                if filepath.endswith("/"):
-                    continue
-                # Also verify it's actually a file, not a directory
-                full_path = repo_path / filepath
-                if full_path.is_dir():
-                    continue
                 if status.startswith("?"):
                     untracked.append(filepath)
                 else:
