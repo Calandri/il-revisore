@@ -482,7 +482,12 @@ class FixOrchestrator:
 
                     # Step 1: Run Claude CLI for this batch
                     prompt = self._build_fix_prompt(
-                        batch, batch_type.lower(), feedback, iteration, request.workspace_path
+                        batch,
+                        batch_type.lower(),
+                        feedback,
+                        iteration,
+                        request.workspace_path,
+                        request.user_notes,
                     )
                     if iteration == 1:
                         claude_prompts.append(
@@ -1065,6 +1070,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         feedback: str,
         iteration: int,
         workspace_path: str | None = None,
+        user_notes: str | None = None,
     ) -> str:
         """Build prompt for Claude CLI to fix issues.
 
@@ -1074,6 +1080,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             feedback: Feedback from previous iteration
             iteration: Current iteration number
             workspace_path: Monorepo workspace restriction (e.g., "packages/frontend")
+            user_notes: User-provided notes with additional context or instructions
         """
         # Load agent prompt based on type
         if agent_type == "fe":
@@ -1130,6 +1137,24 @@ DO NOT modify any files outside this folder. If a fix requires changes outside t
 1. STOP and explain what additional changes would be needed
 2. Do NOT attempt to modify files outside the workspace
 3. The system will BLOCK and REVERT any changes outside the workspace
+
+---
+"""
+            )
+
+        # Add user notes if provided
+        if user_notes:
+            task_parts.append(
+                f"""
+## Developer Notes
+
+The developer has provided the following additional context and instructions:
+
+<user-notes>
+{user_notes}
+</user-notes>
+
+**Take these notes into account when implementing the fixes.**
 
 ---
 """

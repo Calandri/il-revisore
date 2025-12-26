@@ -24,6 +24,7 @@ from ...review.models.review import (
 from ...review.orchestrator import Orchestrator
 from ..review_manager import ReviewManager, ReviewSession, get_review_manager
 from .checkpoint_service import CheckpointService
+from .operation_tracker import OperationType, get_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,27 @@ class ReviewStreamService:
         repo_workspace_path = repo.workspace_path  # Monorepo workspace scope
         checkpoints_for_closure = completed_checkpoints  # Capture for closure
 
+        # Extract repo name for display
+        repo_name = repo.git_url.rstrip("/").split("/")[-1] if repo.git_url else "unknown"
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+
+        # Register with unified OperationTracker
+        tracker = get_tracker()
+        tracker.register(
+            op_type=OperationType.REVIEW,
+            operation_id=task_id,
+            repo_id=repository_id,
+            repo_name=repo_name,
+            user=None,  # Review is system-initiated
+            details={
+                "mode": review_mode,
+                "challenger_enabled": challenger_enabled,
+                "include_functional": include_functional,
+                "resumed_checkpoints": len(checkpoints_for_closure),
+            },
+        )
+
         # Create the review coroutine
         async def run_review(session: ReviewSession):
             """Run the review in background."""
@@ -227,12 +249,24 @@ class ReviewStreamService:
                 # Save results
                 await self._save_review_results(review_db, task_id, repository_id, report)
 
+                # Mark unified tracker as completed
+                tracker.complete(
+                    task_id,
+                    result={
+                        "total_issues": len(report.issues),
+                        "score": report.summary.overall_score,
+                        "recommendation": report.summary.recommendation.value,
+                    },
+                )
+
             except asyncio.CancelledError:
                 db_task = review_db.query(Task).filter(Task.id == task_id).first()
                 if db_task:
                     db_task.status = "cancelled"
                     db_task.completed_at = datetime.utcnow()
                     review_db.commit()
+                # Mark unified tracker as cancelled
+                tracker.cancel(task_id)
                 raise
 
             except Exception as e:
@@ -250,6 +284,9 @@ class ReviewStreamService:
                     db_task.error = str(e)
                     db_task.completed_at = datetime.utcnow()
                     review_db.commit()
+
+                # Mark unified tracker as failed
+                tracker.fail(task_id, error=str(e))
 
             finally:
                 review_db.close()

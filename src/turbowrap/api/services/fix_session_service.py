@@ -60,6 +60,7 @@ from ...fix import (
 )
 from ...linear import LinearStateManager
 from ...review.integrations.linear import LinearClient
+from .operation_tracker import OperationType, get_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ class FixSessionService:
         client_idempotency_key: str | None = None,
         force: bool = False,
         user_name: str | None = None,
+        user_notes: str | None = None,
     ) -> tuple[FixSessionInfo, dict | None]:
         """
         Validate request and prepare fix session.
@@ -234,6 +236,23 @@ class FixSessionService:
             use_existing_branch=use_existing_branch,
             existing_branch_name=existing_branch_name,
             workspace_path=repo.workspace_path,  # Monorepo: restrict fixes to this folder
+            user_notes=user_notes,  # User-provided context/instructions
+        )
+
+        # Register with unified OperationTracker
+        tracker = get_tracker()
+        tracker.register(
+            op_type=OperationType.FIX,
+            operation_id=session_id,
+            repo_id=repository_id,
+            repo_name=repo_name,
+            branch=existing_branch_name,  # Will be updated when fix starts
+            user=user_name,
+            details={
+                "task_id": task_id,
+                "issue_count": len(issues),
+                "issue_codes": [i.issue_code for i in issues],
+            },
         )
 
         return (
@@ -403,6 +422,9 @@ class FixSessionService:
         repo_path = Path(session_info.repository.local_path)
         idempotency_key = session_info.idempotency_key
 
+        # Get tracker reference for callbacks
+        tracker = get_tracker()
+
         async def progress_callback(event: FixProgressEvent):
             """Enqueue progress events."""
             nonlocal session_id
@@ -411,6 +433,8 @@ class FixSessionService:
             # Update branch_name in session metadata when fix starts
             if event.type == FixEventType.FIX_SESSION_STARTED and event.branch_name:
                 self.idempotency.update_branch_name(idempotency_key, event.branch_name)
+                # Also update unified tracker
+                tracker.update(session_info.session_id, branch=event.branch_name)
             await event_queue.put(event)
 
         async def run_fix():
@@ -457,6 +481,18 @@ class FixSessionService:
                     },
                 )
 
+                # Mark unified tracker as completed
+                tracker.complete(
+                    session_info.session_id,
+                    result={
+                        "completed": completed_count,
+                        "failed": failed_count,
+                        "total": len(result.results),
+                        "branch": result.branch_name,
+                        "commit_sha": commit_sha,
+                    },
+                )
+
             except ScopeValidationError as e:
                 # Workspace scope violation - files modified outside allowed workspace
                 logger.error(f"Workspace scope violation: {e}")
@@ -467,6 +503,11 @@ class FixSessionService:
                 )
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
+                # Mark unified tracker as failed
+                tracker.fail(
+                    session_info.session_id,
+                    error=f"Scope violation: {e.workspace_path}",
+                )
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
@@ -480,6 +521,8 @@ class FixSessionService:
                 await self.reset_issues_on_error(fix_db, session_info.issues)
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
+                # Mark unified tracker as failed
+                tracker.fail(session_info.session_id, error=str(e))
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,

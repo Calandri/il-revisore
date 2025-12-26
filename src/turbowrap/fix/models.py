@@ -210,6 +210,13 @@ class FixRequest(BaseModel):
         "If set, fixes outside this path will be rejected and reverted.",
     )
 
+    # User notes - additional context/instructions for the fixer
+    user_notes: str | None = Field(
+        default=None,
+        description="Optional user notes with additional context or instructions for the fixer "
+        "(e.g., 'Use the new API endpoint /api/v2/users')",
+    )
+
 
 class ClarificationQuestion(BaseModel):
     """Question requiring user clarification."""

@@ -937,6 +937,71 @@
         </div>
     </div>
 
+    <!-- Notes Modal (before fix) -->
+    <div x-show="showNotesModal"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="showNotesModal = false">
+
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full overflow-hidden">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="font-semibold">Note per il Fixer</h3>
+                    <p class="text-sm text-gray-500">Aggiungi istruzioni o contesto per l'AI</p>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-4">
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                        <span class="font-medium text-green-600 dark:text-green-400" x-text="selectedIssues.length"></span>
+                        <span x-text="selectedIssues.length === 1 ? 'issue selezionata' : 'issues selezionate'"></span>
+                    </p>
+
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Note aggiuntive <span class="text-gray-400 font-normal">(opzionale)</span>
+                    </label>
+                    <textarea x-model="fixNotes"
+                              rows="4"
+                              class="w-full px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                              placeholder="Es: Usa l'endpoint /api/v2/users invece di /api/users&#10;Es: Mantieni la compatibilità con Python 3.9&#10;Es: Non modificare il file config.py"></textarea>
+
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Queste note verranno passate all'AI che risolverà le issues.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="p-4 border-t dark:border-gray-700 flex justify-end gap-3">
+                <button @click="showNotesModal = false; fixNotes = ''"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    Annulla
+                </button>
+                <button @click="showNotesModal = false; confirmFixWithNotes()"
+                        class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Avvia Fix
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Pending Branch Modal -->
     <div x-show="showPendingBranchModal"
          x-transition:enter="transition ease-out duration-300"
@@ -1061,6 +1126,8 @@ function issuesApp() {
         showFixModal: false,
         showLintModal: false,
         showPendingBranchModal: false,
+        showNotesModal: false,
+        fixNotes: '',
         pendingBranch: null,
         pendingBranchLoading: false,
         confirmMerge: false,  // Double opt-in for Main Merge
@@ -1288,6 +1355,17 @@ function issuesApp() {
                 return;
             }
 
+            // Show notes modal before fixing
+            this.fixNotes = '';  // Reset notes
+            this.showNotesModal = true;
+        },
+
+        async confirmFixWithNotes() {
+            // Called after notes modal is confirmed
+            if (this.selectedIssues.length === 0 || this.isFixing) {
+                return;
+            }
+
             // Get repository_id from first selected issue
             const firstIssue = this.issues.find(i => i.id === this.selectedIssues[0]);
             if (!firstIssue) {
@@ -1308,11 +1386,12 @@ function issuesApp() {
                 if (pendingRes.ok) {
                     const pendingData = await pendingRes.json();
                     if (pendingData.has_pending && pendingData.branches.length > 0) {
-                        // Store the fix request for later
+                        // Store the fix request for later (include notes)
                         this.pendingFixRequest = {
                             repository_id: firstIssue.repository_id,
                             task_id: firstIssue.task_id,
                             issue_ids: [...this.selectedIssues],
+                            user_notes: this.fixNotes || null,
                         };
                         this.pendingBranch = pendingData.branches[0];  // Show first pending branch
                         this.showPendingBranchModal = true;
@@ -1379,6 +1458,11 @@ function issuesApp() {
                     issue_ids: this.selectedIssues,
                     force: forceRestart,  // Force restart if requested
                 };
+
+                // Add user notes if provided
+                if (this.fixNotes && this.fixNotes.trim()) {
+                    requestBody.user_notes = this.fixNotes.trim();
+                }
 
                 // Add branch options if provided (for continuing on existing branch)
                 if (branchOptions) {

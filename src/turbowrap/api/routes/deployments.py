@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
@@ -11,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ...config import get_settings
+from ..services.operation_tracker import OperationType, get_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -406,6 +408,16 @@ async def promote_to_production() -> dict[str, str]:
 
     logger.info("Promoting staging to production...")
 
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.PROMOTE,
+        operation_id=op_id,
+        repo_name="il-revisore",  # The deployed app
+        details={"action": "staging_to_production"},
+    )
+
     try:
         # Step 1: Get secrets from AWS Secrets Manager
         logger.info("[PROMOTE] Fetching secrets...")
@@ -487,14 +499,19 @@ async def promote_to_production() -> dict[str, str]:
         _cache["data"] = None
         _cache["timestamp"] = 0
 
+        # Mark operation as completed
+        tracker.complete(op_id)
+
         return {
             "status": "ok",
             "message": "Production updated successfully",
             "output": "Container turbowrap started successfully",
         }
 
-    except HTTPException:
+    except HTTPException as e:
+        tracker.fail(op_id, error=str(e.detail))
         raise
     except Exception as e:
         logger.error(f"Error promoting to production: {e}")
+        tracker.fail(op_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Promotion error: {str(e)}")

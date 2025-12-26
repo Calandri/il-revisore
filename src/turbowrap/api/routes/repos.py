@@ -1,5 +1,6 @@
 """Repository routes."""
 
+import uuid
 from pathlib import Path
 from typing import Literal
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
+from ..services.operation_tracker import OperationType, get_tracker
 from ...utils.git_utils import get_repo_status as get_git_status
 from ...utils.github_browse import FolderListResponse, list_repo_folders
 from ..deps import get_db
@@ -215,13 +217,32 @@ def _clone_repo_background(
     logger = logging.getLogger(__name__)
     logger.info(f"[CLONE] Starting background clone for {url}")
 
+    # Extract repo name from URL
+    repo_name = url.rstrip("/").split("/")[-1]
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.CLONE,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=branch,
+        details={"workspace_path": workspace_path, "url": url},
+    )
+
     db = SessionLocal()
     try:
         manager = RepoManager(db)
         manager.complete_clone(repo_id, url, branch, token, workspace_path)
         logger.info(f"[CLONE] Completed clone for {url}")
+        tracker.complete(op_id, result={"workspace_path": workspace_path})
     except Exception as e:
         logger.error(f"[CLONE] Failed to clone {url}: {e}")
+        tracker.fail(op_id, error=str(e))
         # Update status to error
         repo = db.query(Repository).filter(Repository.id == repo_id).first()
         if repo:
@@ -329,9 +350,33 @@ def sync_repo(
 ):
     """Sync (pull) repository."""
     manager = RepoManager(db)
+
+    # Get repo info for tracking
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Extract repo name
+    repo_name = repo.git_url.rstrip("/").split("/")[-1] if repo.git_url else repo.name
+    if repo_name and repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.SYNC,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name or "unknown",
+    )
+
     try:
-        return manager.sync(repo_id)
+        result = manager.sync(repo_id)
+        tracker.complete(op_id)
+        return result
     except RepositoryError as e:
+        tracker.fail(op_id, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
 
 

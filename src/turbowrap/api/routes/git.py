@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ...db.models import Repository
 from ..deps import get_db
+from ..services.operation_tracker import OperationType, get_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class CommitInfo(BaseModel):
     message: str
     author: str
     date: str
+    pushed: bool = True  # True if commit exists on remote, False if local-only
 
 
 class BranchInfo(BaseModel):
@@ -195,6 +198,23 @@ def get_commits(
         raise HTTPException(status_code=404, detail=f"Repository path not found: {repo.local_path}")
 
     try:
+        # Get local-only commit SHAs (commits not pushed to remote)
+        local_only_shas: set[str] = set()
+        try:
+            # Get current branch
+            current_branch = run_git_command(repo_path, ["branch", "--show-current"])
+            if current_branch:
+                # Get commits that are ahead of origin (local-only)
+                # This shows commits in HEAD that are not in origin/branch
+                local_commits = run_git_command(
+                    repo_path,
+                    ["log", f"origin/{current_branch}..HEAD", "--pretty=format:%H"],
+                )
+                local_only_shas = {sha.strip() for sha in local_commits.split("\n") if sha.strip()}
+        except HTTPException:
+            # No remote tracking branch or fetch not done - assume all are pushed
+            pass
+
         # Get commits with format: sha|message|author|date
         git_log_format = "--pretty=format:%H|%s|%an|%aI"
         output = run_git_command(repo_path, ["log", git_log_format, f"-n{limit}"])
@@ -206,8 +226,15 @@ def get_commits(
 
             parts = line.split("|", 3)
             if len(parts) == 4:
+                sha = parts[0]
                 commits.append(
-                    CommitInfo(sha=parts[0], message=parts[1], author=parts[2], date=parts[3])
+                    CommitInfo(
+                        sha=sha,
+                        message=parts[1],
+                        author=parts[2],
+                        date=parts[3],
+                        pushed=sha not in local_only_shas,
+                    )
                 )
 
         return commits
@@ -342,6 +369,29 @@ def _get_repo_path(repo_id: str, db: Session) -> Path:
     return repo_path
 
 
+def _get_repo_and_path(repo_id: str, db: Session) -> tuple[Repository, Path]:
+    """Get repository and its path or raise 404."""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path) if repo.local_path else None
+    if not repo_path or not repo_path.exists():
+        raise HTTPException(status_code=404, detail="Repository path not found")
+
+    return repo, repo_path
+
+
+def _extract_repo_name(repo: Repository) -> str:
+    """Extract display name from repository."""
+    if repo.git_url:
+        name = repo.git_url.rstrip("/").split("/")[-1]
+        if name.endswith(".git"):
+            name = name[:-4]
+        return name
+    return repo.name or "unknown"
+
+
 @router.get("/repositories/{repo_id}/status", response_model=GitWorkingStatus)
 def get_working_status(repo_id: str, db: Session = Depends(get_db)):
     """Get working directory status (modified, staged, untracked files)."""
@@ -355,9 +405,16 @@ def get_working_status(repo_id: str, db: Session = Depends(get_db)):
     staged_output = run_git_command(repo_path, ["diff", "--cached", "--name-only"])
     staged = [f for f in staged_output.split("\n") if f.strip()]
 
-    # Get untracked files
+    # Get untracked files (exclude directories)
     untracked_output = run_git_command(repo_path, ["ls-files", "--others", "--exclude-standard"])
-    untracked = [f for f in untracked_output.split("\n") if f.strip()]
+    untracked = []
+    for f in untracked_output.split("\n"):
+        f = f.strip()
+        if f and not f.endswith("/"):
+            # Also check if it's actually a file (not a directory)
+            full_path = repo_path / f
+            if not full_path.is_dir():
+                untracked.append(f)
 
     # Get ahead/behind counts
     ahead, behind = 0, 0
@@ -409,36 +466,97 @@ def fetch_remote(repo_id: str, db: Session = Depends(get_db)):
 @router.post("/repositories/{repo_id}/pull", response_model=GitOperationResult)
 def pull_remote(repo_id: str, db: Session = Depends(get_db)):
     """Pull from remote."""
-    repo_path = _get_repo_path(repo_id, db)
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+    repo_name = _extract_repo_name(repo)
+
+    # Get current branch for tracking
+    try:
+        current_branch = run_git_command(repo_path, ["branch", "--show-current"])
+    except HTTPException:
+        current_branch = None
+
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.GIT_PULL,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=current_branch,
+    )
 
     try:
         output = run_git_command(repo_path, ["pull"])
+        tracker.complete(op_id, result={"output": output[:200] if output else None})
         return GitOperationResult(success=True, message="Pulled from remote", output=output)
     except HTTPException as e:
+        tracker.fail(op_id, error=e.detail)
         return GitOperationResult(success=False, message=e.detail)
 
 
 @router.post("/repositories/{repo_id}/push", response_model=GitOperationResult)
 def push_remote(repo_id: str, db: Session = Depends(get_db)):
     """Push to remote."""
-    repo_path = _get_repo_path(repo_id, db)
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+    repo_name = _extract_repo_name(repo)
+
+    # Get current branch for tracking
+    try:
+        current_branch = run_git_command(repo_path, ["branch", "--show-current"])
+    except HTTPException:
+        current_branch = None
+
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.GIT_PUSH,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=current_branch,
+    )
 
     try:
         output = run_git_command(repo_path, ["push"])
+        tracker.complete(op_id, result={"output": output[:200] if output else None})
         return GitOperationResult(success=True, message="Pushed to remote", output=output)
     except HTTPException as e:
+        tracker.fail(op_id, error=e.detail)
         return GitOperationResult(success=False, message=e.detail)
 
 
 @router.post("/repositories/{repo_id}/merge", response_model=GitOperationResult)
 def merge_branch(repo_id: str, request: MergeRequest, db: Session = Depends(get_db)):
     """Merge a branch into current."""
-    repo_path = _get_repo_path(repo_id, db)
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+    repo_name = _extract_repo_name(repo)
+
+    # Get current branch for tracking
+    try:
+        current_branch = run_git_command(repo_path, ["branch", "--show-current"])
+    except HTTPException:
+        current_branch = None
+
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.GIT_MERGE,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=current_branch,
+        details={"source_branch": request.branch, "target_branch": current_branch},
+    )
 
     try:
         output = run_git_command(repo_path, ["merge", request.branch])
+        tracker.complete(op_id, result={"output": output[:200] if output else None})
         return GitOperationResult(success=True, message=f"Merged '{request.branch}'", output=output)
     except HTTPException as e:
+        tracker.fail(op_id, error=e.detail)
         return GitOperationResult(success=False, message=e.detail)
 
 

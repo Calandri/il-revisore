@@ -227,6 +227,12 @@ class FixStartRequest(BaseModel):
         description="Force restart even if a session is already in progress (use when session is stuck)",
     )
 
+    # User notes - additional context/instructions for the fixer
+    user_notes: str | None = Field(
+        default=None,
+        description="Optional user notes with additional context or instructions for the fixer",
+    )
+
 
 class ClarificationAnswerRequest(BaseModel):
     """Request with clarification answer."""
@@ -403,6 +409,7 @@ async def start_fix(
             client_idempotency_key=x_idempotency_key,
             force=request.force,
             user_name=user_name,
+            user_notes=request.user_notes,
         )
 
         # Handle duplicate request (already processed)
