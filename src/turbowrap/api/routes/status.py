@@ -2,10 +2,14 @@
 
 import asyncio
 import json
+import logging
 import platform
 import time
+from collections import deque
+from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import AsyncIterator, Literal
+from typing import Literal
+from weakref import WeakSet
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -712,10 +716,6 @@ def get_active_development(db: Session = Depends(get_db)):
 # =============================================================================
 # Application Logs Streaming
 # =============================================================================
-
-import logging
-from collections import deque
-from weakref import WeakSet
 
 # Global log buffer and subscribers
 _log_buffer: deque = deque(maxlen=500)  # Keep last 500 logs
