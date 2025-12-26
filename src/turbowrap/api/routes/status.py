@@ -747,10 +747,6 @@ class SSELogHandler(logging.Handler):
 
 def setup_sse_logging():
     """Setup SSE log handler on root logger."""
-    import sys
-
-    print("[SSE_LOGGING] Setting up SSELogHandler...", file=sys.stderr)
-
     handler = SSELogHandler()
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(
@@ -763,11 +759,9 @@ def setup_sse_logging():
     # Check if already added
     for h in root_logger.handlers:
         if isinstance(h, SSELogHandler):
-            print("[SSE_LOGGING] SSELogHandler already exists, skipping", file=sys.stderr)
             return  # Already setup
 
     root_logger.addHandler(handler)
-    print(f"[SSE_LOGGING] SSELogHandler added. Root handlers: {root_logger.handlers}", file=sys.stderr)
 
 
 # NOTE: setup_sse_logging() is called from main.py AFTER configure_logging()
