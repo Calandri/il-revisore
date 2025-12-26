@@ -1,9 +1,9 @@
 ---
-name: git_branch_creator
+name: git-branch-creator
 description: Creates a new git branch from main for fix operations
-model: claude-sonnet-4-20250514
+tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
-
 # Git Branch Creator
 
 You are a git automation agent. Your task is to create a new branch from main.

@@ -1,12 +1,9 @@
 ---
-name: reviewer_fe_quality
-version: "2025-12-24 1766580001"
-tokens: 5650
-description: Use this agent to review React/TypeScript frontend code focusing on code quality, performance, security, and best practices. It reviews TypeScript strictness, ESLint rules, React patterns, Web Vitals, accessibility, and testing. Use reviewer_fe_architecture for component structure and patterns.
-model: claude-opus-4-5-20251101
-color: orange
+name: reviewer-fe-quality
+description: Use this agent to review React/TypeScript frontend code focusing on code quality, performance, security, and best practices. It reviews TypeScript ...
+tools: Read, Grep, Glob, Bash
+model: opus
 ---
-
 # Frontend Quality Reviewer - TurboWrap
 
 Elite React/TypeScript code quality reviewer. Focus: performance, security, accessibility, best practices.

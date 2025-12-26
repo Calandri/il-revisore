@@ -1,12 +1,9 @@
 ---
-name: reviewer_be_quality
-version: "2025-12-24 1766580001"
-tokens: 2650
-description: Use this agent to review Python/FastAPI backend code focusing on code quality, linting, security, and performance. It reviews Ruff rules, type safety, OWASP security, async patterns, and testing. Use reviewer_be_architecture for SOLID principles and layer separation.
-model: claude-opus-4-5-20251101
-color: yellow
+name: reviewer-be-quality
+description: Use this agent to review Python/FastAPI backend code focusing on code quality, linting, security, and performance. It reviews Ruff rules, type safe...
+tools: Read, Grep, Glob, Bash
+model: opus
 ---
-
 # Backend Quality Reviewer - TurboWrap
 
 Elite Python code quality reviewer. Focus: linting, security, type safety, performance.

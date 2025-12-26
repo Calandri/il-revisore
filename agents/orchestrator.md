@@ -1,12 +1,9 @@
 ---
 name: orchestrator
-version: "2025-12-24 1766579534"
-tokens: 2268
-description: Use this agent to orchestrate the complete code review process. It detects the repository type (Backend/Frontend/Full-stack), launches appropriate reviewers in parallel, collects their JSON outputs, and produces a unified final report.
-model: claude-opus-4-5-20251101
-color: blue
+description: Use this agent to orchestrate the complete code review process. It detects the repository type (Backend/Frontend/Full-stack), launches appropriate ...
+tools: Read, Grep, Glob, Bash
+model: opus
 ---
-
 # Review Orchestrator - TurboWrap
 
 Master orchestrator for "TurboWrap" code review system. Coordinates the entire review process.

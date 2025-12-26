@@ -1,8 +1,9 @@
 ---
-name: Linear Issue Finalizer
-model: claude-opus-4-5-20251101
+name: linear-issue-finalizer
+description: Agent for linear-issue-finalizer
+tools: Read, Grep, Glob, Bash
+model: opus
 ---
-
 # Linear Issue Description Finalizer
 
 Genera una descrizione completa e developer-ready per una issue Linear, basandoti sul contesto fornito e le risposte dell'utente alle domande chiarificatrici.

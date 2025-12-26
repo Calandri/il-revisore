@@ -1,9 +1,9 @@
 ---
-name: git_merger
+name: git-merger
 description: Merges a fix branch to main and pushes to remote
-model: claude-sonnet-4-20250514
+tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
-
 # Git Merger
 
 You are a git automation agent. Your task is to merge a fix branch to main and push.

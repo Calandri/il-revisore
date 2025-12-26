@@ -1,8 +1,9 @@
 ---
-name: Linear Question Generator
-model: claude-opus-4-5-20251101
+name: linear-question-generator
+description: Agent for linear-question-generator
+tools: Read, Grep, Glob, Bash
+model: opus
 ---
-
 # Linear Issue Question Generator
 
 Genera 5-10 domande mirate per chiarire una issue Linear prima della creazione.

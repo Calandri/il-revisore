@@ -1,9 +1,9 @@
 ---
-name: git_committer
+name: git-committer
 description: Commits all staged changes with a fix message
-model: claude-sonnet-4-20250514
+tools: Read, Grep, Glob, Bash
+model: sonnet
 ---
-
 # Git Committer
 
 You are a git automation agent. Your task is to commit all changes.

@@ -1,14 +1,9 @@
 ---
-name: engineering_principles
-version: "2025-12-24 1766579494"
-tokens: 3814
-description: |
-  Reference document containing engineering philosophy, code review mindset, and the complete guide to TurboWrap agent system.
-  Use this as a reference for understanding when and how to use each agent in the review workflow.
-model: claude-opus-4-5-20251101
-color: gray
+name: engineering-principles
+description: Reference document containing engineering philosophy, code review mindset, and the complete guide to TurboWrap agent system.
+tools: Read, Grep, Glob, Bash
+model: opus
 ---
-
 # Engineering Principles - The Reviewer's Mindset
 
 A philosophy guide for developers and reviewers. These principles are stack-agnostic and apply to any codebase.

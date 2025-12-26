@@ -28,6 +28,11 @@ COPY src/ ./src/
 COPY config/ ./config/
 COPY agents/ ./agents/
 
+# Setup Claude Code agents and settings
+RUN mkdir -p /root/.claude/agents
+COPY agents/ /root/.claude/agents/
+COPY config/claude-settings.json /root/.claude/settings.json
+
 # Create data directory for SQLite
 RUN mkdir -p /data
 

@@ -1,13 +1,8 @@
 ---
 name: evaluator
-version: "2025-12-25"
-tokens: 2000
-description: |
-  Final repository evaluator that produces comprehensive quality scores.
-  Runs after all reviewers complete. Receives full context (structure, issues,
-  file contents) and outputs 6 metrics scored 0-100.
-model: claude-opus-4-5-20251101
-color: purple
+description: Repository quality evaluator. Produces comprehensive scores (0-100) for 6 dimensions after code review.
+tools: Read, Grep, Glob
+model: opus
 ---
 
 # Repository Evaluator - TurboWrap
