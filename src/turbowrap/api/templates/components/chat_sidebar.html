@@ -18,7 +18,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/20 dark:to-purple-500/20">
         <!-- Mode Toggle -->
-        <div x-show="chatMode !== 'icons'" class="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm">
+        <div class="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm">
             <button @click="chatMode = 'page'"
                     :class="chatMode === 'page' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
                     class="px-2 py-1.5 rounded-md text-xs font-semibold transition-all"
@@ -37,22 +37,6 @@
                     class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
                 Mini
             </button>
-            <button @click="chatMode = 'icons'"
-                    :class="chatMode === 'icons' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                    class="p-1.5 rounded-md transition-all">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                </svg>
-            </button>
-        </div>
-
-        <!-- Title (icons mode) -->
-        <div x-show="chatMode === 'icons'" class="flex-1 flex justify-center">
-            <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-                </svg>
-            </div>
         </div>
 
         <!-- Close button -->
@@ -67,7 +51,7 @@
     <!-- Sessions List -->
     <div class="flex-1 overflow-y-auto" x-show="!activeSession">
         <!-- New Chat Buttons -->
-        <div x-show="chatMode !== 'icons'" class="p-4 space-y-2">
+        <div class="p-4 space-y-2">
             <button @click="createSession('claude')"
                     :disabled="creating"
                     class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white transition-all shadow-lg shadow-orange-500/25 disabled:opacity-50 group">
@@ -93,35 +77,8 @@
             </button>
         </div>
 
-        <!-- Icons mode: combined button -->
-        <div x-show="chatMode === 'icons'" class="p-2">
-            <button @click="showNewChatMenu = !showNewChatMenu"
-                    class="w-full aspect-square rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white transition-all flex items-center justify-center shadow-lg">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                </svg>
-            </button>
-
-            <!-- Dropdown menu -->
-            <div x-show="showNewChatMenu"
-                 @click.away="showNewChatMenu = false"
-                 x-transition
-                 class="absolute left-full top-16 ml-2 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-2 w-48 z-50">
-                <button @click="createSession('claude'); showNewChatMenu = false"
-                        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-500/10 text-orange-600 transition-colors">
-                    <span class="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold">C</span>
-                    <span class="font-medium">Claude</span>
-                </button>
-                <button @click="createSession('gemini'); showNewChatMenu = false"
-                        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-600 transition-colors">
-                    <span class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold">G</span>
-                    <span class="font-medium">Gemini</span>
-                </button>
-            </div>
-        </div>
-
         <!-- Divider -->
-        <div x-show="chatMode !== 'icons' && sessions.length > 0" class="px-4">
+        <div x-show="sessions.length > 0" class="px-4">
             <div class="flex items-center gap-3 text-xs text-gray-400 uppercase tracking-wider">
                 <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
                 <span>Chat Recenti</span>
@@ -145,8 +102,8 @@
                         <span x-text="session.cli_type === 'claude' ? 'C' : 'G'"></span>
                     </div>
 
-                    <!-- Session Info (hidden in icons mode) -->
-                    <div x-show="chatMode !== 'icons'" class="flex-1 min-w-0">
+                    <!-- Session Info -->
+                    <div class="flex-1 min-w-0">
                         <div class="font-medium text-sm truncate text-gray-900 dark:text-white"
                              x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude Chat' : 'Gemini Chat')"></div>
                         <div class="flex items-center gap-2 mt-0.5">
@@ -170,7 +127,6 @@
 
                     <!-- Delete button (visible on hover) -->
                     <button @click.stop="deleteSession(session.id)"
-                            x-show="chatMode !== 'icons'"
                             class="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-all shrink-0"
                             title="Elimina chat">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,7 +137,7 @@
             </template>
 
             <!-- Empty state -->
-            <div x-show="sessions.length === 0 && !loading && chatMode !== 'icons'" class="text-center py-12 px-4">
+            <div x-show="sessions.length === 0 && !loading" class="text-center py-12 px-4">
                 <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-500/20 dark:to-purple-500/20 rounded-2xl flex items-center justify-center">
                     <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

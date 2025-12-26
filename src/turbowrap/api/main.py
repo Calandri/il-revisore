@@ -92,8 +92,9 @@ def _ensure_all_repos_exist():
     SessionLocal = get_session_local()
     db = SessionLocal()
     try:
-        repos = db.query(Repository).filter(Repository.status == "active").all()
-        logger.info(f"[STARTUP] Found {len(repos)} active repositories to check")
+        # Check repos with active or error status (not deleted)
+        repos = db.query(Repository).filter(Repository.status.in_(["active", "error"])).all()
+        logger.info(f"[STARTUP] Found {len(repos)} repositories to check")
 
         missing_count = 0
         restored_count = 0

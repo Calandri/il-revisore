@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html lang="it" x-data="{ sidebarOpen: window.innerWidth >= 768, darkMode: localStorage.getItem('darkMode') === 'true', chatMode: localStorage.getItem('chatMode') || 'third' }"
       :class="{ 'dark': darkMode }"
-      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val)); $watch('chatMode', val => localStorage.setItem('chatMode', val))">
+      x-init="
+        $watch('darkMode', val => localStorage.setItem('darkMode', val));
+        $watch('chatMode', val => localStorage.setItem('chatMode', val));
+        // Reset chat to 'third' when not on chat page and it's in full/page mode
+        if (!window.location.pathname.startsWith('/chat') && (chatMode === 'full' || chatMode === 'page')) {
+            chatMode = 'third';
+        }
+      ">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,9 +117,9 @@
               :class="{
                   'md:ml-64': sidebarOpen,
                   'md:ml-16': !sidebarOpen,
-                  'md:mr-96': chatMode === 'full',
-                  'md:mr-80': chatMode === 'third',
-                  'md:mr-14': chatMode === 'icons'
+                  'md:mr-[calc(100vw-16rem)]': chatMode === 'page',
+                  'md:mr-[520px]': chatMode === 'full',
+                  'md:mr-[340px]': chatMode === 'third'
               }">
             <div class="p-6">
                 {% block content %}{% endblock %}
