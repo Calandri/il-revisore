@@ -3,7 +3,6 @@ Pytest configuration and shared fixtures for TurboWrap tests.
 """
 
 import asyncio
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,17 +37,21 @@ def temp_repo(tmp_path):
     repo.mkdir()
 
     # Create a simple Python file
-    (repo / "main.py").write_text("""
+    (repo / "main.py").write_text(
+        """
 def hello():
     return "Hello, World!"
-""")
+"""
+    )
 
     # Create a structure file
-    (repo / "STRUCTURE.md").write_text("""
+    (repo / "STRUCTURE.md").write_text(
+        """
 # Project Structure
 
 - main.py: Main entry point
-""")
+"""
+    )
 
     return repo
 

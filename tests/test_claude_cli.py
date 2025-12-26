@@ -6,19 +6,11 @@ Run with: uv run pytest tests/test_claude_cli.py -v
 These tests verify the ClaudeCLI refactoring is correct before deployment.
 """
 
-import asyncio
-import json
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from turbowrap.utils.claude_cli import (
-    ClaudeCLI,
-    ClaudeCLIResult,
-    ModelUsage,
-    MODEL_MAP,
-)
+from turbowrap.utils.claude_cli import MODEL_MAP, ClaudeCLI, ModelUsage
 
 
 class TestModelMapping:
@@ -284,6 +276,7 @@ class TestSyncWrapper:
 
             mock_execute.side_effect = mock_execute_cli
             with patch.object(ClaudeCLI, "_save_to_s3") as mock_s3:
+
                 async def mock_save(*args, **kwargs):
                     return "s3://bucket/key"
 

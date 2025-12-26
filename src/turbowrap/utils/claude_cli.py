@@ -20,7 +20,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -193,7 +193,7 @@ class ClaudeCLI:
 
         # Generate context ID if not provided
         if context_id is None:
-            context_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            context_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
 
         # Save prompt to S3 before running
         s3_prompt_url = None
@@ -462,7 +462,9 @@ class ClaudeCLI:
                                             if text:
                                                 await on_chunk(text)
                                         elif event.get("type") == "assistant":
-                                            for block in event.get("message", {}).get("content", []):
+                                            for block in event.get("message", {}).get(
+                                                "content", []
+                                            ):
                                                 if block.get("type") == "text":
                                                     await on_chunk(block.get("text", ""))
                                     except json.JSONDecodeError:
@@ -545,8 +547,8 @@ class ClaudeCLI:
                         api_error = output
                         logger.error(f"[CLAUDE CLI] API error: {output}")
 
-                    # Extract model usage
-                    usage_data = event.get("modelUsage", {})
+                    # Extract model usage (handle null explicitly)
+                    usage_data = event.get("modelUsage") or {}
                     for model_name, usage in usage_data.items():
                         model_usage_list.append(
                             ModelUsage(
@@ -593,14 +595,14 @@ class ClaudeCLI:
             return None
 
         try:
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y/%m/%d/%H%M%S")
             s3_key = f"{self.s3_prefix}/{timestamp}/{context_id}_{artifact_type}.md"
 
             # Build markdown content
             md_content = f"""# Claude CLI {artifact_type.title()}
 
 **Context ID**: {context_id}
-**Timestamp**: {datetime.utcnow().isoformat()}
+**Timestamp**: {datetime.now(UTC).isoformat()}
 **Artifact Type**: {artifact_type}
 **Model**: {metadata.get('model', self.model) if metadata else self.model}
 
