@@ -265,7 +265,15 @@ class ClaudeCLIReviewer(BaseReviewer):
             Tuple of (output content or None, model usage list, error message or None)
         """
         # Output file path (Claude should write here)
-        output_file = context.repo_path / f".turbowrap_review_{self.name}.json" if context.repo_path else Path(f".turbowrap_review_{self.name}.json")
+        # For monorepos: save inside workspace, not repo root
+        output_filename = f".turbowrap_review_{self.name}.json"
+        if context.repo_path:
+            if context.workspace_path:
+                output_file = context.repo_path / context.workspace_path / output_filename
+            else:
+                output_file = context.repo_path / output_filename
+        else:
+            output_file = Path(output_filename)
 
         # Delete old output file if exists
         if output_file.exists():
@@ -476,10 +484,14 @@ This is a **monorepo** review. You MUST only analyze files within the workspace:
 """
             sections.append(workspace_constraint)
 
-        # Output file for this reviewer - use ABSOLUTE path to prevent issues with monorepos
+        # Output file for this reviewer - use ABSOLUTE path
+        # For monorepos: save inside workspace, not repo root
         output_filename = f".turbowrap_review_{self.name}.json"
         if context.repo_path:
-            output_file = str(context.repo_path / output_filename)
+            if context.workspace_path:
+                output_file = str(context.repo_path / context.workspace_path / output_filename)
+            else:
+                output_file = str(context.repo_path / output_filename)
         else:
             output_file = output_filename
 
@@ -531,10 +543,14 @@ After writing, confirm with: "Review saved to {output_file}"
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        # Output file for this reviewer - use ABSOLUTE path to prevent issues with monorepos
+        # Output file for this reviewer - use ABSOLUTE path
+        # For monorepos: save inside workspace, not repo root
         output_filename = f".turbowrap_review_{self.name}.json"
         if context.repo_path:
-            output_file = str(context.repo_path / output_filename)
+            if context.workspace_path:
+                output_file = str(context.repo_path / context.workspace_path / output_filename)
+            else:
+                output_file = str(context.repo_path / output_filename)
         else:
             output_file = output_filename
 
