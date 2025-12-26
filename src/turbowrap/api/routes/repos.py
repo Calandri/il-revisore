@@ -1,6 +1,7 @@
 """Repository routes."""
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from github import GithubException
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
+from ...utils.git_utils import get_repo_status as get_git_status
 from ...utils.github_browse import FolderListResponse, list_repo_folders
 from ..deps import get_db
 from ..schemas.repos import (
@@ -32,6 +34,31 @@ class FileInfo(BaseModel):
     type: str  # 'file' or 'directory'
     size: int | None = None
     extension: str | None = None
+
+
+class TreeNode(BaseModel):
+    """Hierarchical file tree node for VS Code-like explorer."""
+    name: str
+    path: str
+    type: Literal["file", "directory"]
+    extension: str | None = None
+    size: int | None = None
+    children: list["TreeNode"] = []
+    is_modified: bool = False
+    is_untracked: bool = False
+
+
+# Required for self-referencing model
+TreeNode.model_rebuild()
+
+
+class FileDiff(BaseModel):
+    """Diff for a single file."""
+    path: str
+    diff: str
+    status: str  # 'modified', 'untracked', 'staged'
+    additions: int = 0
+    deletions: int = 0
 
 
 class FileContent(BaseModel):
@@ -459,6 +486,216 @@ def get_file_tree(
             ))
 
     return sorted(files, key=lambda f: f.path)
+
+
+def _build_tree_from_files(
+    files: list[FileInfo],
+    modified_files: set[str],
+    untracked_files: set[str],
+) -> TreeNode:
+    """Build hierarchical tree from flat file list."""
+    root = TreeNode(name="root", path="", type="directory", children=[])
+
+    # Dictionary to track created directories
+    dir_nodes: dict[str, TreeNode] = {"": root}
+
+    for file in sorted(files, key=lambda f: f.path):
+        parts = file.path.split("/")
+
+        # Create directory nodes for all parent directories
+        current_path = ""
+        for i, part in enumerate(parts[:-1]):
+            parent_path = current_path
+            current_path = f"{current_path}/{part}" if current_path else part
+
+            if current_path not in dir_nodes:
+                dir_node = TreeNode(
+                    name=part,
+                    path=current_path,
+                    type="directory",
+                    children=[],
+                )
+                dir_nodes[current_path] = dir_node
+                dir_nodes[parent_path].children.append(dir_node)
+
+        # Add file node
+        file_node = TreeNode(
+            name=file.name,
+            path=file.path,
+            type="file",
+            extension=file.extension,
+            size=file.size,
+            is_modified=file.path in modified_files,
+            is_untracked=file.path in untracked_files,
+        )
+
+        parent_path = "/".join(parts[:-1])
+        dir_nodes.get(parent_path, root).children.append(file_node)
+
+    # Sort children: directories first, then alphabetically
+    def sort_children(node: TreeNode) -> None:
+        node.children.sort(key=lambda n: (n.type == "file", n.name.lower()))
+        for child in node.children:
+            if child.type == "directory":
+                sort_children(child)
+
+    sort_children(root)
+    return root
+
+
+@router.get("/{repo_id}/files/tree-hierarchy", response_model=TreeNode)
+def get_file_tree_hierarchy(
+    repo_id: str,
+    extensions: str = Query(default=".md", description="Comma-separated extensions to include"),
+    include_git_status: bool = Query(default=True, description="Include git modification status"),
+    db: Session = Depends(get_db),
+):
+    """Get hierarchical file tree with git status.
+
+    Returns a nested tree structure suitable for VS Code-like file explorer.
+    Directories come first, sorted alphabetically.
+    """
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+    ext_list = [ext.strip() for ext in extensions.split(',')]
+
+    # Get flat file list
+    files = []
+    for ext in ext_list:
+        if not ext.startswith('.'):
+            ext = '.' + ext
+        for item in repo_path.rglob(f'*{ext}'):
+            rel_path = item.relative_to(repo_path)
+            # Skip hidden and .git directories
+            if any(part.startswith('.') for part in rel_path.parts):
+                continue
+
+            rel_path_str = str(rel_path)
+            files.append(FileInfo(
+                name=item.name,
+                path=rel_path_str,
+                type="file",
+                size=item.stat().st_size,
+                extension=item.suffix,
+            ))
+
+    # Get git status if requested
+    modified_files: set[str] = set()
+    untracked_files: set[str] = set()
+
+    if include_git_status:
+        try:
+            git_status = get_git_status(repo_path)
+            modified_files = set(git_status.modified)
+            untracked_files = set(git_status.untracked)
+        except Exception:
+            # If git status fails, just continue without it
+            pass
+
+    return _build_tree_from_files(files, modified_files, untracked_files)
+
+
+@router.get("/{repo_id}/files/diff", response_model=FileDiff)
+def get_file_diff(
+    repo_id: str,
+    path: str = Query(..., description="File path relative to repo root"),
+    staged: bool = Query(default=False, description="Get staged diff instead of working tree diff"),
+    db: Session = Depends(get_db),
+):
+    """Get git diff for a specific file.
+
+    Returns the diff content for uncommitted changes.
+    For untracked files, returns the full file content as additions.
+    """
+    import subprocess
+
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+    file_path = repo_path / path
+
+    # Security check
+    try:
+        file_path = file_path.resolve()
+        repo_path_resolved = repo_path.resolve()
+        if not str(file_path).startswith(str(repo_path_resolved)):
+            raise HTTPException(status_code=400, detail="Invalid path")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Get git status to determine file status
+    try:
+        git_status = get_git_status(repo_path)
+        is_modified = path in git_status.modified
+        is_untracked = path in git_status.untracked
+    except Exception:
+        is_modified = False
+        is_untracked = False
+
+    # Determine status
+    if is_untracked:
+        status = "untracked"
+    elif staged:
+        status = "staged"
+    else:
+        status = "modified"
+
+    # Get diff
+    diff_content = ""
+    additions = 0
+    deletions = 0
+
+    if is_untracked:
+        # For untracked files, show full content as additions
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            lines = content.split('\n')
+            diff_content = '\n'.join(f'+{line}' for line in lines)
+            additions = len(lines)
+        except Exception:
+            diff_content = ""
+    else:
+        # Get git diff
+        try:
+            args = ["git", "diff"]
+            if staged:
+                args.append("--staged")
+            args.append(path)
+
+            result = subprocess.run(
+                args,
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+            )
+            diff_content = result.stdout
+
+            # Count additions/deletions
+            for line in diff_content.split('\n'):
+                if line.startswith('+') and not line.startswith('+++'):
+                    additions += 1
+                elif line.startswith('-') and not line.startswith('---'):
+                    deletions += 1
+        except Exception:
+            diff_content = ""
+
+    return FileDiff(
+        path=path,
+        diff=diff_content,
+        status=status,
+        additions=additions,
+        deletions=deletions,
+    )
 
 
 @router.get("/{repo_id}/structure")

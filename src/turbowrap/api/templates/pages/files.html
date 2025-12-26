@@ -3,17 +3,17 @@
 {% block title %}File Editor - TurboWrap{% endblock %}
 
 {% block content %}
-<div class="space-y-4 md:space-y-6" x-data="{ ...fileEditor(), activeTab: 'files' }" x-init="init()">
+<div class="h-[calc(100vh-8rem)] flex flex-col" x-data="fileEditor()" x-init="init()">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between mb-4 shrink-0">
         <div>
             <h1 class="text-2xl md:text-3xl font-bold">File Editor</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1 text-sm md:text-base hidden md:block">Modifica file di documentazione e configurazione</p>
+            <p class="text-gray-500 dark:text-gray-400 mt-1 text-sm hidden md:block">Modifica file con vista diff stile VS Code</p>
         </div>
     </div>
 
     <!-- Mobile Tab Navigation -->
-    <div class="flex gap-2 lg:hidden">
+    <div class="flex gap-2 lg:hidden mb-4 shrink-0">
         <button @click="activeTab = 'files'"
                 class="flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
                 :class="activeTab === 'files' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'">
@@ -21,7 +21,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
                 </svg>
-                Files
+                Explorer
             </span>
         </button>
         <button @click="activeTab = 'editor'"
@@ -37,13 +37,14 @@
         </button>
     </div>
 
-    <!-- Repository and File Selection -->
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
-        <!-- Sidebar: File Tree -->
-        <div class="lg:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
-             :class="{ 'hidden lg:block': activeTab !== 'files' }">
-            <div class="p-4 border-b dark:border-gray-700">
-                <label class="block text-sm text-gray-500 mb-2">Repository</label>
+    <!-- Main Content -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0">
+        <!-- Sidebar: File Tree Explorer -->
+        <div class="lg:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col"
+             :class="{ 'hidden lg:flex': activeTab !== 'files' }">
+
+            <!-- Repository Selector -->
+            <div class="p-3 border-b dark:border-gray-700 shrink-0">
                 <select x-model="selectedRepoId" @change="loadFileTree()"
                         class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
                     <option value="">Seleziona repository</option>
@@ -53,71 +54,128 @@
                 </select>
             </div>
 
-            <!-- File type filter -->
-            <div class="p-4 border-b dark:border-gray-700">
-                <label class="block text-sm text-gray-500 mb-2">Tipo file</label>
-                <select x-model="fileExtension" @change="loadFileTree()"
-                        class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value=".md">Markdown (.md)</option>
-                    <option value=".md,.txt">Markdown e Text</option>
-                    <option value=".json,.yaml,.yml">Config (json/yaml)</option>
-                    <option value=".py">Python (.py)</option>
-                    <option value=".js,.ts">JavaScript/TypeScript</option>
-                </select>
+            <!-- Quick Filters -->
+            <div class="p-3 border-b dark:border-gray-700 shrink-0">
+                <div class="flex flex-wrap gap-1">
+                    <button @click="fileExtension = '.md'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '.md' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        md
+                    </button>
+                    <button @click="fileExtension = '.md,.txt'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '.md,.txt' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        txt
+                    </button>
+                    <button @click="fileExtension = '.json,.yaml,.yml'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '.json,.yaml,.yml' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        config
+                    </button>
+                    <button @click="fileExtension = '.py'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '.py' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        py
+                    </button>
+                    <button @click="fileExtension = '.js,.ts'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '.js,.ts' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        js/ts
+                    </button>
+                </div>
             </div>
 
-            <!-- File list -->
-            <div class="overflow-y-auto max-h-[60vh]">
+            <!-- Tree Actions -->
+            <div class="px-3 py-2 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
+                <span class="text-xs text-gray-500 uppercase tracking-wide">Explorer</span>
+                <div class="flex gap-1">
+                    <button @click="expandAll()" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" title="Espandi tutto">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <button @click="collapseAll()" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" title="Comprimi tutto">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                    <button @click="loadFileTree()" class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" title="Ricarica">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- File Tree -->
+            <div class="flex-1 overflow-y-auto">
+                <!-- Loading -->
                 <div x-show="loadingTree" class="p-4 text-center text-gray-500">
                     <svg class="animate-spin w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                     </svg>
                 </div>
 
-                <div x-show="!loadingTree && files.length === 0 && selectedRepoId" class="p-4 text-center text-gray-500">
+                <!-- Empty states -->
+                <div x-show="!loadingTree && !selectedRepoId" class="p-4 text-center text-gray-500 text-sm">
+                    Seleziona un repository
+                </div>
+                <div x-show="!loadingTree && selectedRepoId && fileTree && fileTree.children.length === 0" class="p-4 text-center text-gray-500 text-sm">
                     Nessun file trovato
                 </div>
 
-                <div x-show="!loadingTree && !selectedRepoId" class="p-4 text-center text-gray-500">
-                    Seleziona un repository
-                </div>
-
-                <div class="divide-y dark:divide-gray-700">
-                    <template x-for="file in files" :key="file.path">
-                        <button @click="loadFile(file.path); if(window.innerWidth < 1024) activeTab = 'editor'"
-                                class="w-full px-4 py-3 lg:py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-2"
-                                :class="currentFilePath === file.path ? 'bg-primary/10 border-l-2 border-primary' : ''">
-                            <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            <span class="text-sm truncate" x-text="file.path"></span>
-                        </button>
+                <!-- Tree View -->
+                <div x-show="!loadingTree && fileTree && fileTree.children.length > 0" class="py-1">
+                    <template x-for="node in fileTree.children" :key="node.path">
+                        <div x-data="{ node: node }" x-html="renderTreeNode(node, 0)"></div>
                     </template>
                 </div>
             </div>
         </div>
 
         <!-- Editor Area -->
-        <div class="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col min-h-[60vh] lg:min-h-0"
+        <div class="lg:col-span-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col"
              :class="{ 'hidden lg:flex': activeTab !== 'editor' }">
-            <!-- Editor Header -->
-            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
+
+            <!-- Tab Bar -->
+            <div x-show="currentFilePath" class="flex items-center border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shrink-0">
+                <div class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-r dark:border-gray-700">
+                    <span class="text-sm font-medium" x-text="currentFilePath.split('/').pop()"></span>
+                    <span x-show="isDirty" class="w-2 h-2 bg-orange-500 rounded-full" title="Modificato"></span>
+                    <span x-show="isFileModified(currentFilePath)" class="text-xs text-orange-500">M</span>
+                    <span x-show="isFileUntracked(currentFilePath)" class="text-xs text-green-500">U</span>
+                </div>
+                <div class="flex-1 px-2 text-xs text-gray-500 truncate" x-text="currentFilePath"></div>
+            </div>
+
+            <!-- Editor Header / Toolbar -->
+            <div class="p-3 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-2">
-                    <span x-show="currentFilePath" class="font-mono text-sm" x-text="currentFilePath"></span>
-                    <span x-show="!currentFilePath" class="text-gray-500">Seleziona un file</span>
-                    <span x-show="isDirty" class="text-xs text-orange-500">(modificato)</span>
+                    <span x-show="!currentFilePath" class="text-gray-500">Seleziona un file dall'explorer</span>
                 </div>
                 <div class="flex items-center gap-2">
+                    <!-- Reload -->
                     <button @click="reloadFile()"
                             :disabled="!currentFilePath || loading"
                             class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50 transition-colors"
                             title="Ricarica">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                         </svg>
                     </button>
+
+                    <!-- Diff Toggle -->
+                    <button x-show="isFileModified(currentFilePath) || isFileUntracked(currentFilePath)"
+                            @click="toggleDiffView()"
+                            class="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition-colors"
+                            :class="viewMode === 'diff' ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/>
+                        </svg>
+                        <span x-text="viewMode === 'diff' ? 'Modifica' : 'Diff'"></span>
+                    </button>
+
+                    <!-- Save -->
                     <button @click="saveFile()"
                             :disabled="!isDirty || saving"
                             class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2">
@@ -140,26 +198,65 @@
             <div x-show="!loading && !currentFilePath" class="flex-1 flex items-center justify-center text-gray-500">
                 <div class="text-center">
                     <svg class="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
-                    <p>Seleziona un file dalla lista per modificarlo</p>
+                    <p>Seleziona un file dall'explorer</p>
                 </div>
             </div>
 
-            <!-- Editor -->
-            <div x-show="!loading && currentFilePath" class="flex-1 flex flex-col min-h-0">
-                <textarea x-model="content"
-                          @input="isDirty = true"
-                          class="flex-1 w-full p-4 font-mono text-sm bg-gray-50 dark:bg-gray-900 resize-none focus:outline-none"
-                          placeholder="Contenuto del file..."
-                          spellcheck="false"></textarea>
+            <!-- Editor / Diff View -->
+            <div x-show="!loading && currentFilePath" class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <!-- Edit Mode -->
+                <div x-show="viewMode === 'edit'" class="flex-1 min-h-0">
+                    <textarea x-model="content"
+                              @input="isDirty = true"
+                              class="w-full h-full p-4 font-mono text-sm bg-gray-50 dark:bg-gray-900 resize-none focus:outline-none"
+                              placeholder="Contenuto del file..."
+                              spellcheck="false"></textarea>
+                </div>
+
+                <!-- Diff Mode -->
+                <div x-show="viewMode === 'diff'" class="flex-1 overflow-auto bg-gray-900 min-h-0">
+                    <div x-show="loadingDiff" class="p-4 text-gray-500 text-center">
+                        Caricamento diff...
+                    </div>
+                    <div x-show="!loadingDiff && !diffContent" class="p-4 text-gray-500 text-center">
+                        Nessuna modifica
+                    </div>
+                    <pre x-show="!loadingDiff && diffContent" class="p-4 font-mono text-xs leading-relaxed whitespace-pre overflow-x-auto"><template x-for="(line, idx) in diffLines" :key="idx"><div class="diff-line"
+     :class="{
+         'diff-line-add': line.type === 'add',
+         'diff-line-remove': line.type === 'remove',
+         'diff-line-header': line.type === 'header',
+         'diff-line-context': line.type === 'context'
+     }"><span class="diff-line-number" x-text="line.lineNum || ''"></span><span x-text="line.content"></span></div></template></pre>
+                </div>
             </div>
 
-            <!-- Status bar -->
-            <div x-show="currentFilePath" class="px-4 py-2 border-t dark:border-gray-700 text-xs text-gray-500 flex justify-between shrink-0">
-                <span x-text="content.length + ' caratteri'"></span>
-                <span x-text="content.split('\\n').length + ' righe'"></span>
+            <!-- Status Bar (VS Code style) -->
+            <div class="px-4 py-1.5 bg-blue-600 dark:bg-blue-900 text-white text-xs flex items-center justify-between shrink-0">
+                <!-- Left side -->
+                <div class="flex items-center gap-4">
+                    <!-- Branch -->
+                    <div class="flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
+                        </svg>
+                        <span x-text="gitStatus?.branch || '-'"></span>
+                    </div>
+                    <!-- Modified count -->
+                    <div x-show="gitStatus && (gitStatus.modified.length > 0 || gitStatus.untracked.length > 0)"
+                         class="flex items-center gap-2">
+                        <span x-show="gitStatus?.modified?.length > 0" class="text-orange-300" x-text="gitStatus.modified.length + 'M'"></span>
+                        <span x-show="gitStatus?.untracked?.length > 0" class="text-green-300" x-text="gitStatus.untracked.length + 'U'"></span>
+                    </div>
+                </div>
+                <!-- Right side -->
+                <div class="flex items-center gap-4">
+                    <span x-show="currentFilePath" x-text="'Ln ' + cursorLine + ', Col ' + cursorCol"></span>
+                    <span>UTF-8</span>
+                    <span x-show="currentFilePath" x-text="currentFilePath.split('.').pop()?.toUpperCase() || ''"></span>
+                </div>
             </div>
         </div>
     </div>
@@ -169,7 +266,6 @@
          x-transition
          class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
          @click.self="showCommitModal = false">
-
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
             <div class="p-4 border-b dark:border-gray-700">
                 <h3 class="font-semibold">Salva con commit</h3>
@@ -207,7 +303,7 @@
          x-transition:leave="transition ease-in duration-200"
          x-transition:leave-start="opacity-100 translate-y-0"
          x-transition:leave-end="opacity-0 translate-y-2"
-         class="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg"
+         class="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg z-50"
          :class="toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'">
         <span x-text="toast.message"></span>
     </div>
@@ -218,16 +314,38 @@
 <script>
 function fileEditor() {
     return {
+        // Tab state (mobile)
+        activeTab: 'files',
+
+        // Repository and files
         selectedRepoId: '',
         fileExtension: '.md',
-        files: [],
+        fileTree: null,
+        expandedFolders: {},
         loadingTree: false,
+
+        // Git status
+        gitStatus: null,
+
+        // Current file
         currentFilePath: '',
         content: '',
         originalContent: '',
         loading: false,
         saving: false,
         isDirty: false,
+
+        // Diff view
+        viewMode: 'edit', // 'edit' | 'diff'
+        diffContent: '',
+        diffLines: [],
+        loadingDiff: false,
+
+        // Cursor position
+        cursorLine: 1,
+        cursorCol: 1,
+
+        // Modal and toast
         showCommitModal: false,
         commitMessage: '',
         toast: { show: false, message: '', type: 'success' },
@@ -240,31 +358,166 @@ function fileEditor() {
                 this.selectedRepoId = repoId;
                 this.loadFileTree();
             }
+
+            // Track cursor position in textarea
+            this.$nextTick(() => {
+                const textarea = document.querySelector('textarea');
+                if (textarea) {
+                    textarea.addEventListener('click', () => this.updateCursorPosition(textarea));
+                    textarea.addEventListener('keyup', () => this.updateCursorPosition(textarea));
+                }
+            });
         },
 
+        updateCursorPosition(textarea) {
+            const text = textarea.value.substring(0, textarea.selectionStart);
+            const lines = text.split('\n');
+            this.cursorLine = lines.length;
+            this.cursorCol = lines[lines.length - 1].length + 1;
+        },
+
+        // File tree methods
         async loadFileTree() {
             if (!this.selectedRepoId) {
-                this.files = [];
+                this.fileTree = null;
+                this.gitStatus = null;
                 return;
             }
 
             this.loadingTree = true;
             try {
+                // Load hierarchical tree with git status
                 const response = await fetch(
-                    `/api/repos/${this.selectedRepoId}/files/tree?extensions=${encodeURIComponent(this.fileExtension)}`
+                    `/api/repos/${this.selectedRepoId}/files/tree-hierarchy?extensions=${encodeURIComponent(this.fileExtension)}&include_git_status=true`
                 );
                 if (response.ok) {
-                    this.files = await response.json();
-                } else {
-                    this.showToast('Errore caricamento file', 'error');
+                    this.fileTree = await response.json();
+                    // Auto-expand first level
+                    if (this.fileTree && this.fileTree.children) {
+                        for (const child of this.fileTree.children) {
+                            if (child.type === 'directory') {
+                                this.expandedFolders[child.path] = true;
+                                break; // Only first directory
+                            }
+                        }
+                    }
+                }
+
+                // Load git status for status bar
+                const statusResponse = await fetch(`/api/repos/${this.selectedRepoId}/status`);
+                if (statusResponse.ok) {
+                    const status = await statusResponse.json();
+                    this.gitStatus = status.git;
                 }
             } catch (error) {
                 console.error('Error loading file tree:', error);
-                this.showToast('Errore connessione', 'error');
+                this.showToast('Errore caricamento', 'error');
             }
             this.loadingTree = false;
         },
 
+        toggleFolder(path) {
+            this.expandedFolders[path] = !this.expandedFolders[path];
+        },
+
+        isExpanded(path) {
+            return this.expandedFolders[path] === true;
+        },
+
+        expandAll() {
+            const expand = (node) => {
+                if (node.type === 'directory') {
+                    this.expandedFolders[node.path] = true;
+                    for (const child of node.children || []) {
+                        expand(child);
+                    }
+                }
+            };
+            if (this.fileTree) {
+                for (const child of this.fileTree.children || []) {
+                    expand(child);
+                }
+            }
+        },
+
+        collapseAll() {
+            this.expandedFolders = {};
+        },
+
+        isFileModified(path) {
+            return this.gitStatus?.modified?.includes(path) || false;
+        },
+
+        isFileUntracked(path) {
+            return this.gitStatus?.untracked?.includes(path) || false;
+        },
+
+        getFileIcon(extension) {
+            const icons = {
+                '.md': 'text-blue-400',
+                '.json': 'text-yellow-400',
+                '.yaml': 'text-red-400',
+                '.yml': 'text-red-400',
+                '.py': 'text-green-400',
+                '.js': 'text-yellow-300',
+                '.ts': 'text-blue-300',
+                '.html': 'text-orange-400',
+                '.css': 'text-pink-400',
+            };
+            return icons[extension] || 'text-gray-400';
+        },
+
+        renderTreeNode(node, depth) {
+            const indent = depth * 16;
+            const isExpanded = this.isExpanded(node.path);
+            const isModified = this.isFileModified(node.path);
+            const isUntracked = this.isFileUntracked(node.path);
+            const isCurrent = this.currentFilePath === node.path;
+
+            if (node.type === 'directory') {
+                let html = `
+                    <div class="file-tree-item flex items-center gap-1 px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer select-none"
+                         style="padding-left: ${indent + 8}px"
+                         @click="toggleFolder('${node.path}')">
+                        <svg class="w-3 h-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M6 4l4 4-4 4"/>
+                        </svg>
+                        <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.54 3.87L.5 3a2 2 0 012-2h3.672a2 2 0 011.414.586l.828.828A2 2 0 009.828 3H14a2 2 0 012 2v9a2 2 0 01-2 2H2a2 2 0 01-2-2V5a2 2 0 01.17-.83z"/>
+                        </svg>
+                        <span class="text-sm truncate">${node.name}</span>
+                    </div>
+                `;
+
+                if (isExpanded && node.children && node.children.length > 0) {
+                    html += `<div>`;
+                    for (const child of node.children) {
+                        html += this.renderTreeNode(child, depth + 1);
+                    }
+                    html += `</div>`;
+                }
+                return html;
+            } else {
+                const colorClass = isModified ? 'text-orange-500' : (isUntracked ? 'text-green-500' : '');
+                const bgClass = isCurrent ? 'bg-primary/10 border-l-2 border-primary' : '';
+                const iconColor = this.getFileIcon(node.extension);
+
+                return `
+                    <div class="file-tree-item flex items-center gap-1 px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer select-none ${bgClass} ${colorClass}"
+                         style="padding-left: ${indent + 20}px"
+                         @click="loadFile('${node.path}'); if(window.innerWidth < 1024) activeTab = 'editor'">
+                        <svg class="w-4 h-4 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-sm truncate">${node.name}</span>
+                        ${isModified ? '<span class="ml-auto w-1.5 h-1.5 bg-orange-500 rounded-full"></span>' : ''}
+                        ${isUntracked ? '<span class="ml-auto w-1.5 h-1.5 bg-green-500 rounded-full"></span>' : ''}
+                    </div>
+                `;
+            }
+        },
+
+        // File operations
         async loadFile(path) {
             if (this.isDirty && !confirm('Hai modifiche non salvate. Vuoi continuare?')) {
                 return;
@@ -272,6 +525,9 @@ function fileEditor() {
 
             this.loading = true;
             this.currentFilePath = path;
+            this.viewMode = 'edit';
+            this.diffContent = '';
+            this.diffLines = [];
 
             try {
                 const response = await fetch(
@@ -299,6 +555,80 @@ function fileEditor() {
             }
         },
 
+        // Diff view
+        async toggleDiffView() {
+            if (this.viewMode === 'diff') {
+                this.viewMode = 'edit';
+                return;
+            }
+
+            this.viewMode = 'diff';
+            await this.loadDiff();
+        },
+
+        async loadDiff() {
+            if (!this.currentFilePath) return;
+
+            this.loadingDiff = true;
+            try {
+                const response = await fetch(
+                    `/api/repos/${this.selectedRepoId}/files/diff?path=${encodeURIComponent(this.currentFilePath)}`
+                );
+                if (response.ok) {
+                    const data = await response.json();
+                    this.diffContent = data.diff;
+                    this.parseDiffLines(data.diff);
+                }
+            } catch (error) {
+                console.error('Error loading diff:', error);
+            }
+            this.loadingDiff = false;
+        },
+
+        parseDiffLines(diff) {
+            if (!diff) {
+                this.diffLines = [];
+                return;
+            }
+
+            const lines = diff.split('\n');
+            this.diffLines = [];
+            let lineNum = 0;
+
+            for (const line of lines) {
+                let type = 'context';
+                let displayLineNum = '';
+
+                if (line.startsWith('@@')) {
+                    type = 'header';
+                    // Extract line number from @@ -X,Y +Z,W @@
+                    const match = line.match(/@@ -\d+,?\d* \+(\d+)/);
+                    if (match) {
+                        lineNum = parseInt(match[1]) - 1;
+                    }
+                } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                    type = 'add';
+                    lineNum++;
+                    displayLineNum = lineNum;
+                } else if (line.startsWith('-') && !line.startsWith('---')) {
+                    type = 'remove';
+                    displayLineNum = '';
+                } else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+                    type = 'header';
+                } else if (line.trim()) {
+                    lineNum++;
+                    displayLineNum = lineNum;
+                }
+
+                this.diffLines.push({
+                    content: line,
+                    type: type,
+                    lineNum: displayLineNum
+                });
+            }
+        },
+
+        // Save operations
         saveFile() {
             this.showCommitModal = true;
             this.commitMessage = '';
@@ -325,6 +655,10 @@ function fileEditor() {
                     const data = await response.json();
                     this.originalContent = this.content;
                     this.isDirty = false;
+
+                    // Reload tree to update git status
+                    await this.loadFileTree();
+
                     if (data.committed) {
                         this.showToast('Salvato e committato!', 'success');
                     } else {

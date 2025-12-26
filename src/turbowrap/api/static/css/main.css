@@ -274,3 +274,119 @@ main {
         transform: translateX(0) !important;
     }
 }
+
+/* =============================================================================
+   File Editor - VS Code Style
+   ============================================================================= */
+
+/* Diff view line styles */
+.diff-line {
+    padding: 0 8px;
+    white-space: pre;
+    min-height: 1.4em;
+}
+
+.diff-line-add {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.diff-line-remove {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.diff-line-context {
+    color: #9ca3af;
+}
+
+.diff-line-header {
+    background-color: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    font-weight: 600;
+}
+
+.diff-line-number {
+    display: inline-block;
+    width: 40px;
+    text-align: right;
+    padding-right: 12px;
+    color: #4b5563;
+    user-select: none;
+}
+
+/* File tree item styles */
+.file-tree-item {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s ease;
+}
+
+.file-tree-item:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .file-tree-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* File modified/untracked indicators */
+.file-modified {
+    color: #f59e0b;
+}
+
+.file-untracked {
+    color: #22c55e;
+}
+
+/* Status bar VS Code style */
+.status-bar {
+    background: #007acc;
+    color: white;
+    font-size: 12px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.dark .status-bar {
+    background: #1e3a5f;
+}
+
+/* Tree chevron rotation */
+.file-tree-item svg.rotate-90 {
+    transform: rotate(90deg);
+}
+
+/* Editor textarea full height */
+.file-editor-textarea {
+    min-height: 100%;
+    resize: none;
+}
+
+/* Scrollbar for file tree */
+.file-tree-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+}
+
+.dark .file-tree-scroll {
+    scrollbar-color: #475569 transparent;
+}
+
+/* Diff view scrollbar */
+.diff-view-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.diff-view-scroll::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+
+.diff-view-scroll::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 4px;
+}
+
+.diff-view-scroll::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
