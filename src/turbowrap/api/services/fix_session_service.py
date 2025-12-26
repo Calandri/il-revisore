@@ -371,11 +371,13 @@ class FixSessionService:
                     )
                     if success:
                         logger.info(
-                            f"Auto-transitioned Linear issue {linear_issue.linear_identifier} to in_review"
+                            f"Auto-transitioned Linear issue "
+                            f"{linear_issue.linear_identifier} to in_review"
                         )
                 except Exception as e:
                     logger.error(
-                        f"Failed to auto-transition Linear issue {linear_issue.linear_identifier}: {e}"
+                        f"Failed to auto-transition Linear issue "
+                        f"{linear_issue.linear_identifier}: {e}"
                     )
 
             # Commit Linear issue updates
@@ -515,7 +517,8 @@ class FixSessionService:
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
                         error="WORKSPACE SCOPE VIOLATION",
-                        message=f"Modified files outside '{e.workspace_path}': {', '.join(e.files_outside_scope[:3])}",
+                        message=f"Modified files outside '{e.workspace_path}': "
+                        f"{', '.join(e.files_outside_scope[:3])}",
                     )
                 )
 

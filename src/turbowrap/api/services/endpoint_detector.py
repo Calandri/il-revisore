@@ -285,7 +285,8 @@ OUTPUT FORMAT - Return ONLY a valid JSON array (no markdown, no explanation):
     "line": 45,
     "description": "Detailed description of what this endpoint does",
     "parameters": [
-      {{"name": "page", "param_type": "query", "data_type": "int", "required": false, "description": "Page number"}}
+      {{"name": "page", "param_type": "query", "data_type": "int", \
+       "required": false, "description": "Page number"}}
     ],
     "response_type": "List[User]",
     "auth_required": true,
@@ -400,7 +401,8 @@ def _analyze_with_gemini(
     for filepath, content in route_files_content.items():
         files_text += f"\n\n### File: {filepath}\n```\n{content[:8000]}\n```"
 
-    system_prompt = """You are an API documentation expert. Analyze the provided code files and extract all API endpoints.
+    system_prompt = """You are an API documentation expert. Analyze the \
+provided code files and extract all API endpoints.
 For each endpoint, identify:
 - HTTP method (GET, POST, PUT, DELETE, PATCH)
 - URL path (include router prefix!)
@@ -411,7 +413,8 @@ For each endpoint, identify:
 
 IMPORTANT: Do not duplicate endpoints. Each method+path should appear only once.
 
-Return your response as a valid JSON array. Do not include any markdown code blocks or extra text, ONLY the JSON array."""
+Return your response as a valid JSON array. Do not include any markdown code \
+blocks or extra text, ONLY the JSON array."""
 
     user_prompt = f"""Analyze these {framework} route files and extract all API endpoints:
 
@@ -426,7 +429,8 @@ Return a JSON array with this structure for each endpoint:
     "line": 45,
     "description": "List all users with pagination support",
     "parameters": [
-      {{"name": "page", "param_type": "query", "data_type": "int", "required": false, "description": "Page number"}}
+      {{"name": "page", "param_type": "query", "data_type": "int", \
+       "required": false, "description": "Page number"}}
     ],
     "response_type": "List[User]",
     "auth_required": true,
