@@ -48,6 +48,10 @@ DEFAULT_TIMEOUT = 120  # 2 minutes
 CLAUDE_TIMEOUT = 900  # 15 minutes (for complex tasks)
 GEMINI_TIMEOUT = 120  # 2 minutes
 
+# Cleanup settings
+STALE_PROCESS_HOURS = 3  # Kill processes older than 3 hours
+CLEANUP_INTERVAL_SECONDS = 300  # Check every 5 minutes
+
 
 @dataclass
 class CLIProcess:
@@ -574,6 +578,68 @@ class CLIProcessManager:
         """Get session status."""
         proc = self._processes.get(session_id)
         return proc.status if proc else None
+
+    async def cleanup_stale_processes(self, max_age_hours: float = STALE_PROCESS_HOURS) -> int:
+        """Terminate processes that have been running too long.
+
+        Args:
+            max_age_hours: Maximum age in hours before killing a process
+
+        Returns:
+            Number of processes terminated
+        """
+        from datetime import timedelta
+
+        now = datetime.utcnow()
+        max_age = timedelta(hours=max_age_hours)
+        stale_sessions = []
+
+        async with self._lock:
+            for session_id, proc in self._processes.items():
+                age = now - proc.started_at
+                if age > max_age:
+                    stale_sessions.append((session_id, proc.pid, age))
+
+        count = 0
+        for session_id, pid, age in stale_sessions:
+            hours = age.total_seconds() / 3600
+            logger.warning(
+                f"[CLEANUP] Terminating stale process: session={session_id}, "
+                f"PID={pid}, age={hours:.1f}h (max={max_age_hours}h)"
+            )
+            if await self.terminate(session_id):
+                count += 1
+
+        if count > 0:
+            logger.info(f"[CLEANUP] Terminated {count} stale processes")
+
+        return count
+
+    def get_process_stats(self) -> dict:
+        """Get statistics about running processes.
+
+        Returns:
+            Dict with process statistics
+        """
+        now = datetime.utcnow()
+        stats = {
+            "total_processes": len(self._processes),
+            "max_processes": self._max_processes,
+            "processes": [],
+        }
+
+        for session_id, proc in self._processes.items():
+            age_seconds = (now - proc.started_at).total_seconds()
+            stats["processes"].append({
+                "session_id": session_id,
+                "cli_type": proc.cli_type.value,
+                "pid": proc.pid,
+                "status": proc.status.value,
+                "age_hours": round(age_seconds / 3600, 2),
+                "model": proc.model,
+            })
+
+        return stats
 
 
 # Singleton instance

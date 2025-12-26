@@ -75,14 +75,66 @@ def configure_logging() -> None:
     logging.getLogger("sse_starlette").setLevel(logging.WARNING)
 
 
+async def _cleanup_stale_processes_task():
+    """Background task to cleanup stale CLI processes."""
+    import asyncio
+
+    from ..chat_cli.process_manager import (
+        CLEANUP_INTERVAL_SECONDS,
+        STALE_PROCESS_HOURS,
+        get_process_manager,
+    )
+
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"[CLEANUP] Started background task: checking every {CLEANUP_INTERVAL_SECONDS}s "
+        f"for processes older than {STALE_PROCESS_HOURS}h"
+    )
+
+    while True:
+        try:
+            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            manager = get_process_manager()
+            terminated = await manager.cleanup_stale_processes()
+            if terminated > 0:
+                logger.info(f"[CLEANUP] Cleaned up {terminated} stale processes")
+        except asyncio.CancelledError:
+            logger.info("[CLEANUP] Background cleanup task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"[CLEANUP] Error in cleanup task: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
+    import asyncio
+
+    from ..chat_cli.process_manager import get_process_manager
+
+    logger = logging.getLogger(__name__)
+
     # Startup
     init_db()
+
+    # Start background cleanup task
+    cleanup_task = asyncio.create_task(_cleanup_stale_processes_task())
+    logger.info("[STARTUP] Background process cleanup task started")
+
     yield
+
     # Shutdown
-    pass
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+
+    # Terminate all remaining CLI processes
+    manager = get_process_manager()
+    terminated = await manager.terminate_all()
+    if terminated > 0:
+        logger.info(f"[SHUTDOWN] Terminated {terminated} CLI processes")
 
 
 def create_app() -> FastAPI:

@@ -695,6 +695,37 @@ async def terminate_all():
     return {"terminated": count}
 
 
+@router.get("/process-stats")
+def get_process_stats():
+    """Get detailed statistics about running CLI processes.
+
+    Returns process count, max allowed, and details for each process
+    including age in hours.
+    """
+    manager = get_process_manager()
+    return manager.get_process_stats()
+
+
+@router.post("/cleanup-stale")
+async def cleanup_stale_processes(max_age_hours: float = 3.0):
+    """Manually trigger cleanup of stale processes.
+
+    Args:
+        max_age_hours: Kill processes older than this many hours (default: 3)
+
+    Returns:
+        Number of processes terminated
+    """
+    manager = get_process_manager()
+    terminated = await manager.cleanup_stale_processes(max_age_hours)
+
+    return {
+        "terminated": terminated,
+        "max_age_hours": max_age_hours,
+        "message": f"Terminated {terminated} processes older than {max_age_hours}h",
+    }
+
+
 # ============================================================================
 # MCP Servers
 # ============================================================================
