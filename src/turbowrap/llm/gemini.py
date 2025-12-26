@@ -22,10 +22,20 @@ class GeminiClient(BaseAgent):
             raise GeminiError("google-genai not installed. Run: pip install google-genai") from e
 
         settings = get_settings()
+
+        # Try environment variables first, then AWS Secrets Manager
         api_key = settings.agents.effective_google_key
+        if not api_key:
+            # Fallback to AWS Secrets Manager
+            from turbowrap.utils.aws_secrets import get_google_api_key, get_gemini_api_key
+            api_key = get_google_api_key() or get_gemini_api_key()
 
         if not api_key:
-            raise GeminiError("Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable")
+            raise GeminiError(
+                "GOOGLE_API_KEY not found! "
+                "Checked: 1) env var GOOGLE_API_KEY, 2) env var GEMINI_API_KEY, "
+                "3) AWS Secrets 'agent-zero/global/api-keys'"
+            )
 
         self._client = genai.Client(api_key=api_key)
         self._model = model or settings.agents.gemini_model

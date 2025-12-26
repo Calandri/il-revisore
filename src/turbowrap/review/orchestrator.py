@@ -668,29 +668,26 @@ class Orchestrator:
             ))
 
         try:
-            # Try to create GeminiClient for semantic analysis (optional)
-            gemini_client = None
-            try:
-                gemini_client = GeminiClient()
-                logger.info("[ORCHESTRATOR] GeminiClient available for semantic analysis")
-            except Exception as gemini_err:
-                logger.warning(f"[ORCHESTRATOR] GeminiClient not available (will use basic analysis): {gemini_err}")
+            # GeminiClient is REQUIRED for structure generation
+            logger.info("[ORCHESTRATOR] Creating GeminiClient...")
+            gemini_client = GeminiClient()
+            logger.info("[ORCHESTRATOR] GeminiClient OK")
 
-            # Create generator with optional GeminiClient
+            # Create generator with GeminiClient
             # Pass workspace_path for monorepo support
+            logger.info(f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}")
             generator = StructureGenerator(
                 str(context.repo_path),
                 workspace_path=context.workspace_path,
                 gemini_client=gemini_client,
             )
-            logger.info(f"[ORCHESTRATOR] StructureGenerator scan_root={generator.scan_root}")
+            logger.info(f"[ORCHESTRATOR] scan_root={generator.scan_root}")
 
             # Emit progress update
             if emit:
-                message = "Analyzing repository structure with Gemini Flash..." if gemini_client else "Generating basic structure documentation..."
                 await emit(ProgressEvent(
                     type=ProgressEventType.STRUCTURE_GENERATION_PROGRESS,
-                    message=message,
+                    message="Analyzing repository structure with Gemini Flash...",
                 ))
 
             # Run generation (sync method, run in executor)
@@ -701,6 +698,9 @@ class Orchestrator:
                 lambda: generator.generate(verbose=True, formats=["xml"])
             )
 
+            if not generated_files:
+                raise RuntimeError(f"StructureGenerator returned empty list! scan_root={generator.scan_root}")
+
             # Emit completion
             if emit:
                 await emit(ProgressEvent(
@@ -708,16 +708,21 @@ class Orchestrator:
                     message=f"Generated {len(generated_files)} structure file(s)",
                 ))
 
-            logger.info(f"Auto-generated {len(generated_files)} structure files")
+            logger.info(f"[ORCHESTRATOR] SUCCESS: Generated {len(generated_files)} structure files: {generated_files}")
 
         except Exception as e:
-            logger.error(f"Failed to auto-generate structure: {e}")
+            import traceback
+            logger.error(f"[ORCHESTRATOR] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
+            logger.error(f"[ORCHESTRATOR] Error: {e}")
+            logger.error(f"[ORCHESTRATOR] Traceback:\n{traceback.format_exc()}")
             if emit:
                 await emit(ProgressEvent(
                     type=ProgressEventType.REVIEW_ERROR,
-                    error=f"Structure generation failed: {str(e)}",
-                    message="Failed to generate structure docs - proceeding without them",
+                    error=f"CRITICAL: Structure generation failed: {str(e)}",
+                    message="Structure generation FAILED - check logs!",
                 ))
+            # Re-raise so the error is visible
+            raise
 
     async def _load_file_contents(self, context: ReviewContext) -> None:
         """Load content of files in context."""

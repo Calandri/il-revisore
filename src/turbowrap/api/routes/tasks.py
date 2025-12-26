@@ -553,41 +553,48 @@ async def restart_reviewer(
                 except Exception as e:
                     logger.warning(f"[RESTART] Failed to read {xml_path}: {e}")
             else:
-                # Auto-generate structure.xml if missing
-                logger.info(f"[RESTART] No {xml_path.relative_to(context.repo_path)} found - auto-generating...")
+                # Auto-generate structure.xml if missing - GeminiClient is REQUIRED
+                logger.error(f"[RESTART] CRITICAL: {xml_path.relative_to(context.repo_path)} NOT FOUND - attempting auto-generation...")
                 try:
                     from ...tools.structure_generator import StructureGenerator
+                    from ...llm.gemini import GeminiClient
 
-                    # Try to create GeminiClient for semantic analysis (optional)
-                    gemini_client = None
-                    try:
-                        from ...llm.gemini import GeminiClient
-                        gemini_client = GeminiClient()
-                        logger.info("[RESTART] GeminiClient available for semantic analysis")
-                    except Exception as gemini_err:
-                        logger.warning(f"[RESTART] GeminiClient not available (will use basic analysis): {gemini_err}")
+                    # GeminiClient is REQUIRED - fail loudly if not available
+                    logger.info(f"[RESTART] Creating GeminiClient...")
+                    gemini_client = GeminiClient()
+                    logger.info("[RESTART] GeminiClient OK")
 
-                    # Generate structure.xml (works with or without GeminiClient)
-                    logger.info(f"[RESTART] Creating StructureGenerator for {context.repo_path} (workspace={context.workspace_path})")
+                    # Generate structure.xml
+                    logger.info(f"[RESTART] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}")
                     generator = StructureGenerator(
                         str(context.repo_path),
                         workspace_path=context.workspace_path,
                         gemini_client=gemini_client,
                     )
                     logger.info(f"[RESTART] scan_root={generator.scan_root}")
+
                     generated_files = generator.generate(verbose=True, formats=["xml"])
-                    logger.info(f"[RESTART] Auto-generated {len(generated_files)} structure file(s): {generated_files}")
+
+                    if not generated_files:
+                        raise RuntimeError(f"StructureGenerator returned empty list! scan_root={generator.scan_root}")
+
+                    logger.info(f"[RESTART] Generated {len(generated_files)} files: {generated_files}")
 
                     # Reload after generation
                     if xml_path.exists():
                         content = xml_path.read_text(encoding="utf-8")
                         context.structure_docs["structure.xml"] = content
-                        logger.info(f"[RESTART] Loaded auto-generated structure.xml ({len(content)} chars)")
+                        logger.info(f"[RESTART] SUCCESS: Loaded structure.xml ({len(content)} chars)")
                     else:
-                        logger.error(f"[RESTART] structure.xml still not found at {xml_path} after generation!")
+                        raise RuntimeError(f"Generation completed but file NOT FOUND at {xml_path}! Generated files: {generated_files}")
+
                 except Exception as e:
                     import traceback
-                    logger.error(f"[RESTART] Failed to auto-generate structure.xml: {e}\n{traceback.format_exc()}")
+                    logger.error(f"[RESTART] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
+                    logger.error(f"[RESTART] Error: {e}")
+                    logger.error(f"[RESTART] Traceback:\n{traceback.format_exc()}")
+                    # DON'T swallow the error - let it propagate so the user sees it
+                    raise
 
             # Create progress callbacks
             async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
