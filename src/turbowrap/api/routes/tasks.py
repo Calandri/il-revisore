@@ -167,6 +167,32 @@ def get_task(
     return task
 
 
+@router.delete("/{task_id}")
+def delete_task(
+    task_id: str,
+    db: Session = Depends(get_db),
+):
+    """Delete a task and all its associated issues.
+
+    Use this to clean up old reviews before re-running.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Delete associated issues
+    issues_deleted = db.query(Issue).filter(Issue.task_id == task_id).delete()
+
+    # Delete the task
+    db.delete(task)
+    db.commit()
+
+    return {
+        "message": f"Task {task_id} deleted",
+        "issues_deleted": issues_deleted,
+    }
+
+
 @router.get("/{task_id}/progress")
 def get_task_progress(
     task_id: str,
