@@ -1,20 +1,19 @@
-"""Linear issue analyzer using Claude CLI for 2-phase workflow."""
+"""Linear issue analyzer using Claude CLI for 2-phase workflow.
 
-import asyncio
+Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
+"""
+
 import json
 import logging
-import os
 import re
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 
-import boto3
-from botocore.exceptions import ClientError
-
 from turbowrap.config import get_settings
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
+from turbowrap.utils.claude_cli import ClaudeCLI
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +23,8 @@ class LinearIssueAnalyzer:
 
     Phase 1: Generate clarifying questions
     Phase 2: Deep analysis with user answers
+
+    Uses the centralized ClaudeCLI utility for Claude CLI execution.
     """
 
     def __init__(self, linear_client: LinearClient):
@@ -37,92 +38,18 @@ class LinearIssueAnalyzer:
         self.last_analysis_summary: str | None = None
         self.last_repository_recommendations: list[str] = []
 
-        # S3 config
-        _settings = get_settings()
-        self.s3_bucket = _settings.thinking.s3_bucket
-        self.s3_region = _settings.thinking.s3_region
-        self._s3_client = None
+        # Load agent prompt path
+        project_root = Path(__file__).parent.parent.parent.parent
+        self.agent_md_path = project_root / "agents" / "linear_issue_analyzer.md"
 
-    @property
-    def s3_client(self):
-        """Lazy-load S3 client."""
-        if self._s3_client is None:
-            self._s3_client = boto3.client("s3", region_name=self.s3_region)
-        return self._s3_client
-
-    async def _save_analysis_to_s3(
-        self,
-        phase: str,
-        issue_id: str,
-        prompt: str,
-        output: str,
-        parsed_result: dict | list | None = None,
-    ) -> str | None:
-        """Save analysis prompt and output to S3.
-
-        Args:
-            phase: "phase1" or "phase2"
-            issue_id: Linear issue identifier
-            prompt: The prompt sent to Claude
-            output: Raw output from Claude
-            parsed_result: Parsed result (questions or analysis)
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not self.s3_bucket:
-            return None
-
-        try:
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"linear-analysis/{timestamp}/{issue_id}_{phase}.md"
-
-            content = f"""# Linear Issue Analysis - {phase.upper()}
-
-**Issue ID**: {issue_id}
-**Timestamp**: {datetime.utcnow().isoformat()}
-**Phase**: {phase}
-
----
-
-## Prompt
-
-```
-{prompt}
-```
-
----
-
-## Raw Output
-
-```
-{output}
-```
-
----
-
-## Parsed Result
-
-```json
-{json.dumps(parsed_result, indent=2, default=str) if parsed_result else "N/A"}
-```
-"""
-
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[LINEAR ANALYZER] Saved {phase} to S3: {s3_url}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save analysis to S3: {e}")
-            return None
+    def _get_claude_cli(self) -> ClaudeCLI:
+        """Create ClaudeCLI instance for Linear analysis."""
+        return ClaudeCLI(
+            agent_md_path=self.agent_md_path if self.agent_md_path.exists() else None,
+            model="opus",  # Use Opus for complex analysis
+            timeout=180,
+            s3_prefix="linear-analysis",
+        )
 
     async def analyze_phase1_questions(self, issue: LinearIssue) -> list[dict]:
         """Phase 1: Generate 5-10 clarifying questions.
@@ -138,13 +65,18 @@ class LinearIssueAnalyzer:
         prompt = self._build_questions_prompt(issue)
 
         try:
-            output = await self._run_claude_cli(prompt, timeout=120)
-            questions = self._parse_questions(output)
-
-            # Save to S3 for debugging
-            await self._save_analysis_to_s3(
-                "phase1", issue.linear_identifier, prompt, output, questions
+            cli = self._get_claude_cli()
+            result = await cli.run(
+                prompt,
+                context_id=f"{issue.linear_identifier}_phase1",
+                save_prompt=True,
+                save_output=True,
             )
+
+            if not result.success:
+                raise RuntimeError(f"Claude CLI failed: {result.error}")
+
+            questions = self._parse_questions(result.output)
 
             logger.info(f"Generated {len(questions)} questions for {issue.linear_identifier}")
             return questions
@@ -175,19 +107,21 @@ class LinearIssueAnalyzer:
 
         try:
             yield "Running Claude analysis..."
-            output = await self._run_claude_cli(prompt, timeout=180)
+
+            cli = self._get_claude_cli()
+            result = await cli.run(
+                prompt,
+                context_id=f"{issue.linear_identifier}_phase2",
+                save_prompt=True,
+                save_output=True,
+                save_thinking=True,
+            )
+
+            if not result.success:
+                raise RuntimeError(f"Claude CLI failed: {result.error}")
 
             yield "Parsing analysis results..."
-            improved_desc, analysis_summary, metadata = self._parse_analysis(output)
-
-            # Save to S3 for debugging
-            await self._save_analysis_to_s3(
-                "phase2",
-                issue.linear_identifier,
-                prompt,
-                output,
-                {"improved_desc": improved_desc, "summary": analysis_summary, "metadata": metadata},
-            )
+            improved_desc, analysis_summary, metadata = self._parse_analysis(result.output)
 
             # Store for later DB update
             self.last_improved_description = improved_desc
@@ -220,12 +154,10 @@ class LinearIssueAnalyzer:
             issue: LinearIssue to analyze
 
         Returns:
-            Complete prompt for Claude CLI
+            Prompt for Claude CLI (agent prompt is loaded separately by ClaudeCLI)
         """
-        agent_prompt = self._load_agent_prompt()
-
-        # Format issue context
-        issue_context = f"""
+        # Format issue context (agent prompt is loaded by ClaudeCLI via agent_md_path)
+        return f"""
 # Linear Issue to Analyze
 
 **Identifier**: {issue.linear_identifier}
@@ -244,8 +176,6 @@ class LinearIssueAnalyzer:
 **TASK**: Generate 5-10 clarifying questions for this issue following the Phase 1 workflow.
 """
 
-        return f"{agent_prompt}\n\n{issue_context}"
-
     def _build_analysis_prompt(
         self,
         issue: LinearIssue,
@@ -258,14 +188,13 @@ class LinearIssueAnalyzer:
             user_answers: User's answers to questions
 
         Returns:
-            Complete prompt for Claude CLI
+            Prompt for Claude CLI (agent prompt is loaded separately by ClaudeCLI)
         """
-        agent_prompt = self._load_agent_prompt()
-
         # Format user answers
         answers_text = "\n".join([f"**Q{qid}**: {answer}" for qid, answer in user_answers.items()])
 
-        issue_context = f"""
+        # Issue context (agent prompt is loaded by ClaudeCLI via agent_md_path)
+        return f"""
 # Linear Issue to Analyze
 
 **Identifier**: {issue.linear_identifier}
@@ -293,8 +222,6 @@ class LinearIssueAnalyzer:
 
 Be specific with file paths and technical details.
 """
-
-        return f"{agent_prompt}\n\n{issue_context}"
 
     def _parse_questions(self, output: str) -> list[dict]:
         """Parse questions from Claude Phase 1 output.
@@ -427,24 +354,6 @@ Be specific with file paths and technical details.
 *Generated by TurboWrap Linear Analyzer*
 """
 
-    def _load_agent_prompt(self) -> str:
-        """Load agent prompt from file.
-
-        Returns:
-            Agent prompt text
-        """
-        # Assuming agents/ is at project root
-        project_root = Path(__file__).parent.parent.parent.parent
-        prompt_path = project_root / "agents" / "linear_issue_analyzer.md"
-
-        if not prompt_path.exists():
-            logger.warning(f"Agent prompt not found at {prompt_path}, using default")
-            return (
-                "You are a Linear issue analyzer. Analyze the issue and provide detailed insights."
-            )
-
-        return prompt_path.read_text()
-
     def _format_priority(self, priority: int) -> str:
         """Format priority int to human-readable string.
 
@@ -462,71 +371,3 @@ Be specific with file paths and technical details.
             4: "🟢 Low",
         }
         return priority_map.get(priority, "Unknown")
-
-    async def _run_claude_cli(self, prompt: str, timeout: int = 120) -> str:
-        """Execute Claude CLI with streaming output.
-
-        Args:
-            prompt: Input prompt for Claude
-            timeout: Timeout in seconds
-
-        Returns:
-            Complete output from Claude
-        """
-        # Get API key from environment
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
-        # Prepare command
-        # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
-        cmd = [
-            "claude",
-            "--print",
-            "--verbose",
-            "--output-format",
-            "stream-json",
-            "--model",
-            "claude-opus-4-5-20251101",
-        ]
-
-        env = os.environ.copy()
-        env["ANTHROPIC_API_KEY"] = api_key
-        # Workaround: Bun file watcher bug on macOS /var/folders
-        env["TMPDIR"] = "/tmp"
-
-        logger.debug(f"Running Claude CLI with timeout {timeout}s")
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-            )
-
-            # Send prompt to stdin
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=prompt.encode()),
-                timeout=timeout,
-            )
-
-            if process.returncode != 0:
-                error_msg = stderr.decode()
-                logger.error(f"Claude CLI failed: {error_msg}")
-                raise RuntimeError(f"Claude CLI error: {error_msg}")
-
-            output = stdout.decode()
-            logger.debug(f"Claude CLI output length: {len(output)} chars")
-
-            return output
-
-        except asyncio.TimeoutError:
-            logger.error(f"Claude CLI timeout after {timeout}s")
-            if process:
-                process.kill()
-            raise RuntimeError(f"Claude CLI timeout after {timeout}s")
-        except Exception as e:
-            logger.error(f"Claude CLI execution error: {e}")
-            raise

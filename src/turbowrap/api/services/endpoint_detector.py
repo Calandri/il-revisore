@@ -1,7 +1,9 @@
-"""Endpoint detection service using Gemini Flash.
+"""Endpoint detection service using Claude CLI.
 
 Scans repository code to detect API endpoints, Swagger/OpenAPI documentation,
 and extracts endpoint metadata using AI analysis.
+
+Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
 """
 
 import json
@@ -11,6 +13,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+from turbowrap.config import get_settings
+from turbowrap.utils.claude_cli import ClaudeCLI
 
 logger = logging.getLogger(__name__)
 
@@ -238,11 +243,155 @@ def _extract_routes_with_regex(file_path: str, framework: str) -> list[dict]:
     return routes
 
 
+def _analyze_with_claude_cli(
+    repo_path: str,
+    framework: str,
+    route_files: list[str],
+) -> list[EndpointInfo]:
+    """Use Claude CLI to analyze route files and extract endpoint details.
+
+    Claude CLI can explore the repository autonomously, reading files as needed.
+    Uses the centralized ClaudeCLI utility.
+    """
+    # Build the prompt for Claude CLI
+    files_list = "\n".join([f"- {f}" for f in route_files[:20]])  # Limit to 20 files
+
+    prompt = f"""You are analyzing a {framework} backend repository to extract ALL API endpoints.
+
+TASK: Find and document every API endpoint in this repository.
+
+INSTRUCTIONS:
+1. First, explore the route/api files to understand the structure
+2. Look for router prefix declarations (e.g., `router = APIRouter(prefix="/api/v1/tickets")`)
+3. For each endpoint, extract the FULL path (prefix + route path)
+4. Read docstrings and function bodies to understand what each endpoint does
+5. Check for authentication requirements (Depends, decorators, middleware)
+6. Extract parameter details from function signatures
+
+Key files to analyze:
+{files_list}
+
+Also look for:
+- Main app file that registers routers (to find prefixes)
+- Any OpenAPI/Swagger configuration
+- Authentication middleware or decorators
+
+OUTPUT FORMAT - Return ONLY a valid JSON array (no markdown, no explanation):
+[
+  {{
+    "method": "GET",
+    "path": "/api/v1/users",
+    "file": "src/routes/users.py",
+    "line": 45,
+    "description": "Detailed description of what this endpoint does",
+    "parameters": [
+      {{"name": "page", "param_type": "query", "data_type": "int", "required": false, "description": "Page number"}}
+    ],
+    "response_type": "List[User]",
+    "auth_required": true,
+    "tags": ["users"]
+  }}
+]
+
+CRITICAL:
+- Each method+path combination must appear exactly ONCE
+- Include the FULL path with all prefixes
+- Do not invent endpoints that don't exist in the code
+
+Return ONLY the JSON array, nothing else."""
+
+    try:
+        # Use centralized ClaudeCLI utility
+        cli = ClaudeCLI(
+            working_dir=Path(repo_path),
+            model="opus",  # Use Opus for better accuracy
+            timeout=180,
+            s3_prefix="endpoint-detection",
+        )
+
+        logger.info(f"Running Claude CLI for endpoint detection in {repo_path}")
+
+        # Run synchronously since this is called from non-async context
+        result = cli.run_sync(
+            prompt,
+            context_id=f"endpoints_{Path(repo_path).name}",
+            save_prompt=True,
+            save_output=True,
+            save_thinking=False,  # Not needed for this task
+        )
+
+        if not result.success:
+            logger.error(f"Claude CLI failed: {result.error}")
+            return []
+
+        response_text = result.output.strip()
+
+        # Clean up response - remove markdown code blocks if present
+        cleaned = response_text
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        # Try to extract JSON from the response
+        # Sometimes Claude adds text before/after the JSON
+        json_match = re.search(r"\[[\s\S]*\]", cleaned)
+        if json_match:
+            cleaned = json_match.group(0)
+
+        # Parse JSON response
+        endpoints_data = json.loads(cleaned)
+
+        # Deduplicate by method+path
+        seen = set()
+        endpoints = []
+        for ep in endpoints_data:
+            key = (ep.get("method", "GET").upper(), ep.get("path", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+
+            params = [
+                EndpointParameter(
+                    name=p.get("name", ""),
+                    param_type=p.get("param_type", "query"),
+                    data_type=p.get("data_type", "str"),
+                    required=p.get("required", False),
+                    description=p.get("description", ""),
+                )
+                for p in ep.get("parameters", [])
+            ]
+
+            endpoints.append(
+                EndpointInfo(
+                    method=ep.get("method", "GET").upper(),
+                    path=ep.get("path", ""),
+                    file=ep.get("file", ""),
+                    line=ep.get("line"),
+                    description=ep.get("description", ""),
+                    parameters=params,
+                    response_type=ep.get("response_type", ""),
+                    auth_required=ep.get("auth_required", False),
+                    tags=ep.get("tags", []),
+                )
+            )
+
+        logger.info(f"Claude CLI detected {len(endpoints)} unique endpoints")
+        return endpoints
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Claude CLI response as JSON: {e}")
+        logger.debug(f"Response was: {response_text[:1000] if 'response_text' in dir() else 'N/A'}")
+        return []
+    except Exception as e:
+        logger.error(f"Claude CLI analysis failed: {e}")
+        return []
+
+
 def _analyze_with_gemini(
     route_files_content: dict[str, str],
     framework: str,
 ) -> list[EndpointInfo]:
-    """Use Gemini Flash to analyze route files and extract endpoint details."""
+    """Fallback: Use Gemini Flash to analyze route files (faster but less accurate)."""
     from turbowrap.llm.gemini import GeminiClient
 
     # Build the prompt
@@ -253,11 +402,13 @@ def _analyze_with_gemini(
     system_prompt = """You are an API documentation expert. Analyze the provided code files and extract all API endpoints.
 For each endpoint, identify:
 - HTTP method (GET, POST, PUT, DELETE, PATCH)
-- URL path
+- URL path (include router prefix!)
 - Description of what the endpoint does
 - Parameters (path params, query params, body params)
 - Response type
 - Whether authentication is required (look for auth decorators, middleware, etc.)
+
+IMPORTANT: Do not duplicate endpoints. Each method+path should appear only once.
 
 Return your response as a valid JSON array. Do not include any markdown code blocks or extra text, ONLY the JSON array."""
 
@@ -298,8 +449,15 @@ Return ONLY the JSON array, no other text."""
         # Parse JSON response
         endpoints_data = json.loads(cleaned)
 
+        # Deduplicate by method+path
+        seen = set()
         endpoints = []
         for ep in endpoints_data:
+            key = (ep.get("method", "GET").upper(), ep.get("path", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+
             params = [
                 EndpointParameter(
                     name=p.get("name", ""),
@@ -313,7 +471,7 @@ Return ONLY the JSON array, no other text."""
 
             endpoints.append(
                 EndpointInfo(
-                    method=ep.get("method", "GET"),
+                    method=ep.get("method", "GET").upper(),
                     path=ep.get("path", ""),
                     file=ep.get("file", ""),
                     line=ep.get("line"),
@@ -336,12 +494,17 @@ Return ONLY the JSON array, no other text."""
         return []
 
 
-def detect_endpoints(repo_path: str, use_ai: bool = True) -> DetectionResult:
+def detect_endpoints(
+    repo_path: str,
+    use_ai: bool = True,
+    use_claude: bool = True,
+) -> DetectionResult:
     """Detect API endpoints in a repository.
 
     Args:
         repo_path: Path to the repository root.
-        use_ai: Whether to use Gemini Flash for enhanced analysis.
+        use_ai: Whether to use AI for enhanced analysis.
+        use_claude: Whether to use Claude CLI (True) or Gemini Flash (False) for AI analysis.
 
     Returns:
         DetectionResult with detected endpoints and metadata.
@@ -371,26 +534,33 @@ def detect_endpoints(repo_path: str, use_ai: bool = True) -> DetectionResult:
         # No route files found
         return result
 
-    # 4. Extract routes
+    # 4. Extract routes using AI
     if use_ai:
-        # Read file contents for AI analysis
-        route_files_content = {}
-        total_chars = 0
-        max_chars = 50000  # Limit total content to avoid token limits
-
-        for filepath in route_files[:10]:  # Limit to 10 files
-            try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-                    if total_chars + len(content) < max_chars:
-                        route_files_content[filepath.replace(repo_path, "").lstrip("/")] = content
-                        total_chars += len(content)
-            except Exception as e:
-                logger.warning(f"Could not read {filepath}: {e}")
-
-        if route_files_content:
-            endpoints = _analyze_with_gemini(route_files_content, framework)
+        if use_claude:
+            # Primary: Use Claude CLI for autonomous exploration
+            logger.info("Using Claude CLI for endpoint detection (autonomous exploration)")
+            endpoints = _analyze_with_claude_cli(repo_path, framework, route_files)
             result.routes = endpoints
+        else:
+            # Fallback: Use Gemini Flash (requires passing file contents)
+            logger.info("Using Gemini Flash for endpoint detection")
+            route_files_content = {}
+            total_chars = 0
+            max_chars = 50000  # Limit total content to avoid token limits
+
+            for filepath in route_files[:10]:  # Limit to 10 files
+                try:
+                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        if total_chars + len(content) < max_chars:
+                            route_files_content[filepath.replace(repo_path, "").lstrip("/")] = content
+                            total_chars += len(content)
+                except Exception as e:
+                    logger.warning(f"Could not read {filepath}: {e}")
+
+            if route_files_content:
+                endpoints = _analyze_with_gemini(route_files_content, framework)
+                result.routes = endpoints
     else:
         # Fallback to regex-based extraction
         all_routes = []
