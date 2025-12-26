@@ -492,27 +492,49 @@ async def restart_reviewer(
             context.repo_path = Path(local_path)
             context.metadata["review_id"] = f"{task_id}_{reviewer_name}"  # For S3 logging
 
-            # Scan directory for files to review
+            # Set workspace_path for monorepo scope limiting
+            if repo.workspace_path:
+                context.workspace_path = repo.workspace_path
+                logger.info(f"[RESTART] Monorepo mode: limiting review to workspace '{repo.workspace_path}'")
+
+            # Scan directory for files to review (respect workspace_path for monorepos)
             exclude_dirs = {
                 ".git", "node_modules", "__pycache__", ".venv", "venv",
                 ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
-                "coverage", ".tox", "htmlcov",
+                "coverage", ".tox", "htmlcov", ".reviews",
             }
             text_extensions = {
                 ".py", ".js", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
                 ".html", ".css", ".scss", ".less", ".json", ".yaml", ".yml",
-                ".md", ".txt", ".rst", ".sh", ".bash", ".zsh",
-                ".sql", ".graphql", ".prisma", ".env", ".toml", ".ini", ".cfg",
+                ".sh", ".bash", ".zsh",
+                ".sql", ".graphql", ".prisma",
                 ".go", ".rs", ".java", ".kt", ".swift", ".c", ".cpp", ".h",
                 ".rb", ".php", ".ex", ".exs", ".erl", ".hs", ".ml", ".scala",
             }
+            # Exclude config/lock files that shouldn't be reviewed
+            exclude_files = {
+                "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+                "pyproject.toml", "poetry.lock", "requirements.txt",
+                "tsconfig.json", "tsconfig.build.json", ".eslintrc.js", ".prettierrc",
+            }
+
             files = []
-            for path in context.repo_path.rglob("*"):
+            # Use workspace_path as scan base for monorepos
+            if context.workspace_path:
+                scan_base = context.repo_path / context.workspace_path
+            else:
+                scan_base = context.repo_path
+
+            for path in scan_base.rglob("*"):
                 if path.is_file() and path.suffix.lower() in text_extensions:
+                    # Get path relative to repo root (not scan_base)
                     rel_path = path.relative_to(context.repo_path)
                     if any(part in exclude_dirs for part in rel_path.parts):
                         continue
+                    if path.name in exclude_files:
+                        continue
                     files.append(str(rel_path))
+
             context.files = files[:100]  # Limit to 100 files
             logger.info(f"[RESTART] Found {len(context.files)} files to review")
 
