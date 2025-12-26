@@ -185,12 +185,14 @@ class RepoManager:
         local_path = clone_repo(repo_info.url, branch, effective_token)
 
         # Detect repo type and calculate tokens
-        be_files, fe_files = discover_files(local_path)
+        # For monorepo with workspace_path, only scan the workspace subfolder
+        scan_path = local_path / workspace_path if workspace_path else local_path
+        be_files, fe_files = discover_files(scan_path)
         repo_type = detect_repo_type(len(be_files), len(fe_files))
 
         # Calculate token stats for all files
-        be_stats = _calculate_token_totals(local_path, be_files)
-        fe_stats = _calculate_token_totals(local_path, fe_files)
+        be_stats = _calculate_token_totals(scan_path, be_files)
+        fe_stats = _calculate_token_totals(scan_path, fe_files)
 
         # Create DB record with detailed stats
         # If workspace_path is set, append it to the name for display
@@ -307,9 +309,11 @@ class RepoManager:
             pull_repo(local_path, effective_token)
 
             # Re-detect files and recalculate tokens
-            be_files, fe_files = discover_files(local_path)
-            be_stats = _calculate_token_totals(local_path, be_files)
-            fe_stats = _calculate_token_totals(local_path, fe_files)
+            # For monorepo with workspace_path, only scan the workspace subfolder
+            scan_path = local_path / repo.workspace_path if repo.workspace_path else local_path
+            be_files, fe_files = discover_files(scan_path)
+            be_stats = _calculate_token_totals(scan_path, be_files)
+            fe_stats = _calculate_token_totals(scan_path, fe_files)
 
             repo.status = "active"
             repo.last_synced_at = datetime.utcnow()

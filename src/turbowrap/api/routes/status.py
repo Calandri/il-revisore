@@ -854,6 +854,26 @@ def _should_include_log(log_entry: dict, level: str) -> bool:
     return True
 
 
+@router.get("/docker-logs/debug")
+def debug_log_buffer():
+    """Debug endpoint to check log buffer status."""
+    root_logger = logging.getLogger()
+    handlers_info = [
+        {
+            "type": type(h).__name__,
+            "level": logging.getLevelName(h.level),
+        }
+        for h in root_logger.handlers
+    ]
+
+    return {
+        "buffer_size": len(_log_buffer),
+        "root_logger_level": logging.getLevelName(root_logger.level),
+        "handlers": handlers_info,
+        "recent_logs": list(_log_buffer)[-5:] if _log_buffer else [],
+    }
+
+
 @router.get("/docker-logs/stream")
 async def stream_app_logs(level: str = "all"):
     """

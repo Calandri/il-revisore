@@ -222,6 +222,9 @@ def create_app() -> FastAPI:
 
     setup_sse_logging()
 
+    # Test log to verify SSE handler is capturing logs
+    logger.info("[SSE_TEST] SSE log handler setup complete - this should appear in log buffer")
+
     settings = get_settings()
 
     app = FastAPI(
