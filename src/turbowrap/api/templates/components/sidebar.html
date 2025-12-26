@@ -766,12 +766,25 @@
                                 <p x-show="inProgressDeploy.commit_message" class="text-[10px] text-gray-600 dark:text-gray-400 mt-1 truncate" x-text="inProgressDeploy.commit_message"></p>
                             </div>
                         </template>
-                        <!-- Current Production -->
+                        <!-- Actual Production Version (from running container) -->
+                        <template x-if="productionVersion">
+                            <div class="px-3 py-2 bg-emerald-50 dark:bg-emerald-900/30 border-b dark:border-gray-700">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <span class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase">In Produzione Ora</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="font-mono text-sm font-bold text-emerald-800 dark:text-emerald-200" x-text="productionVersion.version"></span>
+                                    <span class="text-[10px] text-gray-500" x-text="productionVersion.build_date ? new Date(productionVersion.build_date).toLocaleDateString('it-IT', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''"></span>
+                                </div>
+                            </div>
+                        </template>
+                        <!-- Current Deploy from GitHub (last successful) -->
                         <template x-if="!deployLoading && currentDeploy">
                             <div class="px-3 py-2 border-b dark:border-gray-700">
                                 <div class="flex items-center gap-2 mb-1">
-                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                    <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase">Produzione</span>
+                                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                                    <span class="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase">Ultimo Deploy OK</span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <a :href="currentDeploy.commit_url" target="_blank" class="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline" x-text="currentDeploy.commit_short"></a>
@@ -866,7 +879,38 @@
         </div>
     </div>
 
-<!-- Application Logs Panel (OUTSIDE sidebar, fixed position) -->
+    <!-- Footer -->
+    <div class="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800">
+        <div class="flex items-center justify-between">
+            <!-- Logout -->
+            <form action="/auth/logout" method="POST">
+                <button type="submit"
+                        class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                    </svg>
+                    <span x-show="sidebarOpen">Esci</span>
+                </button>
+            </form>
+
+            <!-- Dark mode toggle (small icon) -->
+            <button @click="darkMode = !darkMode"
+                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400">
+                <svg x-show="!darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                </svg>
+                <svg x-show="darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</aside>
+
+<!-- Application Logs Panel (OUTSIDE sidebar, at root level for true fullscreen) -->
 <div x-show="showLogs"
      x-transition:enter="transition ease-out duration-200"
      x-transition:enter-start="opacity-0 transform translate-y-4"
@@ -1009,34 +1053,3 @@
         </div>
     </div>
 </div>
-
-    <!-- Footer -->
-    <div class="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div class="flex items-center justify-between">
-            <!-- Logout -->
-            <form action="/auth/logout" method="POST">
-                <button type="submit"
-                        class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors">
-                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                    </svg>
-                    <span x-show="sidebarOpen">Esci</span>
-                </button>
-            </form>
-
-            <!-- Dark mode toggle (small icon) -->
-            <button @click="darkMode = !darkMode"
-                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400">
-                <svg x-show="!darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-                </svg>
-                <svg x-show="darkMode" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                </svg>
-            </button>
-        </div>
-    </div>
-</aside>

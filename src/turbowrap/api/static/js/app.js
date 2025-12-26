@@ -55,17 +55,22 @@ function systemMonitor() {
         stagingReady: false,
         stagingInfo: null,
         promoting: false,
+        // Actual production version (from running container)
+        productionVersion: null,
 
         async init() {
             await this.refresh();
             await this.refreshDeployments();
             await this.refreshStaging();
+            await this.refreshProductionVersion();
             // Poll system status every 5 seconds
             setInterval(() => this.refresh(), 5000);
             // Poll deployments every 30 seconds
             setInterval(() => this.refreshDeployments(), 30000);
             // Poll staging status every 15 seconds
             setInterval(() => this.refreshStaging(), 15000);
+            // Poll production version every 60 seconds
+            setInterval(() => this.refreshProductionVersion(), 60000);
         },
 
         async refresh() {
@@ -190,6 +195,22 @@ function systemMonitor() {
                 console.error('Staging status error:', e);
                 this.stagingReady = false;
                 this.stagingInfo = null;
+            }
+        },
+
+        async refreshProductionVersion() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) throw new Error('Status API error');
+                const data = await res.json();
+                this.productionVersion = {
+                    version: data.version,
+                    commit_sha: data.commit_sha,
+                    build_date: data.build_date
+                };
+            } catch (e) {
+                console.error('Production version error:', e);
+                this.productionVersion = null;
             }
         },
 

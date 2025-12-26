@@ -5,6 +5,10 @@ FROM python:3.11-slim
 ARG COMMIT_SHA=unknown
 ARG BUILD_DATE=unknown
 
+# Make commit info available at runtime via environment
+ENV COMMIT_SHA=$COMMIT_SHA
+ENV BUILD_DATE=$BUILD_DATE
+
 # Labels for container identification
 LABEL org.opencontainers.image.revision=$COMMIT_SHA
 LABEL org.opencontainers.image.created=$BUILD_DATE

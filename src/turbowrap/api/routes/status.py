@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import platform
 import time
 from collections import deque
@@ -10,6 +11,13 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Literal
 from weakref import WeakSet
+
+# Get version from package
+from turbowrap import __version__
+
+# Get build info from environment (set during Docker build)
+COMMIT_SHA = os.environ.get("COMMIT_SHA", "unknown")
+BUILD_DATE = os.environ.get("BUILD_DATE", "unknown")
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -52,7 +60,9 @@ def health_check():
     return {
         "status": "ok",
         "service": "turbowrap",
-        "version": "0.6.0",
+        "version": COMMIT_SHA[:7] if len(COMMIT_SHA) > 7 else COMMIT_SHA,
+        "commit_sha": COMMIT_SHA,
+        "build_date": BUILD_DATE,
         "uptime_seconds": (datetime.now() - SERVER_START_TIME).total_seconds(),
     }
 
@@ -557,7 +567,9 @@ def full_status(db: Session = Depends(get_db)):
     uptime = (datetime.now() - SERVER_START_TIME).total_seconds()
     server = {
         "status": "ok",
-        "version": "0.6.0",
+        "version": COMMIT_SHA[:7] if len(COMMIT_SHA) > 7 else COMMIT_SHA,
+        "commit_sha": COMMIT_SHA,
+        "build_date": BUILD_DATE,
         "uptime_seconds": uptime,
         "uptime_human": format_uptime(uptime),
         "host": settings.server.host,

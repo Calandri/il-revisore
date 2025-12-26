@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from .. import __version__
 from ..config import get_settings
 from ..db.session import init_db
 from .deps import get_db
@@ -227,7 +228,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="TurboWrap",
         description="AI-Powered Repository Orchestrator",
-        version="0.8.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
