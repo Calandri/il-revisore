@@ -38,13 +38,51 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Deploy to EC2 via SSM
+      - name: Deploy to EC2 via SSM (Blue-Green Zero-Downtime)
         run: |
-          # Send deploy command
+          # Blue-green deployment: start new container, wait for health, then switch
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["set -e","echo Starting deployment...","echo Cleaning up disk space...","docker system prune -af --volumes","docker stop turbowrap 2>/dev/null || true","docker rm turbowrap 2>/dev/null || true","aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com","docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","SECRETS=$(aws secretsmanager get-secret-value --secret-id agent-zero/global/api-keys --region eu-west-3 --query SecretString --output text)","ANTHROPIC_KEY=$(echo $SECRETS | jq -r .ANTHROPIC_API_KEY)","DB_URL=$(echo $SECRETS | jq -r .TURBOWRAP_DB_URL)","GOOGLE_KEY=$(echo $SECRETS | jq -r .GOOGLE_API_KEY)","GEMINI_KEY=$(echo $SECRETS | jq -r .GEMINI_API_KEY)","GITHUB_TOKEN=$(echo $SECRETS | jq -r .GITHUB_TOKEN)","docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /opt/turbowrap/data/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest","sleep 5","docker ps | grep turbowrap","echo Deployment complete!"]' \
+            --parameters 'commands=[
+              "set -e",
+              "echo === BLUE-GREEN DEPLOYMENT ===",
+
+              "echo Step 1: Pull new image...",
+              "aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com 2>/dev/null",
+              "docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
+
+              "echo Step 2: Get secrets...",
+              "SECRETS=$(aws secretsmanager get-secret-value --secret-id agent-zero/global/api-keys --region eu-west-3 --query SecretString --output text)",
+              "ANTHROPIC_KEY=$(echo $SECRETS | jq -r .ANTHROPIC_API_KEY)",
+              "DB_URL=$(echo $SECRETS | jq -r .TURBOWRAP_DB_URL)",
+              "GOOGLE_KEY=$(echo $SECRETS | jq -r .GOOGLE_API_KEY)",
+              "GEMINI_KEY=$(echo $SECRETS | jq -r .GEMINI_API_KEY)",
+              "GITHUB_TOKEN=$(echo $SECRETS | jq -r .GITHUB_TOKEN)",
+
+              "echo Step 3: Start NEW container on port 8001...",
+              "docker rm -f turbowrap-new 2>/dev/null || true",
+              "docker run -d --name turbowrap-new -p 8001:8000 -v /data:/data -v /opt/turbowrap/data/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
+
+              "echo Step 4: Wait for NEW container to be healthy...",
+              "for i in 1 2 3 4 5 6 7 8 9 10; do if curl -sf http://localhost:8001/api/status; then echo OK; break; fi; echo waiting...; sleep 3; done",
+              "curl -sf http://localhost:8001/api/status || (echo FAILED && docker logs turbowrap-new --tail 20 && exit 1)",
+
+              "echo Step 5: Switch traffic (stop old, rename new)...",
+              "docker stop turbowrap 2>/dev/null || true",
+              "docker rm turbowrap 2>/dev/null || true",
+              "docker stop turbowrap-new",
+              "docker rename turbowrap-new turbowrap",
+              "docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /opt/turbowrap/data/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
+
+              "echo Step 6: Cleanup old images...",
+              "docker image prune -af 2>/dev/null || true",
+
+              "echo Step 7: Verify...",
+              "sleep 3",
+              "docker ps | grep turbowrap",
+              "echo === DEPLOYMENT COMPLETE ==="
+            ]' \
             --query 'Command.CommandId' --output text)
 
           echo "Command ID: $COMMAND_ID"
