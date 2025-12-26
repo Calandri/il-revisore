@@ -22,6 +22,7 @@ PUBLIC_PATHS = {
     "/redoc",
     "/api/health",
     "/api/status",  # ALB health check
+    "/api/deployments/status",  # Deployment status (public GitHub data)
 }
 
 # Path prefixes that don't require authentication
