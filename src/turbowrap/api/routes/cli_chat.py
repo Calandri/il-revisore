@@ -22,6 +22,7 @@ from ...chat_cli import (
     get_mcp_manager,
     get_process_manager,
 )
+from ...config import get_settings
 from ...db.models import CLIChatMessage, CLIChatSession
 from ..deps import get_db
 from ..schemas.cli_chat import (
@@ -487,7 +488,9 @@ async def send_message(
                     proc = await manager.spawn_claude(
                         session_id=session_id,
                         working_dir=Path(
-                            session.repository.local_path if session.repository else "."
+                            session.repository.local_path
+                            if session.repository
+                            else get_settings().repos_dir
                         ),
                         model=session.model or "claude-opus-4-5-20251101",
                         agent_path=agent_path,
@@ -500,7 +503,9 @@ async def send_message(
                     proc = await manager.spawn_gemini(
                         session_id=session_id,
                         working_dir=Path(
-                            session.repository.local_path if session.repository else "."
+                            session.repository.local_path
+                            if session.repository
+                            else get_settings().repos_dir
                         ),
                         model=session.model or "gemini-3-pro-preview",
                         reasoning=session.reasoning_enabled,
@@ -690,7 +695,11 @@ async def start_cli(
 
             proc = await manager.spawn_claude(
                 session_id=session_id,
-                working_dir=Path(session.repository.local_path if session.repository else "."),
+                working_dir=Path(
+                    session.repository.local_path
+                    if session.repository
+                    else get_settings().repos_dir
+                ),
                 model=session.model or "claude-opus-4-5-20251101",
                 agent_path=agent_path,
                 thinking_budget=session.thinking_budget if session.thinking_enabled else None,
@@ -699,7 +708,11 @@ async def start_cli(
         else:
             proc = await manager.spawn_gemini(
                 session_id=session_id,
-                working_dir=Path(session.repository.local_path if session.repository else "."),
+                working_dir=Path(
+                    session.repository.local_path
+                    if session.repository
+                    else get_settings().repos_dir
+                ),
                 model=session.model or "gemini-3-pro-preview",
                 reasoning=session.reasoning_enabled,
                 context=context,
