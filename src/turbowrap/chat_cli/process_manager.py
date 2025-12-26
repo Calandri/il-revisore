@@ -39,6 +39,8 @@ from datetime import datetime
 from pathlib import Path
 
 from .models import CLIType, SessionStatus
+from ..config import get_settings
+from ..exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,31 @@ class CLIProcessManager:
         self._lock = asyncio.Lock()
         self._max_processes = max_processes
 
+    def _validate_working_dir(self, working_dir: Path) -> Path:
+        """Validate working directory is within allowed paths.
+
+        Args:
+            working_dir: The working directory to validate
+
+        Returns:
+            Resolved absolute path
+
+        Raises:
+            SecurityError: If working directory is outside allowed base
+            ValueError: If working directory does not exist
+        """
+        resolved = working_dir.resolve()
+        settings = get_settings()
+        allowed_base = settings.repos_dir.resolve()
+
+        if not str(resolved).startswith(str(allowed_base) + os.sep) and resolved != allowed_base:
+            raise SecurityError(f"Working directory {resolved} outside allowed base {allowed_base}")
+
+        if not resolved.is_dir():
+            raise ValueError(f"Working directory does not exist: {resolved}")
+
+        return resolved
+
     async def spawn_claude(
         self,
         session_id: str,
@@ -132,7 +159,11 @@ class CLIProcessManager:
 
         Raises:
             RuntimeError: If max processes reached or session already exists
+            SecurityError: If working directory is outside allowed paths
         """
+        # Validate working directory before processing
+        validated_working_dir = self._validate_working_dir(working_dir)
+
         async with self._lock:
             if session_id in self._processes:
                 raise RuntimeError(f"Session {session_id} already exists")
@@ -208,7 +239,7 @@ class CLIProcessManager:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(working_dir),
+            cwd=str(validated_working_dir),
             env=env,
         )
 
@@ -216,7 +247,7 @@ class CLIProcessManager:
             session_id=session_id,
             cli_type=CLIType.CLAUDE,
             process=process,
-            working_dir=working_dir,
+            working_dir=validated_working_dir,
             model=model,
             agent_name=agent_path.stem if agent_path else None,
             status=SessionStatus.RUNNING,
@@ -258,7 +289,13 @@ class CLIProcessManager:
             Gemini CLI doesn't support stdin input like Claude.
             Each message spawns a new process with prompt as argument.
             Context is stored and prepended to the first message.
+
+        Raises:
+            SecurityError: If working directory is outside allowed paths
         """
+        # Validate working directory before processing
+        validated_working_dir = self._validate_working_dir(working_dir)
+
         async with self._lock:
             if session_id in self._processes:
                 raise RuntimeError(f"Session {session_id} already exists")
@@ -275,7 +312,7 @@ class CLIProcessManager:
             session_id=session_id,
             cli_type=CLIType.GEMINI,
             process=None,  # Will be set on first message
-            working_dir=working_dir,
+            working_dir=validated_working_dir,
             model=model,
             agent_name=None,  # Gemini doesn't support custom agents
             status=SessionStatus.IDLE,
