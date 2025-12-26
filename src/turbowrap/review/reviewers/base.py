@@ -2,13 +2,23 @@
 Base reviewer interface and context.
 """
 
+from __future__ import annotations
+
+import logging
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from turbowrap.review.models.challenger import ChallengerFeedback
-from turbowrap.review.models.review import ReviewOutput, ReviewRequest
+from turbowrap.review.models.review import ReviewOutput, ReviewRequest, ReviewSummary
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from turbowrap.review.reviewers.utils.s3_logger import S3Logger
 
 
 @dataclass
@@ -47,7 +57,7 @@ class ReviewContext:
     challenger_feedback: ChallengerFeedback | None = None
 
     # Metadata (e.g., review_id for S3 logging)
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def get_files_summary(self) -> str:
         """Get a summary of files being reviewed."""
@@ -181,10 +191,12 @@ class BaseReviewer(ABC):
         """
         pass
 
-    def _timed_execution(self, func):
+    def _timed_execution(
+        self, func: Callable[..., Coroutine[Any, Any, ReviewOutput]]
+    ) -> Callable[..., Coroutine[Any, Any, ReviewOutput]]:
         """Decorator to time execution."""
 
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> ReviewOutput:
             start = time.time()
             result = await func(*args, **kwargs)
             duration = time.time() - start
@@ -219,3 +231,119 @@ class BaseReviewer(ABC):
                 content = parts[2].strip()
 
         return content
+
+    def _create_error_output(self, error_message: str) -> ReviewOutput:
+        """
+        Create a ReviewOutput for error cases.
+
+        Used when review execution fails. Does not create fake issues -
+        the error is handled through normal error reporting channels.
+
+        Args:
+            error_message: Description of the error
+
+        Returns:
+            ReviewOutput with zero score and no issues
+        """
+        logger.error(f"[{self.name}] Review failed: {error_message}")
+        return ReviewOutput(
+            reviewer=self.name,
+            summary=ReviewSummary(
+                files_reviewed=0,
+                score=0.0,
+            ),
+            issues=[],
+        )
+
+
+class S3LoggingMixin:
+    """
+    Mixin that provides S3 logging capabilities.
+
+    Usage:
+        class MyReviewer(BaseReviewer, S3LoggingMixin):
+            async def review(self, context):
+                # ... do review ...
+                await self.log_review_to_s3(...)
+    """
+
+    _s3_logger: S3Logger | None = None
+
+    @property
+    def s3_logger(self) -> S3Logger:
+        """Lazy-load S3 logger."""
+        if self._s3_logger is None:
+            from turbowrap.review.reviewers.utils.s3_logger import S3Logger
+
+            self._s3_logger = S3Logger()
+        return self._s3_logger
+
+    async def log_thinking_to_s3(
+        self,
+        content: str,
+        review_id: str,
+        model: str,
+        files_reviewed: int = 0,
+    ) -> str | None:
+        """Save thinking content to S3."""
+        from turbowrap.review.reviewers.utils.s3_logger import S3ArtifactMetadata
+
+        metadata = S3ArtifactMetadata(
+            review_id=review_id,
+            component=getattr(self, "name", "unknown"),
+            model=model,
+        )
+        return await self.s3_logger.save_thinking(content, metadata, files_reviewed)
+
+    async def log_review_to_s3(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response: str,
+        review_output: ReviewOutput,
+        review_id: str,
+        model: str,
+    ) -> str | None:
+        """Save complete review to S3."""
+        from turbowrap.review.reviewers.utils.s3_logger import S3ArtifactMetadata
+
+        metadata = S3ArtifactMetadata(
+            review_id=review_id,
+            component=getattr(self, "name", "unknown"),
+            model=model,
+        )
+        return await self.s3_logger.save_review(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response=response,
+            review_json=review_output.model_dump_json(indent=2),
+            metadata=metadata,
+            duration_seconds=review_output.duration_seconds,
+            files_reviewed=review_output.summary.files_reviewed,
+        )
+
+    async def log_challenge_to_s3(
+        self,
+        prompt: str,
+        response: str,
+        feedback: ChallengerFeedback,
+        review_id: str,
+        model: str,
+    ) -> str | None:
+        """Save challenge feedback to S3."""
+        from turbowrap.review.reviewers.utils.s3_logger import S3ArtifactMetadata
+
+        metadata = S3ArtifactMetadata(
+            review_id=review_id,
+            component=getattr(self, "name", "unknown"),
+            model=model,
+        )
+        return await self.s3_logger.save_challenge(
+            prompt=prompt,
+            response=response,
+            feedback_json=feedback.model_dump_json(indent=2),
+            metadata=metadata,
+            iteration=feedback.iteration,
+            satisfaction_score=feedback.satisfaction_score,
+            status=feedback.status.value,
+        )

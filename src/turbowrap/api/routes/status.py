@@ -9,15 +9,8 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from weakref import WeakSet
-
-# Get version from package
-from turbowrap import __version__
-
-# Get build info from environment (set during Docker build)
-COMMIT_SHA = os.environ.get("COMMIT_SHA", "unknown")
-BUILD_DATE = os.environ.get("BUILD_DATE", "unknown")
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -28,6 +21,10 @@ from ...config import get_settings
 from ...core.task_queue import get_task_queue
 from ...db.models import ChatSession, Issue, LinearIssue, Repository, Task
 from ..deps import get_db
+
+# Get build info from environment (set during Docker build)
+COMMIT_SHA = os.environ.get("COMMIT_SHA", "unknown")
+BUILD_DATE = os.environ.get("BUILD_DATE", "unknown")
 
 router = APIRouter(prefix="/status", tags=["status"])
 
@@ -48,14 +45,14 @@ class ServiceStatus(BaseModel):
 class FullStatus(BaseModel):
     """Complete system status."""
 
-    server: dict
+    server: dict[str, Any]
     services: list[ServiceStatus]
-    database: dict
-    system: dict
+    database: dict[str, Any]
+    system: dict[str, Any]
 
 
 @router.get("")
-def health_check():
+def health_check() -> dict[str, Any]:
     """Basic health check."""
     return {
         "status": "ok",
@@ -68,7 +65,7 @@ def health_check():
 
 
 @router.get("/agents")
-def agents_status():
+def agents_status() -> dict[str, Any]:
     """Check AI agent availability (config only)."""
     settings = get_settings()
 
@@ -88,7 +85,7 @@ def agents_status():
 
 
 @router.get("/ping/claude")
-def ping_claude():
+def ping_claude() -> ServiceStatus:
     """Ping Claude API with a minimal request."""
     settings = get_settings()
 
@@ -122,7 +119,7 @@ def ping_claude():
 
 
 @router.get("/ping/gemini")
-def ping_gemini():
+def ping_gemini() -> ServiceStatus:
     """Ping Gemini API with a minimal request."""
     settings = get_settings()
 
@@ -156,7 +153,7 @@ def ping_gemini():
 
 
 @router.get("/ping/all")
-def ping_all_services():
+def ping_all_services() -> dict[str, ServiceStatus]:
     """Ping all AI services."""
     return {
         "claude": ping_claude(),
@@ -165,7 +162,7 @@ def ping_all_services():
 
 
 @router.get("/system")
-def system_status():
+def system_status() -> dict[str, Any]:
     """Get system resource usage."""
     try:
         import psutil
@@ -202,14 +199,14 @@ def system_status():
 
 
 @router.get("/queue")
-def queue_status():
+def queue_status() -> dict[str, Any]:
     """Get task queue status."""
     queue = get_task_queue()
     return queue.get_status()
 
 
 @router.get("/reviews")
-def active_reviews_status():
+def active_reviews_status() -> dict[str, Any]:
     """Get status of active background reviews."""
     from ..review_manager import get_review_manager
 
@@ -233,7 +230,7 @@ def active_reviews_status():
 
 
 @router.get("/live")
-def live_status():
+def live_status() -> dict[str, Any]:
     """
     Get real-time system status for frontend polling.
 
@@ -242,7 +239,7 @@ def live_status():
     """
     from ..review_manager import get_review_manager
 
-    result = {
+    result: dict[str, Any] = {
         "timestamp": datetime.now().isoformat(),
         "uptime_seconds": (datetime.now() - SERVER_START_TIME).total_seconds(),
     }
@@ -509,7 +506,7 @@ def live_status():
 
 
 @router.get("/stats")
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(db: Session = Depends(get_db)) -> dict[str, Any]:
     """Get overall statistics."""
     total_repos = db.query(Repository).count()
     active_repos = db.query(Repository).filter(Repository.status == "active").count()
@@ -539,7 +536,7 @@ def get_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/config")
-def get_config():
+def get_config() -> dict[str, Any]:
     """Get non-sensitive configuration."""
     settings = get_settings()
 
@@ -559,13 +556,13 @@ def get_config():
 
 
 @router.get("/full", response_model=FullStatus)
-def full_status(db: Session = Depends(get_db)):
+def full_status(db: Session = Depends(get_db)) -> FullStatus:
     """Get complete system status with all checks."""
     settings = get_settings()
 
     # Server info
     uptime = (datetime.now() - SERVER_START_TIME).total_seconds()
-    server = {
+    server: dict[str, Any] = {
         "status": "ok",
         "version": COMMIT_SHA[:7] if len(COMMIT_SHA) > 7 else COMMIT_SHA,
         "commit_sha": COMMIT_SHA,
@@ -577,7 +574,7 @@ def full_status(db: Session = Depends(get_db)):
     }
 
     # Service status (config check, not live ping)
-    services = []
+    services: list[ServiceStatus] = []
 
     # Claude status
     if settings.agents.anthropic_api_key:
@@ -610,6 +607,7 @@ def full_status(db: Session = Depends(get_db)):
         )
 
     # Database stats
+    database: dict[str, Any]
     try:
         total_repos = db.query(Repository).count()
         total_tasks = db.query(Task).count()
@@ -627,6 +625,7 @@ def full_status(db: Session = Depends(get_db)):
         }
 
     # System resources
+    system: dict[str, Any]
     try:
         import psutil
 
@@ -669,13 +668,13 @@ def format_uptime(seconds: float) -> str:
 
 
 @router.get("/active-development")
-def get_active_development(db: Session = Depends(get_db)):
+def get_active_development(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     """
     Get currently active development issues (both Linear and GitHub).
 
     Returns a unified list of active issues for the sidebar banner.
     """
-    active_issues = []
+    active_issues: list[dict[str, Any]] = []
 
     # Get active Linear issues
     linear_issues = (
@@ -684,7 +683,7 @@ def get_active_development(db: Session = Depends(get_db)):
 
     for li in linear_issues:
         # Get repository names
-        repo_names = []
+        repo_names: list[str] = []
         for link in li.repository_links:
             if link.repository:
                 repo_names.append(link.repository.name)
@@ -707,6 +706,7 @@ def get_active_development(db: Session = Depends(get_db)):
     github_issues = db.query(Issue).filter(Issue.is_active, Issue.deleted_at.is_(None)).all()
 
     for gi in github_issues:
+        repo_name_list: list[str] = [gi.repository.name] if gi.repository else []
         active_issues.append(
             {
                 "type": "github",
@@ -714,7 +714,7 @@ def get_active_development(db: Session = Depends(get_db)):
                 "identifier": gi.issue_code,
                 "title": gi.title,
                 "url": None,  # GitHub issues don't have external URLs
-                "repository_names": [gi.repository.name] if gi.repository else [],
+                "repository_names": repo_name_list,
                 "fix_branch": gi.fix_branch,
                 "fix_commit_sha": gi.fix_commit_sha,
                 "status": gi.status,
@@ -730,8 +730,8 @@ def get_active_development(db: Session = Depends(get_db)):
 # =============================================================================
 
 # Global log buffer and subscribers
-_log_buffer: deque = deque(maxlen=500)  # Keep last 500 logs
-_log_subscribers: WeakSet = WeakSet()
+_log_buffer: deque[dict[str, Any]] = deque(maxlen=500)  # Keep last 500 logs
+_log_subscribers: WeakSet[asyncio.Queue[dict[str, Any]]] = WeakSet()
 
 
 class SSELogHandler(logging.Handler):
@@ -739,7 +739,7 @@ class SSELogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            log_entry = {
+            log_entry: dict[str, Any] = {
                 "content": self.format(record),
                 "level": record.levelname,
                 "timestamp": datetime.utcnow().isoformat(),
@@ -757,13 +757,11 @@ class SSELogHandler(logging.Handler):
             pass  # Never fail in log handler
 
 
-def setup_sse_logging():
+def setup_sse_logging() -> None:
     """Setup SSE log handler on root logger."""
     handler = SSELogHandler()
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
     # Add to root logger
     root_logger = logging.getLogger()
@@ -780,7 +778,7 @@ def setup_sse_logging():
 # to ensure the SSELogHandler is not removed when logging is reconfigured.
 
 
-async def generate_app_logs(level: str = "all") -> AsyncIterator[dict]:
+async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]:
     """
     Generator that streams application logs via SSE.
 
@@ -788,7 +786,7 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict]:
         level: Filter level - 'all', 'warning', 'error'
     """
     # Create a queue for this subscriber
-    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
     _log_subscribers.add(queue)
 
     try:
@@ -845,7 +843,7 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict]:
         _log_subscribers.discard(queue)
 
 
-def _should_include_log(log_entry: dict, level: str) -> bool:
+def _should_include_log(log_entry: dict[str, Any], level: str) -> bool:
     """Check if log entry should be included based on filter."""
     if level == "all":
         return True
@@ -861,7 +859,7 @@ def _should_include_log(log_entry: dict, level: str) -> bool:
 
 
 @router.get("/docker-logs/debug")
-def debug_log_buffer():
+def debug_log_buffer() -> dict[str, Any]:
     """Debug endpoint to check log buffer status."""
     root_logger = logging.getLogger()
     handlers_info = [
@@ -881,7 +879,7 @@ def debug_log_buffer():
 
 
 @router.get("/docker-logs/stream")
-async def stream_app_logs(level: str = "all"):
+async def stream_app_logs(level: str = "all") -> EventSourceResponse:
     """
     Stream application logs via Server-Sent Events.
 

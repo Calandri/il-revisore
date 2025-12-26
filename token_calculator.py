@@ -88,9 +88,7 @@ def main():
     # Sort by tokens
     print("Top files by token count:")
     max_tokens = max(s.tokens for s in stats_list) if stats_list else 1
-    for i, stats in enumerate(
-        sorted(stats_list, key=lambda x: x.tokens, reverse=True), 1
-    ):
+    for i, stats in enumerate(sorted(stats_list, key=lambda x: x.tokens, reverse=True), 1):
         bar_len = int((stats.tokens / max_tokens) * 30)
         bar = "█" * bar_len
         print(f"  {i}. {stats.name:<35} {stats.tokens:>8,} tokens {bar}")

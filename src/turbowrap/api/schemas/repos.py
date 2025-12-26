@@ -121,7 +121,7 @@ class RepoResponse(BaseModel):
         return None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):
+    def model_validate(cls, obj: Any, **kwargs: Any) -> "RepoResponse":
         """Override to handle SQLAlchemy metadata_ attribute."""
         # If it's a SQLAlchemy model, extract metadata_ manually
         if hasattr(obj, "metadata_") and not hasattr(obj, "metadata"):
@@ -234,7 +234,7 @@ class LinkResponse(BaseModel):
         return None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):
+    def model_validate(cls, obj: Any, **kwargs: Any) -> "LinkResponse":
         """Override to handle SQLAlchemy metadata_ attribute."""
         if hasattr(obj, "metadata_") and not hasattr(obj, "metadata"):
             data = {

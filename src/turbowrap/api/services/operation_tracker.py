@@ -371,9 +371,7 @@ class OperationTracker:
             op.completed_at = datetime.utcnow()
             op.error = error
 
-            logger.error(
-                f"[TRACKER] Failed {op.operation_type.value}: {operation_id} - {error}"
-            )
+            logger.error(f"[TRACKER] Failed {op.operation_type.value}: {operation_id} - {error}")
 
             return op
 
@@ -431,10 +429,7 @@ class OperationTracker:
         with self._store_lock:
             self._cleanup_expired()
 
-            operations = [
-                op for op in self._operations.values()
-                if op.status == "in_progress"
-            ]
+            operations = [op for op in self._operations.values() if op.status == "in_progress"]
 
             if op_type:
                 operations = [op for op in operations if op.operation_type == op_type]
@@ -466,10 +461,7 @@ class OperationTracker:
             if include_completed:
                 operations = list(self._operations.values())
             else:
-                operations = [
-                    op for op in self._operations.values()
-                    if op.status == "in_progress"
-                ]
+                operations = [op for op in self._operations.values() if op.status == "in_progress"]
 
             operations.sort(key=lambda x: x.created_at, reverse=True)
             return operations

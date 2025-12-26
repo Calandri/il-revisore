@@ -2,6 +2,7 @@
 
 import logging
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -81,7 +82,7 @@ def configure_logging() -> None:
     logging.getLogger("sse_starlette").setLevel(logging.WARNING)
 
 
-def _ensure_all_repos_exist_sync():
+def _ensure_all_repos_exist_sync() -> None:
     """Check all repositories and re-clone any with missing local paths (sync version).
 
     This handles the case where local files were deleted (e.g., disk cleanup)
@@ -113,7 +114,7 @@ def _ensure_all_repos_exist_sync():
 
                 try:
                     manager = RepoManager(db)
-                    manager.ensure_repo_exists(repo.id)
+                    manager.ensure_repo_exists(str(repo.id))
                     restored_count += 1
                     logger.info(f"[STARTUP] Restored repo: {repo.name}")
                 except Exception as e:
@@ -135,7 +136,7 @@ def _ensure_all_repos_exist_sync():
         db.close()
 
 
-async def _ensure_all_repos_exist_task():
+async def _ensure_all_repos_exist_task() -> None:
     """Background task to restore missing repositories."""
     import asyncio
 
@@ -147,7 +148,7 @@ async def _ensure_all_repos_exist_task():
     await loop.run_in_executor(None, _ensure_all_repos_exist_sync)
 
 
-async def _cleanup_stale_processes_task():
+async def _cleanup_stale_processes_task() -> None:
     """Background task to cleanup stale CLI processes."""
     import asyncio
 
@@ -178,7 +179,7 @@ async def _cleanup_stale_processes_task():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     import asyncio
 
@@ -286,7 +287,7 @@ def create_app() -> FastAPI:
         websocket: WebSocket,
         session_id: str,
         db: Session = Depends(get_db),
-    ):
+    ) -> None:
         """WebSocket endpoint for streaming chat."""
         handler = ChatWebSocketHandler(websocket, session_id, db)
         await handler.handle()

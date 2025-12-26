@@ -8,12 +8,13 @@ import os
 from logging.config import fileConfig
 from pathlib import Path
 
-from alembic import context
 from sqlalchemy import create_engine, pool
+
+from alembic import context
+from turbowrap.db import models  # noqa: F401 - ensure models are registered
 
 # Import TurboWrap models - this imports Base with all models registered
 from turbowrap.db.base import Base
-from turbowrap.db import models  # noqa: F401 - ensure models are registered
 
 # Alembic Config object
 config = context.config

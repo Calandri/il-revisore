@@ -8,8 +8,10 @@ import asyncio
 import json
 import logging
 import traceback
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -140,7 +142,7 @@ def list_sessions(
     repository_id: str | None = None,
     limit: int = 50,
     db: Session = Depends(get_db),
-):
+) -> list[CLISessionResponse]:
     """List CLI chat sessions."""
     query = db.query(CLIChatSession).filter(CLIChatSession.deleted_at.is_(None))
 
@@ -166,7 +168,7 @@ def list_sessions(
 def create_session(
     data: CLISessionCreate,
     db: Session = Depends(get_db),
-):
+) -> CLIChatSession:
     """Create a new CLI chat session."""
     # Set default model based on CLI type
     default_model = (
@@ -195,7 +197,7 @@ def create_session(
 def get_session(
     session_id: str,
     db: Session = Depends(get_db),
-):
+) -> CLIChatSession:
     """Get CLI chat session details."""
     session = (
         db.query(CLIChatSession)
@@ -217,7 +219,7 @@ def update_session(
     session_id: str,
     data: CLISessionUpdate,
     db: Session = Depends(get_db),
-):
+) -> CLIChatSession:
     """Update CLI chat session settings."""
     session = (
         db.query(CLIChatSession)
@@ -236,7 +238,7 @@ def update_session(
     for key, value in update_data.items():
         setattr(session, key, value)
 
-    session.updated_at = datetime.utcnow()
+    session.updated_at = datetime.utcnow()  # type: ignore[assignment]
     db.commit()
     db.refresh(session)
 
@@ -249,7 +251,7 @@ def delete_session(
     session_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Delete (soft-delete) a CLI chat session."""
     session = (
         db.query(CLIChatSession)
@@ -279,7 +281,7 @@ def delete_session(
 def fork_session(
     session_id: str,
     db: Session = Depends(get_db),
-):
+) -> CLIChatSession:
     """Fork a CLI chat session with all messages.
 
     Creates a new session with:
@@ -324,6 +326,8 @@ def fork_session(
 
     # Copy all messages
     message_count = 0
+    total_tokens_in = 0
+    total_tokens_out = 0
     for msg in original.messages:
         forked_msg = CLIChatMessage(
             session_id=forked.id,
@@ -340,10 +344,12 @@ def fork_session(
         message_count += 1
 
         # Accumulate token counts
-        forked.total_tokens_in += msg.tokens_in or 0
-        forked.total_tokens_out += msg.tokens_out or 0
+        total_tokens_in += cast(int, msg.tokens_in) or 0
+        total_tokens_out += cast(int, msg.tokens_out) or 0
 
-    forked.total_messages = message_count
+    forked.total_messages = message_count  # type: ignore[assignment]
+    forked.total_tokens_in = total_tokens_in  # type: ignore[assignment]
+    forked.total_tokens_out = total_tokens_out  # type: ignore[assignment]
 
     db.commit()
     db.refresh(forked)
@@ -353,15 +359,16 @@ def fork_session(
     original_proc = manager.get_process(session_id)
     if original_proc and original_proc.cli_type == CLIType.CLAUDE:
         # Store in a way that spawn_claude can access
-        manager.set_shared_resume_id(forked.id, original_proc.claude_session_id)
-        logger.info(
-            f"[FORK] Sharing claude_session_id {original_proc.claude_session_id} "
-            f"from {session_id} to {forked.id}"
-        )
+        forked_id = cast(str, forked.id)
+        if original_proc.claude_session_id:
+            manager.set_shared_resume_id(forked_id, original_proc.claude_session_id)
+            logger.info(
+                f"[FORK] Sharing claude_session_id {original_proc.claude_session_id} "
+                f"from {session_id} to {forked.id}"
+            )
 
     logger.info(
-        f"[FORK] Created fork {forked.id} from {session_id} "
-        f"with {message_count} messages"
+        f"[FORK] Created fork {forked.id} from {session_id} " f"with {message_count} messages"
     )
 
     return forked
@@ -378,7 +385,7 @@ def get_messages(
     limit: int = 100,
     include_thinking: bool = False,
     db: Session = Depends(get_db),
-):
+) -> list[CLIChatMessage]:
     """Get messages for a CLI chat session."""
     session = (
         db.query(CLIChatSession)
@@ -409,7 +416,7 @@ async def send_message(
     session_id: str,
     data: CLIMessageCreate,
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """Send a message and stream response via SSE.
 
     Returns an EventSource response with events:
@@ -434,9 +441,7 @@ async def send_message(
     # Check if this is the first message (for title generation)
     # Count actual messages in DB instead of relying on total_messages counter
     actual_message_count = (
-        db.query(CLIChatMessage)
-        .filter(CLIChatMessage.session_id == session_id)
-        .count()
+        db.query(CLIChatMessage).filter(CLIChatMessage.session_id == session_id).count()
     )
     is_first_message = actual_message_count == 0
     logger.info(
@@ -453,7 +458,18 @@ async def send_message(
     db.add(user_message)
     db.commit()
 
-    async def event_generator():
+    # Extract session attributes as proper Python types for use in async generator
+    session_cli_type = cast(str, session.cli_type)
+    session_repository_id = cast(str | None, session.repository_id)
+    session_agent_name = cast(str | None, session.agent_name)
+    session_model = cast(str | None, session.model)
+    session_thinking_enabled = cast(bool, session.thinking_enabled)
+    session_thinking_budget = cast(int | None, session.thinking_budget)
+    session_reasoning_enabled = cast(bool, session.reasoning_enabled)
+    session_display_name = cast(str | None, session.display_name)
+    session_repository = session.repository
+
+    async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         """Generate SSE events for streaming response."""
         manager = get_process_manager()
         loader = get_agent_loader()
@@ -470,32 +486,32 @@ async def send_message(
 
             if not proc:
                 # Spawn new process
-                cli_type = CLIType(session.cli_type)
+                cli_type = CLIType(session_cli_type)
 
                 # Generate context for this session
                 context = get_context_for_session(
                     db,
-                    repo_id=session.repository_id,
+                    repo_id=session_repository_id,
                     linear_issue_id=None,  # TODO: support linear issue context
                 )
                 logger.info(f"Generated context: {len(context)} chars")
 
                 if cli_type == CLIType.CLAUDE:
                     agent_path = None
-                    if session.agent_name:
-                        agent_path = loader.get_agent_path(session.agent_name)
+                    if session_agent_name:
+                        agent_path = loader.get_agent_path(session_agent_name)
 
                     proc = await manager.spawn_claude(
                         session_id=session_id,
                         working_dir=Path(
-                            session.repository.local_path
-                            if session.repository
+                            session_repository.local_path
+                            if session_repository
                             else get_settings().repos_dir
                         ),
-                        model=session.model or "claude-opus-4-5-20251101",
+                        model=session_model or "claude-opus-4-5-20251101",
                         agent_path=agent_path,
                         thinking_budget=(
-                            session.thinking_budget if session.thinking_enabled else None
+                            session_thinking_budget if session_thinking_enabled else None
                         ),
                         context=context,
                     )
@@ -503,18 +519,18 @@ async def send_message(
                     proc = await manager.spawn_gemini(
                         session_id=session_id,
                         working_dir=Path(
-                            session.repository.local_path
-                            if session.repository
+                            session_repository.local_path
+                            if session_repository
                             else get_settings().repos_dir
                         ),
-                        model=session.model or "gemini-3-pro-preview",
-                        reasoning=session.reasoning_enabled,
+                        model=session_model or "gemini-3-pro-preview",
+                        reasoning=session_reasoning_enabled,
                         context=context,
                     )
 
             # Stream response - parse stream-json line by line
-            full_content = []
-            system_events = []
+            full_content: list[str] = []
+            system_events: list[dict[str, Any]] = []
 
             async for line in manager.send_message(session_id, data.content):
                 line = line.strip()
@@ -538,7 +554,7 @@ async def send_message(
                         continue
 
                     # Extract content from different event types
-                    content = None
+                    content: str | None = None
 
                     if event_type == "assistant":
                         # Assistant message with content blocks
@@ -586,20 +602,20 @@ async def send_message(
             )
 
             # Save assistant message
-            content = "".join(full_content)
+            response_content = "".join(full_content)
             assistant_message = CLIChatMessage(
                 session_id=session_id,
                 role="assistant",
-                content=content,
-                model_used=session.model,
-                agent_used=session.agent_name,
+                content=response_content,
+                model_used=session_model,
+                agent_used=session_agent_name,
             )
             db.add(assistant_message)
 
             # Update session stats
-            session.total_messages += 2
-            session.last_message_at = datetime.utcnow()
-            session.updated_at = datetime.utcnow()
+            session.total_messages = cast(int, session.total_messages) + 2  # type: ignore[assignment]
+            session.last_message_at = datetime.utcnow()  # type: ignore[assignment]
+            session.updated_at = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
 
             # Done event
@@ -608,22 +624,22 @@ async def send_message(
                 "data": json.dumps(
                     {
                         "message_id": assistant_message.id,
-                        "total_length": len(content),
+                        "total_length": len(response_content),
                     }
                 ),
             }
 
             # Generate title for first message
-            if is_first_message and not session.display_name:
+            if is_first_message and not session_display_name:
                 logger.info(f"[TITLE] Generating title for session {session_id}")
                 title = await generate_chat_title(
-                    cli_type=session.cli_type,
+                    cli_type=session_cli_type,
                     user_message=data.content,
-                    assistant_response=content,
+                    assistant_response=response_content,
                 )
                 if title:
-                    session.display_name = title
-                    session.updated_at = datetime.utcnow()
+                    session.display_name = title  # type: ignore[assignment]
+                    session.updated_at = datetime.utcnow()  # type: ignore[assignment]
                     db.commit()
                     logger.info(f"[TITLE] Session {session_id} title set to: {title}")
 
@@ -637,7 +653,7 @@ async def send_message(
             else:
                 logger.debug(
                     f"[TITLE] Skipping title generation: is_first={is_first_message}, "
-                    f"display_name={session.display_name}"
+                    f"display_name={session_display_name}"
                 )
 
         except Exception as e:
@@ -660,7 +676,7 @@ async def send_message(
 async def start_cli(
     session_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Start the CLI process for a session."""
     session = (
         db.query(CLIChatSession)
@@ -678,20 +694,21 @@ async def start_cli(
     loader = get_agent_loader()
 
     try:
-        cli_type = CLIType(session.cli_type)
+        cli_type = CLIType(cast(str, session.cli_type))
 
         # Generate context for this session
         context = get_context_for_session(
             db,
-            repo_id=session.repository_id,
+            repo_id=cast(str | None, session.repository_id),
             linear_issue_id=None,
         )
         logger.info(f"[START] Generated context: {len(context)} chars")
 
         if cli_type == CLIType.CLAUDE:
             agent_path = None
-            if session.agent_name:
-                agent_path = loader.get_agent_path(session.agent_name)
+            agent_name = cast(str | None, session.agent_name)
+            if agent_name:
+                agent_path = loader.get_agent_path(agent_name)
 
             proc = await manager.spawn_claude(
                 session_id=session_id,
@@ -700,9 +717,11 @@ async def start_cli(
                     if session.repository
                     else get_settings().repos_dir
                 ),
-                model=session.model or "claude-opus-4-5-20251101",
+                model=cast(str, session.model) or "claude-opus-4-5-20251101",
                 agent_path=agent_path,
-                thinking_budget=session.thinking_budget if session.thinking_enabled else None,
+                thinking_budget=(
+                    cast(int, session.thinking_budget) if session.thinking_enabled else None
+                ),
                 context=context,
             )
         else:
@@ -713,13 +732,13 @@ async def start_cli(
                     if session.repository
                     else get_settings().repos_dir
                 ),
-                model=session.model or "gemini-3-pro-preview",
-                reasoning=session.reasoning_enabled,
+                model=cast(str, session.model) or "gemini-3-pro-preview",
+                reasoning=bool(session.reasoning_enabled),
                 context=context,
             )
 
-        session.status = "running"
-        session.process_pid = proc.pid
+        session.status = "running"  # type: ignore[assignment]
+        session.process_pid = proc.pid  # type: ignore[assignment]
         db.commit()
 
         return {
@@ -736,7 +755,7 @@ async def start_cli(
 async def stop_cli(
     session_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Stop the CLI process for a session."""
     session = (
         db.query(CLIChatSession)
@@ -754,8 +773,8 @@ async def stop_cli(
     terminated = await manager.terminate(session_id)
 
     if terminated:
-        session.status = "idle"
-        session.process_pid = None
+        session.status = "idle"  # type: ignore[assignment]
+        session.process_pid = None  # type: ignore[assignment]
         db.commit()
 
     return {
@@ -770,7 +789,7 @@ async def stop_cli(
 
 
 @router.get("/agents", response_model=AgentListResponse)
-def list_agents():
+def list_agents() -> AgentListResponse:
     """List available Claude agents."""
     loader = get_agent_loader()
     agents = loader.list_agents()
@@ -782,7 +801,7 @@ def list_agents():
 
 
 @router.get("/agents/{agent_name}", response_model=AgentResponse)
-def get_agent(agent_name: str):
+def get_agent(agent_name: str) -> AgentResponse:
     """Get agent details by name."""
     loader = get_agent_loader()
     agent = loader.get_agent(agent_name)
@@ -799,7 +818,7 @@ def get_agent(agent_name: str):
 
 
 @router.get("/active")
-def list_active_processes():
+def list_active_processes() -> dict[str, Any]:
     """List all active CLI processes."""
     manager = get_process_manager()
     sessions = manager.get_active_sessions()
@@ -822,7 +841,7 @@ def list_active_processes():
 
 
 @router.post("/terminate-all")
-async def terminate_all():
+async def terminate_all() -> dict[str, int]:
     """Terminate all running CLI processes."""
     manager = get_process_manager()
     count = await manager.terminate_all()
@@ -831,7 +850,7 @@ async def terminate_all():
 
 
 @router.get("/process-stats")
-def get_process_stats():
+def get_process_stats() -> dict[str, Any]:
     """Get detailed statistics about running CLI processes.
 
     Returns process count, max allowed, and details for each process
@@ -842,7 +861,7 @@ def get_process_stats():
 
 
 @router.post("/cleanup-stale")
-async def cleanup_stale_processes(max_age_hours: float = 3.0):
+async def cleanup_stale_processes(max_age_hours: float = 3.0) -> dict[str, Any]:
     """Manually trigger cleanup of stale processes.
 
     Args:
@@ -867,7 +886,7 @@ async def cleanup_stale_processes(max_age_hours: float = 3.0):
 
 
 @router.get("/mcp", response_model=MCPConfigResponse)
-def get_mcp_config():
+def get_mcp_config() -> MCPConfigResponse:
     """Get MCP server configuration."""
     manager = get_mcp_manager()
     servers = manager.list_servers(include_defaults=True)
@@ -887,7 +906,7 @@ def get_mcp_config():
 
 
 @router.get("/mcp/servers", response_model=list[MCPServerResponse])
-def list_mcp_servers(include_defaults: bool = True):
+def list_mcp_servers(include_defaults: bool = True) -> list[MCPServerResponse]:
     """List all MCP servers (configured + defaults)."""
     manager = get_mcp_manager()
     servers = manager.list_servers(include_defaults=include_defaults)
@@ -904,7 +923,7 @@ def list_mcp_servers(include_defaults: bool = True):
 
 
 @router.post("/mcp/servers", response_model=MCPServerResponse)
-def add_mcp_server(data: MCPServerCreate):
+def add_mcp_server(data: MCPServerCreate) -> MCPServerResponse:
     """Add or update an MCP server."""
     manager = get_mcp_manager()
 
@@ -930,7 +949,7 @@ def add_mcp_server(data: MCPServerCreate):
 
 
 @router.post("/mcp/servers/{name}/enable")
-def enable_mcp_server(name: str):
+def enable_mcp_server(name: str) -> dict[str, str]:
     """Enable an MCP server (add from defaults if needed)."""
     manager = get_mcp_manager()
 
@@ -951,7 +970,7 @@ def enable_mcp_server(name: str):
 
 
 @router.delete("/mcp/servers/{name}")
-def remove_mcp_server(name: str):
+def remove_mcp_server(name: str) -> dict[str, str]:
     """Remove an MCP server from configuration."""
     manager = get_mcp_manager()
 
@@ -970,7 +989,7 @@ def remove_mcp_server(name: str):
 
 
 @router.get("/mcp/defaults")
-def get_default_mcp_servers():
+def get_default_mcp_servers() -> dict[str, list[str]]:
     """Get list of available default MCP servers."""
     manager = get_mcp_manager()
     defaults = manager.get_available_defaults()

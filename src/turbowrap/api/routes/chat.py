@@ -1,6 +1,7 @@
 """Chat routes."""
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -24,7 +25,7 @@ def list_sessions(
     status: str = "active",
     limit: int = 50,
     db: Session = Depends(get_db),
-):
+) -> list[ChatSession]:
     """List chat sessions."""
     query = db.query(ChatSession).filter(ChatSession.status == status)
 
@@ -38,7 +39,7 @@ def list_sessions(
 def create_session(
     data: ChatSessionCreate,
     db: Session = Depends(get_db),
-):
+) -> ChatSession:
     """Create a new chat session."""
     session = ChatSession(
         repository_id=data.repository_id,
@@ -56,7 +57,7 @@ def create_session(
 def get_session(
     session_id: str,
     db: Session = Depends(get_db),
-):
+) -> ChatSession:
     """Get chat session details."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if not session:
@@ -69,7 +70,7 @@ def get_messages(
     session_id: str,
     limit: int = 100,
     db: Session = Depends(get_db),
-):
+) -> list[ChatMessage]:
     """Get messages for a chat session."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if not session:
@@ -89,7 +90,7 @@ def send_message(
     session_id: str,
     data: ChatMessageCreate,
     db: Session = Depends(get_db),
-):
+) -> ChatMessage:
     """Send a message in a chat session (non-streaming)."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if not session:
@@ -151,13 +152,13 @@ Respond helpfully as an AI assistant for code development."""
 def archive_session(
     session_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Archive a chat session."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session.status = "archived"
+    session.status = "archived"  # type: ignore[assignment]
     db.commit()
 
     return {"status": "archived", "id": session_id}
@@ -168,7 +169,7 @@ async def stream_message(
     session_id: str,
     data: ChatMessageCreate,
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """Send a message and stream the response via SSE."""
     session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
     if not session:
@@ -183,7 +184,7 @@ async def stream_message(
     db.add(user_message)
     db.commit()
 
-    async def generate():
+    async def generate() -> Any:
         from ...llm import ClaudeClient
 
         claude = ClaudeClient()

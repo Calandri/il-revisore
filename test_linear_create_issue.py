@@ -80,7 +80,7 @@ This issue should:
         print(f"Priority:    {issue['priority']}")
         print(f"State:       {issue['state']['name']} ({issue['state']['type']})")
         print(f"Team:        {issue['team']['name']} ({issue['team']['key']})")
-        if issue.get('assignee'):
+        if issue.get("assignee"):
             print(f"Assignee:    {issue['assignee']['name']} ({issue['assignee']['email']})")
         print(f"Created At:  {issue['createdAt']}")
         print("=" * 80)
@@ -91,6 +91,7 @@ This issue should:
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

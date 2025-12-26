@@ -259,6 +259,9 @@ function systemMonitor() {
         logConnected: false,
         logError: null,
         containerName: null,
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 10,
+        reconnectTimeout: null,
 
         get filteredLogs() {
             if (this.logFilter === 'all') return this.logs;
@@ -276,6 +279,23 @@ function systemMonitor() {
             } else {
                 this.stopLogStream();
             }
+        },
+
+        scheduleReconnect() {
+            if (!this.showLogs) return; // Don't reconnect if logs were manually closed
+
+            if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                this.logError = 'Max reconnection attempts reached. Toggle logs to retry.';
+                return;
+            }
+
+            const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+            this.reconnectAttempts++;
+            this.logError = `Reconnecting in ${Math.round(delay/1000)}s... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`;
+
+            this.reconnectTimeout = setTimeout(() => {
+                this.startLogStream();
+            }, delay);
         },
 
         startLogStream() {
@@ -311,6 +331,7 @@ function systemMonitor() {
                     } catch {}
                     this.logConnected = true;
                     this.logError = null;
+                    this.reconnectAttempts = 0; // Reset on successful connection
                 });
 
                 // Handle keepalive pings (ignore, just confirms connection is alive)
@@ -330,7 +351,11 @@ function systemMonitor() {
 
                 this.logEventSource.onerror = () => {
                     this.logConnected = false;
-                    this.logError = 'Stream disconnected';
+                    if (this.logEventSource) {
+                        this.logEventSource.close();
+                        this.logEventSource = null;
+                    }
+                    this.scheduleReconnect();
                 };
 
             } catch (err) {
@@ -340,11 +365,16 @@ function systemMonitor() {
         },
 
         stopLogStream() {
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+                this.reconnectTimeout = null;
+            }
             if (this.logEventSource) {
                 this.logEventSource.close();
                 this.logEventSource = null;
             }
             this.logConnected = false;
+            this.reconnectAttempts = 0;
         },
 
         clearLogs() {

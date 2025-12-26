@@ -5,11 +5,10 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .config import get_autoupdate_settings
-from .models import (
-    AutoUpdateRun,
-)
+from .models import AutoUpdateRun
 from .steps.step1_analyze import AnalyzeFunctionalitiesStep
 from .steps.step2_research import WebResearchStep
 from .steps.step3_evaluate import EvaluateFeaturesStep
@@ -231,7 +230,7 @@ class AutoUpdateOrchestrator:
 
         return await self.run_all(resume_from=resume_from)
 
-    async def get_status(self) -> dict | None:
+    async def get_status(self) -> dict[str, Any] | None:
         """Get status of current run.
 
         Returns:

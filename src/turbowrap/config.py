@@ -230,8 +230,8 @@ class Settings(BaseSettings):
 
         # Ensure SQLite directory exists
         if self.database.url.startswith("sqlite"):
-            db_path = self.database.url.replace("sqlite:///", "")
-            db_path = Path(db_path).expanduser()
+            db_path_str = self.database.url.replace("sqlite:///", "")
+            db_path = Path(db_path_str).expanduser()
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
 

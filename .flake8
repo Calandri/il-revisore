@@ -1,0 +1,24 @@
+[flake8]
+max-line-length = 100
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    .mypy_cache,
+    .ruff_cache,
+    .pytest_cache,
+    test_*.py,
+    *_legacy.py
+
+# Ignore rules already covered by Ruff or intentionally disabled
+# E501: line too long (handled by black)
+# W503: line break before binary operator (PEP8 now recommends this)
+# E203: whitespace before ':' (conflicts with black)
+# E704: multiple statements on one line (valid for Protocol stubs with ...)
+# E226: missing whitespace around operator (handled by black)
+ignore = E501,W503,E203,E704,E226

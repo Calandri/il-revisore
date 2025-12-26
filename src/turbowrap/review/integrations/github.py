@@ -7,9 +7,10 @@ import re
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from github import Github, GithubException, RateLimitExceededException
+from github.PullRequest import ReviewComment
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.report import FinalReport, Recommendation
@@ -46,8 +47,8 @@ def with_rate_limit_retry(func: Callable[..., T]) -> Callable[..., T]:
     """
 
     @wraps(func)
-    def wrapper(*args, **kwargs) -> T:
-        last_exception = None
+    def wrapper(*args: Any, **kwargs: Any) -> T:
+        last_exception: BaseException | None = None
         retry_count = 0
 
         while retry_count <= MAX_RETRIES:
@@ -139,7 +140,7 @@ class GitHubClient:
             GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
-        if not all([owner, repo, pr_number]):
+        if owner is None or repo is None or pr_number is None:
             raise ValueError(f"Invalid PR URL: {pr_url}")
 
         repository = self.github.get_repo(f"{owner}/{repo}")
@@ -161,10 +162,10 @@ class GitHubClient:
         Raises:
             GitHubRateLimitError: If rate limit is exceeded after retries.
         """
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         owner, repo, pr_number = self._parse_pr_url(pr_url)
-        if not all([owner, repo, pr_number]):
+        if owner is None or repo is None or pr_number is None:
             raise ValueError(f"Invalid PR URL: {pr_url}")
 
         repository = self.github.get_repo(f"{owner}/{repo}")
@@ -190,7 +191,8 @@ class GitHubClient:
                 )
 
         response.raise_for_status()
-        return response.text
+        result: str = response.text
+        return result
 
     @with_rate_limit_retry
     def post_review_comment(
@@ -214,7 +216,7 @@ class GitHubClient:
             GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
-        if not all([owner, repo, pr_number]):
+        if owner is None or repo is None or pr_number is None:
             raise ValueError(f"Invalid PR URL: {pr_url}")
 
         repository = self.github.get_repo(f"{owner}/{repo}")
@@ -253,7 +255,7 @@ class GitHubClient:
             GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
-        if not all([owner, repo, pr_number]):
+        if owner is None or repo is None or pr_number is None:
             raise ValueError(f"Invalid PR URL: {pr_url}")
 
         repository = self.github.get_repo(f"{owner}/{repo}")
@@ -266,21 +268,21 @@ class GitHubClient:
         elif report.summary.recommendation == Recommendation.REQUEST_CHANGES:
             event = "REQUEST_CHANGES"
 
-        # Build inline comments
-        comments = []
+        # Build inline comments using ReviewComment TypedDict
+        comments: list[ReviewComment] = []
         for issue in report.issues[:20]:  # Limit to 20 inline comments
             if issue.line:
                 comment_body = f"**[{issue.severity.value}]** {issue.title}\n\n{issue.description}"
                 if issue.suggested_fix:
                     comment_body += f"\n\n**Suggested fix:**\n```\n{issue.suggested_fix}\n```"
 
-                comments.append(
-                    {
-                        "path": issue.file,
-                        "line": issue.line,
-                        "body": comment_body,
-                    }
-                )
+                # Create ReviewComment TypedDict
+                review_comment: ReviewComment = {
+                    "path": issue.file,
+                    "line": issue.line,
+                    "body": comment_body,
+                }
+                comments.append(review_comment)
 
         # Create review
         review_body = self._format_review_summary(report)
@@ -320,7 +322,7 @@ class GitHubClient:
             GitHubRateLimitError: If rate limit is exceeded after retries.
         """
         owner, repo, pr_number = self._parse_pr_url(pr_url)
-        if not all([owner, repo, pr_number]):
+        if owner is None or repo is None or pr_number is None:
             raise ValueError(f"Invalid PR URL: {pr_url}")
 
         repository = self.github.get_repo(f"{owner}/{repo}")
@@ -414,7 +416,7 @@ class GitHubClient:
         title: str,
         body: str,
         base_branch: str = "main",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Create a pull request on GitHub.
 

@@ -17,6 +17,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -32,7 +33,7 @@ class ChatHooks:
         await hooks.on_response_complete(session_id, content, duration_ms)
     """
 
-    def __init__(self, db: Session | None = None):
+    def __init__(self, db: Session | None = None) -> None:
         """Initialize hooks.
 
         Args:
@@ -91,8 +92,8 @@ class ChatHooks:
             session = self._db.query(CLIChatSession).filter(CLIChatSession.id == session_id).first()
 
             if session:
-                session.total_tokens_in += stats["tokens"]
-                session.updated_at = datetime.utcnow()
+                session.total_tokens_in = session.total_tokens_in + stats["tokens"]  # type: ignore[assignment]
+                session.updated_at = datetime.utcnow()  # type: ignore[assignment]
                 self._db.commit()
                 logger.debug(f"Session {session_id[:8]}: +{stats['tokens']} input tokens")
 
@@ -126,9 +127,9 @@ class ChatHooks:
             session = self._db.query(CLIChatSession).filter(CLIChatSession.id == session_id).first()
 
             if session:
-                session.total_tokens_out += stats["tokens"]
-                session.last_message_at = datetime.utcnow()
-                session.updated_at = datetime.utcnow()
+                session.total_tokens_out = session.total_tokens_out + stats["tokens"]  # type: ignore[assignment]
+                session.last_message_at = datetime.utcnow()  # type: ignore[assignment]
+                session.updated_at = datetime.utcnow()  # type: ignore[assignment]
 
             if message_id:
                 message = (
@@ -136,9 +137,9 @@ class ChatHooks:
                 )
 
                 if message:
-                    message.tokens_out = stats["tokens"]
+                    message.tokens_out = stats["tokens"]  # type: ignore[assignment]
                     if duration_ms:
-                        message.duration_ms = duration_ms
+                        message.duration_ms = duration_ms  # type: ignore[assignment]
 
             self._db.commit()
             logger.debug(f"Session {session_id[:8]}: +{stats['tokens']} output tokens")
@@ -150,7 +151,7 @@ class ChatHooks:
         session_id: str,
         repo_path: Path | None = None,
         force_regenerate: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: Session started.
 
         Checks and regenerates stale STRUCTURE.md files.
@@ -163,7 +164,7 @@ class ChatHooks:
         Returns:
             Status dict
         """
-        result = {
+        result: dict[str, Any] = {
             "session_id": session_id,
             "structure_generated": False,
             "stale_count": 0,
@@ -178,7 +179,7 @@ class ChatHooks:
             generator = StructureGenerator(repo_path)
 
             # Check for stale structures
-            stale_dirs = (
+            stale_dirs: list[Path] = (
                 generator.check_stale_structures()
                 if hasattr(generator, "check_stale_structures")
                 else []
@@ -189,7 +190,7 @@ class ChatHooks:
                 if hasattr(generator, "regenerate_stale"):
                     await asyncio.to_thread(generator.regenerate_stale)
                 else:
-                    await asyncio.to_thread(generator.generate_all)
+                    await asyncio.to_thread(generator.generate)
 
                 result["structure_generated"] = True
                 result["stale_count"] = len(stale_dirs) if stale_dirs else 1
@@ -210,7 +211,7 @@ class ChatHooks:
         tool_name: str,
         file_path: str | None = None,
         content: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: Tool used by assistant (Write/Edit).
 
         Triggered after file modifications to update structures.
@@ -223,7 +224,7 @@ class ChatHooks:
         Returns:
             Status dict
         """
-        result = {
+        result: dict[str, Any] = {
             "tool": tool_name,
             "tokens": 0,
             "structure_updated": False,
@@ -244,7 +245,7 @@ class ChatHooks:
     async def on_git_status(
         self,
         repo_path: Path,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: Get git status for repository.
 
         Args:
@@ -275,7 +276,7 @@ class ChatHooks:
         self,
         session_id: str,
         threshold_tokens: int = 100000,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: Check if session has exceeded token threshold.
 
         Args:
@@ -285,7 +286,7 @@ class ChatHooks:
         Returns:
             Status dict with exceeded flag
         """
-        result = {
+        result: dict[str, Any] = {
             "session_id": session_id,
             "exceeded": False,
             "total_tokens": 0,
@@ -314,7 +315,7 @@ class ChatHooks:
         self,
         file_path: Path,
         repo_path: Path | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: File was modified, update STRUCTURE.md.
 
         Args:
@@ -324,7 +325,7 @@ class ChatHooks:
         Returns:
             Status dict
         """
-        result = {
+        result: dict[str, Any] = {
             "file": str(file_path),
             "structure_updated": False,
         }
@@ -358,7 +359,7 @@ class ChatHooks:
         self,
         file_path: Path,
         content: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: Run linter on file.
 
         Args:
@@ -368,7 +369,7 @@ class ChatHooks:
         Returns:
             Lint results
         """
-        result = {
+        result: dict[str, Any] = {
             "file": str(file_path),
             "passed": True,
             "errors": [],
@@ -415,7 +416,7 @@ class ChatHooks:
         self,
         session_id: str,
         idle_minutes: int = 5,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Hook: Session has been idle, save state.
 
         Args:
@@ -425,7 +426,7 @@ class ChatHooks:
         Returns:
             Status dict
         """
-        result = {
+        result: dict[str, Any] = {
             "session_id": session_id,
             "idle_minutes": idle_minutes,
             "action_taken": None,
@@ -452,10 +453,10 @@ class HookRegistry:
     Allows adding custom async callbacks for events.
     """
 
-    def __init__(self):
-        self._hooks: dict[str, list[Callable[..., Awaitable]]] = {}
+    def __init__(self) -> None:
+        self._hooks: dict[str, list[Callable[..., Awaitable[Any]]]] = {}
 
-    def register(self, event: str, callback: Callable[..., Awaitable]) -> None:
+    def register(self, event: str, callback: Callable[..., Awaitable[Any]]) -> None:
         """Register a hook callback.
 
         Args:
@@ -466,7 +467,7 @@ class HookRegistry:
             self._hooks[event] = []
         self._hooks[event].append(callback)
 
-    async def trigger(self, event: str, **kwargs) -> list:
+    async def trigger(self, event: str, **kwargs: Any) -> list[Any]:
         """Trigger all hooks for an event.
 
         Args:
@@ -479,7 +480,7 @@ class HookRegistry:
         if event not in self._hooks:
             return []
 
-        results = []
+        results: list[Any] = []
         for callback in self._hooks[event]:
             try:
                 result = await callback(**kwargs)
@@ -492,7 +493,7 @@ class HookRegistry:
 
 
 # Global registry
-_hook_registry = HookRegistry()
+_hook_registry: HookRegistry = HookRegistry()
 
 
 def get_hook_registry() -> HookRegistry:
@@ -500,7 +501,7 @@ def get_hook_registry() -> HookRegistry:
     return _hook_registry
 
 
-def register_hook(event: str, callback: Callable[..., Awaitable]) -> None:
+def register_hook(event: str, callback: Callable[..., Awaitable[Any]]) -> None:
     """Register a hook callback.
 
     Args:
@@ -510,7 +511,7 @@ def register_hook(event: str, callback: Callable[..., Awaitable]) -> None:
     _hook_registry.register(event, callback)
 
 
-async def trigger_hooks(event: str, **kwargs) -> list:
+async def trigger_hooks(event: str, **kwargs: Any) -> list[Any]:
     """Trigger all registered hooks for an event.
 
     Args:
@@ -528,7 +529,7 @@ async def trigger_hooks(event: str, **kwargs) -> list:
 # ============================================================================
 
 
-def main():
+def main() -> None:
     """CLI entry point for hook commands.
 
     Usage:
@@ -560,13 +561,13 @@ def main():
             sys.exit(1)
 
         tool_name = sys.argv[2]
-        file_path = sys.argv[3]
+        file_path_str = sys.argv[3]
 
-        async def run():
-            result = await hooks.on_tool_use(tool_name, file_path)
+        async def run_post_tool_use() -> None:
+            result = await hooks.on_tool_use(tool_name, file_path_str)
             print(json.dumps(result))
 
-        asyncio.run(run())
+        asyncio.run(run_post_tool_use())
 
     elif command == "git_status":
         if len(sys.argv) < 3:
@@ -575,38 +576,38 @@ def main():
 
         repo_path = Path(sys.argv[2])
 
-        async def run():
+        async def run_git_status() -> None:
             result = await hooks.on_git_status(repo_path)
             print(json.dumps(result))
 
-        asyncio.run(run())
+        asyncio.run(run_git_status())
 
     elif command == "lint_check":
         if len(sys.argv) < 3:
             print("Usage: lint_check <file_path>")
             sys.exit(1)
 
-        file_path = Path(sys.argv[2])
+        lint_file_path = Path(sys.argv[2])
 
-        async def run():
-            result = await hooks.on_lint_check(file_path)
+        async def run_lint_check() -> None:
+            result = await hooks.on_lint_check(lint_file_path)
             print(json.dumps(result))
 
-        asyncio.run(run())
+        asyncio.run(run_lint_check())
 
     elif command == "file_modified":
         if len(sys.argv) < 3:
             print("Usage: file_modified <file_path> [repo_path]")
             sys.exit(1)
 
-        file_path = Path(sys.argv[2])
-        repo_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
+        modified_file_path = Path(sys.argv[2])
+        modified_repo_path = Path(sys.argv[3]) if len(sys.argv) > 3 else None
 
-        async def run():
-            result = await hooks.on_file_modified(file_path, repo_path)
+        async def run_file_modified() -> None:
+            result = await hooks.on_file_modified(modified_file_path, modified_repo_path)
             print(json.dumps(result))
 
-        asyncio.run(run())
+        asyncio.run(run_file_modified())
 
     else:
         print(f"Unknown command: {command}")

@@ -8,7 +8,7 @@ from .review import ReviewTask
 class TaskRegistry:
     """Registry for task types."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize registry with built-in tasks."""
         self._tasks: dict[str, type[BaseTask]] = {}
 
@@ -51,13 +51,13 @@ class TaskRegistry:
             return task_class()
         return None
 
-    def list_tasks(self) -> list[dict]:
+    def list_tasks(self) -> list[dict[str, str]]:
         """List all registered tasks.
 
         Returns:
             List of task info dictionaries.
         """
-        result = []
+        result: list[dict[str, str]] = []
         for _name, task_class in self._tasks.items():
             instance = task_class()
             result.append(

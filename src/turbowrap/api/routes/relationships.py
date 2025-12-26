@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -144,7 +146,7 @@ Se non trovi connessioni, rispondi con connections: [] e un summary esplicativo.
 
 def load_structure_content(repo: Repository) -> str | None:
     """Load the main STRUCTURE.md content for a repository."""
-    repo_path = Path(repo.local_path)
+    repo_path = Path(str(repo.local_path))
 
     # Try root STRUCTURE.md first
     structure_file = repo_path / "STRUCTURE.md"
@@ -193,8 +195,8 @@ def check_existing_link(db: Session, source_id: str, target_id: str) -> bool:
 @router.post("/analyze", response_model=AnalysisResult)
 async def analyze_relationships(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_auth),
-):
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> AnalysisResult:
     """Analyze all repositories to identify connections between them.
 
     Uses AI to analyze STRUCTURE.md files and identify:
@@ -204,7 +206,7 @@ async def analyze_relationships(
     - Related projects
     """
     manager = RepoManager(db)
-    repos = manager.list(status="active")
+    repos = manager.list_all(status="active")
 
     if len(repos) < 2:
         raise HTTPException(
@@ -218,9 +220,9 @@ async def analyze_relationships(
         if content:
             repo_structures.append(
                 RepoStructure(
-                    id=repo.id,
-                    name=repo.name,
-                    repo_type=repo.repo_type,
+                    id=str(repo.id),
+                    name=str(repo.name),
+                    repo_type=str(repo.repo_type) if repo.repo_type else None,
                     structure_content=content,
                 )
             )
@@ -285,15 +287,15 @@ async def analyze_relationships(
 @router.post("/analyze/stream")
 async def analyze_relationships_stream(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_auth),
-):
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> StreamingResponse:
     """Stream the relationship analysis progress."""
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         yield f"event: started\ndata: {json.dumps({'message': 'Avvio analisi relazioni...'})}\n\n"
 
         manager = RepoManager(db)
-        repos = manager.list(status="active")
+        repos = manager.list_all(status="active")
 
         yield f"event: progress\ndata: {json.dumps({'message': f'Trovati {len(repos)} repository'})}\n\n"
 
@@ -310,9 +312,9 @@ async def analyze_relationships_stream(
             if content:
                 repo_structures.append(
                     RepoStructure(
-                        id=repo.id,
-                        name=repo.name,
-                        repo_type=repo.repo_type,
+                        id=str(repo.id),
+                        name=str(repo.name),
+                        repo_type=str(repo.repo_type) if repo.repo_type else None,
                         structure_content=content,
                     )
                 )
@@ -389,15 +391,15 @@ async def analyze_relationships_stream(
 async def apply_connections(
     request: ApplyConnectionsRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_auth),
-):
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> ApplyConnectionsResult:
     """Apply identified connections as repository links.
 
     Creates RepositoryLink records for the identified connections.
     """
     created = 0
     skipped = 0
-    errors = []
+    errors: list[str] = []
 
     for conn in request.connections:
         try:
@@ -454,12 +456,12 @@ async def apply_connections(
 @router.get("/existing")
 async def get_existing_relationships(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_auth),
-):
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> list[dict[str, Any]]:
     """Get all existing repository links with details."""
     links = db.query(RepositoryLink).all()
 
-    result = []
+    result: list[dict[str, Any]] = []
     for link in links:
         source_repo = db.query(Repository).get(link.source_repo_id)
         target_repo = db.query(Repository).get(link.target_repo_id)
@@ -484,8 +486,8 @@ async def get_existing_relationships(
 @router.delete("/clear")
 async def clear_all_relationships(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_auth),
-):
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> dict[str, int]:
     """Clear all repository links (for re-analysis)."""
     deleted = db.query(RepositoryLink).delete()
     db.commit()

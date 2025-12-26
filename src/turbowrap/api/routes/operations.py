@@ -11,7 +11,6 @@ This provides a unified view of everything happening across the system:
 The frontend polls this single endpoint to show the Live Tasks banner.
 """
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -68,10 +67,7 @@ async def list_active_operations(
     tracker = get_tracker()
     operations = tracker.get_active(op_type=type, repo_id=repo_id)
 
-    response_ops = [
-        OperationResponse(**op.to_dict())
-        for op in operations
-    ]
+    response_ops = [OperationResponse(**op.to_dict()) for op in operations]
 
     return ActiveOperationsResponse(
         operations=response_ops,

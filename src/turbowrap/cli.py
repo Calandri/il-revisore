@@ -33,7 +33,7 @@ def _check_api_keys(require_claude: bool = False, require_gemini: bool = False) 
         Also prints helpful error messages.
     """
     settings = get_settings()
-    missing = []
+    missing: list[tuple[str, str]] = []
 
     if require_claude and not settings.agents.anthropic_api_key:
         missing.append(("ANTHROPIC_API_KEY", "Claude Opus (code review)"))
@@ -61,7 +61,7 @@ def _check_api_keys(require_claude: bool = False, require_gemini: bool = False) 
 def repo_clone(
     url: str = typer.Argument(..., help="GitHub repository URL"),
     branch: str = typer.Option("main", "--branch", "-b", help="Branch to clone"),
-):
+) -> None:
     """Clone a GitHub repository."""
     from .core.repo_manager import RepoManager
 
@@ -88,7 +88,7 @@ def repo_clone(
 @repo_app.command("list")
 def repo_list(
     status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
-):
+) -> None:
     """List all repositories."""
     from .core.repo_manager import RepoManager
 
@@ -98,7 +98,7 @@ def repo_list(
 
     try:
         manager = RepoManager(db)
-        repos = manager.list(status=status)
+        repos = manager.list(status=status)  # type: ignore[attr-defined]
 
         if not repos:
             console.print("[yellow]No repositories found.[/]")
@@ -114,10 +114,10 @@ def repo_list(
         for repo in repos:
             synced = repo.last_synced_at.strftime("%Y-%m-%d %H:%M") if repo.last_synced_at else "-"
             table.add_row(
-                repo.id[:8],
-                repo.name,
-                repo.repo_type or "-",
-                repo.status,
+                str(repo.id)[:8],
+                str(repo.name),
+                str(repo.repo_type) if repo.repo_type else "-",
+                str(repo.status),
                 synced,
             )
 
@@ -129,7 +129,7 @@ def repo_list(
 @repo_app.command("sync")
 def repo_sync(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
-):
+) -> None:
     """Sync (pull) a repository."""
     from .core.repo_manager import RepoManager
 
@@ -141,21 +141,23 @@ def repo_sync(
         manager = RepoManager(db)
 
         # Find repo by prefix
-        repos = manager.list()
-        matched = [r for r in repos if r.id.startswith(repo_id)]
+        repos = manager.list()  # type: ignore[attr-defined]
+        matched = [r for r in repos if str(r.id).startswith(repo_id)]
 
         if not matched:
             console.print(f"[bold red]✗[/] Repository not found: {repo_id}")
             raise typer.Exit(1)
 
         if len(matched) > 1:
-            console.print(f"[bold red]✗[/] Ambiguous ID, matches: {[r.id[:8] for r in matched]}")
+            console.print(
+                f"[bold red]✗[/] Ambiguous ID, matches: {[str(r.id)[:8] for r in matched]}"
+            )
             raise typer.Exit(1)
 
         repo = matched[0]
         console.print(f"[bold blue]Syncing[/] {repo.name}...")
 
-        manager.sync(repo.id)
+        manager.sync(str(repo.id))
         console.print("[bold green]✓[/] Synced successfully")
     except Exception as e:
         console.print(f"[bold red]✗[/] Error: {e}")
@@ -168,7 +170,7 @@ def repo_sync(
 def repo_remove(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
     keep_local: bool = typer.Option(False, "--keep-local", help="Keep local files"),
-):
+) -> None:
     """Remove a repository."""
     from .core.repo_manager import RepoManager
 
@@ -180,8 +182,8 @@ def repo_remove(
         manager = RepoManager(db)
 
         # Find repo by prefix
-        repos = manager.list()
-        matched = [r for r in repos if r.id.startswith(repo_id)]
+        repos = manager.list()  # type: ignore[attr-defined]
+        matched = [r for r in repos if str(r.id).startswith(repo_id)]
 
         if not matched:
             console.print(f"[bold red]✗[/] Repository not found: {repo_id}")
@@ -192,7 +194,7 @@ def repo_remove(
         if not typer.confirm(f"Remove {repo.name}?"):
             raise typer.Abort()
 
-        manager.delete(repo.id, delete_local=not keep_local)
+        manager.delete(str(repo.id), delete_local=not keep_local)
         console.print(f"[bold green]✓[/] Removed {repo.name}")
     finally:
         db.close()
@@ -208,7 +210,7 @@ def run_review(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
     max_workers: int = typer.Option(3, "--max-workers", "-w", help="Max parallel workers"),
-):
+) -> None:
     """Run code review on a repository."""
     from .core.repo_manager import RepoManager
     from .tasks import ReviewTask, TaskContext
@@ -225,15 +227,15 @@ def run_review(
         manager = RepoManager(db)
 
         # Find repo
-        repos = manager.list()
-        matched = [r for r in repos if r.id.startswith(repo_id)]
+        repos = manager.list()  # type: ignore[attr-defined]
+        matched = [r for r in repos if str(r.id).startswith(repo_id)]
 
         if not matched:
             console.print(f"[bold red]✗[/] Repository not found: {repo_id}")
             raise typer.Exit(1)
 
         repo = matched[0]
-        repo_path = Path(repo.local_path)
+        repo_path = Path(str(repo.local_path))
 
         console.print("=" * 60)
         console.print("[bold blue]TurboWrap[/] - Code Review")
@@ -248,7 +250,7 @@ def run_review(
             db=db,
             repo_path=repo_path,
             config={
-                "repository_id": repo.id,
+                "repository_id": str(repo.id),
                 "max_workers": max_workers,
             },
         )
@@ -276,7 +278,7 @@ def run_develop(
     repo_id: str = typer.Argument(..., help="Repository ID (or prefix)"),
     instruction: str = typer.Option(..., "--instruction", "-i", help="Development instruction"),
     files: list[str] | None = typer.Option(None, "--file", "-f", help="Target files"),
-):
+) -> None:
     """Run AI-assisted development on a repository."""
     from .core.repo_manager import RepoManager
     from .tasks import DevelopTask, TaskContext
@@ -293,15 +295,15 @@ def run_develop(
         manager = RepoManager(db)
 
         # Find repo
-        repos = manager.list()
-        matched = [r for r in repos if r.id.startswith(repo_id)]
+        repos = manager.list()  # type: ignore[attr-defined]
+        matched = [r for r in repos if str(r.id).startswith(repo_id)]
 
         if not matched:
             console.print(f"[bold red]✗[/] Repository not found: {repo_id}")
             raise typer.Exit(1)
 
         repo = matched[0]
-        repo_path = Path(repo.local_path)
+        repo_path = Path(str(repo.local_path))
 
         console.print("=" * 60)
         console.print("[bold blue]TurboWrap[/] - Development")
@@ -316,7 +318,7 @@ def run_develop(
             db=db,
             repo_path=repo_path,
             config={
-                "repository_id": repo.id,
+                "repository_id": str(repo.id),
                 "instruction": instruction,
                 "files": files or [],
             },
@@ -352,7 +354,7 @@ def serve(
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Server host"),
     port: int = typer.Option(8000, "--port", "-p", help="Server port"),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload"),
-):
+) -> None:
     """Start the API server."""
     import uvicorn
 
@@ -379,7 +381,7 @@ def serve(
 
 
 @app.command("status")
-def status():
+def status() -> None:
     """Show TurboWrap status."""
     settings = get_settings()
 
@@ -406,7 +408,7 @@ def status():
 
 
 @app.command("check")
-def check():
+def check() -> None:
     """Check API keys and connectivity."""
     settings = get_settings()
 
@@ -417,8 +419,8 @@ def check():
         try:
             from .llm import GeminiClient
 
-            client = GeminiClient()
-            client.generate("Say 'ok' if you can hear me.")
+            gemini_client = GeminiClient()
+            gemini_client.generate("Say 'ok' if you can hear me.")
             console.print(f"[bold green]✓[/] Gemini: Connected ({settings.agents.gemini_model})")
         except Exception as e:
             console.print(f"[bold red]✗[/] Gemini: {e}")
@@ -430,8 +432,8 @@ def check():
         try:
             from .llm import ClaudeClient
 
-            client = ClaudeClient()
-            client.generate("Say 'ok' if you can hear me.")
+            claude_client = ClaudeClient()
+            claude_client.generate("Say 'ok' if you can hear me.")
             console.print(f"[bold green]✓[/] Claude: Connected ({settings.agents.claude_model})")
         except Exception as e:
             console.print(f"[bold red]✗[/] Claude: {e}")
@@ -453,7 +455,7 @@ def autoupdate_run(
     step: int | None = typer.Option(None, "--step", "-s", help="Run single step (1-4)"),
     resume: bool = typer.Option(False, "--resume", "-r", help="Resume from checkpoint"),
     run_id: str | None = typer.Option(None, "--run-id", help="Existing run ID for resume"),
-):
+) -> None:
     """Run auto-update workflow to discover new features."""
     import asyncio
 
@@ -476,7 +478,7 @@ def autoupdate_run(
         run_id=run_id,
     )
 
-    async def progress(step_name: str, number: int, message: str):
+    async def progress(step_name: str, number: int, message: str) -> None:
         console.print(f"[dim]Step {number}:[/] {message}")
 
     try:
@@ -510,25 +512,25 @@ def autoupdate_run(
 @autoupdate_app.command("status")
 def autoupdate_status(
     run_id: str = typer.Argument(..., help="Run ID to check"),
-):
+) -> None:
     """Check status of auto-update run."""
     import asyncio
 
     from .tools.auto_update.storage import S3CheckpointManager
 
     manager = S3CheckpointManager()
-    status = asyncio.run(manager.get_run_status(run_id))
+    run_status = asyncio.run(manager.get_run_status(run_id))
 
-    if not status:
+    if not run_status:
         console.print(f"[bold red]✗[/] Run not found: {run_id}")
         raise typer.Exit(1)
 
-    console.print(f"\n[bold]Run:[/] {status['run_id']}")
-    console.print(f"[bold]Current Step:[/] {status['current_step']}")
-    console.print(f"[bold]Completed:[/] {'Yes' if status['completed'] else 'No'}")
+    console.print(f"\n[bold]Run:[/] {run_status['run_id']}")
+    console.print(f"[bold]Current Step:[/] {run_status['current_step']}")
+    console.print(f"[bold]Completed:[/] {'Yes' if run_status['completed'] else 'No'}")
 
     console.print("\n[bold]Steps:[/]")
-    for step_name, step_info in status.get("steps", {}).items():
+    for step_name, step_info in run_status.get("steps", {}).items():
         status_icon = "✓" if step_info["status"] == "completed" else "○"
         console.print(f"  [{status_icon}] {step_name}: {step_info['status']}")
         if step_info.get("error"):
@@ -538,7 +540,7 @@ def autoupdate_status(
 @autoupdate_app.command("list")
 def autoupdate_list(
     limit: int = typer.Option(10, "--limit", "-l", help="Number of runs to show"),
-):
+) -> None:
     """List recent auto-update runs."""
     import asyncio
 
@@ -572,7 +574,7 @@ def autoupdate_list(
 # ============================================================================
 
 
-def main():
+def main() -> None:
     """CLI entry point."""
     app()
 

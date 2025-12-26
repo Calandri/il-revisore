@@ -17,7 +17,7 @@ class QueuedTask:
     task_id: str
     task_type: str
     repository_id: str
-    config: dict = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     priority: int = 0
     created_at: datetime = field(default_factory=datetime.utcnow)
     started_at: datetime | None = field(default=None)  # When processing started

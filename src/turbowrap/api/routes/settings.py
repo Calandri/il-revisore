@@ -41,9 +41,9 @@ def _set_setting(
     setting = _get_setting(db, key)
 
     if setting:
-        setting.value = value
+        setting.value = value  # type: ignore[assignment]
         if description:
-            setting.description = description
+            setting.description = description  # type: ignore[assignment]
     else:
         setting = Setting(
             key=key,
@@ -59,7 +59,7 @@ def _set_setting(
 
 
 @router.get("", response_model=SettingsResponse)
-def get_settings(db: Session = Depends(get_db)):
+def get_settings(db: Session = Depends(get_db)) -> SettingsResponse:
     """Get all settings (secrets are masked)."""
     config = get_config()
 
@@ -76,12 +76,24 @@ def get_settings(db: Session = Depends(get_db)):
         # Linear Integration
         linear_api_key="***" if linear_api_key and linear_api_key.value else None,
         linear_api_key_set=bool(linear_api_key and linear_api_key.value),
-        linear_team_id=linear_team_id.value if linear_team_id else None,
+        linear_team_id=(
+            str(linear_team_id.value) if linear_team_id and linear_team_id.value else None
+        ),
         # Models: DB overrides config defaults
-        claude_model=claude_model.value if claude_model else config.agents.claude_model,
-        gemini_model=gemini_model.value if gemini_model else config.agents.gemini_model,
+        claude_model=(
+            str(claude_model.value)
+            if claude_model and claude_model.value
+            else config.agents.claude_model
+        ),
+        gemini_model=(
+            str(gemini_model.value)
+            if gemini_model and gemini_model.value
+            else config.agents.gemini_model
+        ),
         gemini_pro_model=(
-            gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model
+            str(gemini_pro_model.value)
+            if gemini_pro_model and gemini_pro_model.value
+            else config.agents.gemini_pro_model
         ),
     )
 
@@ -90,7 +102,7 @@ def get_settings(db: Session = Depends(get_db)):
 def set_github_token(
     data: GitHubTokenUpdate,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Set GitHub token for private repositories."""
     _set_setting(
         db,
@@ -103,7 +115,7 @@ def set_github_token(
 
 
 @router.delete("/github-token")
-def delete_github_token(db: Session = Depends(get_db)):
+def delete_github_token(db: Session = Depends(get_db)) -> dict[str, str]:
     """Delete GitHub token."""
     setting = _get_setting(db, GITHUB_TOKEN_KEY)
     if setting:
@@ -117,7 +129,7 @@ def delete_github_token(db: Session = Depends(get_db)):
 def set_linear_api_key(
     data: LinearAPIKeyUpdate,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Set Linear API key for issue management."""
     _set_setting(
         db,
@@ -130,7 +142,7 @@ def set_linear_api_key(
 
 
 @router.delete("/linear-api-key")
-def delete_linear_api_key(db: Session = Depends(get_db)):
+def delete_linear_api_key(db: Session = Depends(get_db)) -> dict[str, str]:
     """Delete Linear API key."""
     setting = _get_setting(db, LINEAR_API_KEY_KEY)
     if setting:
@@ -143,7 +155,7 @@ def delete_linear_api_key(db: Session = Depends(get_db)):
 def set_linear_team_id(
     data: LinearTeamIDUpdate,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Set Linear team ID for default team."""
     _set_setting(
         db,
@@ -160,7 +172,7 @@ def get_github_token(db: Session) -> str | None:
     This is a utility function for use by other modules.
     """
     setting = _get_setting(db, GITHUB_TOKEN_KEY)
-    return setting.value if setting else None
+    return str(setting.value) if setting and setting.value else None
 
 
 # Model endpoints
@@ -168,7 +180,7 @@ def get_github_token(db: Session) -> str | None:
 def set_claude_model(
     data: ModelUpdate,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Set Claude model name."""
     _set_setting(
         db,
@@ -183,7 +195,7 @@ def set_claude_model(
 def set_gemini_model(
     data: ModelUpdate,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Set Gemini Flash model name."""
     _set_setting(
         db,
@@ -198,7 +210,7 @@ def set_gemini_model(
 def set_gemini_pro_model(
     data: ModelUpdate,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Set Gemini Pro model name."""
     _set_setting(
         db,
@@ -215,4 +227,4 @@ def get_model_setting(db: Session, key: str, default: str) -> str:
     This is a utility function for use by other modules.
     """
     setting = _get_setting(db, key)
-    return setting.value if setting and setting.value else default
+    return str(setting.value) if setting and setting.value else default

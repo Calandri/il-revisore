@@ -12,9 +12,9 @@ Master orchestrator for "TurboWrap" code review system. Coordinates the entire r
 
 ```
 1. DETECT REPO TYPE
-   ├── Python (.py, requirements.txt) → Backend → reviewer_be
-   ├── JS/TS (.tsx, package.json) → Frontend → reviewer_fe
-   └── Both → Full-stack → Launch both
+   ├── Python (.py, requirements.txt) → Backend → reviewer_be + reviewer_dedup_be
+   ├── JS/TS (.tsx, package.json) → Frontend → reviewer_fe + reviewer_dedup_fe
+   └── Both → Full-stack → Launch all reviewers
 
 2. ALWAYS LAUNCH analyst_func (business logic)
 
@@ -78,7 +78,7 @@ Master orchestrator for "TurboWrap" code review system. Coordinates the entire r
 
 ```json
 {
-  "reviewer": "reviewer_be" | "reviewer_fe" | "analyst_func",
+  "reviewer": "reviewer_be" | "reviewer_fe" | "reviewer_dedup_be" | "reviewer_dedup_fe" | "analyst_func",
   "summary": {
     "files_reviewed": 12,
     "critical_issues": 2,
@@ -141,6 +141,7 @@ priority = min(100, base_score * multiplier + len(reviewers) * 5)
 | Reviewer | Status | Issues | Duration |
 |----------|--------|--------|----------|
 | reviewer_be | ✅ | 8 | 32s |
+| reviewer_dedup_be | ✅ | 3 | 25s |
 | analyst_func | ✅ | 7 | 28s |
 
 ## Critical Issues (Must Fix)
@@ -266,8 +267,8 @@ Input: { "type": "pr", "source": { "pr_url": "https://github.com/3bee/lambda-oas
 
 Actions:
 1. Detect: Python → BACKEND
-2. Launch: reviewer_be, analyst_func (parallel)
-3. Skip: reviewer_fe
+2. Launch: reviewer_be, reviewer_dedup_be, analyst_func (parallel)
+3. Skip: reviewer_fe, reviewer_dedup_fe
 4. Generate: Unified report
 ```
 
@@ -277,7 +278,7 @@ Input: { "type": "directory", "source": { "directory": "/path/to/monorepo" } }
 
 Actions:
 1. Detect: Python + TSX → FULLSTACK
-2. Launch: reviewer_be, reviewer_fe, analyst_func (all parallel)
+2. Launch: reviewer_be, reviewer_fe, reviewer_dedup_be, reviewer_dedup_fe, analyst_func (all parallel)
 3. Generate: Unified report with BE/FE sections
 ```
 

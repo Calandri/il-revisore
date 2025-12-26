@@ -4,6 +4,7 @@ import logging
 import subprocess
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -131,7 +132,7 @@ def run_git_command(repo_path: Path, command: list[str]) -> str:
 
 
 @router.get("/repositories")
-def list_repositories(db: Session = Depends(get_db)):
+def list_repositories(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     """List all active repositories with basic info."""
     repos = (
         db.query(Repository)
@@ -139,15 +140,15 @@ def list_repositories(db: Session = Depends(get_db)):
         .all()
     )
 
-    result = []
+    result: list[dict[str, Any]] = []
     for repo in repos:
         path = repo.local_path
         path_exists = Path(path).exists() if path else False
         logger.debug(f"[git/repos] {repo.name}: path={path}, exists={path_exists}")
         result.append(
             {
-                "id": repo.id,
-                "name": repo.name,
+                "id": str(repo.id),
+                "name": str(repo.name) if repo.name else None,
                 "path": str(path) if path else None,
                 "path_exists": path_exists,
             }
@@ -157,7 +158,7 @@ def list_repositories(db: Session = Depends(get_db)):
 
 
 @router.get("/repositories/{repo_id}/branch", response_model=BranchInfo)
-def get_current_branch(repo_id: str, db: Session = Depends(get_db)):
+def get_current_branch(repo_id: str, db: Session = Depends(get_db)) -> BranchInfo:
     """Get the current branch for a repository."""
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if not repo:
@@ -180,7 +181,7 @@ def get_current_branch(repo_id: str, db: Session = Depends(get_db)):
 @router.get("/repositories/{repo_id}/commits", response_model=list[CommitInfo])
 def get_commits(
     repo_id: str, limit: int = Query(default=5, ge=1, le=50), db: Session = Depends(get_db)
-):
+) -> list[CommitInfo]:
     """Get recent commits for a repository.
 
     Args:
@@ -244,7 +245,7 @@ def get_commits(
 
 
 @router.get("/repositories/{repo_id}/branches", response_model=BranchListInfo)
-def list_branches(repo_id: str, db: Session = Depends(get_db)):
+def list_branches(repo_id: str, db: Session = Depends(get_db)) -> BranchListInfo:
     """List all branches for a repository."""
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if not repo:
@@ -278,7 +279,7 @@ def list_branches(repo_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/repositories/{repo_id}/commits/{sha}/files", response_model=list[CommitFileInfo])
-def get_commit_files(repo_id: str, sha: str, db: Session = Depends(get_db)):
+def get_commit_files(repo_id: str, sha: str, db: Session = Depends(get_db)) -> list[CommitFileInfo]:
     """Get list of files changed in a commit with stats."""
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if not repo:
@@ -289,7 +290,9 @@ def get_commit_files(repo_id: str, sha: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Repository path not found")
 
     # Get file status (A/M/D/R)
-    status_output = run_git_command(repo_path, ["diff-tree", "--no-commit-id", "--name-status", "-r", sha])
+    status_output = run_git_command(
+        repo_path, ["diff-tree", "--no-commit-id", "--name-status", "-r", sha]
+    )
 
     # Get numstat for additions/deletions
     numstat_output = run_git_command(repo_path, ["show", "--numstat", "--format=", sha])
@@ -316,18 +319,17 @@ def get_commit_files(repo_id: str, sha: str, db: Session = Depends(get_db)):
             deletions = int(parts[1]) if parts[1] != "-" else 0
             filename = parts[2]
             status = status_map.get(filename, "M")
-            files.append(CommitFileInfo(
-                filename=filename,
-                status=status,
-                additions=additions,
-                deletions=deletions
-            ))
+            files.append(
+                CommitFileInfo(
+                    filename=filename, status=status, additions=additions, deletions=deletions
+                )
+            )
 
     return files
 
 
 @router.get("/repositories/{repo_id}/commits/{sha}/diff", response_model=CommitDiff)
-def get_commit_diff(repo_id: str, sha: str, db: Session = Depends(get_db)):
+def get_commit_diff(repo_id: str, sha: str, db: Session = Depends(get_db)) -> CommitDiff:
     """Get the diff for a specific commit.
 
     Args:
@@ -385,15 +387,16 @@ def _get_repo_and_path(repo_id: str, db: Session) -> tuple[Repository, Path]:
 def _extract_repo_name(repo: Repository) -> str:
     """Extract display name from repository."""
     if repo.url:
-        name = repo.url.rstrip("/").split("/")[-1]
+        url_str = str(repo.url)
+        name = url_str.rstrip("/").split("/")[-1]
         if name.endswith(".git"):
             name = name[:-4]
         return name
-    return repo.name or "unknown"
+    return str(repo.name) if repo.name else "unknown"
 
 
 @router.get("/repositories/{repo_id}/status", response_model=GitWorkingStatus)
-def get_working_status(repo_id: str, db: Session = Depends(get_db)):
+def get_working_status(repo_id: str, db: Session = Depends(get_db)) -> GitWorkingStatus:
     """Get working directory status (modified, staged, untracked files)."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -431,28 +434,28 @@ def get_working_status(repo_id: str, db: Session = Depends(get_db)):
         pass
 
     return GitWorkingStatus(
-        modified=modified,
-        staged=staged,
-        untracked=untracked,
-        ahead=ahead,
-        behind=behind
+        modified=modified, staged=staged, untracked=untracked, ahead=ahead, behind=behind
     )
 
 
 @router.post("/repositories/{repo_id}/checkout", response_model=GitOperationResult)
-def checkout_branch(repo_id: str, request: CheckoutRequest, db: Session = Depends(get_db)):
+def checkout_branch(
+    repo_id: str, request: CheckoutRequest, db: Session = Depends(get_db)
+) -> GitOperationResult:
     """Checkout a branch."""
     repo_path = _get_repo_path(repo_id, db)
 
     try:
         output = run_git_command(repo_path, ["checkout", request.branch])
-        return GitOperationResult(success=True, message=f"Switched to branch '{request.branch}'", output=output)
+        return GitOperationResult(
+            success=True, message=f"Switched to branch '{request.branch}'", output=output
+        )
     except HTTPException as e:
         return GitOperationResult(success=False, message=e.detail)
 
 
 @router.post("/repositories/{repo_id}/fetch", response_model=GitOperationResult)
-def fetch_remote(repo_id: str, db: Session = Depends(get_db)):
+def fetch_remote(repo_id: str, db: Session = Depends(get_db)) -> GitOperationResult:
     """Fetch from remote."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -464,7 +467,7 @@ def fetch_remote(repo_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/repositories/{repo_id}/pull", response_model=GitOperationResult)
-def pull_remote(repo_id: str, db: Session = Depends(get_db)):
+def pull_remote(repo_id: str, db: Session = Depends(get_db)) -> GitOperationResult:
     """Pull from remote."""
     repo, repo_path = _get_repo_and_path(repo_id, db)
     repo_name = _extract_repo_name(repo)
@@ -496,7 +499,7 @@ def pull_remote(repo_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/repositories/{repo_id}/push", response_model=GitOperationResult)
-def push_remote(repo_id: str, db: Session = Depends(get_db)):
+def push_remote(repo_id: str, db: Session = Depends(get_db)) -> GitOperationResult:
     """Push to remote."""
     repo, repo_path = _get_repo_and_path(repo_id, db)
     repo_name = _extract_repo_name(repo)
@@ -528,7 +531,9 @@ def push_remote(repo_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/repositories/{repo_id}/merge", response_model=GitOperationResult)
-def merge_branch(repo_id: str, request: MergeRequest, db: Session = Depends(get_db)):
+def merge_branch(
+    repo_id: str, request: MergeRequest, db: Session = Depends(get_db)
+) -> GitOperationResult:
     """Merge a branch into current."""
     repo, repo_path = _get_repo_and_path(repo_id, db)
     repo_name = _extract_repo_name(repo)
@@ -561,7 +566,7 @@ def merge_branch(repo_id: str, request: MergeRequest, db: Session = Depends(get_
 
 
 @router.get("/repositories/{repo_id}/stash", response_model=list[StashEntry])
-def list_stashes(repo_id: str, db: Session = Depends(get_db)):
+def list_stashes(repo_id: str, db: Session = Depends(get_db)) -> list[StashEntry]:
     """List all stashes."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -579,18 +584,22 @@ def list_stashes(repo_id: str, db: Session = Depends(get_db)):
                     index = int(index_str)
                 except ValueError:
                     index = 0
-                stashes.append(StashEntry(
-                    index=index,
-                    message=parts[1] if len(parts) > 1 else "",
-                    date=parts[2] if len(parts) > 2 else ""
-                ))
+                stashes.append(
+                    StashEntry(
+                        index=index,
+                        message=parts[1] if len(parts) > 1 else "",
+                        date=parts[2] if len(parts) > 2 else "",
+                    )
+                )
         return stashes
     except HTTPException:
         return []
 
 
 @router.post("/repositories/{repo_id}/stash", response_model=GitOperationResult)
-def create_stash(repo_id: str, request: StashRequest | None = None, db: Session = Depends(get_db)):
+def create_stash(
+    repo_id: str, request: StashRequest | None = None, db: Session = Depends(get_db)
+) -> GitOperationResult:
     """Create a new stash."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -605,7 +614,9 @@ def create_stash(repo_id: str, request: StashRequest | None = None, db: Session 
 
 
 @router.post("/repositories/{repo_id}/stash/pop", response_model=GitOperationResult)
-def pop_stash(repo_id: str, request: StashPopRequest | None = None, db: Session = Depends(get_db)):
+def pop_stash(
+    repo_id: str, request: StashPopRequest | None = None, db: Session = Depends(get_db)
+) -> GitOperationResult:
     """Pop a stash (apply and remove)."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -618,7 +629,9 @@ def pop_stash(repo_id: str, request: StashPopRequest | None = None, db: Session 
 
 
 @router.post("/repositories/{repo_id}/stash/drop", response_model=GitOperationResult)
-def drop_stash(repo_id: str, request: StashPopRequest | None = None, db: Session = Depends(get_db)):
+def drop_stash(
+    repo_id: str, request: StashPopRequest | None = None, db: Session = Depends(get_db)
+) -> GitOperationResult:
     """Drop a stash (remove without applying)."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -631,7 +644,7 @@ def drop_stash(repo_id: str, request: StashPopRequest | None = None, db: Session
 
 
 @router.post("/repositories/{repo_id}/reset", response_model=GitOperationResult)
-def reset_changes(repo_id: str, db: Session = Depends(get_db)):
+def reset_changes(repo_id: str, db: Session = Depends(get_db)) -> GitOperationResult:
     """Discard all local changes (git checkout -- . && git clean -fd)."""
     repo_path = _get_repo_path(repo_id, db)
 
@@ -661,8 +674,10 @@ class GeneratedCommitMessage(BaseModel):
     summary: str  # Short summary of changes
 
 
-@router.post("/repositories/{repo_id}/commit/generate-message", response_model=GeneratedCommitMessage)
-def generate_commit_message(repo_id: str, db: Session = Depends(get_db)):
+@router.post(
+    "/repositories/{repo_id}/commit/generate-message", response_model=GeneratedCommitMessage
+)
+def generate_commit_message(repo_id: str, db: Session = Depends(get_db)) -> GeneratedCommitMessage:
     """Generate a commit message using AI (Gemini Flash).
 
     Analyzes the current diff and generates a descriptive commit message.
@@ -689,7 +704,9 @@ def generate_commit_message(repo_id: str, db: Session = Depends(get_db)):
 
         # If no diff, list untracked files
         if not diff_output.strip():
-            untracked_output = run_git_command(repo_path, ["ls-files", "--others", "--exclude-standard"])
+            untracked_output = run_git_command(
+                repo_path, ["ls-files", "--others", "--exclude-standard"]
+            )
             if untracked_output.strip():
                 diff_output = f"New untracked files:\n{untracked_output}"
 
@@ -744,20 +761,19 @@ Return ONLY the JSON, no markdown code blocks or explanations."""
 
         # Clean response - remove markdown code blocks if present
         cleaned = response.strip()
-        cleaned = re.sub(r'^```json\s*', '', cleaned)
-        cleaned = re.sub(r'\s*```$', '', cleaned)
+        cleaned = re.sub(r"^```json\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
 
         try:
             result = json.loads(cleaned)
             return GeneratedCommitMessage(
                 message=result.get("message", "chore: update files"),
-                summary=result.get("summary", "Changes committed")
+                summary=result.get("summary", "Changes committed"),
             )
         except json.JSONDecodeError:
             # Fallback: use the response as-is
             return GeneratedCommitMessage(
-                message=response.strip()[:500],
-                summary="Changes committed"
+                message=response.strip()[:500], summary="Changes committed"
             )
 
     except Exception as e:
@@ -765,13 +781,14 @@ Return ONLY the JSON, no markdown code blocks or explanations."""
         # Fallback to a simple message based on file count
         file_count = len(status_output.strip().split("\n"))
         return GeneratedCommitMessage(
-            message=f"chore: update {file_count} file(s)",
-            summary=f"Updated {file_count} file(s)"
+            message=f"chore: update {file_count} file(s)", summary=f"Updated {file_count} file(s)"
         )
 
 
 @router.post("/repositories/{repo_id}/commit", response_model=GitOperationResult)
-def commit_changes(repo_id: str, request: CommitRequest, db: Session = Depends(get_db)):
+def commit_changes(
+    repo_id: str, request: CommitRequest, db: Session = Depends(get_db)
+) -> GitOperationResult:
     """Commit all changes with the provided message.
 
     Stages all changes (git add -A) and commits with the message.
@@ -811,5 +828,7 @@ def commit_changes(repo_id: str, request: CommitRequest, db: Session = Depends(g
         tracker.fail(op_id, error=e.detail)
         # Check if it's "nothing to commit"
         if "nothing to commit" in e.detail.lower():
-            return GitOperationResult(success=False, message="Nothing to commit - working tree clean")
+            return GitOperationResult(
+                success=False, message="Nothing to commit - working tree clean"
+            )
         return GitOperationResult(success=False, message=e.detail)

@@ -69,6 +69,7 @@ def print_info(message: str):
 # STEP 1: Test Gemini Vision
 # ==============================================================================
 
+
 def test_gemini_vision():
     """Test Gemini Vision screenshot analysis."""
     print_header("Gemini Vision Screenshot Analysis", step=1)
@@ -78,12 +79,12 @@ def test_gemini_vision():
 
         # Create a simple test image (1x1 pixel PNG)
         test_img_data = (
-            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
-            b'\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\x00\x01'
-            b'\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\x00\x01"
+            b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
         )
 
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             f.write(test_img_data)
             temp_path = f.name
 
@@ -97,8 +98,8 @@ def test_gemini_vision():
                     "title": TEST_ISSUE["title"],
                     "description": TEST_ISSUE["description"],
                     "figma_link": TEST_ISSUE["figma_link"],
-                    "website_link": TEST_ISSUE["website_link"]
-                }
+                    "website_link": TEST_ISSUE["website_link"],
+                },
             )
 
             print_success("Gemini Vision analysis completed")
@@ -115,6 +116,7 @@ def test_gemini_vision():
     except Exception as e:
         print_error(f"Gemini Vision test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -122,6 +124,7 @@ def test_gemini_vision():
 # ==============================================================================
 # STEP 2: Test Linear Client
 # ==============================================================================
+
 
 async def test_linear_create_issue():
     """Test Linear issue creation."""
@@ -151,7 +154,7 @@ async def test_linear_create_issue():
             team_id=team_id,
             title=f"[TEST] {TEST_ISSUE['title']}",
             description=f"{TEST_ISSUE['description']}\n\n**This is a test issue created by test script**",
-            priority=0
+            priority=0,
         )
 
         print_success("Linear issue created successfully")
@@ -173,6 +176,7 @@ async def test_linear_create_issue():
     except Exception as e:
         print_error(f"Linear test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -180,6 +184,7 @@ async def test_linear_create_issue():
 # ==============================================================================
 # STEP 3: Test Claude Agents
 # ==============================================================================
+
 
 def test_claude_question_generator():
     """Test Claude question generator agent."""
@@ -206,7 +211,7 @@ Target touch area dell'icona è 20x20px, sotto il minimo consigliato di 44x44px.
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
 
         if result.returncode != 0:
@@ -248,6 +253,7 @@ Target touch area dell'icona è 20x20px, sotto il minimo consigliato di 44x44px.
     except Exception as e:
         print_error(f"Question generator test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -282,7 +288,7 @@ Risposte utente:
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=180
+            timeout=180,
         )
 
         if result.returncode != 0:
@@ -315,6 +321,7 @@ Risposte utente:
     except Exception as e:
         print_error(f"Finalizer test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -322,6 +329,7 @@ Risposte utente:
 # ==============================================================================
 # STEP 4: Test Backend API Endpoints
 # ==============================================================================
+
 
 def test_backend_api():
     """Test that API endpoints are correctly registered."""
@@ -361,6 +369,7 @@ def test_backend_api():
     except Exception as e:
         print_error(f"Backend API test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -368,6 +377,7 @@ def test_backend_api():
 # ==============================================================================
 # STEP 5: Frontend Test Instructions
 # ==============================================================================
+
 
 def test_frontend_manual():
     """Print instructions for manual frontend testing."""
@@ -414,6 +424,7 @@ def test_frontend_manual():
 # Main Test Runner
 # ==============================================================================
 
+
 async def main():
     """Run all tests."""
     print("\n")
@@ -424,22 +435,22 @@ async def main():
     results = {}
 
     # STEP 1: Gemini Vision
-    results['gemini'] = test_gemini_vision()
+    results["gemini"] = test_gemini_vision()
 
     # STEP 2: Linear Client
-    results['linear'] = await test_linear_create_issue()
+    results["linear"] = await test_linear_create_issue()
 
     # STEP 3a: Claude Question Generator
-    results['claude_questions'] = test_claude_question_generator()
+    results["claude_questions"] = test_claude_question_generator()
 
     # STEP 3b: Claude Finalizer
-    results['claude_finalizer'] = test_claude_finalizer()
+    results["claude_finalizer"] = test_claude_finalizer()
 
     # STEP 4: Backend API
-    results['backend'] = test_backend_api()
+    results["backend"] = test_backend_api()
 
     # STEP 5: Frontend (manual)
-    results['frontend'] = test_frontend_manual()
+    results["frontend"] = test_frontend_manual()
 
     # Summary
     print("\n")

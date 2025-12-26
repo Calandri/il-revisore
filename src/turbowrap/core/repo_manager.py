@@ -4,26 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db.models import LinkType, Repository, RepositoryLink, Setting
 from ..exceptions import RepositoryError
-from ..utils.file_utils import (
-    detect_repo_type,
-    discover_files,
-    load_file_content,
-)
-from ..utils.git_utils import (
-    clone_repo,
-    get_repo_status,
-    parse_github_url,
-    pull_repo,
-)
+from ..utils.file_utils import FileInfo, detect_repo_type, discover_files, load_file_content
+from ..utils.git_utils import clone_repo, get_repo_status, parse_github_url, pull_repo
 
 
-def _calculate_token_totals(repo_path: Path, files: list) -> dict:
+def _calculate_token_totals(repo_path: Path, files: list[FileInfo]) -> dict[str, int]:
     """Calculate total tokens for a list of files.
 
     Args:
@@ -74,7 +66,7 @@ def get_directory_size(path: Path, skip_git: bool = True) -> int:
             try:
                 if os.path.isfile(fp):
                     total += os.path.getsize(fp)
-            except (OSError, IOError):
+            except OSError:
                 pass  # Skip files we can't access
     return total
 
@@ -165,7 +157,7 @@ class RepoManager:
         # 2. Check database
         db_setting = self.db.query(Setting).filter(Setting.key == "github_token").first()
         if db_setting and db_setting.value:
-            return db_setting.value
+            return cast(str, db_setting.value)
 
         # 3. Fall back to environment variable
         return self._settings.agents.github_token
@@ -203,7 +195,7 @@ class RepoManager:
         existing = query.first()
 
         if existing:
-            return self.sync(existing.id, token)
+            return self.sync(cast(str, existing.id), token)
 
         # Get effective token
         effective_token = self._get_token(token)
@@ -289,7 +281,7 @@ class RepoManager:
             if existing.status == "cloning":
                 return existing
             # If already cloned (active/error), sync instead
-            return self.sync(existing.id)
+            return self.sync(cast(str, existing.id))
 
         # Create record with cloning status
         display_name = repo_info.full_name
@@ -361,11 +353,11 @@ class RepoManager:
         disk_size = get_directory_size(scan_path)
 
         # Update repo record
-        repo.local_path = str(local_path)
-        repo.status = "active"
-        repo.repo_type = repo_type
-        repo.last_synced_at = datetime.utcnow()
-        repo.metadata_ = {
+        repo.local_path = str(local_path)  # type: ignore[assignment]
+        repo.status = "active"  # type: ignore[assignment]
+        repo.repo_type = repo_type  # type: ignore[assignment]
+        repo.last_synced_at = datetime.utcnow()  # type: ignore[assignment]
+        repo.metadata_ = {  # type: ignore[assignment]
             "be_files": be_stats,
             "fe_files": fe_stats,
             "total_tokens": be_stats["tokens"] + fe_stats["tokens"],
@@ -398,7 +390,7 @@ class RepoManager:
         if not repo:
             raise RepositoryError(f"Repository not found: {repo_id}")
 
-        local_path = Path(repo.local_path)
+        local_path = Path(cast(str, repo.local_path))
 
         # Check if local path exists
         if local_path.exists() and (local_path / ".git").exists():
@@ -406,6 +398,7 @@ class RepoManager:
 
         # Local path missing - re-clone
         import logging
+
         logger = logging.getLogger(__name__)
         logger.warning(f"Repository local path missing, re-cloning: {repo.name} -> {local_path}")
 
@@ -413,11 +406,13 @@ class RepoManager:
 
         try:
             # Re-clone to the same path
-            clone_repo(repo.url, repo.default_branch or "main", effective_token, target_path=local_path)
+            repo_url = cast(str, repo.url)
+            repo_branch = cast(str, repo.default_branch) if repo.default_branch else "main"
+            clone_repo(repo_url, repo_branch, effective_token, target_path=local_path)
 
             # Update sync timestamp
-            repo.last_synced_at = datetime.utcnow()
-            repo.status = "active"
+            repo.last_synced_at = datetime.utcnow()  # type: ignore[assignment]
+            repo.status = "active"  # type: ignore[assignment]
             self.db.commit()
             self.db.refresh(repo)
 
@@ -425,7 +420,7 @@ class RepoManager:
             return repo
 
         except Exception as e:
-            repo.status = "error"
+            repo.status = "error"  # type: ignore[assignment]
             self.db.commit()
             raise RepositoryError(f"Failed to re-clone repository {repo.name}: {e}") from e
 
@@ -450,11 +445,11 @@ class RepoManager:
         # Ensure local path exists before syncing
         repo = self.ensure_repo_exists(repo_id, token)
 
-        repo.status = "syncing"
+        repo.status = "syncing"  # type: ignore[assignment]
         self.db.commit()
 
         try:
-            local_path = Path(repo.local_path)
+            local_path = Path(cast(str, repo.local_path))
 
             # Validate path stays within repos directory
             self._validate_path(local_path, base_dir=self._settings.repos_dir)
@@ -464,7 +459,8 @@ class RepoManager:
 
             # Re-detect files and recalculate tokens
             # For monorepo with workspace_path, only scan the workspace subfolder
-            scan_path = local_path / repo.workspace_path if repo.workspace_path else local_path
+            workspace_path = cast(str | None, repo.workspace_path)
+            scan_path = local_path / workspace_path if workspace_path else local_path
             be_files, fe_files = discover_files(scan_path)
             be_stats = _calculate_token_totals(scan_path, be_files)
             fe_stats = _calculate_token_totals(scan_path, fe_files)
@@ -472,9 +468,9 @@ class RepoManager:
             # Calculate disk size for the scanned path
             disk_size = get_directory_size(scan_path)
 
-            repo.status = "active"
-            repo.last_synced_at = datetime.utcnow()
-            repo.metadata_ = {
+            repo.status = "active"  # type: ignore[assignment]
+            repo.last_synced_at = datetime.utcnow()  # type: ignore[assignment]
+            repo.metadata_ = {  # type: ignore[assignment]
                 "be_files": be_stats,
                 "fe_files": fe_stats,
                 "total_tokens": be_stats["tokens"] + fe_stats["tokens"],
@@ -487,7 +483,7 @@ class RepoManager:
             return repo
 
         except Exception as e:
-            repo.status = "error"
+            repo.status = "error"  # type: ignore[assignment]
             self.db.commit()
             raise RepositoryError(f"Sync failed: {e}") from e
 
@@ -499,7 +495,9 @@ class RepoManager:
         """Get repository by name (owner/repo)."""
         return self.db.query(Repository).filter(Repository.name == name).first()
 
-    def list(self, status: str | None = None, project_name: str | None = None) -> list[Repository]:
+    def list_all(
+        self, status: str | None = None, project_name: str | None = None
+    ) -> list[Repository]:
         """List all repositories.
 
         Args:
@@ -537,7 +535,7 @@ class RepoManager:
             raise RepositoryError(f"Repository not found: {repo_id}")
 
         if delete_local:
-            local_path = Path(repo.local_path)
+            local_path = Path(cast(str, repo.local_path))
 
             # CRITICAL: Validate path before deletion to prevent directory traversal attacks
             # This ensures we only delete within the repos directory
@@ -549,7 +547,7 @@ class RepoManager:
         self.db.delete(repo)
         self.db.commit()
 
-    def get_status(self, repo_id: str) -> dict:
+    def get_status(self, repo_id: str) -> dict[str, Any]:
         """Get detailed repository status.
 
         Args:
@@ -563,11 +561,11 @@ class RepoManager:
         if not repo:
             raise RepositoryError(f"Repository not found: {repo_id}")
 
-        local_path = Path(repo.local_path)
+        local_path = Path(cast(str, repo.local_path))
         git_status = get_repo_status(local_path)
 
         # Parse file stats from metadata if available
-        files_stats = None
+        files_stats: dict[str, int] | None = None
         if repo.metadata_ and isinstance(repo.metadata_, dict):
             be_count = repo.metadata_.get("be_files")
             fe_count = repo.metadata_.get("fe_files")
@@ -596,7 +594,7 @@ class RepoManager:
         source_id: str,
         target_id: str,
         link_type: str,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> RepositoryLink:
         """Create a link between two repositories.
 
@@ -684,7 +682,7 @@ class RepoManager:
         repo_id: str,
         link_type: str | None = None,
         direction: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Get all repositories linked to a repository.
 
         Args:
@@ -702,7 +700,7 @@ class RepoManager:
         if not repo:
             raise RepositoryError(f"Repository not found: {repo_id}")
 
-        linked_repos = []
+        linked_repos: list[dict[str, Any]] = []
 
         # Outgoing links (this repo is the source)
         if direction is None or direction == "outgoing":

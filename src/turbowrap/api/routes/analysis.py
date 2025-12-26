@@ -9,6 +9,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -91,7 +92,7 @@ class LintResult(BaseModel):
 async def run_lint_analysis(
     request: LintRequest,
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """
     Run linting analysis on a repository using Claude CLI.
 
@@ -108,16 +109,17 @@ async def run_lint_analysis(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(str(repo.local_path))
     if not repo_path.exists():
         raise HTTPException(status_code=400, detail="Repository path not found")
 
     # Create or use task
+    task_id: str
     if request.task_id:
         task = db.query(Task).filter(Task.id == request.task_id).first()
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        task_id = task.id
+        task_id = str(task.id)
     else:
         # Create a new task for this lint run
         task_id = str(uuid.uuid4())
@@ -132,7 +134,7 @@ async def run_lint_analysis(
         db.add(task)
         db.commit()
 
-    async def generate() -> AsyncIterator[dict]:
+    async def generate() -> AsyncIterator[dict[str, str]]:
         """Generate SSE events from lint analysis."""
         issues_created = 0
 
@@ -246,8 +248,8 @@ async def run_lint_analysis(
                 # Update task status
                 task_obj = db.query(Task).filter(Task.id == task_id).first()
                 if task_obj:
-                    task_obj.status = "completed"
-                    task_obj.result = {"issues_found": 0}
+                    task_obj.status = "completed"  # type: ignore[assignment]
+                    task_obj.result = {"issues_found": 0}  # type: ignore[assignment]
                     db.commit()
                 return
 
@@ -308,8 +310,8 @@ async def run_lint_analysis(
             # Update task status
             task_obj = db.query(Task).filter(Task.id == task_id).first()
             if task_obj:
-                task_obj.status = "completed"
-                task_obj.result = {
+                task_obj.status = "completed"  # type: ignore[assignment]
+                task_obj.result = {  # type: ignore[assignment]
                     "issues_found": len(issues),
                     "issues_created": issues_created,
                 }
@@ -350,7 +352,7 @@ async def run_lint_analysis(
     return EventSourceResponse(generate())
 
 
-def _parse_lint_output(output: str) -> list[dict]:
+def _parse_lint_output(output: str) -> list[dict[str, Any]]:
     """Parse JSON issues from Claude's lint output."""
     if not output:
         return []
@@ -387,7 +389,7 @@ def _parse_lint_output(output: str) -> list[dict]:
 async def get_lint_results(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get results of a lint analysis task."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -439,7 +441,7 @@ class LintFixResult(BaseModel):
 async def run_lint_fix(
     request: LintFixRequest,
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """
     Run lint + fix flow on a repository.
 
@@ -458,11 +460,12 @@ async def run_lint_fix(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(str(repo.local_path))
     if not repo_path.exists():
         raise HTTPException(status_code=400, detail="Repository path not found")
 
     # Determine which lint types to run
+    lint_types: list[str]
     if request.category == "all":
         lint_types = LINT_TYPES["BE"] + LINT_TYPES["FE"]
     elif request.category in LINT_TYPES:
@@ -483,7 +486,7 @@ async def run_lint_fix(
     db.add(task)
     db.commit()
 
-    async def generate() -> AsyncIterator[dict]:
+    async def generate() -> AsyncIterator[dict[str, str]]:
         """Generate SSE events from lint-fix orchestration."""
         results: list[LintFixResult] = []
         total_fixed = 0
@@ -624,7 +627,7 @@ async def run_lint_fix(
                     try:
                         current_branch = get_current_branch(repo_path)
                     except Exception:
-                        current_branch = repo.default_branch or "main"
+                        current_branch = str(repo.default_branch) if repo.default_branch else "main"
 
                     issue = Issue(
                         id=str(uuid.uuid4()),
@@ -650,8 +653,8 @@ async def run_lint_fix(
             # Update task status
             task_obj = db.query(Task).filter(Task.id == task_id).first()
             if task_obj:
-                task_obj.status = "completed"
-                task_obj.result = {
+                task_obj.status = "completed"  # type: ignore[assignment]
+                task_obj.result = {  # type: ignore[assignment]
                     "total_fixed": total_fixed,
                     "results": [r.model_dump() for r in results],
                 }

@@ -9,13 +9,17 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
 from ...db.models import Issue, Repository, Task
 from ...db.session import get_session_local
 from ...review.models.progress import ProgressEvent, ProgressEventType
+from ...review.models.report import FinalReport
+from ...review.models.review import Issue as ReviewIssue
 from ...review.models.review import (
+    IssueSeverity,
     ReviewMode,
     ReviewOptions,
     ReviewRequest,
@@ -49,7 +53,7 @@ class ReviewStreamService:
     - SSE event generation
     """
 
-    def __init__(self, db: Session, review_manager: ReviewManager):
+    def __init__(self, db: Session, review_manager: ReviewManager) -> None:
         self.db = db
         self.manager = review_manager
 
@@ -116,8 +120,8 @@ class ReviewStreamService:
             )
 
         # Check for resumable failed task
-        resume_task_id = None
-        completed_checkpoints: dict[str, dict] = {}
+        resume_task_id: str | None = None
+        completed_checkpoints: dict[str, dict[str, Any]] = {}
 
         if resume:
             failed_task = (
@@ -133,16 +137,16 @@ class ReviewStreamService:
 
             if failed_task:
                 checkpoint_service = CheckpointService(self.db)
-                checkpoints = checkpoint_service.get_completed_reviewers(failed_task.id)
+                checkpoints = checkpoint_service.get_completed_reviewers(cast(str, failed_task.id))
 
                 if checkpoints:
                     # We can resume! Update the task status
-                    failed_task.status = "running"
-                    failed_task.error = None
-                    failed_task.started_at = datetime.utcnow()
+                    failed_task.status = "running"  # type: ignore[assignment]
+                    failed_task.error = None  # type: ignore[assignment]
+                    failed_task.started_at = datetime.utcnow()  # type: ignore[assignment]
                     self.db.commit()
 
-                    resume_task_id = failed_task.id
+                    resume_task_id = cast(str, failed_task.id)
                     # Convert checkpoints to dict format for orchestrator
                     for name, cp in checkpoints.items():
                         completed_checkpoints[name] = {
@@ -160,18 +164,19 @@ class ReviewStreamService:
         # Create new task if not resuming
         if not resume_task_id:
             task = self.create_task_record(repository_id, mode, challenger_enabled)
-            task_id = task.id
+            task_id = cast(str, task.id)
         else:
             task_id = resume_task_id
 
         # Capture values for the closure
-        local_path = repo.local_path
+        local_path = cast(str, repo.local_path)
         review_mode = mode
-        repo_workspace_path = repo.workspace_path  # Monorepo workspace scope
+        repo_workspace_path = cast(str | None, repo.workspace_path)  # Monorepo workspace scope
         checkpoints_for_closure = completed_checkpoints  # Capture for closure
 
         # Extract repo name for display
-        repo_name = repo.url.rstrip("/").split("/")[-1] if repo.url else "unknown"
+        repo_url = cast(str, repo.url) if repo.url else ""
+        repo_name = repo_url.rstrip("/").split("/")[-1] if repo_url else "unknown"
         if repo_name.endswith(".git"):
             repo_name = repo_name[:-4]
 
@@ -192,7 +197,7 @@ class ReviewStreamService:
         )
 
         # Create the review coroutine
-        async def run_review(session: ReviewSession):
+        async def run_review(session: ReviewSession) -> None:
             """Run the review in background."""
             SessionLocal = get_session_local()
             review_db = SessionLocal()
@@ -201,19 +206,19 @@ class ReviewStreamService:
                 orchestrator = Orchestrator()
                 checkpoint_service = CheckpointService(review_db)
 
-                async def progress_callback(event: ProgressEvent):
+                async def progress_callback(event: ProgressEvent) -> None:
                     """Callback to add events to session."""
                     session.add_event(event)
 
                 async def checkpoint_callback(
                     reviewer_name: str,
                     status: str,
-                    issues: list,
+                    issues: list[ReviewIssue],
                     satisfaction: float,
                     iterations: int,
-                    model_usage: list[dict],
+                    model_usage: list[dict[str, Any]],
                     started_at: datetime,
-                ):
+                ) -> None:
                     """Callback to save checkpoint after each reviewer."""
                     checkpoint_service.save_checkpoint(
                         task_id=task_id,
@@ -229,6 +234,8 @@ class ReviewStreamService:
                 request = ReviewRequest(
                     type="directory",
                     source=ReviewRequestSource(
+                        pr_url=None,
+                        commit_sha=None,
                         directory=local_path,
                         workspace_path=repo_workspace_path,
                     ),
@@ -236,6 +243,9 @@ class ReviewStreamService:
                         mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
                         challenger_enabled=challenger_enabled,
                         include_functional=include_functional,
+                        severity_threshold=IssueSeverity.LOW,
+                        output_format="both",
+                        satisfaction_threshold=50,
                     ),
                 )
 
@@ -262,8 +272,8 @@ class ReviewStreamService:
             except asyncio.CancelledError:
                 db_task = review_db.query(Task).filter(Task.id == task_id).first()
                 if db_task:
-                    db_task.status = "cancelled"
-                    db_task.completed_at = datetime.utcnow()
+                    db_task.status = "cancelled"  # type: ignore[assignment]
+                    db_task.completed_at = datetime.utcnow()  # type: ignore[assignment]
                     review_db.commit()
                 # Mark unified tracker as cancelled
                 tracker.cancel(task_id)
@@ -280,9 +290,9 @@ class ReviewStreamService:
 
                 db_task = review_db.query(Task).filter(Task.id == task_id).first()
                 if db_task:
-                    db_task.status = "failed"
-                    db_task.error = str(e)
-                    db_task.completed_at = datetime.utcnow()
+                    db_task.status = "failed"  # type: ignore[assignment]
+                    db_task.error = str(e)  # type: ignore[assignment]
+                    db_task.completed_at = datetime.utcnow()  # type: ignore[assignment]
                     review_db.commit()
 
                 # Mark unified tracker as failed
@@ -310,16 +320,16 @@ class ReviewStreamService:
         db: Session,
         task_id: str,
         repository_id: str,
-        report,
+        report: FinalReport,
     ) -> None:
         """Save review results and issues to the database."""
         db_task = db.query(Task).filter(Task.id == task_id).first()
         if not db_task:
             return
 
-        db_task.status = "completed"
-        db_task.result = report.model_dump(mode="json")
-        db_task.completed_at = datetime.utcnow()
+        db_task.status = "completed"  # type: ignore[assignment]
+        db_task.result = report.model_dump(mode="json")  # type: ignore[assignment]
+        db_task.completed_at = datetime.utcnow()  # type: ignore[assignment]
 
         # Save issues to database for tracking
         for issue in report.issues:
@@ -356,7 +366,7 @@ class ReviewStreamService:
     async def generate_events(
         self,
         session_info: ReviewSessionInfo,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[dict[str, str]]:
         """
         Generate SSE events from review progress.
 
@@ -378,8 +388,8 @@ class ReviewStreamService:
             }
 
             # Replay event history for reconnecting clients
-            for event in session.get_history():
-                yield event.to_sse()
+            for history_event in session.get_history():
+                yield history_event.to_sse()
 
             # If already completed, signal done
             if session.status != "running":
@@ -388,12 +398,14 @@ class ReviewStreamService:
             # Stream live events until done
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    live_event: ProgressEvent | None = await asyncio.wait_for(
+                        queue.get(), timeout=30.0
+                    )
 
-                    if event is None:
+                    if live_event is None:
                         break
 
-                    yield event.to_sse()
+                    yield live_event.to_sse()
 
                 except asyncio.TimeoutError:
                     # Send keepalive ping

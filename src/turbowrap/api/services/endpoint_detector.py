@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from turbowrap.utils.claude_cli import ClaudeCLI
 
@@ -58,7 +59,7 @@ class DetectionResult:
 
 
 # File patterns for different frameworks
-ROUTE_FILE_PATTERNS = {
+ROUTE_FILE_PATTERNS: dict[str, list[str]] = {
     "fastapi": ["**/routes/*.py", "**/routers/*.py", "**/api/*.py", "**/endpoints/*.py"],
     "flask": ["**/routes/*.py", "**/views/*.py", "**/api/*.py", "**/*_routes.py"],
     "express": ["**/routes/*.js", "**/routes/*.ts", "**/api/*.js", "**/api/*.ts"],
@@ -100,7 +101,7 @@ def _detect_framework(repo_path: str) -> str:
     for req_file in requirements_files:
         req_path = os.path.join(repo_path, req_file)
         if os.path.exists(req_path):
-            with open(req_path, "r") as f:
+            with open(req_path) as f:
                 content = f.read().lower()
                 if "fastapi" in content:
                     return "fastapi"
@@ -112,7 +113,7 @@ def _detect_framework(repo_path: str) -> str:
     # Check for Node.js frameworks
     package_json = os.path.join(repo_path, "package.json")
     if os.path.exists(package_json):
-        with open(package_json, "r") as f:
+        with open(package_json) as f:
             try:
                 pkg = json.load(f)
                 deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
@@ -130,7 +131,7 @@ def _detect_framework(repo_path: str) -> str:
     # Check for Go frameworks
     go_mod = os.path.join(repo_path, "go.mod")
     if os.path.exists(go_mod):
-        with open(go_mod, "r") as f:
+        with open(go_mod) as f:
             content = f.read().lower()
             if "gin-gonic" in content:
                 return "gin"
@@ -142,7 +143,7 @@ def _detect_framework(repo_path: str) -> str:
     # Check for Java/Spring
     pom_xml = os.path.join(repo_path, "pom.xml")
     if os.path.exists(pom_xml):
-        with open(pom_xml, "r") as f:
+        with open(pom_xml) as f:
             content = f.read().lower()
             if "spring-boot" in content or "spring-web" in content:
                 return "spring"
@@ -188,16 +189,16 @@ def _find_route_files(repo_path: str, framework: str) -> list[str]:
     return list(set(filtered))
 
 
-def _extract_routes_with_regex(file_path: str, framework: str) -> list[dict]:
+def _extract_routes_with_regex(file_path: str, framework: str) -> list[dict[str, Any]]:
     """Extract basic route info using regex patterns."""
-    routes = []
+    routes: list[dict[str, Any]] = []
 
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+    with open(file_path, encoding="utf-8", errors="ignore") as f:
         content = f.read()
         lines = content.split("\n")
 
     # Framework-specific patterns
-    patterns = {
+    patterns: dict[str, list[str]] = {
         "fastapi": [
             r'@(router|app)\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']',
             r'@(router|app)\.(get|post|put|delete|patch)\s*\(\s*path\s*=\s*["\']([^"\']+)["\']',
@@ -299,6 +300,7 @@ CRITICAL:
 
 Return ONLY the JSON array, nothing else."""
 
+    response_text = ""
     try:
         # Use centralized ClaudeCLI utility
         cli = ClaudeCLI(
@@ -341,8 +343,8 @@ Return ONLY the JSON array, nothing else."""
         endpoints_data = json.loads(cleaned)
 
         # Deduplicate by method+path
-        seen = set()
-        endpoints = []
+        seen: set[tuple[str, str]] = set()
+        endpoints: list[EndpointInfo] = []
         for ep in endpoints_data:
             key = (ep.get("method", "GET").upper(), ep.get("path", ""))
             if key in seen:
@@ -379,7 +381,7 @@ Return ONLY the JSON array, nothing else."""
 
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude CLI response as JSON: {e}")
-        logger.debug(f"Response was: {response_text[:1000] if 'response_text' in dir() else 'N/A'}")
+        logger.debug(f"Response was: {response_text[:1000] if response_text else 'N/A'}")
         return []
     except Exception as e:
         logger.error(f"Claude CLI analysis failed: {e}")
@@ -434,6 +436,7 @@ Return a JSON array with this structure for each endpoint:
 
 Return ONLY the JSON array, no other text."""
 
+    response = ""
     try:
         client = GeminiClient()
         response = client.generate(user_prompt, system_prompt)
@@ -449,8 +452,8 @@ Return ONLY the JSON array, no other text."""
         endpoints_data = json.loads(cleaned)
 
         # Deduplicate by method+path
-        seen = set()
-        endpoints = []
+        seen: set[tuple[str, str]] = set()
+        endpoints: list[EndpointInfo] = []
         for ep in endpoints_data:
             key = (ep.get("method", "GET").upper(), ep.get("path", ""))
             if key in seen:
@@ -543,16 +546,18 @@ def detect_endpoints(
         else:
             # Fallback: Use Gemini Flash (requires passing file contents)
             logger.info("Using Gemini Flash for endpoint detection")
-            route_files_content = {}
+            route_files_content: dict[str, str] = {}
             total_chars = 0
             max_chars = 50000  # Limit total content to avoid token limits
 
             for filepath in route_files[:10]:  # Limit to 10 files
                 try:
-                    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(filepath, encoding="utf-8", errors="ignore") as f:
                         content = f.read()
                         if total_chars + len(content) < max_chars:
-                            route_files_content[filepath.replace(repo_path, "").lstrip("/")] = content
+                            route_files_content[filepath.replace(repo_path, "").lstrip("/")] = (
+                                content
+                            )
                             total_chars += len(content)
                 except Exception as e:
                     logger.warning(f"Could not read {filepath}: {e}")
@@ -562,7 +567,7 @@ def detect_endpoints(
                 result.routes = endpoints
     else:
         # Fallback to regex-based extraction
-        all_routes = []
+        all_routes: list[EndpointInfo] = []
         for filepath in route_files:
             routes = _extract_routes_with_regex(filepath, framework)
             for r in routes:
@@ -580,7 +585,7 @@ def detect_endpoints(
     return result
 
 
-def result_to_dict(result: DetectionResult) -> dict:
+def result_to_dict(result: DetectionResult) -> dict[str, Any]:
     """Convert DetectionResult to a JSON-serializable dict."""
     return {
         "swagger_url": result.swagger_url,

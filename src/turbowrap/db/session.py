@@ -12,7 +12,7 @@ from .base import Base
 
 # Module-level engine cache
 _engine: Engine | None = None
-_SessionLocal: sessionmaker | None = None
+_SessionLocal: sessionmaker[Session] | None = None
 
 
 def get_engine() -> Engine:
@@ -47,7 +47,7 @@ def get_engine() -> Engine:
     return _engine
 
 
-def get_session_local() -> sessionmaker:
+def get_session_local() -> sessionmaker[Session]:
     """Get or create the session factory."""
     global _SessionLocal
 
@@ -85,4 +85,4 @@ def drop_db() -> None:
 
 
 # Alias for compatibility
-SessionLocal = property(lambda: get_session_local())
+SessionLocal = get_session_local

@@ -4,10 +4,13 @@ import asyncio
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from ..db.models import Task
 from ..review.models.report import FinalReport
 from ..review.models.review import (
+    IssueSeverity,
+    ReviewMode,
     ReviewOptions,
     ReviewRequest,
     ReviewRequestSource,
@@ -56,8 +59,8 @@ class ReviewTask(BaseTask):
             task = self._get_or_create_task(context)
 
             # Update task status
-            task.status = "running"
-            task.started_at = started_at
+            task.status = "running"  # type: ignore[assignment]
+            task.started_at = started_at  # type: ignore[assignment]
             context.db.commit()
 
             # Build review request
@@ -71,15 +74,16 @@ class ReviewTask(BaseTask):
             completed_at = datetime.utcnow()
             duration = time.time() - start_time
 
-            task.status = "completed"
-            task.completed_at = completed_at
-            task.result = self._report_to_dict(report)
+            result_data = self._report_to_dict(report)
+            task.status = "completed"  # type: ignore[assignment]
+            task.completed_at = completed_at  # type: ignore[assignment]
+            task.result = result_data  # type: ignore[assignment]
 
             context.db.commit()
 
             return TaskResult(
                 status="completed",
-                data=task.result,
+                data=result_data,
                 duration_seconds=duration,
                 started_at=started_at,
                 completed_at=completed_at,
@@ -91,9 +95,9 @@ class ReviewTask(BaseTask):
 
             # Update task if exists
             if "task" in locals():
-                task.status = "failed"
-                task.error = str(e)
-                task.completed_at = completed_at
+                task.status = "failed"  # type: ignore[assignment]
+                task.error = str(e)  # type: ignore[assignment]
+                task.completed_at = completed_at  # type: ignore[assignment]
                 context.db.commit()
 
             return TaskResult(
@@ -115,26 +119,50 @@ class ReviewTask(BaseTask):
 
         if pr_url:
             review_type = "pr"
-            source = ReviewRequestSource(pr_url=pr_url)
+            source = ReviewRequestSource(
+                pr_url=pr_url,
+                commit_sha=None,
+                directory=None,
+                workspace_path=None,
+            )
         elif commit_sha:
             review_type = "commit"
             source = ReviewRequestSource(
+                pr_url=None,
                 commit_sha=commit_sha,
                 directory=str(context.repo_path),
+                workspace_path=None,
             )
         elif files:
             review_type = "files"
             source = ReviewRequestSource(
+                pr_url=None,
+                commit_sha=None,
                 files=files,
                 directory=str(context.repo_path),
+                workspace_path=None,
             )
         else:
             review_type = "directory"
-            source = ReviewRequestSource(directory=str(context.repo_path))
+            source = ReviewRequestSource(
+                pr_url=None,
+                commit_sha=None,
+                directory=str(context.repo_path),
+                workspace_path=None,
+            )
+
+        # Get severity threshold from config, defaulting to LOW
+        severity_threshold_str = config.get("severity_threshold")
+        if severity_threshold_str is not None:
+            severity_threshold = IssueSeverity(severity_threshold_str)
+        else:
+            severity_threshold = IssueSeverity.LOW
 
         # Build options
         options = ReviewOptions(
+            mode=ReviewMode.DIFF,
             include_functional=config.get("include_functional", True),
+            severity_threshold=severity_threshold,
             challenger_enabled=config.get("challenger_enabled", True),
             satisfaction_threshold=config.get("satisfaction_threshold", 99),
             output_format=config.get("output_format", "both"),
@@ -146,7 +174,7 @@ class ReviewTask(BaseTask):
             options=options,
         )
 
-    def _report_to_dict(self, report: FinalReport) -> dict:
+    def _report_to_dict(self, report: FinalReport) -> dict[str, Any]:
         """Convert FinalReport to dictionary for storage.
 
         Uses Pydantic's model_dump() for reliable serialization of nested objects,
@@ -211,22 +239,22 @@ class ReviewTask(BaseTask):
         task_id = context.config.get("task_id")
 
         if task_id:
-            task = context.db.query(Task).filter(Task.id == task_id).first()
-            if task:
-                return task
+            existing_task: Task | None = context.db.query(Task).filter(Task.id == task_id).first()
+            if existing_task is not None:
+                return existing_task
 
         # Create new task
-        task = Task(
+        new_task = Task(
             repository_id=context.config.get("repository_id"),
             type=self.name,
             status="pending",
             config=context.config,
         )
-        context.db.add(task)
+        context.db.add(new_task)
         context.db.commit()
-        context.db.refresh(task)
+        context.db.refresh(new_task)
 
-        return task
+        return new_task
 
     def generate_report(self, result: TaskResult, output_dir: Path) -> Path:
         """Generate markdown report from results.

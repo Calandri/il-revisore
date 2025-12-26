@@ -51,46 +51,41 @@ Examples:
     python turbowrap.py ~/code/my-project --output ./reviews
     python turbowrap.py ~/code/my-project --no-challenger
     python turbowrap.py ~/code/my-project --no-functional
-        """
+        """,
     )
+    parser.add_argument("repo_path", type=Path, help="Path to repository to review")
     parser.add_argument(
-        "repo_path",
-        type=Path,
-        help="Path to repository to review"
-    )
-    parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=Path,
         default=None,
-        help="Output directory (default: <repo>/.reviews)"
+        help="Output directory (default: <repo>/.reviews)",
     )
     parser.add_argument(
         "--no-challenger",
         action="store_true",
-        help="Disable challenger loop (faster but less thorough)"
+        help="Disable challenger loop (faster but less thorough)",
     )
     parser.add_argument(
-        "--no-functional",
-        action="store_true",
-        help="Skip functional analysis reviewer"
+        "--no-functional", action="store_true", help="Skip functional analysis reviewer"
     )
     parser.add_argument(
         "--satisfaction-threshold",
         type=int,
         default=99,
-        help="Challenger satisfaction threshold 0-100 (default: 99)"
+        help="Challenger satisfaction threshold 0-100 (default: 99)",
     )
     parser.add_argument(
         "--format",
         choices=["markdown", "json", "both"],
         default="both",
-        help="Output format (default: both)"
+        help="Output format (default: both)",
     )
     parser.add_argument(
         "--mode",
         choices=["initial", "diff"],
         default="diff",
-        help="Review mode: initial (STRUCTURE.md only) or diff (changed files)"
+        help="Review mode: initial (STRUCTURE.md only) or diff (changed files)",
     )
 
     args = parser.parse_args()

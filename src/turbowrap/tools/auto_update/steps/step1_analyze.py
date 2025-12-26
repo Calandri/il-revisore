@@ -5,6 +5,7 @@ import logging
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from turbowrap.llm import GeminiClient
 
@@ -113,11 +114,13 @@ class AnalyzeFunctionalitiesStep(BaseStep[Step1Checkpoint]):
     async def execute(
         self,
         previous_checkpoint: Step1Checkpoint | None = None,
+        **kwargs: Any,
     ) -> Step1Checkpoint:
         """Execute Step 1: Analyze codebase functionalities.
 
         Args:
             previous_checkpoint: Previous checkpoint if resuming.
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             Step1Checkpoint with extracted functionalities.
@@ -125,7 +128,7 @@ class AnalyzeFunctionalitiesStep(BaseStep[Step1Checkpoint]):
         # Skip if already completed
         if self.should_skip(previous_checkpoint):
             logger.info(f"{self.step_name} already completed, skipping")
-            return previous_checkpoint  # type: ignore
+            return previous_checkpoint  # type: ignore[return-value]
 
         checkpoint = Step1Checkpoint(
             step=self.step_name,

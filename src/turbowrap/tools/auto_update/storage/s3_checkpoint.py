@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -34,10 +34,10 @@ class S3CheckpointManager:
         self.bucket = bucket or settings.s3_bucket
         self.region = region or settings.s3_region
         self.prefix = prefix or settings.s3_prefix
-        self._client = None
+        self._client: Any = None
 
     @property
-    def client(self):
+    def client(self) -> Any:
         """Lazy-load S3 client."""
         if self._client is None:
             import boto3
@@ -112,12 +112,12 @@ class S3CheckpointManager:
 
         try:
             paginator = self.client.get_paginator("list_objects_v2")
-            latest_key = None
-            latest_time = None
+            latest_key: str | None = None
+            latest_time: datetime | None = None
 
             for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
                 for obj in page.get("Contents", []):
-                    key = obj["Key"]
+                    key: str = obj["Key"]
                     if run_id in key and step_name in key:
                         if latest_time is None or obj["LastModified"] > latest_time:
                             latest_key = key
@@ -144,7 +144,7 @@ class S3CheckpointManager:
             logger.error(f"S3 error loading checkpoint: {e}")
             raise
 
-    async def list_runs(self, limit: int = 10) -> list[dict]:
+    async def list_runs(self, limit: int = 10) -> list[dict[str, Any]]:
         """List recent auto-update runs.
 
         Args:
@@ -153,14 +153,14 @@ class S3CheckpointManager:
         Returns:
             List of run info dicts with run_id, started_at, status.
         """
-        runs: dict[str, dict] = {}
+        runs: dict[str, dict[str, Any]] = {}
 
         try:
             paginator = self.client.get_paginator("list_objects_v2")
 
             for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
                 for obj in page.get("Contents", []):
-                    key = obj["Key"]
+                    key: str = obj["Key"]
                     parts = key.replace(self.prefix, "").split("/")
                     if len(parts) >= 4:
                         # Format: YYYY/MM/DD/run_id/step.json
@@ -188,7 +188,7 @@ class S3CheckpointManager:
             logger.error(f"Error listing runs: {e}")
             return []
 
-    async def get_run_status(self, run_id: str) -> dict | None:
+    async def get_run_status(self, run_id: str) -> dict[str, Any] | None:
         """Get status of a specific run.
 
         Args:
@@ -197,21 +197,16 @@ class S3CheckpointManager:
         Returns:
             Run status dict or None if not found.
         """
-        from ..models import (
-            Step1Checkpoint,
-            Step2Checkpoint,
-            Step3Checkpoint,
-            Step4Checkpoint,
-        )
+        from ..models import Step1Checkpoint, Step2Checkpoint, Step3Checkpoint, Step4Checkpoint
 
-        step_models = {
+        step_models: dict[str, type[BaseModel]] = {
             "step1_analyze": Step1Checkpoint,
             "step2_research": Step2Checkpoint,
             "step3_evaluate": Step3Checkpoint,
             "step4_create_issues": Step4Checkpoint,
         }
 
-        status = {
+        status: dict[str, Any] = {
             "run_id": run_id,
             "steps": {},
             "current_step": None,
@@ -222,12 +217,14 @@ class S3CheckpointManager:
             checkpoint = await self.load(run_id, step_name, model_class)
             if checkpoint:
                 status["steps"][step_name] = {
-                    "status": checkpoint.status.value,
-                    "started_at": checkpoint.started_at.isoformat(),
+                    "status": checkpoint.status.value,  # type: ignore[attr-defined]
+                    "started_at": checkpoint.started_at.isoformat(),  # type: ignore[attr-defined]
                     "completed_at": (
-                        checkpoint.completed_at.isoformat() if checkpoint.completed_at else None
+                        checkpoint.completed_at.isoformat()  # type: ignore[attr-defined]
+                        if checkpoint.completed_at  # type: ignore[attr-defined]
+                        else None
                     ),
-                    "error": checkpoint.error,
+                    "error": checkpoint.error,  # type: ignore[attr-defined]
                 }
 
         # Determine current step

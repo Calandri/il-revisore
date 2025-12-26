@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from turbowrap.llm import ClaudeClient
 
@@ -105,6 +106,7 @@ class EvaluateFeaturesStep(BaseStep[Step3Checkpoint]):
         previous_checkpoint: Step3Checkpoint | None = None,
         step1_checkpoint: Step1Checkpoint | None = None,
         step2_checkpoint: Step2Checkpoint | None = None,
+        **kwargs: Any,
     ) -> Step3Checkpoint:
         """Execute Step 3: Feature evaluation.
 
@@ -112,6 +114,7 @@ class EvaluateFeaturesStep(BaseStep[Step3Checkpoint]):
             previous_checkpoint: Previous checkpoint if resuming.
             step1_checkpoint: Step 1 checkpoint with existing functionalities.
             step2_checkpoint: Step 2 checkpoint with research results.
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             Step3Checkpoint with proposed and rejected features.
@@ -119,7 +122,7 @@ class EvaluateFeaturesStep(BaseStep[Step3Checkpoint]):
         # Skip if already completed
         if self.should_skip(previous_checkpoint):
             logger.info(f"{self.step_name} already completed, skipping")
-            return previous_checkpoint  # type: ignore
+            return previous_checkpoint  # type: ignore[return-value]
 
         checkpoint = Step3Checkpoint(
             step=self.step_name,
@@ -286,8 +289,8 @@ Be selective. Propose 5-10 high-impact features max. Reject ideas that don't fit
         Returns:
             Tuple of (proposed features, rejected features).
         """
-        proposed = []
-        rejected = []
+        proposed: list[ProposedFeature] = []
+        rejected: list[RejectedFeature] = []
 
         try:
             # Extract JSON from response
@@ -320,12 +323,12 @@ Be selective. Propose 5-10 high-impact features max. Reject ideas that don't fit
             # Parse rejected features
             for item in data.get("rejected_features", []):
                 try:
-                    feature = RejectedFeature(
+                    rejected_feature = RejectedFeature(
                         id=item.get("id", "unknown"),
                         title=item.get("title", "Unknown"),
                         reason=item.get("reason", "No reason provided"),
                     )
-                    rejected.append(feature)
+                    rejected.append(rejected_feature)
                 except Exception as e:
                     logger.warning(f"Failed to parse rejected feature: {e}")
 

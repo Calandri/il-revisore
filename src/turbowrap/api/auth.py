@@ -19,7 +19,7 @@ _jwks_cache_time: float = 0
 JWKS_CACHE_TTL = 3600  # 1 hour
 
 
-def get_cognito_client():
+def get_cognito_client() -> Any:
     """Get boto3 Cognito Identity Provider client."""
     settings = get_settings()
     return boto3.client(
@@ -137,13 +137,14 @@ def verify_token(token: str) -> dict[str, Any] | None:
             return None
 
         # Verify token
-        return jwt.decode(
+        decoded: dict[str, Any] = jwt.decode(
             token,
             rsa_key,
             algorithms=["RS256"],
             audience=settings.auth.cognito_app_client_id,
             issuer=f"https://cognito-idp.{settings.auth.cognito_region}.amazonaws.com/{settings.auth.cognito_user_pool_id}",
         )
+        return decoded
 
     except JWTError as e:
         logger.warning(f"Token verification failed: {e}")

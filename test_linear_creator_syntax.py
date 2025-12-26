@@ -42,12 +42,12 @@ def test_agent_structure(file_path: Path) -> bool:
             content = f.read()
 
         # Check frontmatter
-        if not content.startswith('---'):
+        if not content.startswith("---"):
             print(f"❌ {file_path.name}: Missing frontmatter")
             return False
 
         # Extract frontmatter
-        parts = content.split('---', 2)
+        parts = content.split("---", 2)
         if len(parts) < 3:
             print(f"❌ {file_path.name}: Invalid frontmatter format")
             return False
@@ -55,19 +55,19 @@ def test_agent_structure(file_path: Path) -> bool:
         frontmatter = parts[1].strip()
 
         # Check required fields
-        if 'name:' not in frontmatter:
+        if "name:" not in frontmatter:
             print(f"❌ {file_path.name}: Missing 'name' in frontmatter")
             return False
 
-        if 'model:' not in frontmatter:
+        if "model:" not in frontmatter:
             print(f"❌ {file_path.name}: Missing 'model' in frontmatter")
             return False
 
         # Extract model
-        model_match = re.search(r'model:\s*(.+)', frontmatter)
+        model_match = re.search(r"model:\s*(.+)", frontmatter)
         if model_match:
             model = model_match.group(1).strip()
-            if 'claude' not in model.lower():
+            if "claude" not in model.lower():
                 print(f"⚠️  {file_path.name}: Model '{model}' doesn't seem to be Claude")
 
         print(f"✅ {file_path.name}: Valid agent structure")
@@ -86,14 +86,14 @@ def test_html_template(file_path: Path) -> bool:
 
         # Check for required elements
         checks = [
-            ("Create Issue button", 'openCreateModal()'),
-            ("Create modal HTML", '<!-- Create Issue Modal'),
-            ("Alpine.js createModal state", 'createModal: {'),
-            ("openCreateModal function", 'openCreateModal() {'),
-            ("closeCreateModal function", 'closeCreateModal() {'),
-            ("handleScreenshotUpload function", 'handleScreenshotUpload(event)'),
-            ("analyzeWithAI function", 'analyzeWithAI()'),
-            ("finalizeIssueCreation function", 'finalizeIssueCreation()'),
+            ("Create Issue button", "openCreateModal()"),
+            ("Create modal HTML", "<!-- Create Issue Modal"),
+            ("Alpine.js createModal state", "createModal: {"),
+            ("openCreateModal function", "openCreateModal() {"),
+            ("closeCreateModal function", "closeCreateModal() {"),
+            ("handleScreenshotUpload function", "handleScreenshotUpload(event)"),
+            ("analyzeWithAI function", "analyzeWithAI()"),
+            ("finalizeIssueCreation function", "finalizeIssueCreation()"),
             ("Step 1 form", 'x-show="createModal.step === 1"'),
             ("Step 2 analysis", 'x-show="createModal.step === 2"'),
             ("Step 3 creating", 'x-show="createModal.step === 3"'),
@@ -108,7 +108,7 @@ def test_html_template(file_path: Path) -> bool:
                 passed = False
 
         # Count lines
-        line_count = len(content.split('\n'))
+        line_count = len(content.split("\n"))
         print(f"ℹ️  Total lines: {line_count}")
 
         return passed
@@ -126,12 +126,12 @@ def test_api_routes(file_path: Path) -> bool:
 
         # Check for required imports
         imports = [
-            'import json',
-            'import shutil',
-            'import subprocess',
-            'import uuid',
-            'from pathlib import Path',
-            'from sse_starlette.sse import EventSourceResponse',
+            "import json",
+            "import shutil",
+            "import subprocess",
+            "import uuid",
+            "from pathlib import Path",
+            "from sse_starlette.sse import EventSourceResponse",
         ]
 
         for imp in imports:
@@ -151,7 +151,7 @@ def test_api_routes(file_path: Path) -> bool:
                 return False
 
         # Check for FinalizeIssueRequest schema
-        if 'class FinalizeIssueRequest' not in content:
+        if "class FinalizeIssueRequest" not in content:
             print("❌ Missing FinalizeIssueRequest schema")
             return False
 
@@ -175,30 +175,30 @@ def main():
     # Test STEP 1: Gemini extension
     print_header("STEP 1: Gemini Vision Extension")
     gemini_path = base_path / "src/turbowrap/llm/gemini.py"
-    results['gemini'] = test_python_syntax(gemini_path)
+    results["gemini"] = test_python_syntax(gemini_path)
 
     # Test STEP 2: Linear client
     print_header("STEP 2: Linear Client Extension")
     linear_client_path = base_path / "src/turbowrap/review/integrations/linear.py"
-    results['linear_client'] = test_python_syntax(linear_client_path)
+    results["linear_client"] = test_python_syntax(linear_client_path)
 
     # Test STEP 3: Claude agents
     print_header("STEP 3: Claude Agent Prompts")
     question_gen_path = base_path / "agents/linear_question_generator.md"
     finalizer_path = base_path / "agents/linear_finalizer.md"
-    results['question_gen'] = test_agent_structure(question_gen_path)
-    results['finalizer'] = test_agent_structure(finalizer_path)
+    results["question_gen"] = test_agent_structure(question_gen_path)
+    results["finalizer"] = test_agent_structure(finalizer_path)
 
     # Test STEP 4: API routes
     print_header("STEP 4: Backend API Endpoints")
     routes_path = base_path / "src/turbowrap/api/routes/linear.py"
-    results['routes'] = test_python_syntax(routes_path)
-    results['routes_structure'] = test_api_routes(routes_path)
+    results["routes"] = test_python_syntax(routes_path)
+    results["routes_structure"] = test_api_routes(routes_path)
 
     # Test STEP 5: Frontend
     print_header("STEP 5: Frontend Modal UI")
     template_path = base_path / "src/turbowrap/api/templates/pages/linear_issues.html"
-    results['frontend'] = test_html_template(template_path)
+    results["frontend"] = test_html_template(template_path)
 
     # Summary
     print("\n" + "=" * 70)

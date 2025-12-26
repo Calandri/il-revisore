@@ -7,13 +7,15 @@ Reviews run independently of client SSE connections, allowing:
 - Event history for late-joining clients
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import ClassVar
 
 from turbowrap.review.models.progress import ProgressEvent, ProgressEventType
 
@@ -34,15 +36,15 @@ class ReviewSession:
     status: str = "running"  # running, completed, failed, cancelled
 
     # The asyncio task running the review
-    task: asyncio.Task | None = None
+    task: asyncio.Task[None] | None = None
 
     # Buffer of progress events (for reconnection)
-    events: deque = field(default_factory=lambda: deque(maxlen=MAX_EVENT_BUFFER))
+    events: deque[ProgressEvent] = field(default_factory=lambda: deque(maxlen=MAX_EVENT_BUFFER))
 
     # Subscribers waiting for new events
-    subscribers: list[asyncio.Queue] = field(default_factory=list)
+    subscribers: list[asyncio.Queue[ProgressEvent | None]] = field(default_factory=list)
 
-    def add_event(self, event: ProgressEvent):
+    def add_event(self, event: ProgressEvent) -> None:
         """Add event to buffer and notify subscribers."""
         self.events.append(event)
 
@@ -53,13 +55,13 @@ class ReviewSession:
             except asyncio.QueueFull:
                 pass  # Subscriber is slow, skip
 
-    def subscribe(self) -> asyncio.Queue:
+    def subscribe(self) -> asyncio.Queue[ProgressEvent | None]:
         """Create a new subscriber queue."""
-        queue = asyncio.Queue(maxsize=100)
+        queue: asyncio.Queue[ProgressEvent | None] = asyncio.Queue(maxsize=100)
         self.subscribers.append(queue)
         return queue
 
-    def unsubscribe(self, queue: asyncio.Queue):
+    def unsubscribe(self, queue: asyncio.Queue[ProgressEvent | None]) -> None:
         """Remove a subscriber queue."""
         if queue in self.subscribers:
             self.subscribers.remove(queue)
@@ -77,19 +79,21 @@ class ReviewManager:
     Clients can reconnect and receive event history + live updates.
     """
 
-    _instance: Optional["ReviewManager"] = None
+    _instance: ClassVar[ReviewManager | None] = None
+    _initialized: bool
+    _sessions: dict[str, ReviewSession]
 
-    def __new__(cls):
+    def __new__(cls) -> ReviewManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         if self._initialized:
             return
 
-        self._sessions: dict[str, ReviewSession] = {}
+        self._sessions = {}
         self._initialized = True
         logger.info("ReviewManager initialized")
 
@@ -105,7 +109,7 @@ class ReviewManager:
         self,
         task_id: str,
         repository_id: str,
-        review_coro: Callable[["ReviewSession"], Awaitable[None]],
+        review_coro: Callable[[ReviewSession], Awaitable[None]],
     ) -> ReviewSession:
         """
         Start a new review in the background.
@@ -132,7 +136,7 @@ class ReviewManager:
         )
 
         # Wrapper to catch completion/errors
-        async def run_with_tracking():
+        async def run_with_tracking() -> None:
             try:
                 await review_coro(session)  # Pass session directly!
                 session.status = "completed"
@@ -182,7 +186,7 @@ class ReviewManager:
 
         return False
 
-    def cleanup_old_sessions(self, max_age_hours: int = 24):
+    def cleanup_old_sessions(self, max_age_hours: int = 24) -> None:
         """Remove old completed sessions to free memory."""
         now = datetime.utcnow()
         to_remove = []

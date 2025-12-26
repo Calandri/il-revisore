@@ -21,9 +21,9 @@ Agent instructions in markdown...
 import logging
 import re
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from .models import AgentInfo
 
@@ -69,7 +69,7 @@ class AgentLoader:
         self.agents_dir = Path(agents_dir)
         self._cache: dict[str, AgentContent] = {}
 
-    def _parse_frontmatter(self, content: str) -> tuple[dict, str]:
+    def _parse_frontmatter(self, content: str) -> tuple[dict[str, Any], str]:
         """Parse YAML frontmatter from markdown content.
 
         Args:

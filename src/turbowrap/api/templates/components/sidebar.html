@@ -876,6 +876,10 @@
         logConnected: false,
         logError: null,
         containerName: null,
+        retryCount: 0,
+        maxRetries: 10,
+        retryTimeout: null,
+        manualDisconnect: false,
 
         get filteredLogs() {
             if (this.logFilter === 'all') return this.logs;
@@ -889,14 +893,25 @@
         toggleLogs() {
             this.showLogs = !this.showLogs;
             if (this.showLogs) {
+                this.manualDisconnect = false;
                 this.startLogStream();
             } else {
+                this.manualDisconnect = true;
                 this.stopLogStream();
             }
         },
 
         startLogStream() {
-            this.logs = [];
+            // Clear any pending retry
+            if (this.retryTimeout) {
+                clearTimeout(this.retryTimeout);
+                this.retryTimeout = null;
+            }
+
+            // Only clear logs on first connect, not on retry
+            if (this.retryCount === 0) {
+                this.logs = [];
+            }
             this.logError = null;
             this.logConnected = false;
 
@@ -924,10 +939,12 @@
                     } catch {}
                     this.logConnected = true;
                     this.logError = null;
+                    this.retryCount = 0; // Reset retry count on successful connection
                 });
 
                 this.logEventSource.addEventListener('ping', () => {
                     this.logConnected = true;
+                    this.retryCount = 0; // Reset on successful ping
                 });
 
                 this.logEventSource.addEventListener('error', (e) => {
@@ -938,25 +955,67 @@
                         this.logError = 'Connection lost';
                     }
                     this.logConnected = false;
+                    this.scheduleRetry();
                 });
 
                 this.logEventSource.onerror = () => {
                     this.logConnected = false;
-                    this.logError = 'Stream disconnected';
+                    if (!this.manualDisconnect) {
+                        this.logError = 'Stream disconnected - reconnecting...';
+                        this.scheduleRetry();
+                    }
                 };
 
             } catch (err) {
                 this.logError = 'Failed to connect: ' + err.message;
                 this.logConnected = false;
+                this.scheduleRetry();
             }
         },
 
+        scheduleRetry() {
+            // Don't retry if manually disconnected or panel closed
+            if (this.manualDisconnect || !this.showLogs) return;
+
+            // Don't retry if max retries reached
+            if (this.retryCount >= this.maxRetries) {
+                this.logError = 'Max retries reached. Click Retry to reconnect.';
+                return;
+            }
+
+            // Close existing connection
+            if (this.logEventSource) {
+                this.logEventSource.close();
+                this.logEventSource = null;
+            }
+
+            // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+            const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000);
+            this.retryCount++;
+
+            console.log(`Log stream: retry ${this.retryCount}/${this.maxRetries} in ${delay/1000}s`);
+            this.logError = `Reconnecting in ${Math.ceil(delay/1000)}s... (attempt ${this.retryCount}/${this.maxRetries})`;
+
+            this.retryTimeout = setTimeout(() => {
+                if (this.showLogs && !this.manualDisconnect) {
+                    this.startLogStream();
+                }
+            }, delay);
+        },
+
         stopLogStream() {
+            // Clear pending retry
+            if (this.retryTimeout) {
+                clearTimeout(this.retryTimeout);
+                this.retryTimeout = null;
+            }
+
             if (this.logEventSource) {
                 this.logEventSource.close();
                 this.logEventSource = null;
             }
             this.logConnected = false;
+            this.retryCount = 0;
         },
 
         clearLogs() {
@@ -965,6 +1024,13 @@
 
         toggleLogsExpanded() {
             this.logsExpanded = !this.logsExpanded;
+        },
+
+        forceReconnect() {
+            this.manualDisconnect = false;
+            this.retryCount = 0;
+            this.stopLogStream();
+            this.startLogStream();
         }
      }"
      @toggle-logs.window="toggleLogs()"
@@ -1071,7 +1137,7 @@
                     </svg>
                     <span x-text="logError"></span>
                 </div>
-                <button @click="stopLogStream(); startLogStream()"
+                <button @click="forceReconnect()"
                         class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded transition-colors">
                     Riprova
                 </button>
@@ -1104,9 +1170,18 @@
             <span x-show="logs.length !== filteredLogs.length" x-text="'(' + logs.length + ' total)'"></span>
         </div>
         <div class="flex items-center gap-1 md:gap-2">
-            <span class="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full animate-pulse"
-                  :class="logConnected ? 'bg-green-500' : 'bg-red-500'"></span>
-            <span x-text="logConnected ? 'Live' : 'Disconnected'"></span>
+            <!-- Connection status indicator -->
+            <span class="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full"
+                  :class="{
+                      'bg-green-500 animate-pulse': logConnected,
+                      'bg-yellow-500 animate-pulse': !logConnected && retryCount > 0 && retryCount < maxRetries,
+                      'bg-red-500': !logConnected && (retryCount >= maxRetries || retryCount === 0)
+                  }"></span>
+            <span x-text="logConnected ? 'Live' : (retryCount > 0 && retryCount < maxRetries ? 'Reconnecting...' : 'Disconnected')"></span>
+            <!-- Retry count badge -->
+            <span x-show="retryCount > 0 && !logConnected"
+                  class="px-1 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-[8px]"
+                  x-text="retryCount + '/' + maxRetries"></span>
         </div>
     </div>
 </div>

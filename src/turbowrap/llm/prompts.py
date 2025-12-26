@@ -113,7 +113,7 @@ class PromptCache:
                 return True
             return False
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, int | list[str]]:
         """Get cache statistics.
 
         Returns:
@@ -202,7 +202,7 @@ def invalidate_prompt(name: str) -> bool:
     return _prompt_cache.invalidate(name)
 
 
-def get_cache_stats() -> dict:
+def get_cache_stats() -> dict[str, int | list[str]]:
     """Get prompt cache statistics.
 
     Returns:

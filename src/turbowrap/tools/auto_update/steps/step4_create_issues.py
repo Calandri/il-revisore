@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from turbowrap.review.integrations.linear import LinearClient
 
@@ -122,12 +123,14 @@ Le seguenti domande aiuteranno a definire meglio i requisiti.
         self,
         previous_checkpoint: Step4Checkpoint | None = None,
         step3_checkpoint: Step3Checkpoint | None = None,
+        **kwargs: Any,
     ) -> Step4Checkpoint:
         """Execute Step 4: Create Linear issues.
 
         Args:
             previous_checkpoint: Previous checkpoint if resuming.
             step3_checkpoint: Step 3 checkpoint with proposed features.
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             Step4Checkpoint with created issues.
@@ -135,7 +138,7 @@ Le seguenti domande aiuteranno a definire meglio i requisiti.
         # Skip if already completed
         if self.should_skip(previous_checkpoint):
             logger.info(f"{self.step_name} already completed, skipping")
-            return previous_checkpoint  # type: ignore
+            return previous_checkpoint  # type: ignore[return-value]
 
         checkpoint = Step4Checkpoint(
             step=self.step_name,

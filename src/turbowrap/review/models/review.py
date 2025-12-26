@@ -4,6 +4,7 @@ Models for review requests and outputs.
 
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -121,7 +122,7 @@ class ReviewOutput(BaseModel):
         default_factory=dict, description="Checklist results by category"
     )
     metrics: ReviewMetrics = Field(default_factory=ReviewMetrics)
-    refinement_notes: list[dict] = Field(
+    refinement_notes: list[dict[str, Any]] = Field(
         default_factory=list, description="Notes from challenger refinements"
     )
     model_usage: list[ModelUsageInfo] = Field(

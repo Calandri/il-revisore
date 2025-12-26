@@ -4,7 +4,7 @@ Pydantic models for CLI-based chat API endpoints.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -194,7 +194,7 @@ class StreamEvent(BaseModel):
     content: str | None = Field(default=None, description="Content chunk")
     session_id: str | None = Field(default=None, description="Session ID")
     message_id: str | None = Field(default=None, description="Message ID")
-    metadata: dict | None = Field(default=None, description="Additional metadata")
+    metadata: dict[str, Any] | None = Field(default=None, description="Additional metadata")
 
 
 # ============================================================================

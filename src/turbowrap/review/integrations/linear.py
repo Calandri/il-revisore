@@ -3,6 +3,7 @@ Linear integration for TurboWrap.
 """
 
 import re
+from typing import Any, cast
 
 import httpx
 
@@ -92,7 +93,7 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        return data["data"]["commentCreate"]["comment"]["id"]
+        return cast(str, data["data"]["commentCreate"]["comment"]["id"])
 
     async def get_issue_id(self, identifier: str) -> str | None:
         """
@@ -128,7 +129,7 @@ class LinearClient:
         data = response.json()
 
         if data.get("data", {}).get("issue"):
-            return data["data"]["issue"]["id"]
+            return cast(str, data["data"]["issue"]["id"])
 
         return None
 
@@ -254,7 +255,7 @@ class LinearClient:
         response.raise_for_status()
         data = response.json()
 
-        return data.get("data", {}).get("issueUpdate", {}).get("success", False)
+        return cast(bool, data.get("data", {}).get("issueUpdate", {}).get("success", False))
 
     async def _get_state_id(self, state_name: str) -> str | None:
         """Get workflow state ID by name."""
@@ -282,7 +283,7 @@ class LinearClient:
         states = data.get("data", {}).get("workflowStates", {}).get("nodes", [])
         for state in states:
             if state["name"].lower() == state_name.lower():
-                return state["id"]
+                return cast(str, state["id"])
 
         return None
 
@@ -291,7 +292,7 @@ class LinearClient:
         team_id: str,
         limit: int = 100,
         after: str | None = None,
-    ) -> tuple[list[dict], str | None]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         """
         Fetch issues from a Linear team with pagination.
 
@@ -367,13 +368,13 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        issues = data["data"]["team"]["issues"]["nodes"]
+        issues: list[dict[str, Any]] = data["data"]["team"]["issues"]["nodes"]
         page_info = data["data"]["team"]["issues"]["pageInfo"]
-        next_cursor = page_info["endCursor"] if page_info["hasNextPage"] else None
+        next_cursor: str | None = page_info["endCursor"] if page_info["hasNextPage"] else None
 
         return issues, next_cursor
 
-    async def get_issue_by_id(self, issue_id: str) -> dict:
+    async def get_issue_by_id(self, issue_id: str) -> dict[str, Any]:
         """
         Fetch a single issue by Linear UUID.
 
@@ -433,7 +434,7 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        return data["data"]["issue"]
+        return cast(dict[str, Any], data["data"]["issue"])
 
     async def create_comment(
         self,
@@ -477,7 +478,7 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        return data["data"]["commentCreate"]["comment"]["id"]
+        return cast(str, data["data"]["commentCreate"]["comment"]["id"])
 
     async def create_issue(
         self,
@@ -489,7 +490,7 @@ class LinearClient:
         assignee_id: str | None = None,
         label_ids: list[str] | None = None,
         due_date: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Create a new issue on Linear.
 
@@ -543,7 +544,7 @@ class LinearClient:
         """
 
         # Build input variables
-        input_vars = {
+        input_vars: dict[str, Any] = {
             "teamId": team_id,
             "title": title,
             "description": description,
@@ -583,9 +584,9 @@ class LinearClient:
         if not data.get("data", {}).get("issueCreate", {}).get("success"):
             raise RuntimeError("Issue creation failed (success=false)")
 
-        return data["data"]["issueCreate"]["issue"]
+        return cast(dict[str, Any], data["data"]["issueCreate"]["issue"])
 
-    async def get_teams(self) -> list[dict]:
+    async def get_teams(self) -> list[dict[str, Any]]:
         """
         Get all teams accessible with current API key.
 
@@ -618,9 +619,9 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        return data["data"]["teams"]["nodes"]
+        return cast(list[dict[str, Any]], data["data"]["teams"]["nodes"])
 
-    async def get_users(self, team_id: str | None = None) -> list[dict]:
+    async def get_users(self, team_id: str | None = None) -> list[dict[str, Any]]:
         """
         Get all users in the workspace or optionally filtered by team.
 
@@ -656,12 +657,12 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        users = data["data"]["users"]["nodes"]
+        users: list[dict[str, Any]] = data["data"]["users"]["nodes"]
 
         # Filter to active users only
         return [u for u in users if u.get("active", True)]
 
-    async def get_workflow_states(self, team_id: str) -> list[dict]:
+    async def get_workflow_states(self, team_id: str) -> list[dict[str, Any]]:
         """
         Get all workflow states for a team.
 
@@ -700,4 +701,4 @@ class LinearClient:
         if "errors" in data:
             raise RuntimeError(f"Linear API error: {data['errors']}")
 
-        return data["data"]["team"]["states"]["nodes"]
+        return cast(list[dict[str, Any]], data["data"]["team"]["states"]["nodes"])

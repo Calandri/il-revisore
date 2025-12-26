@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -38,8 +39,8 @@ class IssueResponse(BaseModel):
     description: str
     current_code: str | None = None
     suggested_fix: str | None = None
-    references: list | None = None
-    flagged_by: list | None = None
+    references: list[Any] | None = None
+    flagged_by: list[Any] | None = None
     status: str
     resolution_note: str | None = None
     resolved_at: datetime | None = None
@@ -97,7 +98,7 @@ def list_issues(
     limit: int = Query(default=100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
-):
+) -> list[Issue]:
     """
     List issues with optional filters.
 
@@ -149,7 +150,8 @@ def list_issues(
         )
         query = query.order_by(severity_order, Issue.created_at.desc())
 
-    return query.offset(offset).limit(limit).all()
+    issues: list[Issue] = query.offset(offset).limit(limit).all()
+    return issues
 
 
 @router.get("/summary", response_model=IssueSummary)
@@ -157,7 +159,7 @@ def get_issues_summary(
     repository_id: str | None = None,
     status: str | None = Query(default="open", description="Filter by status (default: open)"),
     db: Session = Depends(get_db),
-):
+) -> IssueSummary:
     """Get summary statistics for issues."""
     query = db.query(Issue)
 
@@ -166,25 +168,34 @@ def get_issues_summary(
     if status:
         query = query.filter(Issue.status == status)
 
-    issues = query.all()
+    issues: list[Issue] = query.all()
 
-    by_severity = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    by_status = {"open": 0, "in_progress": 0, "resolved": 0, "ignored": 0, "duplicate": 0}
-    by_category = {}
+    by_severity: dict[str, int] = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    by_status: dict[str, int] = {
+        "open": 0,
+        "in_progress": 0,
+        "resolved": 0,
+        "ignored": 0,
+        "duplicate": 0,
+    }
+    by_category: dict[str, int] = {}
 
     for issue in issues:
-        # Count by severity
-        if issue.severity in by_severity:
-            by_severity[issue.severity] += 1
+        # Count by severity - cast to str for type safety
+        severity_val = str(issue.severity)
+        if severity_val in by_severity:
+            by_severity[severity_val] += 1
 
-        # Count by status
-        if issue.status in by_status:
-            by_status[issue.status] += 1
+        # Count by status - cast to str for type safety
+        status_val = str(issue.status)
+        if status_val in by_status:
+            by_status[status_val] += 1
 
-        # Count by category
-        if issue.category not in by_category:
-            by_category[issue.category] = 0
-        by_category[issue.category] += 1
+        # Count by category - cast to str for type safety
+        category_val = str(issue.category)
+        if category_val not in by_category:
+            by_category[category_val] = 0
+        by_category[category_val] += 1
 
     return IssueSummary(
         total=len(issues),
@@ -198,7 +209,7 @@ def get_issues_summary(
 def get_issue(
     issue_id: str,
     db: Session = Depends(get_db),
-):
+) -> Issue:
     """Get issue details."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
@@ -211,7 +222,7 @@ def update_issue(
     issue_id: str,
     data: IssueUpdateRequest,
     db: Session = Depends(get_db),
-):
+) -> Issue:
     """
     Update issue status or resolution note.
 
@@ -231,16 +242,16 @@ def update_issue(
             raise HTTPException(
                 status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}"
             )
-        issue.status = data.status
+        issue.status = data.status  # type: ignore[assignment]
 
         # Set resolved_at timestamp when marking as resolved
         if data.status in ("resolved", "ignored", "duplicate"):
-            issue.resolved_at = datetime.utcnow()
+            issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
         elif data.status == "open":
-            issue.resolved_at = None
+            issue.resolved_at = None  # type: ignore[assignment]
 
     if data.resolution_note is not None:
-        issue.resolution_note = data.resolution_note
+        issue.resolution_note = data.resolution_note  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)
@@ -252,16 +263,16 @@ def resolve_issue(
     issue_id: str,
     note: str = Query(default="", description="Resolution note"),
     db: Session = Depends(get_db),
-):
+) -> Issue:
     """Quick action to mark an issue as resolved."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    issue.status = IssueStatus.RESOLVED.value
-    issue.resolved_at = datetime.utcnow()
+    issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
+    issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
     if note:
-        issue.resolution_note = note
+        issue.resolution_note = note  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)
@@ -273,16 +284,16 @@ def ignore_issue(
     issue_id: str,
     note: str = Query(default="", description="Reason for ignoring"),
     db: Session = Depends(get_db),
-):
+) -> Issue:
     """Quick action to mark an issue as ignored (false positive or won't fix)."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    issue.status = IssueStatus.IGNORED.value
-    issue.resolved_at = datetime.utcnow()
+    issue.status = IssueStatus.IGNORED.value  # type: ignore[assignment]
+    issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
     if note:
-        issue.resolution_note = note
+        issue.resolution_note = note  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)
@@ -293,14 +304,14 @@ def ignore_issue(
 def reopen_issue(
     issue_id: str,
     db: Session = Depends(get_db),
-):
+) -> Issue:
     """Reopen a resolved or ignored issue."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    issue.status = IssueStatus.OPEN.value
-    issue.resolved_at = None
+    issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
+    issue.resolved_at = None  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)
@@ -316,7 +327,7 @@ class FixLogResponse(BaseModel):
     branch_name: str | None = None
     issues_requested: int
     issues_fixed: int
-    claude_prompts: list[dict] = []  # [{type, batch, issues, prompt}]
+    claude_prompts: list[dict[str, Any]] = []  # [{type, batch, issues, prompt}]
     gemini_prompt: str | None = None
     gemini_review: str | None = None
 
@@ -325,7 +336,7 @@ class FixLogResponse(BaseModel):
 def get_issue_fix_log(
     issue_id: str,
     db: Session = Depends(get_db),
-):
+) -> FixLogResponse:
     """
     Get the fix log for an issue from S3.
 
@@ -351,12 +362,13 @@ def get_issue_fix_log(
     try:
         # List all objects with the fix-logs prefix to find our session
         paginator = s3_client.get_paginator("list_objects_v2")
-        session_id = issue.fix_session_id
+        session_id = str(issue.fix_session_id)
 
         # Try fixed_at date first if available
-        s3_key = None
+        s3_key: str | None = None
         if issue.fixed_at:
-            date_str = issue.fixed_at.strftime("%Y-%m-%d")
+            fixed_at_dt: datetime = issue.fixed_at  # type: ignore[assignment]
+            date_str = fixed_at_dt.strftime("%Y-%m-%d")
             s3_key = f"fix-logs/{date_str}/{session_id}.json"
             try:
                 s3_client.head_object(Bucket=S3_BUCKET, Key=s3_key)
@@ -380,7 +392,7 @@ def get_issue_fix_log(
 
         # Fetch the log
         response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-        log_data = json.loads(response["Body"].read().decode("utf-8"))
+        log_data: dict[str, Any] = json.loads(response["Body"].read().decode("utf-8"))
 
         return FixLogResponse(
             session_id=log_data.get("session_id", session_id),

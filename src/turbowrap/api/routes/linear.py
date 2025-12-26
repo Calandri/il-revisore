@@ -5,8 +5,10 @@ import logging
 import shutil
 import subprocess
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,13 +44,13 @@ class LinearIssueResponse(BaseModel):
     improved_description: str | None = None
     assignee_name: str | None = None
     priority: int
-    labels: list | None = None
+    labels: list[dict[str, Any]] | None = None
     turbowrap_state: str
     linear_state_name: str | None = None
     is_active: bool
     analysis_summary: str | None = None
     analyzed_at: datetime | None = None
-    user_answers: dict | None = None
+    user_answers: dict[str, Any] | None = None
     fix_commit_sha: str | None = None
     fix_branch: str | None = None
     repository_ids: list[str] = Field(default_factory=list)
@@ -109,7 +111,7 @@ def _get_linear_client(db: Session) -> LinearClient:
     setting = db.query(Setting).filter(Setting.key == "linear_api_key").first()
     if not setting or not setting.value:
         raise HTTPException(status_code=400, detail="Linear API key not configured")
-    return LinearClient(api_key=setting.value)
+    return LinearClient(api_key=str(setting.value))
 
 
 def _get_team_id(db: Session, provided: str | None = None) -> str:
@@ -123,7 +125,7 @@ def _get_team_id(db: Session, provided: str | None = None) -> str:
                 status_code=400,
                 detail="Linear team ID not configured. Please go to Settings and configure your Linear Team ID (UUID format).",
             )
-        team_id = setting.value
+        team_id = str(setting.value)
 
     # Validate team ID format (should be UUID)
     if len(team_id) < 20:  # UUIDs are much longer
@@ -136,7 +138,7 @@ def _get_team_id(db: Session, provided: str | None = None) -> str:
     return team_id
 
 
-def _parse_repo_labels(labels: list[dict]) -> list[str]:
+def _parse_repo_labels(labels: list[dict[str, Any]]) -> list[str]:
     """Extract repository names from labels.
 
     Looks for labels like:
@@ -176,7 +178,7 @@ def list_linear_issues(
     limit: int = Query(100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
-):
+) -> list[LinearIssueResponse]:
     """List Linear issues synced to TurboWrap."""
     query = db.query(LinearIssue).filter(LinearIssue.deleted_at.is_(None))
 
@@ -191,7 +193,7 @@ def list_linear_issues(
     issues = query.offset(offset).limit(limit).all()
 
     # Enrich with repository info
-    result = []
+    result: list[LinearIssueResponse] = []
     for issue in issues:
         # Get linked repositories
         links = (
@@ -216,7 +218,7 @@ def list_linear_issues(
 async def sync_linear_issues(
     request: LinearSyncRequest,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Sync issues from Linear to TurboWrap."""
     try:
         client = _get_linear_client(db)
@@ -245,7 +247,7 @@ async def sync_linear_issues(
         triage_state_setting = (
             db.query(Setting).filter(Setting.key == "linear_state_triage_id").first()
         )
-        triage_state_id = triage_state_setting.value if triage_state_setting else None
+        triage_state_id = str(triage_state_setting.value) if triage_state_setting else None
 
         for linear_issue in issues:
             linear_id = linear_issue["id"]
@@ -268,22 +270,24 @@ async def sync_linear_issues(
             # Extract labels
             labels_data = linear_issue.get("labels") or {}
             label_nodes = labels_data.get("nodes", [])
-            labels = [{"name": label["name"], "color": label["color"]} for label in label_nodes]
+            labels: list[dict[str, Any]] = [
+                {"name": label["name"], "color": label["color"]} for label in label_nodes
+            ]
             repo_label_names = _parse_repo_labels(label_nodes)
 
             if existing:
                 # Update existing
                 existing.title = linear_issue["title"]
-                existing.description = linear_issue.get("description")
+                existing.description = linear_issue.get("description")  # type: ignore[assignment]
                 existing.priority = linear_issue.get("priority", 0)
-                existing.labels = labels
+                existing.labels = labels  # type: ignore[assignment]
                 existing.linear_state_id = linear_issue["state"]["id"]
                 existing.linear_state_name = linear_issue["state"]["name"]
                 assignee_data = linear_issue.get("assignee") or {}
-                existing.assignee_id = assignee_data.get("id")
-                existing.assignee_name = assignee_data.get("name")
-                existing.synced_at = datetime.utcnow()
-                existing.updated_at = datetime.utcnow()
+                existing.assignee_id = assignee_data.get("id")  # type: ignore[assignment]
+                existing.assignee_name = assignee_data.get("name")  # type: ignore[assignment]
+                existing.synced_at = datetime.utcnow()  # type: ignore[assignment]
+                existing.updated_at = datetime.utcnow()  # type: ignore[assignment]
 
                 issue_obj = existing
                 updated_count += 1
@@ -315,7 +319,7 @@ async def sync_linear_issues(
             if state_name.lower() == "to do" and triage_state_id:
                 try:
                     await client.update_issue_state(linear_id, triage_state_id)
-                    issue_obj.linear_state_name = "Triage"
+                    issue_obj.linear_state_name = "Triage"  # type: ignore[assignment]
                     converted_count += 1
                     logger.info(f"Converted {linear_issue['identifier']} from To Do to Triage")
                 except Exception as e:
@@ -380,7 +384,7 @@ async def sync_linear_issues(
 async def improve_issue_phase1(
     request: ImproveIssueRequest,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Phase 1: Generate clarifying questions for issue analysis."""
     issue = db.query(LinearIssue).filter(LinearIssue.id == request.issue_id).first()
     if not issue:
@@ -408,7 +412,7 @@ async def improve_issue_phase1(
 async def improve_issue_phase2(
     request: ImproveIssuePhase2Request,
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """Phase 2: Deep analysis with user answers (SSE streaming)."""
     issue = db.query(LinearIssue).filter(LinearIssue.id == request.issue_id).first()
     if not issue:
@@ -424,23 +428,23 @@ async def improve_issue_phase2(
     client = _get_linear_client(db)
     analyzer = LinearIssueAnalyzer(client)
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[dict[str, str], None]:
         """Stream analysis progress via SSE."""
         try:
             async for message in analyzer.analyze_phase2_with_answers(issue, request.answers):
                 if message == "COMPLETE":
                     # Update database with analysis results
-                    issue.improved_description = analyzer.last_improved_description
-                    issue.analysis_summary = analyzer.last_analysis_summary
-                    issue.user_answers = request.answers  # Store as JSON
-                    issue.analyzed_at = datetime.utcnow()
-                    issue.analyzed_by = "claude_opus"
+                    issue.improved_description = analyzer.last_improved_description  # type: ignore[assignment]
+                    issue.analysis_summary = analyzer.last_analysis_summary  # type: ignore[assignment]
+                    issue.user_answers = request.answers  # type: ignore[assignment]
+                    issue.analyzed_at = datetime.utcnow()  # type: ignore[assignment]
+                    issue.analyzed_by = "claude_opus"  # type: ignore[assignment]
 
                     # Transition state: analysis → repo_link
                     if issue.turbowrap_state == "analysis":
-                        issue.turbowrap_state = "repo_link"
+                        issue.turbowrap_state = "repo_link"  # type: ignore[assignment]
 
-                    issue.updated_at = datetime.utcnow()
+                    issue.updated_at = datetime.utcnow()  # type: ignore[assignment]
                     db.commit()
 
                     # Update Linear state: Triage → To Do
@@ -451,9 +455,9 @@ async def improve_issue_phase2(
                     if todo_state_setting and todo_state_setting.value:
                         try:
                             await client.update_issue_state(
-                                issue.linear_id, todo_state_setting.value
+                                str(issue.linear_id), str(todo_state_setting.value)
                             )
-                            issue.linear_state_name = "To Do"
+                            issue.linear_state_name = "To Do"  # type: ignore[assignment]
                             db.commit()
                             logger.info(
                                 f"Updated Linear state to To Do for {issue.linear_identifier}"
@@ -511,14 +515,14 @@ async def improve_issue_phase2(
                                 f"Auto-linked {linked_count} repositories from Claude analysis"
                             )
 
+                    improved_desc = analyzer.last_improved_description
+                    preview = improved_desc[:500] if improved_desc else ""
                     yield {
                         "event": "complete",
                         "data": json.dumps(
                             {
                                 "status": "complete",
-                                "improved_description": analyzer.last_improved_description[
-                                    :500
-                                ],  # Preview
+                                "improved_description": preview,
                                 "repository_count": len(analyzer.last_repository_recommendations),
                             }
                         ),
@@ -538,7 +542,7 @@ async def improve_issue_phase2(
 def link_repository(
     request: LinkRepositoryRequest,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Manually link a repository to a Linear issue."""
     issue = db.query(LinearIssue).filter(LinearIssue.id == request.issue_id).first()
     if not issue:
@@ -591,7 +595,7 @@ def link_repository(
 async def start_development(
     issue_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Mark issue as active and ready for development.
 
     Enforces single-active-issue constraint.
@@ -632,9 +636,9 @@ async def start_development(
         )
 
     # Mark as active and in_progress
-    issue.is_active = True
-    issue.turbowrap_state = "in_progress"
-    issue.updated_at = datetime.utcnow()
+    issue.is_active = True  # type: ignore[assignment]
+    issue.turbowrap_state = "in_progress"  # type: ignore[assignment]
+    issue.updated_at = datetime.utcnow()  # type: ignore[assignment]
     db.commit()
 
     # Update Linear state to "In Progress"
@@ -645,7 +649,9 @@ async def start_development(
 
     if inprogress_state_setting and inprogress_state_setting.value:
         try:
-            await client.update_issue_state(issue.linear_id, inprogress_state_setting.value)
+            await client.update_issue_state(
+                str(issue.linear_id), str(inprogress_state_setting.value)
+            )
             logger.info(f"Updated Linear state to In Progress for {issue.linear_identifier}")
         except Exception as e:
             logger.error(f"Failed to update Linear state: {e}")
@@ -656,7 +662,7 @@ async def start_development(
 @router.get("/teams")
 async def get_linear_teams(
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get all teams accessible with configured API key."""
     try:
         client = _get_linear_client(db)
@@ -674,7 +680,7 @@ async def get_linear_teams(
 async def get_linear_users(
     team_id: str | None = None,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get all users from Linear workspace."""
     try:
         client = _get_linear_client(db)
@@ -691,7 +697,7 @@ async def get_linear_users(
 @router.get("/settings/states")
 async def get_linear_states(
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get workflow states from Linear (for setup)."""
     client = _get_linear_client(db)
     team_id = _get_team_id(db)
@@ -712,18 +718,18 @@ async def analyze_for_creation(
     website_link: str = Form(None),
     screenshots: list[UploadFile] = File([]),
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """Step 2: Analyze screenshots with Gemini + generate questions with Claude (SSE streaming)."""
 
     # Read screenshots first (can only be done once)
-    screenshots_data = []
+    screenshots_data: list[tuple[str, bytes]] = []
     for file in screenshots:
         content = await file.read()
         screenshots_data.append(
             (file.filename or f"screenshot_{len(screenshots_data)}.png", content)
         )
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[dict[str, str], None]:
         try:
             # Create temporary directory for screenshots
             session_id = str(uuid.uuid4())
@@ -736,7 +742,7 @@ async def analyze_for_creation(
             }
 
             # Save screenshots
-            screenshot_paths = []
+            screenshot_paths: list[str] = []
             for filename, content in screenshots_data:
                 path = temp_dir / filename
                 with open(path, "wb") as f:
@@ -862,7 +868,9 @@ Output JSON: {{"questions": [{{"id": 1, "question": "...", "why": "..."}}]}}
 
 
 @router.post("/create/finalize")
-async def finalize_creation(request: FinalizeIssueRequest, db: Session = Depends(get_db)):
+async def finalize_creation(
+    request: FinalizeIssueRequest, db: Session = Depends(get_db)
+) -> EventSourceResponse:
     """Step 3: Generate final description + create issue (SSE streaming).
 
     Takes user answers and generates complete issue description with Claude,
@@ -874,7 +882,7 @@ async def finalize_creation(request: FinalizeIssueRequest, db: Session = Depends
     - error: {"error": "..."}
     """
 
-    async def event_generator():
+    async def event_generator() -> AsyncGenerator[dict[str, str], None]:
         try:
             # Step 1: Claude description finalization
             logger.info(f"[create/finalize] Starting finalization for '{request.title}'")
@@ -940,7 +948,7 @@ Genera descrizione markdown con:
                 final_desc += f"\n\n**Sito**: {request.website_link}"
 
             # Step 1.5: Auto-detect repository
-            detected_repo_name = None
+            detected_repo_name: str | None = None
             yield {
                 "event": "progress",
                 "data": json.dumps({"message": "Rilevando repository coinvolto..."}),
@@ -948,7 +956,7 @@ Genera descrizione markdown con:
 
             try:
                 # Get available repositories
-                repos = db.query(Repository).filter(not Repository.is_deleted).all()
+                repos = db.query(Repository).filter(Repository.deleted_at.is_(None)).all()
                 repo_names = [r.name for r in repos]
 
                 if repo_names:
@@ -1059,7 +1067,8 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                         repo = (
                             db.query(Repository)
                             .filter(
-                                Repository.name == detected_repo_name, not Repository.is_deleted
+                                Repository.name == detected_repo_name,
+                                Repository.deleted_at.is_(None),
                             )
                             .first()
                         )
@@ -1078,7 +1087,7 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                             )
 
                             # Update state to in_progress since repo is linked
-                            db_issue.turbowrap_state = "repo_link"
+                            db_issue.turbowrap_state = "repo_link"  # type: ignore[assignment]
                             db.commit()
 
                             yield {

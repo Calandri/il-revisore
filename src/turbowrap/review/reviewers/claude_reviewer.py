@@ -3,28 +3,19 @@ Claude Opus 4.5 reviewer implementation.
 """
 
 import asyncio
-import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
 import anthropic
-import boto3
-from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.challenger import ChallengerFeedback
-from turbowrap.review.models.review import (
-    ChecklistResult,
-    Issue,
-    IssueCategory,
-    IssueSeverity,
-    ReviewMetrics,
-    ReviewOutput,
-    ReviewSummary,
-)
-from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
+from turbowrap.review.models.review import ReviewOutput
+from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext, S3LoggingMixin
+from turbowrap.review.reviewers.utils import parse_review_output
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +23,12 @@ logger = logging.getLogger(__name__)
 ThinkingCallback = Callable[[str], Awaitable[None]]
 
 
-class ClaudeReviewer(BaseReviewer):
+class ClaudeReviewer(BaseReviewer, S3LoggingMixin):
     """
     Code reviewer using Claude Opus 4.5.
 
     Implements the reviewer role in the dual-reviewer system.
+    Uses S3LoggingMixin for centralized S3 logging.
     """
 
     def __init__(
@@ -61,8 +53,6 @@ class ClaudeReviewer(BaseReviewer):
         # Thinking settings from config
         self.thinking_enabled = self.settings.thinking.enabled
         self.thinking_budget = self.settings.thinking.budget_tokens
-        self.s3_bucket = self.settings.thinking.s3_bucket
-        self.s3_region = self.settings.thinking.s3_region
 
         if not self.api_key:
             raise ValueError(
@@ -70,162 +60,6 @@ class ClaudeReviewer(BaseReviewer):
             )
 
         self.client = anthropic.Anthropic(api_key=self.api_key)
-
-        # Initialize S3 client (lazy)
-        self._s3_client = None
-
-    @property
-    def s3_client(self):
-        """Lazy-load S3 client."""
-        if self._s3_client is None:
-            self._s3_client = boto3.client("s3", region_name=self.s3_region)
-        return self._s3_client
-
-    async def _save_thinking_to_s3(
-        self,
-        thinking_content: str,
-        review_id: str,
-        context: ReviewContext,
-    ) -> str | None:
-        """
-        Save thinking content to S3.
-
-        Args:
-            thinking_content: The thinking text to save
-            review_id: Unique identifier for this review
-            context: Review context for metadata
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not thinking_content:
-            return None
-
-        try:
-            # Create S3 key with timestamp
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"thinking/{timestamp}/{review_id}_{self.name}.md"
-
-            # Create markdown content with metadata
-            content = f"""# Extended Thinking - {self.name}
-
-**Review ID**: {review_id}
-**Timestamp**: {datetime.utcnow().isoformat()}
-**Model**: {self.model}
-**Files Reviewed**: {len(context.files)}
-
----
-
-## Thinking Process
-
-{thinking_content}
-"""
-
-            # Upload to S3
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"Saved thinking to {s3_url}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save thinking to S3: {e}")
-            return None
-
-    async def _save_review_to_s3(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        response_text: str,
-        review_output: ReviewOutput,
-        review_id: str,
-        context: ReviewContext,
-    ) -> str | None:
-        """
-        Save complete prompt and review output to S3.
-
-        Args:
-            system_prompt: The system prompt sent to Claude
-            user_prompt: The user prompt sent to Claude
-            response_text: Raw response from Claude
-            review_output: Parsed ReviewOutput
-            review_id: Unique identifier for this review
-            context: Review context for metadata
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not self.s3_bucket:
-            return None
-
-        try:
-            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"reviews/{timestamp}/{review_id}_{self.name}.md"
-
-            review_json = review_output.model_dump_json(indent=2)
-
-            content = f"""# Code Review - {self.name}
-
-**Review ID**: {review_id}
-**Timestamp**: {datetime.utcnow().isoformat()}
-**Model**: {self.model}
-**Files Reviewed**: {len(context.files)}
-**Duration**: {review_output.duration_seconds:.2f}s
-
----
-
-## System Prompt
-
-```
-{system_prompt}
-```
-
----
-
-## User Prompt
-
-```
-{user_prompt}
-```
-
----
-
-## Raw Response
-
-```
-{response_text}
-```
-
----
-
-## Parsed Review Output
-
-```json
-{review_json}
-```
-"""
-
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[CLAUDE_REVIEWER] Saved review to {s3_url}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"Failed to save review to S3: {e}")
-            return None
 
     async def review(
         self,
@@ -259,20 +93,22 @@ class ClaudeReviewer(BaseReviewer):
             thinking_callback,
         )
 
-        # Save thinking to S3 in background
+        # Save thinking to S3 in background (using mixin)
         if thinking_content:
-            asyncio.create_task(self._save_thinking_to_s3(thinking_content, review_id, context))
+            asyncio.create_task(
+                self.log_thinking_to_s3(thinking_content, review_id, self.model, len(context.files))
+            )
 
-        # Parse the response
+        # Parse the response using centralized parser
         review_output = self._parse_response(response_text, context)
         review_output.duration_seconds = time.time() - start_time
         review_output.reviewer = self.name
         review_output.timestamp = datetime.utcnow()
 
-        # Save complete review to S3 in background
+        # Save complete review to S3 in background (using mixin)
         asyncio.create_task(
-            self._save_review_to_s3(
-                system_prompt, user_prompt, response_text, review_output, review_id, context
+            self.log_review_to_s3(
+                system_prompt, user_prompt, response_text, review_output, review_id, self.model
             )
         )
 
@@ -291,23 +127,28 @@ class ClaudeReviewer(BaseReviewer):
         thinking_content = ""
         response_text = ""
 
-        # Build request params
-        params = {
-            "model": self.model,
-            "max_tokens": 16000,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_prompt}],
-        }
+        # Build messages
+        messages: list[anthropic.types.MessageParam] = [{"role": "user", "content": user_prompt}]
 
-        # Add thinking if enabled
+        # Build thinking config if enabled
+        thinking_config: anthropic.types.ThinkingConfigParam | None = None
         if self.thinking_enabled:
-            params["thinking"] = {
+            thinking_config = {
                 "type": "enabled",
                 "budget_tokens": self.thinking_budget,
             }
 
-        # Use streaming
-        with self.client.messages.stream(**params) as stream:
+        # Use streaming with explicit parameters
+        stream_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": 16000,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if thinking_config is not None:
+            stream_kwargs["thinking"] = thinking_config
+
+        with self.client.messages.stream(**stream_kwargs) as stream:
             for event in stream:
                 if hasattr(event, "type") and event.type == "content_block_delta":
                     if hasattr(event, "delta") and hasattr(event.delta, "type"):
@@ -356,11 +197,13 @@ class ClaudeReviewer(BaseReviewer):
             thinking_callback,
         )
 
-        # Save thinking to S3 in background
+        # Save thinking to S3 in background (using mixin)
         if thinking_content:
-            asyncio.create_task(self._save_thinking_to_s3(thinking_content, review_id, context))
+            asyncio.create_task(
+                self.log_thinking_to_s3(thinking_content, review_id, self.model, len(context.files))
+            )
 
-        # Parse the response
+        # Parse the response using centralized parser
         review_output = self._parse_response(response_text, context)
         review_output.duration_seconds = time.time() - start_time
         review_output.reviewer = self.name
@@ -378,10 +221,10 @@ class ClaudeReviewer(BaseReviewer):
             }
         )
 
-        # Save complete refinement to S3 in background
+        # Save complete refinement to S3 in background (using mixin)
         asyncio.create_task(
-            self._save_review_to_s3(
-                system_prompt, user_prompt, response_text, review_output, review_id, context
+            self.log_review_to_s3(
+                system_prompt, user_prompt, response_text, review_output, review_id, self.model
             )
         )
 
@@ -509,110 +352,8 @@ IMPORTANT: Output ONLY the JSON. No markdown code blocks, no explanations before
         return "".join(sections)
 
     def _parse_response(self, response_text: str, context: ReviewContext) -> ReviewOutput:
-        """Parse Claude's response into ReviewOutput."""
-        try:
-            # Try to extract JSON from response
-            json_text = response_text.strip()
-
-            # Handle markdown code blocks
-            if json_text.startswith("```"):
-                lines = json_text.split("\n")
-                json_lines = []
-                in_block = False
-                for line in lines:
-                    if line.startswith("```"):
-                        in_block = not in_block
-                        continue
-                    if in_block:
-                        json_lines.append(line)
-                json_text = "\n".join(json_lines)
-
-            data = json.loads(json_text)
-
-            # Build ReviewOutput from parsed data
-            summary_data = data.get("summary", {})
-
-            # Normalize score: Claude sometimes returns 0-100 instead of 0-10
-            raw_score = summary_data.get("score", 10.0)
-            if raw_score > 10:
-                raw_score = raw_score / 10.0
-            normalized_score = max(0.0, min(10.0, raw_score))
-
-            summary = ReviewSummary(
-                files_reviewed=summary_data.get("files_reviewed", len(context.files)),
-                critical_issues=summary_data.get("critical_issues", 0),
-                high_issues=summary_data.get("high_issues", 0),
-                medium_issues=summary_data.get("medium_issues", 0),
-                low_issues=summary_data.get("low_issues", 0),
-                score=normalized_score,
-            )
-
-            # Parse issues
-            issues = []
-            for issue_data in data.get("issues", []):
-                try:
-                    issue = Issue(
-                        id=issue_data.get("id", f"{self.name.upper()}-ISSUE"),
-                        severity=IssueSeverity(issue_data.get("severity", "MEDIUM")),
-                        category=IssueCategory(issue_data.get("category", "style")),
-                        rule=issue_data.get("rule"),
-                        file=issue_data.get("file", "unknown"),
-                        line=issue_data.get("line"),
-                        title=issue_data.get("title", "Issue"),
-                        description=issue_data.get("description", ""),
-                        current_code=issue_data.get("current_code"),
-                        suggested_fix=issue_data.get("suggested_fix"),
-                        references=issue_data.get("references", []),
-                        flagged_by=[self.name],
-                    )
-                    issues.append(issue)
-                except Exception:
-                    continue
-
-            # Parse checklists
-            checklists = {}
-            for category, checks in data.get("checklists", {}).items():
-                checklists[category] = ChecklistResult(
-                    passed=checks.get("passed", 0),
-                    failed=checks.get("failed", 0),
-                    skipped=checks.get("skipped", 0),
-                )
-
-            # Parse metrics
-            metrics_data = data.get("metrics", {})
-            metrics = ReviewMetrics(
-                complexity_avg=metrics_data.get("complexity_avg"),
-                test_coverage=metrics_data.get("test_coverage"),
-                type_coverage=metrics_data.get("type_coverage"),
-            )
-
-            return ReviewOutput(
-                reviewer=self.name,
-                summary=summary,
-                issues=issues,
-                checklists=checklists,
-                metrics=metrics,
-            )
-
-        except json.JSONDecodeError as e:
-            # Return a minimal output on parse failure
-            return ReviewOutput(
-                reviewer=self.name,
-                summary=ReviewSummary(
-                    files_reviewed=len(context.files),
-                    score=0.0,
-                ),
-                issues=[
-                    Issue(
-                        id=f"{self.name.upper()}-PARSE-ERROR",
-                        severity=IssueSeverity.HIGH,
-                        category=IssueCategory.DOCUMENTATION,
-                        file="review_output",
-                        title="Failed to parse review output",
-                        description=f"JSON parse error: {str(e)}\n\nRaw output:\n{response_text[:1000]}",
-                    )
-                ],
-            )
+        """Parse Claude's response into ReviewOutput using centralized parser."""
+        return parse_review_output(response_text, self.name, len(context.files))
 
     def _get_default_prompt(self) -> str:
         """Get default system prompt if agent file not found."""

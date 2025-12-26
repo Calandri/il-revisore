@@ -47,7 +47,7 @@ class SoftDeleteMixin:
     """
 
     @declared_attr
-    def deleted_at(cls):
+    def deleted_at(cls):  # type: ignore[override]
         """Timestamp when the record was soft-deleted. None means active."""
         return Column(DateTime, nullable=True, default=None, index=True)
 
@@ -180,7 +180,9 @@ class RepositoryLink(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<RepositoryLink {self.source_repo_id[:8]}--{self.link_type}-->{self.target_repo_id[:8]}>"
+        src = self.source_repo_id[:8]
+        tgt = self.target_repo_id[:8]
+        return f"<RepositoryLink {src}--{self.link_type}-->{tgt}>"
 
 
 class Task(Base, SoftDeleteMixin):

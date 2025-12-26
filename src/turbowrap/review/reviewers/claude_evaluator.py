@@ -7,7 +7,6 @@ Runs after all reviewers complete, with full context.
 Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
 """
 
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -17,6 +16,7 @@ from turbowrap.config import get_settings
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.report import RepositoryInfo, ReviewerResult
 from turbowrap.review.models.review import Issue
+from turbowrap.review.reviewers.utils import parse_json_safe
 from turbowrap.utils.claude_cli import ClaudeCLI
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,27 @@ class ClaudeEvaluator:
             timeout=self.timeout,
             s3_prefix="evaluations",
         )
+
+    @staticmethod
+    def _get_enum_value(obj: object, attr: str) -> str:
+        """
+        Get string value from an enum-like attribute.
+
+        Handles both proper Enum objects and string values.
+
+        Args:
+            obj: Object containing the attribute
+            attr: Attribute name
+
+        Returns:
+            String value of the attribute
+        """
+        value = getattr(obj, attr, None)
+        if value is None:
+            return "UNKNOWN"
+        if hasattr(value, "value"):
+            return str(value.value)
+        return str(value)
 
     async def evaluate(
         self,
@@ -150,9 +171,7 @@ class ClaudeEvaluator:
         sections.append("\n## Issues Found\n")
         severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
         for issue in issues:
-            severity = (
-                issue.severity.value if hasattr(issue.severity, "value") else str(issue.severity)
-            )
+            severity = self._get_enum_value(issue, "severity")
             if severity in severity_counts:
                 severity_counts[severity] += 1
 
@@ -165,20 +184,10 @@ class ClaudeEvaluator:
         # Issue details (limit to first 30 to avoid token explosion)
         if issues:
             sections.append("\n### Issue Details\n")
-            for _i, issue in enumerate(issues[:30]):
-                severity = (
-                    issue.severity.value
-                    if hasattr(issue.severity, "value")
-                    else str(issue.severity)
-                )
-                category = (
-                    issue.category.value
-                    if hasattr(issue.category, "value")
-                    else str(issue.category)
-                )
-                sections.append(
-                    f"- **[{severity}]** `{issue.file}`: {issue.title} " f"({category})\n"
-                )
+            for issue in issues[:30]:
+                severity = self._get_enum_value(issue, "severity")
+                category = self._get_enum_value(issue, "category")
+                sections.append(f"- **[{severity}]** `{issue.file}`: {issue.title} ({category})\n")
             if len(issues) > 30:
                 sections.append(f"... and {len(issues) - 30} more issues\n")
 
@@ -190,9 +199,8 @@ class ClaudeEvaluator:
     def _parse_response(self, response_text: str) -> RepositoryEvaluation | None:
         """Parse Claude's JSON response into RepositoryEvaluation."""
         try:
-            # Extract JSON from response
-            json_text = self._extract_json(response_text)
-            data = json.loads(json_text)
+            # Use centralized JSON parser
+            data = parse_json_safe(response_text)
 
             # Calculate overall if not provided
             overall = data.get("overall_score")
@@ -221,38 +229,7 @@ class ClaudeEvaluator:
                 evaluator_model=self.settings.agents.claude_model,
             )
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Evaluator JSON parse error: {e}")
-            logger.error(f"Raw response: {response_text[:1000]}")
-            return None
         except Exception as e:
             logger.error(f"Evaluator parse error: {e}")
+            logger.error(f"Raw response: {response_text[:1000]}")
             return None
-
-    def _extract_json(self, text: str) -> str:
-        """Extract JSON from response text."""
-        text = text.strip()
-
-        # Look for markdown code blocks
-        if "```json" in text:
-            start = text.find("```json") + 7
-            end = text.find("```", start)
-            if end != -1:
-                return text[start:end].strip()
-
-        if "```" in text:
-            start = text.find("```") + 3
-            end = text.find("```", start)
-            if end != -1:
-                potential = text[start:end].strip()
-                if potential.startswith("{"):
-                    return potential
-
-        # Find first { and last }
-        first_brace = text.find("{")
-        if first_brace != -1:
-            last_brace = text.rfind("}")
-            if last_brace > first_brace:
-                return text[first_brace : last_brace + 1]
-
-        return text

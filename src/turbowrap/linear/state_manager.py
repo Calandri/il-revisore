@@ -1,6 +1,7 @@
 """Linear state manager for handling state transitions."""
 
 import logging
+from typing import cast
 
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
@@ -69,7 +70,7 @@ class LinearStateManager:
         Raises:
             ValueError: If transition is not allowed
         """
-        current_state = issue.turbowrap_state
+        current_state = cast(str, issue.turbowrap_state)
 
         # Validate transition
         if not force and new_state not in self.ALLOWED_TRANSITIONS.get(current_state, []):
@@ -82,24 +83,27 @@ class LinearStateManager:
         # Additional validation based on target state
         if not force:
             if new_state == self.STATE_IN_PROGRESS:
-                if not issue.repository_links or len(list(issue.repository_links)) == 0:
+                repo_links = issue.repository_links
+                if not repo_links or len(list(repo_links)) == 0:
                     raise ValueError(
                         "Cannot transition to 'in_progress' without linked repositories"
                     )
 
             elif new_state == self.STATE_IN_REVIEW:
-                if not issue.fix_commit_sha:
+                if not cast(str | None, issue.fix_commit_sha):
                     raise ValueError("Cannot transition to 'in_review' without fix commit")
 
             elif new_state == self.STATE_MERGED:
-                if not issue.fix_commit_sha or not issue.fix_branch:
+                if not cast(str | None, issue.fix_commit_sha) or not cast(
+                    str | None, issue.fix_branch
+                ):
                     raise ValueError("Cannot transition to 'merged' without fix commit and branch")
 
         # Update TurboWrap state
         logger.info(
             f"Transitioning {issue.linear_identifier} from '{current_state}' to '{new_state}'"
         )
-        issue.turbowrap_state = new_state
+        issue.turbowrap_state = new_state  # type: ignore[assignment]
 
         # Update Linear state if requested
         if update_linear:
@@ -113,9 +117,11 @@ class LinearStateManager:
                 state_id = self._get_linear_state_id(issue, linear_state_name)
 
                 if state_id:
-                    success = await self.linear_client.update_issue_state(issue.linear_id, state_id)
+                    success = await self.linear_client.update_issue_state(
+                        cast(str, issue.linear_id), state_id
+                    )
                     if success:
-                        issue.linear_state_name = linear_state_name
+                        issue.linear_state_name = linear_state_name  # type: ignore[assignment]
                         logger.info(
                             f"Updated Linear state to '{linear_state_name}' for {issue.linear_identifier}"
                         )
@@ -200,8 +206,8 @@ class LinearStateManager:
         )
 
         # Update fix details
-        issue.fix_commit_sha = commit_sha
-        issue.fix_branch = branch_name
+        issue.fix_commit_sha = commit_sha  # type: ignore[assignment]
+        issue.fix_branch = branch_name  # type: ignore[assignment]
 
         # Transition to in_review
         try:
@@ -222,7 +228,7 @@ class LinearStateManager:
         logger.info(f"Auto-transitioning {issue.linear_identifier} to 'merged' after merge")
 
         # Deactivate issue
-        issue.is_active = False
+        issue.is_active = False  # type: ignore[assignment]
 
         # Transition to merged
         try:

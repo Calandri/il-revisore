@@ -59,7 +59,7 @@ class ChatWebSocketHandler:
 
         return session
 
-    async def handle(self):
+    async def handle(self) -> None:
         """Main handler loop with session validation."""
         await self.websocket.accept()
 
@@ -91,7 +91,7 @@ class ChatWebSocketHandler:
         except Exception as e:
             await self.send_error(str(e))
 
-    async def handle_message(self, content: str):
+    async def handle_message(self, content: str) -> None:
         """Handle incoming chat message with session validation.
 
         Validates session before each critical operation to handle
@@ -197,11 +197,11 @@ Respond helpfully as an AI assistant for code development."""
         except Exception as e:
             await self.send_error(f"AI error: {e}")
 
-    async def send_json(self, data: dict[str, Any]):
+    async def send_json(self, data: dict[str, Any]) -> None:
         """Send JSON message."""
         await self.websocket.send_text(json.dumps(data))
 
-    async def send_error(self, message: str):
+    async def send_error(self, message: str) -> None:
         """Send error message."""
         await self.send_json(
             {

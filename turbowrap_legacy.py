@@ -40,9 +40,21 @@ FE_EXTENSIONS = {".tsx", ".ts", ".jsx", ".js"}
 
 # Directories to ignore
 IGNORE_DIRS = {
-    "node_modules", ".git", "__pycache__", ".venv", "venv",
-    "dist", "build", ".next", "coverage", ".pytest_cache",
-    "eggs", "*.egg-info", ".tox", ".mypy_cache", ".reviews"
+    "node_modules",
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    ".pytest_cache",
+    "eggs",
+    "*.egg-info",
+    ".tox",
+    ".mypy_cache",
+    ".reviews",
 }
 
 # Files to ignore
@@ -58,11 +70,13 @@ BE_ELEMENTS = ["Function", "Class", "Decorator", "Constant"]
 # Data Classes
 # ============================================================================
 
+
 @dataclass
 class FileInfo:
     path: Path
     type: Literal["be", "fe"]
     content: str = ""
+
 
 @dataclass
 class ReviewIssue:
@@ -73,39 +87,48 @@ class ReviewIssue:
     description: str
     suggestion: str
 
+
 @dataclass
 class ReviewResult:
     files: list[str]
     issues: list[ReviewIssue] = field(default_factory=list)
     summary: str = ""
 
+
 @dataclass
 class FileElement:
     """Elemento estratto da un file (Component, Hook, Function, etc.)."""
-    type: str           # "Component", "Hook", "Utils", "Function", "Class"
-    name: str           # Nome elemento
-    description: str    # Max 10 parole
+
+    type: str  # "Component", "Hook", "Utils", "Function", "Class"
+    name: str  # Nome elemento
+    description: str  # Max 10 parole
+
 
 @dataclass
 class FileStructure:
     """Struttura di un file analizzato per tree generation."""
+
     path: Path
     file_type: Literal["be", "fe"]
     elements: list[FileElement] = field(default_factory=list)
     tokens: int = 0
     lines: int = 0
 
+
 @dataclass
 class DirectoryStructure:
     """Struttura di una cartella per STRUCTURE.md generation."""
+
     path: Path
     depth: int
     files: list[FileStructure] = field(default_factory=list)
     subdirectories: list["DirectoryStructure"] = field(default_factory=list)
 
+
 # ============================================================================
 # Gemini Client (for Flash Analyzer)
 # ============================================================================
+
 
 class GeminiClient:
     """Client for Google Gemini API (Flash model for fast analysis)."""
@@ -125,7 +148,12 @@ class GeminiClient:
         contents = []
         if system_prompt:
             contents.append({"role": "user", "parts": [{"text": system_prompt}]})
-            contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions."}]})
+            contents.append(
+                {
+                    "role": "model",
+                    "parts": [{"text": "Understood. I will follow these instructions."}],
+                }
+            )
         contents.append({"role": "user", "parts": [{"text": prompt}]})
 
         response = self.client.models.generate_content(
@@ -141,9 +169,11 @@ class GeminiProClient(GeminiClient):
     def __init__(self, model: str = "gemini-3-pro-preview"):
         super().__init__(model=model)
 
+
 # ============================================================================
 # Claude Client (for Opus Reviewer)
 # ============================================================================
+
 
 class ClaudeClient:
     """Client for Anthropic Claude API (Opus model for deep review)."""
@@ -164,15 +194,15 @@ class ClaudeClient:
             model=self.model,
             max_tokens=8192,
             system=system_prompt if system_prompt else "You are a senior code reviewer.",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text
+
 
 # ============================================================================
 # File Discovery
 # ============================================================================
+
 
 def should_ignore(path: Path) -> bool:
     """Check if path should be ignored."""
@@ -180,6 +210,7 @@ def should_ignore(path: Path) -> bool:
         if part in IGNORE_DIRS or part.startswith("."):
             return True
     return path.name in IGNORE_FILES
+
 
 def discover_files(repo_path: Path) -> tuple[list[FileInfo], list[FileInfo]]:
     """Discover BE and FE files in repository."""
@@ -200,6 +231,7 @@ def discover_files(repo_path: Path) -> tuple[list[FileInfo], list[FileInfo]]:
 
     return be_files, fe_files
 
+
 def load_file_content(repo_path: Path, file_info: FileInfo) -> FileInfo:
     """Load file content."""
     full_path = repo_path / file_info.path
@@ -214,15 +246,14 @@ def count_tokens(content: str) -> int:
     """Count tokens using tiktoken cl100k_base encoding."""
     return len(_encoder.encode(content))
 
+
 # ============================================================================
 # Agent: Flash Analyzer (Repository Description) - Gemini Flash
 # ============================================================================
 
+
 def run_repo_analyzer(
-    client: GeminiProClient,
-    repo_path: Path,
-    output_dir: Path,
-    structure_files: list[Path]
+    client: GeminiProClient, repo_path: Path, output_dir: Path, structure_files: list[Path]
 ) -> Path:
     """
     Run Repo Analyzer (Level 2) - uses Gemini Pro to synthesize STRUCTURE.md files.
@@ -249,10 +280,11 @@ def run_repo_analyzer(
             if "tokens" in content:
                 # Parse token counts from the file
                 import re
-                token_matches = re.findall(r'(\d{1,3}(?:,\d{3})*)\s*tokens', content)
+
+                token_matches = re.findall(r"(\d{1,3}(?:,\d{3})*)\s*tokens", content)
                 for match in token_matches:
-                    total_tokens += int(match.replace(',', ''))
-                file_matches = re.findall(r'(\d+)\s*files?', content)
+                    total_tokens += int(match.replace(",", ""))
+                file_matches = re.findall(r"(\d+)\s*files?", content)
                 for match in file_matches:
                     total_files += int(match)
         except Exception as e:
@@ -533,16 +565,18 @@ Be specific about versions where visible. Use the exact format from your instruc
 
     return output_file
 
+
 # ============================================================================
 # Agent: Code Reviewer (BE/FE) - Claude Opus
 # ============================================================================
+
 
 def run_reviewer_agent(
     client: ClaudeClient,
     repo_path: Path,
     files: list[FileInfo],
     agent_type: Literal["be", "fe"],
-    batch_id: int
+    batch_id: int,
 ) -> ReviewResult:
     """Run reviewer agent on a batch of files using Claude Opus."""
     agent_file = "reviewer_be.md" if agent_type == "be" else "reviewer_fe.md"
@@ -576,10 +610,8 @@ Focus on real issues, not style nitpicks unless they affect readability signific
 
     result = client.generate(prompt, system_prompt)
 
-    return ReviewResult(
-        files=[str(f.path) for f in files],
-        summary=result
-    )
+    return ReviewResult(files=[str(f.path) for f in files], summary=result)
+
 
 def run_all_reviewers(
     client: ClaudeClient,
@@ -587,7 +619,7 @@ def run_all_reviewers(
     be_files: list[FileInfo],
     fe_files: list[FileInfo],
     max_workers: int = 3,
-    max_tokens_per_batch: int = 50000
+    max_tokens_per_batch: int = 50000,
 ) -> list[ReviewResult]:
     """Run reviewer agents in parallel, 1 triplet of agents per ~50k tokens."""
     results: list[ReviewResult] = []
@@ -668,15 +700,19 @@ def run_all_reviewers(
             try:
                 result = future.result()
                 results.append(result)
-                print(f"   ✅ [{completed}/{total_batches}] {batch_name} - {file_count} files, {token_count:,} tokens")
+                print(
+                    f"   ✅ [{completed}/{total_batches}] {batch_name} - {file_count} files, {token_count:,} tokens"
+                )
             except Exception as e:
                 print(f"   ❌ [{completed}/{total_batches}] {batch_name} - Error: {e}")
 
     return results
 
+
 # ============================================================================
 # Generate TODO List
 # ============================================================================
+
 
 def generate_todo_list(results: list[ReviewResult], output_dir: Path) -> Path:
     """Generate comprehensive TODO list from review results."""
@@ -706,14 +742,18 @@ def generate_todo_list(results: list[ReviewResult], output_dir: Path) -> Path:
 
     # Group by BE/FE
     be_results = [r for r in results if any(".py" in f for f in r.files)]
-    fe_results = [r for r in results if any(f.endswith(('.tsx', '.ts', '.jsx', '.js')) for f in r.files)]
+    fe_results = [
+        r for r in results if any(f.endswith((".tsx", ".ts", ".jsx", ".js")) for f in r.files)
+    ]
 
     # Backend section
     if be_results:
-        lines.extend([
-            "## 🐍 Backend (Python) Issues",
-            "",
-        ])
+        lines.extend(
+            [
+                "## 🐍 Backend (Python) Issues",
+                "",
+            ]
+        )
         for i, result in enumerate(be_results, 1):
             files_str = ", ".join([f"`{f}`" for f in result.files])
             lines.append(f"### Batch {i}")
@@ -726,10 +766,12 @@ def generate_todo_list(results: list[ReviewResult], output_dir: Path) -> Path:
 
     # Frontend section
     if fe_results:
-        lines.extend([
-            "## ⚛️ Frontend (React/TypeScript) Issues",
-            "",
-        ])
+        lines.extend(
+            [
+                "## ⚛️ Frontend (React/TypeScript) Issues",
+                "",
+            ]
+        )
         for i, result in enumerate(fe_results, 1):
             files_str = ", ".join([f"`{f}`" for f in result.files])
             lines.append(f"### Batch {i}")
@@ -741,22 +783,24 @@ def generate_todo_list(results: list[ReviewResult], output_dir: Path) -> Path:
             lines.append("")
 
     # Action items template
-    lines.extend([
-        "## ✅ Action Items Checklist",
-        "",
-        "### 🔴 Critical (Fix Immediately)",
-        "- [ ] Review and fix all issues marked as **critical** above",
-        "",
-        "### 🟠 High Priority (This Sprint)",
-        "- [ ] Review and fix all issues marked as **warning** above",
-        "",
-        "### 🟢 Low Priority (Backlog)",
-        "- [ ] Review issues marked as **info** for future improvements",
-        "",
-        "---",
-        "",
-        "*Generated with ❤️ by TurboWrap*",
-    ])
+    lines.extend(
+        [
+            "## ✅ Action Items Checklist",
+            "",
+            "### 🔴 Critical (Fix Immediately)",
+            "- [ ] Review and fix all issues marked as **critical** above",
+            "",
+            "### 🟠 High Priority (This Sprint)",
+            "- [ ] Review and fix all issues marked as **warning** above",
+            "",
+            "### 🟢 Low Priority (Backlog)",
+            "- [ ] Review issues marked as **info** for future improvements",
+            "",
+            "---",
+            "",
+            "*Generated with ❤️ by TurboWrap*",
+        ]
+    )
 
     output_file = output_dir / "REVIEW_TODO.md"
     output_file.write_text("\n".join(lines))
@@ -764,13 +808,14 @@ def generate_todo_list(results: list[ReviewResult], output_dir: Path) -> Path:
 
     return output_file
 
+
 # ============================================================================
 # Tree Generator (STRUCTURE.md) - Gemini Flash
 # ============================================================================
 
+
 def discover_directories(
-    repo_path: Path,
-    max_depth: int = MAX_TREE_DEPTH
+    repo_path: Path, max_depth: int = MAX_TREE_DEPTH
 ) -> list[DirectoryStructure]:
     """
     Scopre le cartelle da processare rispettando la profondità massima.
@@ -791,8 +836,7 @@ def discover_directories(
             rel_path = Path(".")
 
         dir_struct = DirectoryStructure(
-            path=rel_path if str(rel_path) != "." else Path("."),
-            depth=depth
+            path=rel_path if str(rel_path) != "." else Path("."), depth=depth
         )
 
         # Trova file processabili nella cartella corrente
@@ -802,13 +846,9 @@ def discover_directories(
                     suffix = item.suffix.lower()
                     rel_file = item.relative_to(repo_path)
                     if suffix in BE_EXTENSIONS:
-                        dir_struct.files.append(
-                            FileStructure(path=rel_file, file_type="be")
-                        )
+                        dir_struct.files.append(FileStructure(path=rel_file, file_type="be"))
                     elif suffix in FE_EXTENSIONS:
-                        dir_struct.files.append(
-                            FileStructure(path=rel_file, file_type="fe")
-                        )
+                        dir_struct.files.append(FileStructure(path=rel_file, file_type="fe"))
         except PermissionError:
             pass
 
@@ -837,10 +877,7 @@ def discover_directories(
     return directories
 
 
-def parse_elements_response(
-    response: str,
-    file_type: Literal["be", "fe"]
-) -> list[FileElement]:
+def parse_elements_response(response: str, file_type: Literal["be", "fe"]) -> list[FileElement]:
     """Parsa la risposta di Gemini in lista di FileElement."""
     elements = []
     valid_types = FE_ELEMENTS if file_type == "fe" else BE_ELEMENTS
@@ -873,11 +910,9 @@ def parse_elements_response(
                     description = desc_part.strip()[:80]
 
                     if name:  # Solo se ha un nome valido
-                        elements.append(FileElement(
-                            type=element_type,
-                            name=name,
-                            description=description
-                        ))
+                        elements.append(
+                            FileElement(type=element_type, name=name, description=description)
+                        )
             except ValueError:
                 continue
 
@@ -885,9 +920,7 @@ def parse_elements_response(
 
 
 def extract_file_elements(
-    client: GeminiClient,
-    repo_path: Path,
-    file_struct: FileStructure
+    client: GeminiClient, repo_path: Path, file_struct: FileStructure
 ) -> FileStructure:
     """Usa Gemini Flash per estrarre elementi semantici da un file."""
     full_path = repo_path / file_struct.path
@@ -944,10 +977,7 @@ Be concise. Only list the most important elements (max 10).
     return file_struct
 
 
-def generate_structure_md(
-    dir_struct: DirectoryStructure,
-    repo_path: Path
-) -> Path:
+def generate_structure_md(dir_struct: DirectoryStructure, repo_path: Path) -> Path:
     """Genera STRUCTURE.md per una singola cartella."""
     # Nome cartella per titolo
     dir_name = dir_struct.path.name if str(dir_struct.path) != "." else repo_path.name
@@ -963,17 +993,21 @@ def generate_structure_md(
         total_tokens = sum(f.tokens for f in dir_struct.files)
         total_lines = sum(f.lines for f in dir_struct.files)
 
-        lines.extend([
-            "## Files",
-            "",
-            f"**Directory Stats:** {len(dir_struct.files)} files, {total_lines:,} lines, {total_tokens:,} tokens",
-            "",
-            "| File | Lines | Tokens |",
-            "|------|------:|-------:|",
-        ])
+        lines.extend(
+            [
+                "## Files",
+                "",
+                f"**Directory Stats:** {len(dir_struct.files)} files, {total_lines:,} lines, {total_tokens:,} tokens",
+                "",
+                "| File | Lines | Tokens |",
+                "|------|------:|-------:|",
+            ]
+        )
 
         for file_struct in sorted(dir_struct.files, key=lambda f: f.path.name):
-            lines.append(f"| `{file_struct.path.name}` | {file_struct.lines:,} | {file_struct.tokens:,} |")
+            lines.append(
+                f"| `{file_struct.path.name}` | {file_struct.lines:,} | {file_struct.tokens:,} |"
+            )
 
         lines.append("")
 
@@ -984,9 +1018,7 @@ def generate_structure_md(
 
             if file_struct.elements:
                 for elem in file_struct.elements:
-                    lines.append(
-                        f"- **{elem.type}**: `{elem.name}` - {elem.description}"
-                    )
+                    lines.append(f"- **{elem.type}**: `{elem.name}` - {elem.description}")
             else:
                 lines.append("- *No exported elements detected*")
 
@@ -1013,10 +1045,12 @@ def generate_structure_md(
         lines.append("")
 
     # Footer
-    lines.extend([
-        "---",
-        f"*Generated by TurboWrap - {time.strftime('%Y-%m-%d %H:%M')}*",
-    ])
+    lines.extend(
+        [
+            "---",
+            f"*Generated by TurboWrap - {time.strftime('%Y-%m-%d %H:%M')}*",
+        ]
+    )
 
     # Determina path output (in-place nel repository)
     if str(dir_struct.path) == ".":
@@ -1031,10 +1065,7 @@ def generate_structure_md(
 
 
 def run_tree_generator(
-    client: GeminiClient,
-    repo_path: Path,
-    max_depth: int = MAX_TREE_DEPTH,
-    max_workers: int = 5
+    client: GeminiClient, repo_path: Path, max_depth: int = MAX_TREE_DEPTH, max_workers: int = 5
 ) -> list[Path]:
     """
     Orchestratore principale per la generazione dell'albero STRUCTURE.md.
@@ -1065,9 +1096,7 @@ def run_tree_generator(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(
-                extract_file_elements, client, repo_path, file_struct
-            ): file_struct
+            executor.submit(extract_file_elements, client, repo_path, file_struct): file_struct
             for file_struct in all_files
         }
 
@@ -1086,9 +1115,7 @@ def run_tree_generator(
 
     # 4. Aggiorna strutture directory con risultati
     for dir_struct in directories:
-        dir_struct.files = [
-            processed_files.get(f.path, f) for f in dir_struct.files
-        ]
+        dir_struct.files = [processed_files.get(f.path, f) for f in dir_struct.files]
 
     # 5. Genera STRUCTURE.md per ogni cartella
     print(f"\n   📝 Generating {len(directories)} STRUCTURE.md files...")
@@ -1106,9 +1133,11 @@ def run_tree_generator(
 
     return generated_files
 
+
 # ============================================================================
 # Main
 # ============================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1130,15 +1159,31 @@ Examples:
     python turbowrap.py ~/code/my-project --skip-flash  # Skip repo analysis
     python turbowrap.py ~/code/my-project --tree  # Generate STRUCTURE.md tree
     python turbowrap.py ~/code/my-project --tree --tree-depth 2  # Limit to 2 levels
-        """
+        """,
     )
     parser.add_argument("repo_path", type=Path, help="Path to repository to analyze")
-    parser.add_argument("--output", "-o", type=Path, default=None, help="Output directory (default: <repo>/.reviews)")
-    parser.add_argument("--max-workers", "-w", type=int, default=3, help="Max parallel review agents (default: 3)")
-    parser.add_argument("--skip-flash", action="store_true", help="Skip Flash analyzer (repo description)")
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output directory (default: <repo>/.reviews)",
+    )
+    parser.add_argument(
+        "--max-workers", "-w", type=int, default=3, help="Max parallel review agents (default: 3)"
+    )
+    parser.add_argument(
+        "--skip-flash", action="store_true", help="Skip Flash analyzer (repo description)"
+    )
     parser.add_argument("--skip-review", action="store_true", help="Skip code review")
-    parser.add_argument("--tree", action="store_true", help="Generate STRUCTURE.md documentation tree (max 3 levels)")
-    parser.add_argument("--tree-depth", type=int, default=3, help="Max depth for tree generation (default: 3)")
+    parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="Generate STRUCTURE.md documentation tree (max 3 levels)",
+    )
+    parser.add_argument(
+        "--tree-depth", type=int, default=3, help="Max depth for tree generation (default: 3)"
+    )
 
     args = parser.parse_args()
 
@@ -1208,10 +1253,7 @@ Examples:
             print("\n⚠️  Skipping Level 1: Gemini Flash client not available")
         else:
             tree_generated = run_tree_generator(
-                gemini_client,
-                repo_path,
-                args.tree_depth,
-                args.max_workers
+                gemini_client, repo_path, args.tree_depth, args.max_workers
             )
 
     # =========================================================================
@@ -1242,6 +1284,7 @@ Examples:
         print("   📄 REPO_DESCRIPTION.md - Repository overview")
     print("   📋 REVIEW_TODO.md - Issues and action items (Claude Opus)")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     main()

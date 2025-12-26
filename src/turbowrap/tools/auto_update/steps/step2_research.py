@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from turbowrap.llm import GeminiProClient
 
@@ -53,12 +54,14 @@ class WebResearchStep(BaseStep[Step2Checkpoint]):
         self,
         previous_checkpoint: Step2Checkpoint | None = None,
         step1_checkpoint: Step1Checkpoint | None = None,
+        **kwargs: Any,
     ) -> Step2Checkpoint:
         """Execute Step 2: Web research.
 
         Args:
             previous_checkpoint: Previous checkpoint if resuming.
             step1_checkpoint: Step 1 checkpoint for context.
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
             Step2Checkpoint with research results.
@@ -66,7 +69,7 @@ class WebResearchStep(BaseStep[Step2Checkpoint]):
         # Skip if already completed
         if self.should_skip(previous_checkpoint):
             logger.info(f"{self.step_name} already completed, skipping")
-            return previous_checkpoint  # type: ignore
+            return previous_checkpoint  # type: ignore[return-value]
 
         checkpoint = Step2Checkpoint(
             step=self.step_name,
@@ -202,7 +205,7 @@ Be specific and factual. Include at least 3-5 relevant results.
     async def _synthesize_findings(
         self,
         results: list[ResearchResult],
-    ) -> dict:
+    ) -> dict[str, list[str]]:
         """Synthesize research findings into categories.
 
         Args:
@@ -257,7 +260,8 @@ Be concise - list only the top 5-10 items per category.
             elif "```" in result:
                 json_str = result.split("```")[1].split("```")[0]
 
-            return json.loads(json_str.strip())
+            parsed: dict[str, list[str]] = json.loads(json_str.strip())
+            return parsed
 
         except json.JSONDecodeError:
             logger.error("Failed to parse synthesis response")

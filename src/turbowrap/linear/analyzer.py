@@ -8,6 +8,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any, cast
 
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
@@ -49,7 +50,7 @@ class LinearIssueAnalyzer:
             s3_prefix="linear-analysis",
         )
 
-    async def analyze_phase1_questions(self, issue: LinearIssue) -> list[dict]:
+    async def analyze_phase1_questions(self, issue: LinearIssue) -> list[dict[str, Any]]:
         """Phase 1: Generate 5-10 clarifying questions.
 
         Args:
@@ -130,7 +131,7 @@ class LinearIssueAnalyzer:
             yield "Posting analysis to Linear..."
             comment_body = self._format_linear_comment(improved_desc, analysis_summary)
             comment_id = await self.linear_client.create_comment(
-                issue.linear_id,
+                cast(str, issue.linear_id),
                 comment_body,
             )
 
@@ -164,8 +165,8 @@ class LinearIssueAnalyzer:
 **Description**:
 {issue.description or "No description provided"}
 
-**Priority**: {self._format_priority(issue.priority)}
-**Labels**: {', '.join([label.get('name', '') for label in (issue.labels or [])])}
+**Priority**: {self._format_priority(cast(int, issue.priority))}
+**Labels**: {', '.join([label.get('name', '') for label in cast(list[dict[str, Any]], issue.labels or [])])}
 **Assignee**: {issue.assignee_name or "Unassigned"}
 **State**: {issue.linear_state_name or "Unknown"}
 
@@ -201,8 +202,8 @@ class LinearIssueAnalyzer:
 **Description**:
 {issue.description or "No description provided"}
 
-**Priority**: {self._format_priority(issue.priority)}
-**Labels**: {', '.join([label.get('name', '') for label in (issue.labels or [])])}
+**Priority**: {self._format_priority(cast(int, issue.priority))}
+**Labels**: {', '.join([label.get('name', '') for label in cast(list[dict[str, Any]], issue.labels or [])])}
 **Assignee**: {issue.assignee_name or "Unassigned"}
 **State**: {issue.linear_state_name or "Unknown"}
 
@@ -221,7 +222,7 @@ class LinearIssueAnalyzer:
 Be specific with file paths and technical details.
 """
 
-    def _parse_questions(self, output: str) -> list[dict]:
+    def _parse_questions(self, output: str) -> list[dict[str, Any]]:
         """Parse questions from Claude Phase 1 output.
 
         Args:
@@ -236,7 +237,7 @@ Be specific with file paths and technical details.
             try:
                 data = json.loads(json_match.group(1))
                 if "questions" in data:
-                    return data["questions"]
+                    return cast(list[dict[str, Any]], data["questions"])
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse JSON questions: {e}")
 
@@ -274,7 +275,7 @@ Be specific with file paths and technical details.
 
         return questions[:10]  # Max 10 questions
 
-    def _parse_analysis(self, output: str) -> tuple[str, str, dict]:
+    def _parse_analysis(self, output: str) -> tuple[str, str, dict[str, Any]]:
         """Parse improved description and analysis from Phase 2 output.
 
         Args:
@@ -285,7 +286,7 @@ Be specific with file paths and technical details.
         """
         improved_desc = ""
         analysis_summary = ""
-        metadata = {"repositories": []}
+        metadata: dict[str, Any] = {"repositories": []}
 
         # Extract Improved Description section
         desc_match = re.search(

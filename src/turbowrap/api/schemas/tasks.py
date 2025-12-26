@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 TaskType = Literal["review", "develop", "lint_fix", "fix"]
 TaskStatusType = Literal["pending", "running", "completed", "failed", "cancelled"]
@@ -34,7 +34,7 @@ class TaskCreate(BaseModel):
 
     @field_validator("config")
     @classmethod
-    def validate_config(cls, v: dict[str, Any], info) -> dict[str, Any]:
+    def validate_config(cls, v: dict[str, Any], info: ValidationInfo) -> dict[str, Any]:
         """Validate config based on task type."""
         task_type = info.data.get("type")
         if task_type == "develop" and "instruction" not in v:

@@ -88,7 +88,7 @@ class SeveritySummary(BaseModel):
 class ReportSummary(BaseModel):
     """Executive summary of the report."""
 
-    repo_type: RepoType
+    repo_type: RepoType = RepoType.UNKNOWN
     files_reviewed: int = 0
     total_issues: int = 0
     by_severity: SeveritySummary = Field(default_factory=SeveritySummary)
@@ -135,7 +135,7 @@ class FinalReport(BaseModel):
     version: str = Field("1.0.0", description="Report schema version")
 
     repository: RepositoryInfo
-    summary: ReportSummary = Field(default_factory=ReportSummary)
+    summary: ReportSummary = Field(default_factory=lambda: ReportSummary())
 
     reviewers: list[ReviewerResult] = Field(
         default_factory=list, description="Results from each reviewer"
@@ -152,7 +152,9 @@ class FinalReport(BaseModel):
         default_factory=dict, description="Aggregated checklist results"
     )
 
-    metrics: ReviewMetrics = Field(default_factory=ReviewMetrics, description="Aggregated metrics")
+    metrics: ReviewMetrics = Field(
+        default_factory=lambda: ReviewMetrics(), description="Aggregated metrics"
+    )
 
     next_steps: list[NextStep] = Field(default_factory=list, description="Prioritized action items")
 

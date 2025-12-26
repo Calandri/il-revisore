@@ -4,7 +4,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -13,6 +13,13 @@ from ..models import StepStatus
 from ..storage.s3_checkpoint import S3CheckpointManager
 
 logger = logging.getLogger(__name__)
+
+
+class CheckpointProtocol(Protocol):
+    """Protocol for checkpoint models that have a status attribute."""
+
+    status: StepStatus
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -61,7 +68,7 @@ class BaseStep(ABC, Generic[T]):
         ...
 
     @abstractmethod
-    async def execute(self, **kwargs) -> T:
+    async def execute(self, **kwargs: Any) -> T:
         """Execute the step and return a checkpoint.
 
         Subclasses must implement this method.
@@ -113,7 +120,9 @@ class BaseStep(ABC, Generic[T]):
         """
         if checkpoint is None:
             return False
-        return checkpoint.status == StepStatus.COMPLETED
+        # Cast to access status attribute - all checkpoint models have this
+        checkpoint_with_status: CheckpointProtocol = checkpoint  # type: ignore[assignment]
+        return checkpoint_with_status.status == StepStatus.COMPLETED
 
     def should_skip(self, checkpoint: T | None) -> bool:
         """Check if step should be skipped (already completed).
@@ -126,9 +135,11 @@ class BaseStep(ABC, Generic[T]):
         """
         if checkpoint is None:
             return False
-        return checkpoint.status == StepStatus.COMPLETED
+        # Cast to access status attribute - all checkpoint models have this
+        checkpoint_with_status: CheckpointProtocol = checkpoint  # type: ignore[assignment]
+        return checkpoint_with_status.status == StepStatus.COMPLETED
 
-    async def execute_with_retry(self, **kwargs) -> T:
+    async def execute_with_retry(self, **kwargs: Any) -> T:
         """Execute step with automatic retry on failure.
 
         Uses exponential backoff for retries.
@@ -157,4 +168,4 @@ class BaseStep(ABC, Generic[T]):
                     await asyncio.sleep(wait_time)
 
         logger.error(f"{self.step_name} failed after {max_retries} attempts")
-        raise last_error  # type: ignore
+        raise last_error  # type: ignore[misc]

@@ -8,7 +8,7 @@ i repository gestiti, le issue attive e le configurazioni correnti.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy.orm import Session
 
@@ -360,9 +360,12 @@ Quando modifichi file, usa path relativi a: `{repo.local_path}`
             )
             # Load structure documentation if available
             if repo.local_path:
+                # Cast to str for mypy - SQLAlchemy Column returns str at runtime
+                local_path_str = cast(str, repo.local_path)
+                workspace_path_str = cast(str | None, getattr(repo, "workspace_path", None))
                 structure_doc = load_structure_documentation(
-                    repo.local_path,
-                    workspace_path=getattr(repo, "workspace_path", None),
+                    local_path_str,
+                    workspace_path=workspace_path_str,
                 )
                 if structure_doc:
                     # Wrap XML in semantic tags for better LLM parsing

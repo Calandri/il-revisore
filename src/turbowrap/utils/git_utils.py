@@ -4,8 +4,9 @@ import hashlib
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from ..config import get_settings
 from ..exceptions import CloneError, RepositoryError, SyncError
@@ -41,7 +42,7 @@ class GitHubRepo(BaseModel):
 
     @field_validator("full_name")
     @classmethod
-    def validate_full_name(cls, v: str, info) -> str:
+    def validate_full_name(cls, v: str, info: ValidationInfo) -> str:
         """Ensure full_name matches owner/name format."""
         if "/" not in v:
             raise ValueError("full_name must be in format 'owner/name'")
@@ -281,7 +282,7 @@ async def smart_push_with_conflict_resolution(
     repo_path: Path,
     message: str = "Update via TurboWrap",
     api_key: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Smart push that uses Claude CLI to resolve conflicts if needed.
 
@@ -302,7 +303,7 @@ async def smart_push_with_conflict_resolution(
     import asyncio
     import os
 
-    result = {
+    result: dict[str, Any] = {
         "status": "success",
         "had_conflicts": False,
         "claude_resolved": False,

@@ -39,7 +39,7 @@ def test_screenshot_analysis(image_paths: list[str]):
         "title": "Fix login button UI",
         "description": "The login button is not properly aligned and doesn't respond on mobile",
         "figma_link": "https://figma.com/file/example",
-        "website_link": "https://app.example.com/login"
+        "website_link": "https://app.example.com/login",
     }
 
     # Run analysis
@@ -58,6 +58,7 @@ def test_screenshot_analysis(image_paths: list[str]):
     except Exception as e:
         print(f"❌ Analysis failed: {e}")
         import traceback
+
         traceback.print_exc()
 
 

@@ -45,7 +45,7 @@ class UserDeleteResponse(BaseModel):
 
 
 @router.get("", response_model=list[UserResponse])
-async def list_users(admin: dict[str, Any] = Depends(require_admin)):
+async def list_users(admin: dict[str, Any] = Depends(require_admin)) -> list[UserResponse]:
     """Lista tutti gli utenti del pool Cognito."""
     settings = get_settings()
     client = get_cognito_client()
@@ -81,7 +81,7 @@ async def list_users(admin: dict[str, Any] = Depends(require_admin)):
 async def invite_user(
     data: UserInvite,
     admin: dict[str, Any] = Depends(require_admin),
-):
+) -> UserResponse:
     """
     Invita un nuovo utente.
     Cognito inviera automaticamente email con credenziali temporanee.
@@ -129,7 +129,7 @@ async def invite_user(
 async def delete_user(
     username: str,
     admin: dict[str, Any] = Depends(require_admin),
-):
+) -> UserDeleteResponse:
     """Elimina un utente dal pool Cognito."""
     settings = get_settings()
     client = get_cognito_client()

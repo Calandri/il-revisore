@@ -97,7 +97,10 @@ class ClaudeClient(BaseAgent):
                 system=system_prompt or DEFAULT_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return message.content[0].text
+            first_block = message.content[0]
+            if not hasattr(first_block, "text"):
+                raise ClaudeError("Unexpected response block type from Claude API")
+            return first_block.text
         except httpx.TimeoutException as e:
             raise ClaudeError(
                 f"Claude API timeout after {self._timeout}s. "
@@ -129,8 +132,11 @@ class ClaudeClient(BaseAgent):
                 messages=[{"role": "user", "content": prompt}],
             )
 
+            first_block = message.content[0]
+            if not hasattr(first_block, "text"):
+                raise ClaudeError("Unexpected response block type from Claude API")
             return AgentResponse(
-                content=message.content[0].text,
+                content=first_block.text,
                 prompt_tokens=message.usage.input_tokens,
                 completion_tokens=message.usage.output_tokens,
                 model=self._model,

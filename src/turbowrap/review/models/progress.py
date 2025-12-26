@@ -74,7 +74,7 @@ class ProgressEvent(BaseModel):
         default=None, description="Models used and their token/cost info"
     )
 
-    def to_sse(self) -> dict:
+    def to_sse(self) -> dict[str, str]:
         """Convert to SSE format."""
         return {
             "event": self.type.value,

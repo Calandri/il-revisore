@@ -1,6 +1,6 @@
 """Gemini Flash client for fast analysis."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from turbowrap.config import get_settings
 from turbowrap.exceptions import GeminiError
@@ -82,6 +82,8 @@ class GeminiClient(BaseAgent):
                 model=self._model,
                 contents=contents,
             )
+            if response.text is None:
+                raise GeminiError("Gemini returned empty response")
             return response.text
         except Exception as e:
             raise GeminiError(f"Gemini API error: {e}") from e
@@ -120,8 +122,11 @@ class GeminiClient(BaseAgent):
             prompt_tokens = getattr(usage, "prompt_token_count", None) if usage else None
             completion_tokens = getattr(usage, "candidates_token_count", None) if usage else None
 
+            content = response.text
+            if content is None:
+                raise GeminiError("Gemini returned empty response")
             return AgentResponse(
-                content=response.text,
+                content=content,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 model=self._model,
@@ -150,7 +155,7 @@ class GeminiProClient(GeminiClient):
     def analyze_screenshots(
         self,
         image_paths: list[str],
-        context: dict,
+        context: dict[str, str],
     ) -> str:
         """Analyze screenshots with Gemini Vision API.
 
@@ -188,7 +193,7 @@ Identifica e descrivi in dettaglio:
 Fornisci un'analisi tecnica dettagliata e specifica, non generica."""
 
         # Build parts list starting with the prompt
-        parts = [{"text": prompt}]
+        parts: list[Any] = [{"text": prompt}]
 
         # Add each image as a Part
         for img_path in image_paths:
@@ -220,6 +225,8 @@ Fornisci un'analisi tecnica dettagliata e specifica, non generica."""
                 model=self._model,
                 contents=[{"role": "user", "parts": parts}],
             )
+            if response.text is None:
+                raise GeminiError("Gemini Vision returned empty response")
             return response.text
         except Exception as e:
             raise GeminiError(f"Gemini Vision API error: {e}") from e

@@ -4,6 +4,7 @@ Repository type detection utility.
 
 import fnmatch
 from pathlib import Path
+from typing import Any
 
 from turbowrap.review.models.report import RepoType
 
@@ -145,7 +146,7 @@ class RepoDetector:
                 "coverage",
             }
 
-        files = []
+        files: list[str] = []
         self._scan_directory(directory, directory, files, max_depth, exclude_dirs, 0)
         return files
 
@@ -179,7 +180,7 @@ class RepoDetector:
         except PermissionError:
             pass
 
-    def get_analysis_summary(self, files: list[str]) -> dict:
+    def get_analysis_summary(self, files: list[str]) -> dict[str, Any]:
         """
         Get detailed analysis of repository composition.
 

@@ -7,7 +7,7 @@ import logging
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -27,10 +27,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 # Global registry for running review tasks (for cancellation)
-_running_reviews: dict[str, asyncio.Task] = {}
+_running_reviews: dict[str, asyncio.Task[Any]] = {}
 
 
-def run_task_background(task_id: str, repo_path: str, task_type: str, config: dict):
+def run_task_background(
+    task_id: str, repo_path: str, task_type: str, config: dict[str, Any]
+) -> None:
     """Run task in background thread."""
     from ...db.session import get_session_local
 
@@ -45,8 +47,8 @@ def run_task_background(task_id: str, repo_path: str, task_type: str, config: di
             # Update task as failed
             db_task = db.query(Task).filter(Task.id == task_id).first()
             if db_task:
-                db_task.status = "failed"
-                db_task.error = f"Unknown task type: {task_type}"
+                db_task.status = "failed"  # type: ignore[assignment]
+                db_task.error = f"Unknown task type: {task_type}"  # type: ignore[assignment]
                 db.commit()
             return
 
@@ -72,7 +74,7 @@ def list_tasks(
     task_type: str | None = None,
     limit: int = 50,
     db: Session = Depends(get_db),
-):
+) -> list[Task]:
     """List tasks."""
     query = db.query(Task)
 
@@ -91,7 +93,7 @@ def create_task(
     data: TaskCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-):
+) -> Task:
     """Create and queue a new task."""
     # Verify repository exists
     repo_manager = RepoManager(db)
@@ -122,7 +124,7 @@ def create_task(
     # Add to queue
     queue = get_task_queue()
     queued = QueuedTask(
-        task_id=task.id,
+        task_id=cast(str, task.id),
         task_type=data.type,
         repository_id=data.repository_id,
         config=data.config,
@@ -132,8 +134,8 @@ def create_task(
     # Start background execution
     background_tasks.add_task(
         run_task_background,
-        task.id,
-        repo.local_path,
+        cast(str, task.id),
+        cast(str, repo.local_path),
         data.type,
         data.config,
     )
@@ -142,14 +144,14 @@ def create_task(
 
 
 @router.get("/queue", response_model=TaskQueueStatus)
-def get_queue_status():
+def get_queue_status() -> TaskQueueStatus:
     """Get task queue status."""
     queue = get_task_queue()
-    return queue.get_status()
+    return cast(TaskQueueStatus, queue.get_status())
 
 
 @router.get("/types")
-def list_task_types():
+def list_task_types() -> list[dict[str, Any]]:
     """List available task types."""
     registry = get_task_registry()
     return registry.list_tasks()
@@ -159,7 +161,7 @@ def list_task_types():
 def get_task(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> Task:
     """Get task details."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -171,7 +173,7 @@ def get_task(
 def delete_task(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Delete a task and all its associated issues.
 
     Use this to clean up old reviews before re-running.
@@ -197,7 +199,7 @@ def delete_task(
 def get_task_progress(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get task progress details.
 
     Returns progress percentage, elapsed time, and estimated remaining time.
@@ -241,7 +243,7 @@ def get_task_progress(
 def get_task_evaluation(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get evaluation metrics from a completed review task.
 
     Returns the RepositoryEvaluation scores (0-100) for:
@@ -264,20 +266,22 @@ def get_task_evaluation(
         raise HTTPException(status_code=404, detail="No result available")
 
     # Extract evaluation from the stored result
-    result = task.result if isinstance(task.result, dict) else json.loads(task.result)
+    result: dict[str, Any] = (
+        task.result if isinstance(task.result, dict) else json.loads(cast(str, task.result))
+    )
     evaluation = result.get("evaluation")
 
     if not evaluation:
         raise HTTPException(status_code=404, detail="No evaluation available")
 
-    return evaluation
+    return cast(dict[str, Any], evaluation)
 
 
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Cancel a pending or running task."""
     from ..review_manager import get_review_manager
 
@@ -295,15 +299,15 @@ async def cancel_task(
     cancelled = queue.cancel(task_id)
 
     if cancelled or task.status == "pending":
-        task.status = "cancelled"
+        task.status = "cancelled"  # type: ignore[assignment]
         db.commit()
         return {"status": "cancelled", "id": task_id}
 
     # Try to cancel via ReviewManager
     manager = get_review_manager()
     if manager.cancel_review(task_id):
-        task.status = "cancelled"
-        task.completed_at = datetime.utcnow()
+        task.status = "cancelled"  # type: ignore[assignment]
+        task.completed_at = datetime.utcnow()  # type: ignore[assignment]
         db.commit()
         return {"status": "cancelled", "id": task_id}
 
@@ -316,14 +320,14 @@ async def cancel_task(
                 await asyncio.wait_for(asyncio.shield(review_task), timeout=2.0)
         _running_reviews.pop(task_id, None)
 
-        task.status = "cancelled"
-        task.completed_at = datetime.utcnow()
+        task.status = "cancelled"  # type: ignore[assignment]
+        task.completed_at = datetime.utcnow()  # type: ignore[assignment]
         db.commit()
         return {"status": "cancelled", "id": task_id}
 
     # Task running but not in registries
-    task.status = "cancelled"
-    task.completed_at = datetime.utcnow()
+    task.status = "cancelled"  # type: ignore[assignment]
+    task.completed_at = datetime.utcnow()  # type: ignore[assignment]
     db.commit()
     return {"status": "cancelled", "id": task_id, "note": "Task marked as cancelled"}
 
@@ -349,7 +353,7 @@ async def stream_review(
     repository_id: str,
     request_body: ReviewStreamRequest = ReviewStreamRequest(),
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """
     Start a review task and stream progress via SSE.
 
@@ -395,7 +399,7 @@ async def restart_reviewer(
     reviewer_name: str,
     request_body: RestartReviewerRequest = RestartReviewerRequest(),
     db: Session = Depends(get_db),
-):
+) -> EventSourceResponse:
     """
     Restart a single reviewer for an existing review task.
 
@@ -453,7 +457,7 @@ async def restart_reviewer(
     display_name = get_reviewer_display_name(reviewer_name)
 
     # Create the restart coroutine
-    async def run_reviewer_restart(session):
+    async def run_reviewer_restart(session: Any) -> None:
         """Run single reviewer restart in background."""
         logger.info(f"[RESTART] run_reviewer_restart called with session={session}")
         from ...db.session import get_session_local
@@ -480,7 +484,7 @@ async def restart_reviewer(
 
             request = ReviewRequest(
                 type="directory",
-                source=ReviewRequestSource(directory=local_path),
+                source=ReviewRequestSource(directory=cast(str, local_path)),
                 options=ReviewOptions(
                     mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
                     challenger_enabled=challenger_enabled,
@@ -494,7 +498,7 @@ async def restart_reviewer(
 
             # Set workspace_path for monorepo scope limiting
             if repo.workspace_path:
-                context.workspace_path = repo.workspace_path
+                context.workspace_path = cast(str, repo.workspace_path)
                 logger.info(
                     f"[RESTART] Monorepo mode: limiting review to workspace '{repo.workspace_path}'"
                 )
@@ -635,7 +639,7 @@ async def restart_reviewer(
                         f"[RESTART] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}"
                     )
                     generator = StructureGenerator(
-                        str(context.repo_path),
+                        context.repo_path,
                         workspace_path=context.workspace_path,
                         gemini_client=gemini_client,
                     )
@@ -702,7 +706,7 @@ async def restart_reviewer(
                     raise
 
             # Create progress callbacks
-            async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
+            async def on_iteration(iteration: int, satisfaction: float, issues_count: int) -> None:
                 session.add_event(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_ITERATION,
@@ -716,7 +720,7 @@ async def restart_reviewer(
                     )
                 )
 
-            async def on_content(content: str):
+            async def on_content(content: str) -> None:
                 session.add_event(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
@@ -824,12 +828,12 @@ async def restart_reviewer(
     # Start background reviewer restart (session passed directly by manager)
     session = await manager.start_review(
         task_id=restart_session_id,
-        repository_id=task.repository_id,
+        repository_id=cast(str, task.repository_id),
         review_coro=run_reviewer_restart,
     )
 
     # Generator for SSE streaming
-    async def generate() -> AsyncIterator[dict]:
+    async def generate() -> AsyncIterator[dict[str, str]]:
         """Generate SSE events from reviewer restart progress."""
         queue = session.subscribe()
 
@@ -864,7 +868,7 @@ async def restart_reviewer(
 def get_task_checkpoints(
     task_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get checkpoint status for a task.
 
     Returns list of reviewers and their checkpoint status.
@@ -899,7 +903,7 @@ def get_task_checkpoints(
 def check_resumable(
     repository_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Check if a repository has a resumable failed review.
 
     Returns info about the most recent failed task and its checkpoints.

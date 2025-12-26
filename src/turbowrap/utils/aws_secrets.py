@@ -4,6 +4,7 @@ AWS Secrets Manager utility for fetching API keys.
 
 import json
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -12,10 +13,10 @@ AWS_REGION = "eu-west-3"
 SECRET_NAME = "agent-zero/global/api-keys"
 
 # Cache for secrets
-_secrets_cache: dict | None = None
+_secrets_cache: dict[str, Any] | None = None
 
 
-def get_secrets() -> dict:
+def get_secrets() -> dict[str, Any]:
     """
     Fetch secrets from AWS Secrets Manager.
 
@@ -34,7 +35,7 @@ def get_secrets() -> dict:
         client = boto3.client("secretsmanager", region_name=AWS_REGION)
 
         response = client.get_secret_value(SecretId=SECRET_NAME)
-        secrets = json.loads(response["SecretString"])
+        secrets: dict[str, Any] = json.loads(response["SecretString"])
 
         _secrets_cache = secrets
         logger.info(f"Successfully fetched secrets from AWS ({SECRET_NAME})")

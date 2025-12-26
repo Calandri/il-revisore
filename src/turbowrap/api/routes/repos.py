@@ -1,30 +1,33 @@
 """Repository routes."""
 
+import logging
+import re
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
-import logging
-
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 from github import GithubException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
-from ..services.operation_tracker import OperationType, get_tracker
 from ...utils.git_utils import get_repo_status as get_git_status
 from ...utils.github_browse import FolderListResponse, list_repo_folders
 from ..deps import get_db
 from ..schemas.repos import (
+    FileStats,
+    GitStatus,
     LinkCreate,
     LinkedRepoSummary,
     LinkResponse,
+    LinkTypeEnum,
     RepoCreate,
     RepoResponse,
     RepoStatus,
 )
+from ..services.operation_tracker import OperationType, get_tracker
 
 router = APIRouter(prefix="/repos", tags=["repositories"])
 
@@ -109,10 +112,11 @@ def list_repos(
     status: str | None = None,
     project: str | None = Query(default=None, description="Filter by project name"),
     db: Session = Depends(get_db),
-):
+) -> list[RepoResponse]:
     """List all repositories, optionally filtered by status or project."""
     manager = RepoManager(db)
-    return manager.list(status=status, project_name=project)
+    repos = manager.list_all(status=status, project_name=project)
+    return [RepoResponse.model_validate(repo) for repo in repos]
 
 
 @router.get("/github/folders", response_model=FolderListResponse)
@@ -121,7 +125,7 @@ def list_github_folders(
     path: str = Query(default="", description="Subdirectory path to browse"),
     branch: str = Query(default="main", description="Branch to browse"),
     db: Session = Depends(get_db),
-):
+) -> FolderListResponse:
     """List folders in a GitHub repository for workspace path selection.
 
     Uses GitHub API to fetch directory structure before cloning.
@@ -144,7 +148,7 @@ def list_github_folders(
 
     # Get GitHub token from settings if available
     token_setting = db.query(Setting).filter(Setting.key == "github_token").first()
-    token = token_setting.value if token_setting else None
+    token: str | None = str(token_setting.value) if token_setting else None
 
     try:
         return list_repo_folders(url, path, branch, token)
@@ -170,7 +174,7 @@ def list_github_folders(
 
 
 @router.get("/projects")
-def list_projects(db: Session = Depends(get_db)):
+def list_projects(db: Session = Depends(get_db)) -> dict[str, Any]:
     """List all unique project names with their repository counts."""
     from sqlalchemy import func
 
@@ -205,14 +209,14 @@ def _clone_repo_background(
     branch: str,
     token: str | None,
     workspace_path: str | None,
-):
+) -> None:
     """Background task to clone repository.
 
     This runs after the endpoint returns, performing the actual git clone
     and updating the repository record with status='active' or 'error'.
     """
-    from ...db.session import SessionLocal
     from ...db.models import Repository
+    from ...db.session import get_session_local
 
     logger = logging.getLogger(__name__)
     logger.info(f"[CLONE] Starting background clone for {url}")
@@ -234,7 +238,9 @@ def _clone_repo_background(
         details={"workspace_path": workspace_path, "url": url},
     )
 
-    db = SessionLocal()
+    # Get a new session for the background task
+    session_factory = get_session_local()
+    db: Session = session_factory()
     try:
         manager = RepoManager(db)
         manager.complete_clone(repo_id, url, branch, token, workspace_path)
@@ -246,8 +252,8 @@ def _clone_repo_background(
         # Update status to error
         repo = db.query(Repository).filter(Repository.id == repo_id).first()
         if repo:
-            repo.status = "error"
-            repo.metadata_ = {"error": str(e)}
+            repo.status = "error"  # type: ignore[assignment]
+            repo.metadata_ = {"error": str(e)}  # type: ignore[assignment]
             db.commit()
     finally:
         db.close()
@@ -258,7 +264,7 @@ def clone_repo(
     data: RepoCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-):
+) -> RepoResponse:
     """Clone a new repository (async - returns immediately).
 
     The clone operation runs in the background. The response includes
@@ -283,19 +289,19 @@ def clone_repo(
 
         # If repo already exists and is active, it was synced - return immediately
         if repo.status != "cloning":
-            return repo
+            return RepoResponse.model_validate(repo)
 
         # Start background clone task
         background_tasks.add_task(
             _clone_repo_background,
-            repo.id,
+            str(repo.id),
             data.url,
             data.branch,
             data.token,
             data.workspace_path,
         )
 
-        return repo
+        return RepoResponse.model_validate(repo)
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -311,13 +317,13 @@ class RepoUpdate(BaseModel):
 def get_repo(
     repo_id: str,
     db: Session = Depends(get_db),
-):
+) -> RepoResponse:
     """Get repository details."""
     manager = RepoManager(db)
     repo = manager.get(repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
-    return repo
+    return RepoResponse.model_validate(repo)
 
 
 @router.patch("/{repo_id}", response_model=RepoResponse)
@@ -325,7 +331,7 @@ def update_repo(
     repo_id: str,
     data: RepoUpdate,
     db: Session = Depends(get_db),
-):
+) -> RepoResponse:
     """Update repository metadata (project_name, repo_type)."""
     from ...db.models import Repository
 
@@ -334,20 +340,20 @@ def update_repo(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     if data.project_name is not None:
-        repo.project_name = data.project_name if data.project_name else None
+        repo.project_name = data.project_name if data.project_name else None  # type: ignore[assignment]
     if data.repo_type is not None:
-        repo.repo_type = data.repo_type if data.repo_type else None
+        repo.repo_type = data.repo_type if data.repo_type else None  # type: ignore[assignment]
 
     db.commit()
     db.refresh(repo)
-    return repo
+    return RepoResponse.model_validate(repo)
 
 
 @router.post("/{repo_id}/sync", response_model=RepoResponse)
 def sync_repo(
     repo_id: str,
     db: Session = Depends(get_db),
-):
+) -> RepoResponse:
     """Sync (pull) repository."""
     manager = RepoManager(db)
 
@@ -356,10 +362,12 @@ def sync_repo(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    # Extract repo name
-    repo_name = repo.url.rstrip("/").split("/")[-1] if repo.url else repo.name
-    if repo_name and repo_name.endswith(".git"):
-        repo_name = repo_name[:-4]
+    # Extract repo name - cast to str to satisfy mypy
+    repo_url = cast(str, repo.url) if repo.url else ""
+    repo_name_str = cast(str, repo.name) if repo.name else "unknown"
+    extracted_name: str = repo_url.rstrip("/").split("/")[-1] if repo_url else repo_name_str
+    if extracted_name.endswith(".git"):
+        extracted_name = extracted_name[:-4]
 
     # Register with unified OperationTracker
     tracker = get_tracker()
@@ -368,13 +376,13 @@ def sync_repo(
         op_type=OperationType.SYNC,
         operation_id=op_id,
         repo_id=repo_id,
-        repo_name=repo_name or "unknown",
+        repo_name=extracted_name or "unknown",
     )
 
     try:
         result = manager.sync(repo_id)
         tracker.complete(op_id)
-        return result
+        return RepoResponse.model_validate(result)
     except RepositoryError as e:
         tracker.fail(op_id, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
@@ -384,11 +392,35 @@ def sync_repo(
 def get_repo_status(
     repo_id: str,
     db: Session = Depends(get_db),
-):
+) -> RepoStatus:
     """Get detailed repository status."""
     manager = RepoManager(db)
     try:
-        return manager.get_status(repo_id)
+        status_dict = manager.get_status(repo_id)
+        # Convert the dict to RepoStatus schema
+        git_data = status_dict.get("git", {})
+        git_status = GitStatus(
+            branch=git_data.get("branch", "unknown"),
+            is_clean=git_data.get("is_clean", True),
+            modified=git_data.get("modified", []),
+            untracked=git_data.get("untracked", []),
+        )
+        files_data = status_dict.get("files")
+        file_stats: FileStats | None = None
+        if files_data:
+            file_stats = FileStats(
+                be_files=files_data.get("be_files", 0),
+                fe_files=files_data.get("fe_files", 0),
+            )
+        return RepoStatus(
+            id=str(status_dict["id"]),
+            name=str(status_dict["name"]),
+            status=status_dict["status"],
+            repo_type=status_dict.get("repo_type"),
+            last_synced_at=status_dict.get("last_synced_at"),
+            git=git_status,
+            files=file_stats,
+        )
     except RepositoryError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -398,7 +430,7 @@ def delete_repo(
     repo_id: str,
     delete_local: bool = True,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Delete a repository."""
     manager = RepoManager(db)
     try:
@@ -416,7 +448,7 @@ def create_link(
     repo_id: str,
     data: LinkCreate,
     db: Session = Depends(get_db),
-):
+) -> LinkResponse:
     """Create a link from this repository to another.
 
     Link types:
@@ -446,7 +478,7 @@ def list_linked_repos(
     link_type: str | None = None,
     direction: str | None = None,
     db: Session = Depends(get_db),
-):
+) -> list[LinkedRepoSummary]:
     """List all repositories linked to this repository.
 
     Args:
@@ -456,11 +488,23 @@ def list_linked_repos(
     """
     manager = RepoManager(db)
     try:
-        return manager.get_linked_repos(
+        linked_dicts = manager.get_linked_repos(
             repo_id=repo_id,
             link_type=link_type,
             direction=direction,
         )
+        # Convert list of dicts to list of LinkedRepoSummary
+        return [
+            LinkedRepoSummary(
+                id=str(item["id"]),
+                name=str(item["name"]),
+                repo_type=item.get("repo_type"),
+                link_id=str(item["link_id"]),
+                link_type=LinkTypeEnum(item["link_type"]),
+                direction=item["direction"],
+            )
+            for item in linked_dicts
+        ]
     except RepositoryError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -470,7 +514,7 @@ def delete_link(
     repo_id: str,
     link_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     """Remove a repository link.
 
     The link must belong to this repository (as source).
@@ -518,7 +562,7 @@ def list_files(
     path: str = Query(default="", description="Subdirectory path"),
     pattern: str = Query(default="*", description="Glob pattern to filter files"),
     db: Session = Depends(get_db),
-):
+) -> list[FileInfo]:
     """List files in a repository directory.
 
     Args:
@@ -531,7 +575,7 @@ def list_files(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     target_path = repo_path / path
 
     # Security: ensure we stay within repo directory
@@ -546,7 +590,7 @@ def list_files(
     if not target_path.exists():
         raise HTTPException(status_code=404, detail="Path not found")
 
-    files = []
+    files: list[FileInfo] = []
     if target_path.is_file():
         # Single file
         files.append(
@@ -593,7 +637,7 @@ def get_file_tree(
     repo_id: str,
     extensions: str = Query(default=".md", description="Comma-separated extensions to include"),
     db: Session = Depends(get_db),
-):
+) -> list[FileInfo]:
     """Get a tree of files matching specified extensions.
 
     Returns a flat list of all matching files in the repository.
@@ -603,10 +647,10 @@ def get_file_tree(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     ext_list = [ext.strip() for ext in extensions.split(",")]
 
-    files = []
+    files: list[FileInfo] = []
     for ext in ext_list:
         if not ext.startswith("."):
             ext = "." + ext
@@ -616,11 +660,11 @@ def get_file_tree(
             if any(part.startswith(".") for part in rel_path.parts):
                 continue
 
-            rel_path = str(rel_path)
+            rel_path_str = str(rel_path)
             files.append(
                 FileInfo(
                     name=item.name,
-                    path=rel_path,
+                    path=rel_path_str,
                     type="file",
                     size=item.stat().st_size,
                     extension=item.suffix,
@@ -691,7 +735,7 @@ def get_file_tree_hierarchy(
     extensions: str = Query(default=".md", description="Comma-separated extensions to include"),
     include_git_status: bool = Query(default=True, description="Include git modification status"),
     db: Session = Depends(get_db),
-):
+) -> TreeNode:
     """Get hierarchical file tree with git status.
 
     Returns a nested tree structure suitable for VS Code-like file explorer.
@@ -702,12 +746,12 @@ def get_file_tree_hierarchy(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     ext_list = [ext.strip() for ext in extensions.split(",")]
 
     # Get flat file list
-    files = []
-    seen_paths = set()  # Avoid duplicates when using '*'
+    files: list[FileInfo] = []
+    seen_paths: set[str] = set()  # Avoid duplicates when using '*'
 
     # Handle '*' for all files
     if "*" in ext_list:
@@ -773,7 +817,7 @@ def get_file_diff(
     path: str = Query(..., description="File path relative to repo root"),
     staged: bool = Query(default=False, description="Get staged diff instead of working tree diff"),
     db: Session = Depends(get_db),
-):
+) -> FileDiff:
     """Get git diff for a specific file.
 
     Returns the diff content for uncommitted changes.
@@ -786,7 +830,7 @@ def get_file_diff(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
 
     # Security check
@@ -866,12 +910,10 @@ def get_file_diff(
 
 # --- Symbol Definition / Go to Definition ---
 
-import re
 
-
-def _parse_python_imports(content: str) -> list[dict]:
+def _parse_python_imports(content: str) -> list[dict[str, Any]]:
     """Parse Python import statements and return structured data."""
-    imports = []
+    imports: list[dict[str, Any]] = []
 
     # Pattern for: from module import name1, name2
     from_import_pattern = r"^from\s+([\w.]+)\s+import\s+(.+)$"
@@ -888,12 +930,14 @@ def _parse_python_imports(content: str) -> list[dict]:
             names = [n.strip().split(" as ")[0].strip() for n in match.group(2).split(",")]
             for name in names:
                 if name and name != "*":
-                    imports.append({
-                        "type": "from_import",
-                        "module": module,
-                        "name": name,
-                        "line": line_num,
-                    })
+                    imports.append(
+                        {
+                            "type": "from_import",
+                            "module": module,
+                            "name": name,
+                            "line": line_num,
+                        }
+                    )
             continue
 
         # import X
@@ -902,22 +946,26 @@ def _parse_python_imports(content: str) -> list[dict]:
             modules = [m.strip().split(" as ")[0].strip() for m in match.group(1).split(",")]
             for module in modules:
                 if module:
-                    imports.append({
-                        "type": "import",
-                        "module": module,
-                        "name": module.split(".")[-1],
-                        "line": line_num,
-                    })
+                    imports.append(
+                        {
+                            "type": "import",
+                            "module": module,
+                            "name": module.split(".")[-1],
+                            "line": line_num,
+                        }
+                    )
 
     return imports
 
 
-def _resolve_python_module(module_path: str, repo_path: Path, current_file: str | None = None) -> Path | None:
+def _resolve_python_module(
+    module_path: str, repo_path: Path, current_file: str | None = None
+) -> Path | None:
     """Resolve a Python module path to a file path."""
     parts = module_path.split(".")
 
     # Try different resolution strategies
-    candidates = []
+    candidates: list[Path] = []
 
     # 1. Direct path: module.submodule -> module/submodule.py
     direct_path = repo_path / "/".join(parts)
@@ -959,10 +1007,10 @@ def _find_symbol_definitions(
     if file_extensions is None:
         file_extensions = [".py", ".js", ".ts", ".jsx", ".tsx"]
 
-    definitions = []
+    definitions: list[SymbolDefinition] = []
 
     # Patterns for different languages
-    patterns = {
+    patterns: dict[str, list[tuple[str, str]]] = {
         ".py": [
             (rf"^def\s+{re.escape(symbol)}\s*\(", "function"),
             (rf"^class\s+{re.escape(symbol)}\s*[:\(]", "class"),
@@ -984,7 +1032,10 @@ def _find_symbol_definitions(
             (rf"class\s+{re.escape(symbol)}\s*[{{\s<]", "class"),
             (rf"interface\s+{re.escape(symbol)}\s*[{{\s<]", "interface"),
             (rf"type\s+{re.escape(symbol)}\s*[=<]", "type"),
-            (rf"export\s+(?:default\s+)?(?:function|class|const|let|interface|type)\s+{re.escape(symbol)}", "export"),
+            (
+                rf"export\s+(?:default\s+)?(?:function|class|const|let|interface|type)\s+{re.escape(symbol)}",
+                "export",
+            ),
         ],
     }
     # Apply JS patterns to JSX/TSX too
@@ -1008,14 +1059,22 @@ def _find_symbol_definitions(
                 for line_num, line in enumerate(lines, 1):
                     for pattern, symbol_type in patterns[ext]:
                         if re.search(pattern, line):
-                            definitions.append(SymbolDefinition(
-                                symbol=symbol,
-                                path=str(rel_path),
-                                line=line_num,
-                                type=symbol_type,
-                                preview=line.strip()[:100],
-                                confidence=1.0 if line.strip().startswith(("def ", "class ", "function ", "const ", "let ")) else 0.8,
-                            ))
+                            definitions.append(
+                                SymbolDefinition(
+                                    symbol=symbol,
+                                    path=str(rel_path),
+                                    line=line_num,
+                                    type=symbol_type,
+                                    preview=line.strip()[:100],
+                                    confidence=(
+                                        1.0
+                                        if line.strip().startswith(
+                                            ("def ", "class ", "function ", "const ", "let ")
+                                        )
+                                        else 0.8
+                                    ),
+                                )
+                            )
                             break  # Only one match per line
 
             except (UnicodeDecodeError, OSError):
@@ -1032,7 +1091,7 @@ def find_definition(
     symbol: str = Query(..., description="Symbol name to find (function, class, variable)"),
     current_file: str | None = Query(default=None, description="Current file path for context"),
     db: Session = Depends(get_db),
-):
+) -> SymbolSearchResult:
     """Find symbol definition (Go to Definition).
 
     Searches for function, class, and variable definitions.
@@ -1045,7 +1104,7 @@ def find_definition(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     definitions: list[SymbolDefinition] = []
 
     # 1. If current_file is provided and is Python, check if symbol is an import
@@ -1061,34 +1120,48 @@ def find_definition(
                         # Try to resolve the import
                         if imp["type"] == "from_import":
                             # from module import symbol -> find symbol in module
-                            module_file = _resolve_python_module(imp["module"], repo_path, current_file)
+                            module_file = _resolve_python_module(
+                                imp["module"], repo_path, current_file
+                            )
                             if module_file:
                                 # Search for the symbol in the module file
                                 module_content = module_file.read_text(encoding="utf-8")
                                 for line_num, line in enumerate(module_content.split("\n"), 1):
-                                    if re.match(rf"^(def|class)\s+{re.escape(symbol)}\s*[\(:]", line):
-                                        definitions.append(SymbolDefinition(
-                                            symbol=symbol,
-                                            path=str(module_file.relative_to(repo_path)),
-                                            line=line_num,
-                                            type="function" if line.strip().startswith("def") else "class",
-                                            preview=line.strip()[:100],
-                                            confidence=1.0,
-                                        ))
+                                    if re.match(
+                                        rf"^(def|class)\s+{re.escape(symbol)}\s*[\(:]", line
+                                    ):
+                                        definitions.append(
+                                            SymbolDefinition(
+                                                symbol=symbol,
+                                                path=str(module_file.relative_to(repo_path)),
+                                                line=line_num,
+                                                type=(
+                                                    "function"
+                                                    if line.strip().startswith("def")
+                                                    else "class"
+                                                ),
+                                                preview=line.strip()[:100],
+                                                confidence=1.0,
+                                            )
+                                        )
                                         break
 
                         elif imp["type"] == "import":
                             # import module -> go to module file
-                            module_file = _resolve_python_module(imp["module"], repo_path, current_file)
+                            module_file = _resolve_python_module(
+                                imp["module"], repo_path, current_file
+                            )
                             if module_file:
-                                definitions.append(SymbolDefinition(
-                                    symbol=symbol,
-                                    path=str(module_file.relative_to(repo_path)),
-                                    line=1,
-                                    type="import",
-                                    preview=f"Module: {imp['module']}",
-                                    confidence=1.0,
-                                ))
+                                definitions.append(
+                                    SymbolDefinition(
+                                        symbol=symbol,
+                                        path=str(module_file.relative_to(repo_path)),
+                                        line=1,
+                                        type="import",
+                                        preview=f"Module: {imp['module']}",
+                                        confidence=1.0,
+                                    )
+                                )
             except Exception:
                 pass
 
@@ -1114,7 +1187,7 @@ def find_definition(
 def get_structure_files(
     repo_id: str,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Get all STRUCTURE.md files with their content.
 
     Returns a list of STRUCTURE.md files found in the repository,
@@ -1125,21 +1198,21 @@ def get_structure_files(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
 
-    structure_files = []
+    structure_files: list[dict[str, Any]] = []
     for item in repo_path.rglob("STRUCTURE.md"):
         rel_path = item.relative_to(repo_path)
         # Skip hidden directories (check relative path, not absolute)
         if any(part.startswith(".") for part in rel_path.parts):
             continue
 
-        rel_path = str(rel_path)
+        rel_path_str = str(rel_path)
         try:
             content = item.read_text(encoding="utf-8")
             structure_files.append(
                 {
-                    "path": rel_path,
+                    "path": rel_path_str,
                     "directory": (
                         str(item.parent.relative_to(repo_path)) if item.parent != repo_path else ""
                     ),
@@ -1166,7 +1239,7 @@ def read_file(
     repo_id: str,
     path: str = Query(..., description="File path relative to repo root"),
     db: Session = Depends(get_db),
-):
+) -> FileContent:
     """Read file content.
 
     Only text files are supported. Binary files will return an error.
@@ -1176,14 +1249,14 @@ def read_file(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
 
     # Security check
     try:
         file_path = file_path.resolve()
-        repo_path = repo_path.resolve()
-        if not str(file_path).startswith(str(repo_path)):
+        repo_path_resolved = repo_path.resolve()
+        if not str(file_path).startswith(str(repo_path_resolved)):
             raise HTTPException(status_code=400, detail="Invalid path")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid path")
@@ -1217,9 +1290,9 @@ def read_file(
 def write_file(
     repo_id: str,
     path: str = Query(..., description="File path relative to repo root"),
-    data: FileWriteRequest = ...,
+    data: FileWriteRequest = Body(...),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Write file content.
 
     Updates an existing file or creates a new one.
@@ -1230,7 +1303,7 @@ def write_file(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = Path(repo.local_path)
+    repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
 
     # Security check

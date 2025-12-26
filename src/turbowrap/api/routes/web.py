@@ -1,8 +1,11 @@
 """Web routes for HTML pages."""
 
+from typing import Any, cast
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from starlette.responses import Response
 
 from ...db.models import Repository, Setting, Task
 from ...utils.aws_secrets import get_anthropic_api_key
@@ -13,48 +16,57 @@ router = APIRouter(tags=["web"])
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
+async def dashboard(request: Request, db: Session = Depends(get_db)) -> Response:
     """Dashboard page - lista repository."""
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/dashboard.html",
-        {
-            "request": request,
-            "repos": repos,
-            "active_page": "dashboard",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/dashboard.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "dashboard",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/repos", response_class=HTMLResponse)
-async def repos_page(request: Request, db: Session = Depends(get_db)):
+async def repos_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Repository management page."""
     repos = db.query(Repository).all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/repos.html",
-        {
-            "request": request,
-            "repos": repos,
-            "active_page": "repos",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/repos.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "repos",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request):
+async def chat_page(request: Request) -> Response:
     """Chat CLI interface page - opens sidebar in page mode."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/chat.html",
-        {
-            "request": request,
-            "active_page": "chat",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/chat.html",
+            {
+                "request": request,
+                "active_page": "chat",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
@@ -62,119 +74,140 @@ async def chat_page(request: Request):
 async def chat_session_page(
     request: Request,
     session_id: str,
-):
+) -> Response:
     """Redirect old chat session URLs to main chat page."""
     return RedirectResponse(url="/chat", status_code=302)
 
 
 @router.get("/system-status", response_class=HTMLResponse)
-async def status_page(request: Request):
+async def status_page(request: Request) -> Response:
     """System status monitoring page."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/status.html",
-        {
-            "request": request,
-            "active_page": "status",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/status.html",
+            {
+                "request": request,
+                "active_page": "status",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/review", response_class=HTMLResponse)
-async def review_page(request: Request, db: Session = Depends(get_db)):
+async def review_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Code review page with multi-agent streaming."""
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/review.html",
-        {
-            "request": request,
-            "repos": repos,
-            "active_page": "review",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/review.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "review",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/tasks", response_class=HTMLResponse)
-async def tasks_page(request: Request):
+async def tasks_page(request: Request) -> Response:
     """Task history page."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/tasks.html",
-        {
-            "request": request,
-            "active_page": "tasks",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/tasks.html",
+            {
+                "request": request,
+                "active_page": "tasks",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/issues", response_class=HTMLResponse)
-async def issues_page(request: Request, db: Session = Depends(get_db)):
+async def issues_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Issues tracking page."""
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/issues.html",
-        {
-            "request": request,
-            "repos": repos,
-            "active_page": "issues",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/issues.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "issues",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/live-tasks", response_class=HTMLResponse)
-async def live_tasks_page(request: Request):
+async def live_tasks_page(request: Request) -> Response:
     """Live tasks page - shows active fix sessions."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/live_tasks.html",
-        {
-            "request": request,
-            "active_page": "live_tasks",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/live_tasks.html",
+            {
+                "request": request,
+                "active_page": "live_tasks",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/linear", response_class=HTMLResponse)
-async def linear_page(request: Request, db: Session = Depends(get_db)):
+async def linear_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Linear issues page."""
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/linear_issues.html",
-        {
-            "request": request,
-            "repos": repos,
-            "active_page": "linear",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/linear_issues.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "linear",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/files", response_class=HTMLResponse)
-async def files_page(request: Request, db: Session = Depends(get_db)):
+async def files_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """File editor page."""
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/files.html",
-        {
-            "request": request,
-            "repos": repos,
-            "active_page": "files",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/files.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "files",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, db: Session = Depends(get_db)):
+async def settings_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Settings page for configuring TurboWrap."""
     from ...config import get_settings as get_config
 
@@ -189,28 +222,31 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
     gemini_pro_model = db.query(Setting).filter(Setting.key == "gemini_pro_model").first()
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/settings.html",
-        {
-            "request": request,
-            "active_page": "settings",
-            "github_token_set": bool(github_token and github_token.value),
-            # Linear Integration
-            "linear_api_key_set": bool(linear_api_key and linear_api_key.value),
-            "linear_team_id": linear_team_id.value if linear_team_id else "",
-            # Models: DB value or config default
-            "claude_model": claude_model.value if claude_model else config.agents.claude_model,
-            "gemini_model": gemini_model.value if gemini_model else config.agents.gemini_model,
-            "gemini_pro_model": (
-                gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model
-            ),
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/settings.html",
+            {
+                "request": request,
+                "active_page": "settings",
+                "github_token_set": bool(github_token and github_token.value),
+                # Linear Integration
+                "linear_api_key_set": bool(linear_api_key and linear_api_key.value),
+                "linear_team_id": linear_team_id.value if linear_team_id else "",
+                # Models: DB value or config default
+                "claude_model": claude_model.value if claude_model else config.agents.claude_model,
+                "gemini_model": gemini_model.value if gemini_model else config.agents.gemini_model,
+                "gemini_pro_model": (
+                    gemini_pro_model.value if gemini_pro_model else config.agents.gemini_pro_model
+                ),
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/users", response_class=HTMLResponse)
-async def users_page(request: Request):
+async def users_page(request: Request) -> Response:
     """User management page (admin only)."""
     current_user = get_current_user(request)
 
@@ -219,47 +255,56 @@ async def users_page(request: Request):
         return RedirectResponse(url="/", status_code=302)
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/users.html",
-        {
-            "request": request,
-            "active_page": "users",
-            "current_user": current_user,
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/users.html",
+            {
+                "request": request,
+                "active_page": "users",
+                "current_user": current_user,
+            },
+        ),
     )
 
 
 @router.get("/databases", response_class=HTMLResponse)
-async def databases_page(request: Request):
+async def databases_page(request: Request) -> Response:
     """Database viewer page - manage and visualize databases."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/databases.html",
-        {
-            "request": request,
-            "active_page": "databases",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/databases.html",
+            {
+                "request": request,
+                "active_page": "databases",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 @router.get("/endpoints", response_class=HTMLResponse)
-async def endpoints_page(request: Request):
+async def endpoints_page(request: Request) -> Response:
     """Endpoint manager page - view and document API endpoints."""
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/endpoints.html",
-        {
-            "request": request,
-            "active_page": "endpoints",
-            "current_user": get_current_user(request),
-        },
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/endpoints.html",
+            {
+                "request": request,
+                "active_page": "endpoints",
+                "current_user": get_current_user(request),
+            },
+        ),
     )
 
 
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
-async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
+async def htmx_repo_list(request: Request, db: Session = Depends(get_db)) -> Response:
     """HTMX partial: repository list with last evaluation."""
     import json
 
@@ -289,14 +334,17 @@ async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
     )
 
     # Build repo_id -> evaluation dict
-    evaluations = {}
+    evaluations: dict[str, Any] = {}
     for task in last_tasks:
         if task.result:
             try:
-                result = task.result if isinstance(task.result, dict) else json.loads(task.result)
+                result_value = cast(Any, task.result)
+                result: dict[str, Any] = (
+                    result_value if isinstance(result_value, dict) else json.loads(result_value)
+                )
                 eval_data = result.get("evaluation")
                 if eval_data:
-                    evaluations[task.repository_id] = {
+                    evaluations[str(task.repository_id)] = {
                         "evaluation": eval_data,
                         "task_id": task.id,
                         "completed_at": task.completed_at,
@@ -305,9 +353,12 @@ async def htmx_repo_list(request: Request, db: Session = Depends(get_db)):
                 pass
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "components/repo_list.html",
-        {"request": request, "repos": repos, "evaluations": evaluations},
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/repo_list.html",
+            {"request": request, "repos": repos, "evaluations": evaluations},
+        ),
     )
 
 
@@ -318,7 +369,7 @@ async def htmx_add_repo(
     branch: str = Form("main"),
     workspace_path: str | None = Form(None),
     db: Session = Depends(get_db),
-):
+) -> Response:
     """HTMX: add a new repository and return updated list.
 
     For monorepos, workspace_path limits operations to a subfolder.
@@ -336,13 +387,18 @@ async def htmx_add_repo(
     # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "components/repo_list.html", {"request": request, "repos": repos}
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/repo_list.html", {"request": request, "repos": repos}
+        ),
     )
 
 
 @router.delete("/htmx/repos/{repo_id}", response_class=HTMLResponse)
-async def htmx_delete_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+async def htmx_delete_repo(
+    request: Request, repo_id: str, db: Session = Depends(get_db)
+) -> Response:
     """HTMX: delete a repository and return updated list."""
     import shutil
     from pathlib import Path
@@ -350,7 +406,7 @@ async def htmx_delete_repo(request: Request, repo_id: str, db: Session = Depends
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if repo:
         # Delete local files
-        local_path = Path(repo.local_path)
+        local_path = Path(str(repo.local_path))
         if local_path.exists():
             shutil.rmtree(local_path)
         # Delete from DB
@@ -360,13 +416,16 @@ async def htmx_delete_repo(request: Request, repo_id: str, db: Session = Depends
     # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "components/repo_list.html", {"request": request, "repos": repos}
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/repo_list.html", {"request": request, "repos": repos}
+        ),
     )
 
 
 @router.post("/htmx/repos/{repo_id}/sync", response_class=HTMLResponse)
-async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(get_db)) -> Response:
     """HTMX: sync a repository and return updated list."""
     from ...core.repo_manager import RepoManager
 
@@ -380,13 +439,18 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
     # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "components/repo_list.html", {"request": request, "repos": repos}
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/repo_list.html", {"request": request, "repos": repos}
+        ),
     )
 
 
 @router.post("/htmx/repos/{repo_id}/reclone", response_class=HTMLResponse)
-async def htmx_reclone_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+async def htmx_reclone_repo(
+    request: Request, repo_id: str, db: Session = Depends(get_db)
+) -> Response:
     """HTMX: force reclone a repository (delete local + fresh clone)."""
     import logging
     import shutil
@@ -399,7 +463,7 @@ async def htmx_reclone_repo(request: Request, repo_id: str, db: Session = Depend
 
     if repo:
         try:
-            local_path = Path(repo.local_path)
+            local_path = Path(str(repo.local_path))
 
             # Delete local directory if exists
             if local_path.exists():
@@ -413,20 +477,23 @@ async def htmx_reclone_repo(request: Request, repo_id: str, db: Session = Depend
         except Exception as e:
             logger.error(f"[RECLONE] Failed for {repo.name}: {e}")
             # Mark as error
-            repo.status = "error"
+            repo.status = "error"  # type: ignore[assignment]
             db.commit()
 
     # Return updated list (redirect to GET which loads evaluations properly)
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "components/repo_list.html",
-        {"request": request, "repos": repos, "evaluations": {}},
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/repo_list.html",
+            {"request": request, "repos": repos, "evaluations": {}},
+        ),
     )
 
 
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
-async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)):
+async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)) -> Response:
     """HTMX: push repository changes with automatic conflict resolution via Claude CLI."""
     import json
     import logging
@@ -441,26 +508,29 @@ async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(g
         try:
             api_key = get_anthropic_api_key()
             result = await smart_push_with_conflict_resolution(
-                Path(repo.local_path),
+                Path(str(repo.local_path)),
                 message="Update via TurboWrap",
                 api_key=api_key,
             )
             if result.get("claude_resolved"):
-                push_message = f"✅ Push completato - Claude ha risolto i conflitti per {repo.name}"
+                push_message = f"Push completato - Claude ha risolto i conflitti per {repo.name}"
             else:
-                push_message = f"✅ Push completato per {repo.name}"
+                push_message = f"Push completato per {repo.name}"
             logger.info(push_message)
         except Exception as e:
-            push_error = f"❌ Push fallito per {repo.name}: {str(e)}"
+            push_error = f"Push fallito per {repo.name}: {str(e)}"
             logger.error(push_error)
     else:
-        push_error = "❌ Repository non trovata"
+        push_error = "Repository non trovata"
 
     # Return updated list with HX-Trigger for toast notification
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    response = templates.TemplateResponse(
-        "components/repo_list.html", {"request": request, "repos": repos}
+    response = cast(
+        Response,
+        templates.TemplateResponse(
+            "components/repo_list.html", {"request": request, "repos": repos}
+        ),
     )
 
     # Add HX-Trigger header for toast notification

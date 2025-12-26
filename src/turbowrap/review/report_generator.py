@@ -4,11 +4,7 @@ Report generator for TurboWrap.
 
 from pathlib import Path
 
-from turbowrap.review.models.report import (
-    ConvergenceStatus,
-    FinalReport,
-    Recommendation,
-)
+from turbowrap.review.models.report import ConvergenceStatus, FinalReport, Recommendation
 from turbowrap.review.models.review import Issue, IssueSeverity
 
 
@@ -282,7 +278,7 @@ class ReportGenerator:
     def save_report(
         report: FinalReport,
         output_dir: str | Path,
-        formats: list[str] = None,
+        formats: list[str] | None = None,
     ) -> dict[str, Path]:
         """
         Save report to files.

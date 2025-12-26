@@ -31,16 +31,18 @@ import asyncio
 import codecs
 import logging
 import os
+import sys
 import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-from .models import CLIType, SessionStatus
 from ..config import get_settings
 from ..exceptions import SecurityError
+from .models import CLIType, SessionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,40 @@ GEMINI_TIMEOUT = 120  # 2 minutes
 STALE_PROCESS_HOURS = 3  # Kill processes older than 3 hours
 CLEANUP_INTERVAL_SECONDS = 300  # Check every 5 minutes
 
+# Python version check for asyncio.timeout (3.11+)
+if sys.version_info >= (3, 11):
+    from asyncio import timeout as asyncio_timeout
+else:
+    # Fallback for Python 3.10: use async_timeout or a simple wrapper
+    from collections.abc import AsyncGenerator
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def asyncio_timeout(delay: float) -> AsyncGenerator[None, None]:
+        """Simple timeout context manager for Python 3.10."""
+        # Create a task that will be cancelled after delay
+        loop = asyncio.get_event_loop()
+        timeout_handle = loop.call_later(
+            delay,
+            lambda: None,  # Dummy callback
+        )
+        try:
+            yield
+        finally:
+            timeout_handle.cancel()
+
+
+# Type alias for process stats entry
+class ProcessStatsEntry:
+    """Type for process stats entry."""
+
+    session_id: str
+    cli_type: str
+    pid: int | None
+    status: str
+    age_hours: float
+    model: str
+
 
 @dataclass
 class CLIProcess:
@@ -60,7 +96,7 @@ class CLIProcess:
 
     session_id: str
     cli_type: CLIType
-    process: asyncio.subprocess.Process
+    process: asyncio.subprocess.Process | None
     working_dir: Path
     model: str
     agent_name: str | None = None
@@ -71,6 +107,9 @@ class CLIProcess:
     claude_session_id: str | None = None  # Claude CLI's session ID for --resume
     thinking_budget: int | None = None
     mcp_config: Path | None = None
+    # Gemini-specific fields for context injection
+    gemini_context: str | None = None  # Context to prepend to first message
+    context_used: bool = False  # Whether context has been prepended
 
     @property
     def pid(self) -> int | None:
@@ -80,7 +119,7 @@ class CLIProcess:
     @property
     def is_running(self) -> bool:
         """Check if process is still running."""
-        return self.process and self.process.returncode is None
+        return self.process is not None and self.process.returncode is None
 
     def cleanup(self) -> None:
         """Cleanup temporary files."""
@@ -222,25 +261,27 @@ class CLIProcessManager:
 
         # Build CLI arguments
         # Using --print mode for non-interactive chat
-        args = [
+        args: list[str] = [
             "claude",
             "--print",
         ]
 
         # Use --resume for forked sessions, --session-id for new ones
-        if use_resume:
+        if use_resume and claude_session_id:
             args.extend(["--resume", claude_session_id])
-        else:
+        elif claude_session_id:
             args.extend(["--session-id", claude_session_id])
 
-        args.extend([
-            "--verbose",
-            "--dangerously-skip-permissions",
-            "--model",
-            model,
-            "--output-format",
-            "stream-json",
-        ])
+        args.extend(
+            [
+                "--verbose",
+                "--dangerously-skip-permissions",
+                "--model",
+                model,
+                "--output-format",
+                "stream-json",
+            ]
+        )
 
         # Create system prompt file combining context and agent
         temp_prompt_file = None
@@ -362,8 +403,8 @@ class CLIProcessManager:
 
         # Store context for Gemini (will be prepended to first message)
         if context:
-            cli_proc._gemini_context = context
-            cli_proc._context_used = False
+            cli_proc.gemini_context = context
+            cli_proc.context_used = False
             logger.info(
                 f"[GEMINI] Context stored: {len(context)} chars (will prepend to first msg)"
             )
@@ -471,7 +512,7 @@ class CLIProcessManager:
         timeout: int | None = None,
     ) -> AsyncIterator[str]:
         """Send message to Claude CLI process."""
-        timeout = timeout or CLAUDE_TIMEOUT
+        timeout_value = timeout or CLAUDE_TIMEOUT
         process = proc.process
 
         if not process or process.returncode is not None:
@@ -479,6 +520,9 @@ class CLIProcessManager:
             logger.info("[CLAUDE] Process ended, respawning with --resume")
             await self._respawn_claude_with_resume(proc)
             process = proc.process  # Get the new process
+
+        if process is None or process.stdin is None:
+            raise RuntimeError("Claude process or stdin is None")
 
         proc.status = SessionStatus.STREAMING
 
@@ -495,10 +539,13 @@ class CLIProcessManager:
             logger.error(f"[CLAUDE] Stdin error: {e}")
             raise
 
+        if process.stdout is None:
+            raise RuntimeError("Claude process stdout is None")
+
         # Read stdout LINE BY LINE for proper streaming
         # stream-json outputs one JSON object per line
         try:
-            async with asyncio.timeout(timeout):
+            async with asyncio_timeout(timeout_value):
                 while True:
                     # Read line by line - this is key for streaming!
                     line_bytes = await process.stdout.readline()
@@ -513,7 +560,7 @@ class CLIProcessManager:
                         yield line
 
         except asyncio.TimeoutError:
-            logger.error(f"[CLAUDE] Timeout after {timeout}s")
+            logger.error(f"[CLAUDE] Timeout after {timeout_value}s")
             process.kill()
             proc.status = SessionStatus.ERROR
             raise
@@ -534,7 +581,7 @@ class CLIProcessManager:
         timeout: int | None = None,
     ) -> AsyncIterator[str]:
         """Send message to Gemini CLI (spawns new process per message)."""
-        timeout = timeout or GEMINI_TIMEOUT
+        timeout_value = timeout or GEMINI_TIMEOUT
         proc.status = SessionStatus.STREAMING
 
         # Build environment
@@ -542,8 +589,8 @@ class CLIProcessManager:
 
         # Prepend context to first message if available
         full_message = message
-        if hasattr(proc, "_gemini_context") and not getattr(proc, "_context_used", True):
-            context = proc._gemini_context
+        if proc.gemini_context and not proc.context_used:
+            context = proc.gemini_context
             full_message = f"""<context>
 {context}
 </context>
@@ -551,7 +598,7 @@ class CLIProcessManager:
 ---
 
 {message}"""
-            proc._context_used = True
+            proc.context_used = True
             logger.info(f"[GEMINI] Context prepended to message ({len(context)} chars)")
 
         # Gemini expects prompt as positional argument
@@ -575,11 +622,14 @@ class CLIProcessManager:
         proc.process = process
         logger.info(f"[GEMINI] Spawned process PID={process.pid}")
 
+        if process.stdout is None:
+            raise RuntimeError("Gemini process stdout is None")
+
         # Stream stdout
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         try:
-            async with asyncio.timeout(timeout):
+            async with asyncio_timeout(timeout_value):
                 while True:
                     chunk = await process.stdout.read(1024)
                     if not chunk:
@@ -593,7 +643,7 @@ class CLIProcessManager:
                         yield decoded
 
         except asyncio.TimeoutError:
-            logger.error(f"[GEMINI] Timeout after {timeout}s")
+            logger.error(f"[GEMINI] Timeout after {timeout_value}s")
             process.kill()
             proc.status = SessionStatus.ERROR
             raise
@@ -602,8 +652,9 @@ class CLIProcessManager:
         logger.info(f"[GEMINI] Process exited with code {process.returncode}")
 
         if process.returncode != 0:
-            stderr = await process.stderr.read()
-            logger.error(f"[GEMINI] Error: {stderr.decode()}")
+            if process.stderr:
+                stderr = await process.stderr.read()
+                logger.error(f"[GEMINI] Error: {stderr.decode()}")
             proc.status = SessionStatus.ERROR
         else:
             proc.status = SessionStatus.IDLE  # Ready for next message
@@ -699,22 +750,18 @@ class CLIProcessManager:
 
         return count
 
-    def get_process_stats(self) -> dict:
+    def get_process_stats(self) -> dict[str, Any]:
         """Get statistics about running processes.
 
         Returns:
             Dict with process statistics
         """
         now = datetime.utcnow()
-        stats = {
-            "total_processes": len(self._processes),
-            "max_processes": self._max_processes,
-            "processes": [],
-        }
+        processes_list: list[dict[str, Any]] = []
 
         for session_id, proc in self._processes.items():
             age_seconds = (now - proc.started_at).total_seconds()
-            stats["processes"].append(
+            processes_list.append(
                 {
                     "session_id": session_id,
                     "cli_type": proc.cli_type.value,
@@ -724,6 +771,12 @@ class CLIProcessManager:
                     "model": proc.model,
                 }
             )
+
+        stats: dict[str, Any] = {
+            "total_processes": len(self._processes),
+            "max_processes": self._max_processes,
+            "processes": processes_list,
+        }
 
         return stats
 

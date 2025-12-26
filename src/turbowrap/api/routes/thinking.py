@@ -1,6 +1,7 @@
 """Thinking logs routes - fetch extended thinking from S3."""
 
 import asyncio
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -11,7 +12,7 @@ from turbowrap.config import get_settings
 router = APIRouter(prefix="/thinking", tags=["thinking"])
 
 
-def get_s3_client():
+def get_s3_client() -> Any:
     """Get S3 client with region from config."""
     settings = get_settings()
     return boto3.client("s3", region_name=settings.thinking.s3_region)
@@ -21,7 +22,7 @@ def get_s3_client():
 async def get_thinking_log(
     task_id: str,
     reviewer_name: str,
-):
+) -> dict[str, Any]:
     """
     Fetch thinking log for a specific reviewer from S3.
 
@@ -111,7 +112,7 @@ async def get_thinking_log(
 @router.get("/list/{review_id}")
 async def list_thinking_logs(
     review_id: str,
-):
+) -> dict[str, Any]:
     """
     List all thinking logs for a review.
 

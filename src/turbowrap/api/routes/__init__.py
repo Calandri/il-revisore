@@ -8,11 +8,11 @@ from .databases import router as databases_router
 from .deployments import router as deployments_router
 from .endpoints import router as endpoints_router
 from .fix import router as fix_router
-from .operations import router as operations_router
 from .git import router as git_router
 from .github import router as github_router
 from .issues import router as issues_router
 from .linear import router as linear_router
+from .operations import router as operations_router
 from .relationships import router as relationships_router
 from .repos import router as repos_router
 from .settings import router as settings_router

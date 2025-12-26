@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
@@ -114,7 +115,9 @@ def _get_endpoints_from_metadata(repo: Repository) -> EndpointsData | None:
         return None
 
 
-def _save_endpoints_to_metadata(repo: Repository, endpoints_data: dict, db: Session) -> None:
+def _save_endpoints_to_metadata(
+    repo: Repository, endpoints_data: dict[str, Any], db: Session
+) -> None:
     """Save endpoints data to repository metadata."""
     if repo.metadata_ is None:
         repo.metadata_ = {}
@@ -122,8 +125,8 @@ def _save_endpoints_to_metadata(repo: Repository, endpoints_data: dict, db: Sess
     # Create a new dict to trigger SQLAlchemy change detection
     new_metadata = dict(repo.metadata_)
     new_metadata["endpoints"] = endpoints_data
-    repo.metadata_ = new_metadata
-    repo.updated_at = datetime.utcnow()
+    repo.metadata_ = new_metadata  # type: ignore[assignment]
+    repo.updated_at = datetime.utcnow()  # type: ignore[assignment]
     db.commit()
 
 
@@ -134,7 +137,7 @@ def _save_endpoints_to_metadata(repo: Repository, endpoints_data: dict, db: Sess
 def list_repos_with_endpoints(
     include_without_endpoints: bool = False,
     db: Session = Depends(get_db),
-):
+) -> list[RepoWithEndpoints]:
     """List all repositories with their endpoint information.
 
     Args:
@@ -142,7 +145,7 @@ def list_repos_with_endpoints(
     """
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
 
-    result = []
+    result: list[RepoWithEndpoints] = []
     for repo in repos:
         endpoints_data = _get_endpoints_from_metadata(repo)
 
@@ -154,10 +157,10 @@ def list_repos_with_endpoints(
 
         result.append(
             RepoWithEndpoints(
-                id=repo.id,
-                name=repo.name,
-                repo_type=repo.repo_type,
-                local_path=repo.local_path,
+                id=str(repo.id),
+                name=str(repo.name),
+                repo_type=str(repo.repo_type) if repo.repo_type else None,
+                local_path=str(repo.local_path) if repo.local_path else None,
                 has_endpoints=has_endpoints,
                 endpoint_count=endpoint_count,
                 framework=endpoints_data.framework if endpoints_data else None,
@@ -173,7 +176,7 @@ def list_repos_with_endpoints(
 
 
 @router.get("/{repo_id}", response_model=EndpointsData)
-def get_repo_endpoints(repo_id: str, db: Session = Depends(get_db)):
+def get_repo_endpoints(repo_id: str, db: Session = Depends(get_db)) -> EndpointsData:
     """Get detected endpoints for a specific repository."""
     repo = (
         db.query(Repository)
@@ -196,7 +199,7 @@ def trigger_endpoint_detection(
     background_tasks: BackgroundTasks,
     use_ai: bool = True,
     db: Session = Depends(get_db),
-):
+) -> DetectionResponse:
     """Trigger endpoint detection for a repository.
 
     Args:
@@ -216,7 +219,7 @@ def trigger_endpoint_detection(
 
     # Run detection synchronously for now (could be async with background_tasks)
     try:
-        result = detect_endpoints(repo.local_path, use_ai=use_ai)
+        result = detect_endpoints(str(repo.local_path), use_ai=use_ai)
         result_dict = result_to_dict(result)
 
         _save_endpoints_to_metadata(repo, result_dict, db)
@@ -244,7 +247,7 @@ def trigger_endpoint_detection(
 
 
 @router.delete("/{repo_id}")
-def clear_repo_endpoints(repo_id: str, db: Session = Depends(get_db)):
+def clear_repo_endpoints(repo_id: str, db: Session = Depends(get_db)) -> dict[str, str]:
     """Clear detected endpoints for a repository."""
     repo = (
         db.query(Repository)
@@ -257,15 +260,15 @@ def clear_repo_endpoints(repo_id: str, db: Session = Depends(get_db)):
     if repo.metadata_ and "endpoints" in repo.metadata_:
         new_metadata = dict(repo.metadata_)
         del new_metadata["endpoints"]
-        repo.metadata_ = new_metadata
-        repo.updated_at = datetime.utcnow()
+        repo.metadata_ = new_metadata  # type: ignore[assignment]
+        repo.updated_at = datetime.utcnow()  # type: ignore[assignment]
         db.commit()
 
     return {"status": "cleared", "repo_id": repo_id}
 
 
 @router.post("/ai-instructions", response_model=AIInstructionsResponse)
-def generate_ai_instructions(req: AIInstructionsRequest):
+def generate_ai_instructions(req: AIInstructionsRequest) -> AIInstructionsResponse:
     """Generate AI-powered instructions for calling an endpoint."""
     from ...llm.gemini import GeminiClient
 
@@ -275,7 +278,7 @@ def generate_ai_instructions(req: AIInstructionsRequest):
         params_text = "\n".join(
             [
                 f"  - {p.name} ({p.param_type}): {p.data_type}"
-                + (f" [required]" if p.required else "")
+                + (" [required]" if p.required else "")
                 + (f" - {p.description}" if p.description else "")
                 for p in req.parameters
             ]

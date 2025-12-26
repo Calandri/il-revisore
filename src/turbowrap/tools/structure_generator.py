@@ -13,7 +13,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from turbowrap.llm.base import BaseAgent
 
 import tiktoken
 
@@ -163,7 +166,7 @@ class StructureGenerator:
         workspace_path: str | None = None,
         max_depth: int = MAX_TREE_DEPTH,
         max_workers: int = 5,
-        gemini_client: object | None = None,
+        gemini_client: "BaseAgent | None" = None,
     ):
         """
         Initialize structure generator.
@@ -428,6 +431,9 @@ PATTERN: <pattern>
 DESCRIPTION: <description>
 """
 
+        # Type narrowing for mypy - caller checks gemini_client is not None
+        assert self.gemini_client is not None
+
         try:
             result = self.gemini_client.generate(prompt)
 
@@ -473,6 +479,9 @@ api: REST API endpoints and routes
 utils: Shared helper functions
 models: Data models and schemas
 """
+
+        # Type narrowing for mypy - caller checks gemini_client is not None
+        assert self.gemini_client is not None
 
         try:
             result = self.gemini_client.generate(prompt)
@@ -628,6 +637,9 @@ If no elements found, respond with: EMPTY
 Be concise. Only list the most important elements (max 10).
 """
 
+        # Type narrowing for mypy - caller checks gemini_client is not None
+        assert self.gemini_client is not None
+
         try:
             result = self.gemini_client.generate(prompt)
             return self._parse_elements_response(result, file_struct.file_type)
@@ -638,7 +650,7 @@ Be concise. Only list the most important elements (max 10).
         self, response: str, file_type: Literal["be", "fe"]
     ) -> list[FileElement]:
         """Parse Gemini response into list of FileElement."""
-        elements = []
+        elements: list[FileElement] = []
         valid_types = FE_ELEMENTS if file_type == "fe" else BE_ELEMENTS
 
         if "EMPTY" in response.upper():

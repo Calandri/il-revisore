@@ -161,27 +161,27 @@ def list_pull_requests(
         pulls = repository.get_pulls(state=state, sort="updated", direction="desc")
 
         result = []
-        for pr in pulls[:limit]:
+        for pr_typed in list(pulls)[:limit]:
             result.append(
                 PullRequestInfo(
-                    number=pr.number,
-                    title=pr.title,
-                    state=pr.state,
-                    draft=pr.draft,
-                    user=pr.user.login if pr.user else "unknown",
-                    user_avatar=pr.user.avatar_url if pr.user else None,
-                    created_at=pr.created_at.isoformat() if pr.created_at else "",
-                    updated_at=pr.updated_at.isoformat() if pr.updated_at else "",
-                    time_ago=_time_ago(pr.updated_at),
-                    merged=pr.merged,
-                    mergeable=pr.mergeable,
-                    head_branch=pr.head.ref if pr.head else "",
-                    base_branch=pr.base.ref if pr.base else "",
-                    additions=pr.additions,
-                    deletions=pr.deletions,
-                    changed_files=pr.changed_files,
-                    html_url=pr.html_url,
-                    labels=[label.name for label in pr.labels],
+                    number=pr_typed.number,
+                    title=pr_typed.title,
+                    state=pr_typed.state,
+                    draft=pr_typed.draft,
+                    user=pr_typed.user.login if pr_typed.user else "unknown",
+                    user_avatar=pr_typed.user.avatar_url if pr_typed.user else None,
+                    created_at=pr_typed.created_at.isoformat() if pr_typed.created_at else "",
+                    updated_at=pr_typed.updated_at.isoformat() if pr_typed.updated_at else "",
+                    time_ago=_time_ago(pr_typed.updated_at),
+                    merged=pr_typed.merged,
+                    mergeable=pr_typed.mergeable,
+                    head_branch=pr_typed.head.ref if pr_typed.head else "",
+                    base_branch=pr_typed.base.ref if pr_typed.base else "",
+                    additions=pr_typed.additions,
+                    deletions=pr_typed.deletions,
+                    changed_files=pr_typed.changed_files,
+                    html_url=pr_typed.html_url,
+                    labels=[label.name for label in pr_typed.labels],
                 )
             )
         return result
@@ -341,24 +341,24 @@ def list_issues(
         issues = repository.get_issues(state=state, sort="updated", direction="desc")
 
         result = []
-        for issue in issues[:limit]:
+        for issue_typed in list(issues)[:limit]:
             # Skip PRs (GitHub API returns PRs as issues too)
-            if issue.pull_request is not None:
+            if issue_typed.pull_request is not None:
                 continue
 
             result.append(
                 IssueInfo(
-                    number=issue.number,
-                    title=issue.title,
-                    state=issue.state,
-                    user=issue.user.login if issue.user else "unknown",
-                    user_avatar=issue.user.avatar_url if issue.user else None,
-                    created_at=issue.created_at.isoformat() if issue.created_at else "",
-                    updated_at=issue.updated_at.isoformat() if issue.updated_at else "",
-                    time_ago=_time_ago(issue.updated_at),
-                    html_url=issue.html_url,
-                    labels=[label.name for label in issue.labels],
-                    comments=issue.comments,
+                    number=issue_typed.number,
+                    title=issue_typed.title,
+                    state=issue_typed.state,
+                    user=issue_typed.user.login if issue_typed.user else "unknown",
+                    user_avatar=issue_typed.user.avatar_url if issue_typed.user else None,
+                    created_at=issue_typed.created_at.isoformat() if issue_typed.created_at else "",
+                    updated_at=issue_typed.updated_at.isoformat() if issue_typed.updated_at else "",
+                    time_ago=_time_ago(issue_typed.updated_at),
+                    html_url=issue_typed.html_url,
+                    labels=[label.name for label in issue_typed.labels],
+                    comments=issue_typed.comments,
                 )
             )
         return result
@@ -457,19 +457,19 @@ def list_workflow_runs(
         runs = repository.get_workflow_runs()
 
         result = []
-        for run in runs[:limit]:
+        for run_typed in list(runs)[:limit]:
             result.append(
                 WorkflowRun(
-                    id=run.id,
-                    name=run.name or "Unknown",
-                    status=run.status,
-                    conclusion=run.conclusion,
-                    created_at=run.created_at.isoformat() if run.created_at else "",
-                    updated_at=run.updated_at.isoformat() if run.updated_at else "",
-                    time_ago=_time_ago(run.updated_at),
-                    html_url=run.html_url,
-                    head_branch=run.head_branch or "",
-                    head_sha=run.head_sha[:7] if run.head_sha else "",
+                    id=run_typed.id,
+                    name=run_typed.name or "Unknown",
+                    status=run_typed.status,
+                    conclusion=run_typed.conclusion,
+                    created_at=run_typed.created_at.isoformat() if run_typed.created_at else "",
+                    updated_at=run_typed.updated_at.isoformat() if run_typed.updated_at else "",
+                    time_ago=_time_ago(run_typed.updated_at),
+                    html_url=run_typed.html_url,
+                    head_branch=run_typed.head_branch or "",
+                    head_sha=run_typed.head_sha[:7] if run_typed.head_sha else "",
                 )
             )
         return result

@@ -17,7 +17,7 @@ class AgentResponse(BaseModel):
     model: str | None = Field(default=None, description="Model identifier used")
     agent_type: Literal["gemini", "claude"] | None = Field(default=None, description="LLM type")
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def total_tokens(self) -> int | None:
         """Calculate total tokens if available."""

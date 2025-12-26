@@ -3,6 +3,7 @@ Models for repository evaluation scoring.
 """
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -99,7 +100,7 @@ class RepositoryEvaluation(BaseModel):
             return "yellow"
         return "green"
 
-    def to_dict_with_colors(self) -> dict:
+    def to_dict_with_colors(self) -> dict[str, Any]:
         """Return metrics with color indicators for UI."""
         return {
             "functionality": {

@@ -9,6 +9,7 @@ Create Date: 2025-12-26 15:00:00
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "add_review_checkpoints"
@@ -39,9 +40,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("task_id", "reviewer_name", name="uq_task_reviewer"),
     )
-    op.create_index(
-        "idx_review_checkpoints_task", "review_checkpoints", ["task_id"], unique=False
-    )
+    op.create_index("idx_review_checkpoints_task", "review_checkpoints", ["task_id"], unique=False)
     op.create_index(
         "idx_review_checkpoints_status",
         "review_checkpoints",

@@ -178,6 +178,10 @@ class ChallengerLoop:
                 )
             else:
                 logger.info("[LOOP] >> Starting REFINEMENT with Claude CLI...")
+                # challenger_feedback should never be None when refining (it's set after first iteration)
+                assert (
+                    challenger_feedback is not None
+                ), "challenger_feedback should be set after first iteration"
                 current_review = await self.reviewer.refine(
                     context,
                     current_review,
@@ -273,6 +277,11 @@ class ChallengerLoop:
             f"convergence={final_convergence.value}, "
             f"issues={len(current_review.issues) if current_review else 0}"
         )
+
+        # At this point, current_review should never be None (at least one iteration ran)
+        assert (
+            current_review is not None
+        ), "current_review should be set after at least one iteration"
 
         return ChallengerLoopResult(
             final_review=current_review,

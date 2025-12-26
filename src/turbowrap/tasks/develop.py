@@ -2,6 +2,7 @@
 
 import time
 from datetime import datetime
+from typing import Any
 
 from ..db.models import AgentRun, Task
 from ..llm import ClaudeClient, GeminiClient, load_prompt
@@ -43,8 +44,8 @@ class DevelopTask(BaseTask):
             task = self._get_or_create_task(context)
 
             # Update task status
-            task.status = "running"
-            task.started_at = started_at
+            task.status = "running"  # type: ignore[assignment]
+            task.started_at = started_at  # type: ignore[assignment]
             context.db.commit()
 
             # First, analyze with Gemini Flash
@@ -57,18 +58,19 @@ class DevelopTask(BaseTask):
             completed_at = datetime.utcnow()
             duration = time.time() - start_time
 
-            task.status = "completed"
-            task.completed_at = completed_at
-            task.result = {
+            result_data: dict[str, Any] = {
                 "analysis": analysis,
                 "development": development,
                 "duration_seconds": duration,
             }
+            task.status = "completed"  # type: ignore[assignment]
+            task.completed_at = completed_at  # type: ignore[assignment]
+            task.result = result_data  # type: ignore[assignment]
             context.db.commit()
 
             return TaskResult(
                 status="completed",
-                data=task.result,
+                data=result_data,
                 duration_seconds=duration,
                 started_at=started_at,
                 completed_at=completed_at,

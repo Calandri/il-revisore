@@ -37,7 +37,7 @@ Su iPhone 12 il bottone appare più piccolo del target touch raccomandato (44x44
             input=input_text,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
 
         output = result.stdout.strip()
@@ -106,7 +106,7 @@ Risposte utente:
             input=input_text,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
 
         output = result.stdout.strip()

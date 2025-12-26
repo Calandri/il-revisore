@@ -10,9 +10,20 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from turbowrap.config import get_settings
 from turbowrap.llm import GeminiClient
+
+# Import shared orchestration utilities
+from turbowrap.orchestration import (
+    build_next_steps,
+    calculate_overall_score,
+    calculate_recommendation,
+    count_by_severity,
+    deduplicate_issues,
+    prioritize_issues,
+)
 from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.progress import (
@@ -23,21 +34,12 @@ from turbowrap.review.models.progress import (
 from turbowrap.review.models.report import (
     ChallengerMetadata,
     FinalReport,
-    NextStep,
-    Recommendation,
     ReportSummary,
     RepositoryInfo,
     RepoType,
     ReviewerResult,
-    SeveritySummary,
 )
-from turbowrap.review.models.review import (
-    Issue,
-    IssueSeverity,
-    ReviewMode,
-    ReviewOutput,
-    ReviewRequest,
-)
+from turbowrap.review.models.review import Issue, ReviewMode, ReviewOutput, ReviewRequest
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
 from turbowrap.review.utils.file_utils import FileUtils
@@ -48,7 +50,7 @@ from turbowrap.tools.structure_generator import StructureGenerator
 logger = logging.getLogger(__name__)
 
 # Type alias for checkpoint data (reviewer_name -> checkpoint dict)
-CheckpointData = dict[str, dict]
+CheckpointData = dict[str, dict[str, Any]]
 
 # Type alias for progress callback
 ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
@@ -56,7 +58,7 @@ ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 # Type alias for checkpoint callback
 # Args: reviewer_name, status, issues, satisfaction, iterations, model_usage, started_at
 CheckpointCallback = Callable[
-    [str, str, list, float, int, list[dict], datetime],
+    [str, str, list[Issue], float, int, list[dict[str, Any]], datetime],
     Awaitable[None],
 ]
 
@@ -72,7 +74,7 @@ class Orchestrator:
     4. Report aggregation and generation
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize the orchestrator.
         """
@@ -108,13 +110,13 @@ class Orchestrator:
         logger.info(f"Starting review {report_id}")
 
         # Helper to emit events
-        async def emit(event: ProgressEvent):
+        async def emit(event: ProgressEvent) -> None:
             if progress_callback:
                 event.review_id = report_id
                 await progress_callback(event)
 
         # Helper to emit toast log notifications
-        async def emit_log(level: str, message: str):
+        async def emit_log(level: str, message: str) -> None:
             """Emit a log event for UI toast notifications."""
             await emit(
                 ProgressEvent(
@@ -154,7 +156,9 @@ class Orchestrator:
 
         if request.options.challenger_enabled:
             # Run all reviewers in PARALLEL with progress callbacks
-            async def run_reviewer_with_progress(reviewer_name: str):
+            async def run_reviewer_with_progress(
+                reviewer_name: str,
+            ) -> tuple[str, str, Any]:
                 """Run a single reviewer with progress events."""
                 display_name = get_reviewer_display_name(reviewer_name)
 
@@ -276,10 +280,13 @@ class Orchestrator:
                 if isinstance(result, Exception):
                     continue
 
+                # At this point, result is guaranteed to be a tuple
+                assert isinstance(result, tuple)
                 reviewer_name, status, data = result
 
                 if status == "checkpoint":
-                    # Restore from checkpoint
+                    # Restore from checkpoint - data is dict[str, Any]
+                    assert isinstance(data, dict)
                     checkpoint = data
                     issues_data = checkpoint.get("issues_data", [])
                     # Convert issue dicts back to Issue objects
@@ -299,6 +306,8 @@ class Orchestrator:
                     )
 
                 elif status == "success":
+                    # data is ChallengerLoopResult here
+                    assert isinstance(data, ChallengerLoopResult)
                     loop_result = data
                     loop_results.append(loop_result)
 
@@ -315,6 +324,8 @@ class Orchestrator:
 
                     all_issues.extend(loop_result.final_review.issues)
                 else:
+                    # data is str (error message) here
+                    assert isinstance(data, str)
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
@@ -325,7 +336,9 @@ class Orchestrator:
 
         else:
             # Run without challenger pattern (simple mode) - still parallel
-            async def run_simple_with_progress(reviewer_name: str):
+            async def run_simple_with_progress(
+                reviewer_name: str,
+            ) -> tuple[str, str, Any]:
                 display_name = get_reviewer_display_name(reviewer_name)
 
                 await emit(
@@ -368,9 +381,13 @@ class Orchestrator:
                 if isinstance(result, Exception):
                     continue
 
+                # At this point, result is guaranteed to be a tuple
+                assert isinstance(result, tuple)
                 reviewer_name, status, data = result
 
                 if status == "success":
+                    # data is ReviewOutput here
+                    assert isinstance(data, ReviewOutput)
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
@@ -382,6 +399,8 @@ class Orchestrator:
                     )
                     all_issues.extend(data.issues)
                 else:
+                    # data is str (error message) here
+                    assert isinstance(data, str)
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
@@ -391,8 +410,8 @@ class Orchestrator:
                     )
 
         # Step 5: Deduplicate and prioritize issues
-        deduplicated_issues = self._deduplicate_issues(all_issues)
-        prioritized_issues = self._prioritize_issues(deduplicated_issues)
+        deduplicated_issues = deduplicate_issues(all_issues)
+        prioritized_issues = prioritize_issues(deduplicated_issues)
 
         # Step 5.5: Run final evaluator (Claude Opus)
         repo_info = RepositoryInfo(
@@ -477,7 +496,8 @@ class Orchestrator:
         )
 
         # Save report to output directory
-        await self._save_report(report, context.repo_path)
+        if context.repo_path is not None:
+            await self._save_report(report, context.repo_path)
 
         return report
 
@@ -564,6 +584,8 @@ class Orchestrator:
             elif source.directory:
                 # Fallback: scan directory (limited)
                 # Use workspace subfolder if set (monorepo support)
+                # context.repo_path is always set when source.directory is set
+                assert context.repo_path is not None
                 if context.workspace_path:
                     scan_base = context.repo_path / context.workspace_path
                     if not scan_base.exists():
@@ -729,8 +751,10 @@ class Orchestrator:
             logger.info(
                 f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, workspace={context.workspace_path}"
             )
+            # context.repo_path is guaranteed to be set at this point
+            assert context.repo_path is not None
             generator = StructureGenerator(
-                str(context.repo_path),
+                context.repo_path,
                 workspace_path=context.workspace_path,
                 gemini_client=gemini_client,
             )
@@ -898,7 +922,7 @@ class Orchestrator:
         display_name = get_reviewer_display_name(reviewer_name)
 
         # Create iteration callback
-        async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
+        async def on_iteration(iteration: int, satisfaction: float, issues_count: int) -> None:
             await emit(
                 ProgressEvent(
                     type=ProgressEventType.REVIEWER_ITERATION,
@@ -913,7 +937,7 @@ class Orchestrator:
             )
 
         # Create streaming callback for token-by-token updates
-        async def on_content(content: str):
+        async def on_content(content: str) -> None:
             await emit(
                 ProgressEvent(
                     type=ProgressEventType.REVIEWER_STREAMING,
@@ -947,65 +971,8 @@ class Orchestrator:
         # CLI reviewer receives file list and explores autonomously
         return await reviewer.review(context, context.files)
 
-    def _deduplicate_issues(self, issues: list[Issue]) -> list[Issue]:
-        """Deduplicate issues from multiple reviewers."""
-        unique: dict[tuple, Issue] = {}
-
-        for issue in issues:
-            key = (issue.file, issue.line, issue.category)
-
-            if key in unique:
-                existing = unique[key]
-                # Keep highest severity
-                if self._severity_rank(issue.severity) > self._severity_rank(existing.severity):
-                    existing.severity = issue.severity
-                # Merge flagged_by
-                for reviewer in issue.flagged_by:
-                    if reviewer not in existing.flagged_by:
-                        existing.flagged_by.append(reviewer)
-            else:
-                unique[key] = issue
-
-        return list(unique.values())
-
-    def _severity_rank(self, severity: IssueSeverity) -> int:
-        """Get numeric rank for severity."""
-        ranks = {
-            IssueSeverity.CRITICAL: 4,
-            IssueSeverity.HIGH: 3,
-            IssueSeverity.MEDIUM: 2,
-            IssueSeverity.LOW: 1,
-        }
-        return ranks.get(severity, 0)
-
-    def _prioritize_issues(self, issues: list[Issue]) -> list[Issue]:
-        """Sort issues by priority score."""
-
-        def priority_score(issue: Issue) -> float:
-            severity_scores = {
-                IssueSeverity.CRITICAL: 100,
-                IssueSeverity.HIGH: 75,
-                IssueSeverity.MEDIUM: 50,
-                IssueSeverity.LOW: 25,
-            }
-            category_multipliers = {
-                "security": 1.5,
-                "logic": 1.3,
-                "performance": 1.1,
-                "architecture": 1.0,
-                "ux": 0.9,
-                "style": 0.8,
-                "testing": 0.9,
-                "documentation": 0.7,
-            }
-
-            base = severity_scores.get(issue.severity, 50)
-            multiplier = category_multipliers.get(issue.category.value, 1.0)
-            reviewer_bonus = len(issue.flagged_by) * 5
-
-            return min(100, base * multiplier + reviewer_bonus)
-
-        return sorted(issues, key=priority_score, reverse=True)
+    # NOTE: _deduplicate_issues, _severity_rank, _prioritize_issues moved to
+    # turbowrap.orchestration.report_utils for shared use across orchestrators
 
     async def _run_evaluator(
         self,
@@ -1080,25 +1047,20 @@ class Orchestrator:
         evaluation: RepositoryEvaluation | None = None,
     ) -> FinalReport:
         """Build the final report."""
-        # Count by severity
-        severity_counts = SeveritySummary(
-            critical=sum(1 for i in issues if i.severity == IssueSeverity.CRITICAL),
-            high=sum(1 for i in issues if i.severity == IssueSeverity.HIGH),
-            medium=sum(1 for i in issues if i.severity == IssueSeverity.MEDIUM),
-            low=sum(1 for i in issues if i.severity == IssueSeverity.LOW),
-        )
+        # Count by severity (using shared utility)
+        severity_counts = count_by_severity(issues)
 
-        # Calculate score
-        score = self._calculate_score(issues)
+        # Calculate score (using shared utility)
+        score = calculate_overall_score(issues)
 
-        # Determine recommendation
-        recommendation = self._calculate_recommendation(severity_counts)
+        # Determine recommendation (using shared utility)
+        recommendation = calculate_recommendation(severity_counts)
 
         # Build challenger metadata
         challenger_metadata = self._build_challenger_metadata(loop_results)
 
-        # Build next steps
-        next_steps = self._build_next_steps(issues)
+        # Build next steps (using shared utility)
+        next_steps = build_next_steps(issues)
 
         # Repository info
         repo_info = RepositoryInfo(
@@ -1121,6 +1083,7 @@ class Orchestrator:
         return FinalReport(
             id=report_id,
             timestamp=datetime.utcnow(),
+            version="1.0.0",
             repository=repo_info,
             summary=summary,
             reviewers=reviewer_results,
@@ -1130,32 +1093,8 @@ class Orchestrator:
             evaluation=evaluation,
         )
 
-    def _calculate_score(self, issues: list[Issue]) -> float:
-        """Calculate overall score based on issues."""
-        if not issues:
-            return 10.0
-
-        # Deductions per severity
-        deductions = {
-            IssueSeverity.CRITICAL: 2.0,
-            IssueSeverity.HIGH: 1.0,
-            IssueSeverity.MEDIUM: 0.3,
-            IssueSeverity.LOW: 0.1,
-        }
-
-        total_deduction = sum(deductions.get(issue.severity, 0.1) for issue in issues)
-
-        return max(0.0, round(10.0 - total_deduction, 1))
-
-    def _calculate_recommendation(self, severity: SeveritySummary) -> Recommendation:
-        """Calculate recommendation based on severity counts."""
-        if severity.critical >= 1:
-            return Recommendation.REQUEST_CHANGES
-        if severity.high > 3:
-            return Recommendation.REQUEST_CHANGES
-        if severity.high > 0:
-            return Recommendation.APPROVE_WITH_CHANGES
-        return Recommendation.APPROVE
+    # NOTE: _calculate_score, _calculate_recommendation moved to
+    # turbowrap.orchestration.report_utils for shared use across orchestrators
 
     def _build_challenger_metadata(
         self,
@@ -1192,41 +1131,7 @@ class Orchestrator:
             insights=all_insights,
         )
 
-    def _build_next_steps(self, issues: list[Issue]) -> list[NextStep]:
-        """Build prioritized next steps."""
-        steps = []
-
-        critical_issues = [i for i in issues if i.severity == IssueSeverity.CRITICAL]
-        if critical_issues:
-            steps.append(
-                NextStep(
-                    priority=1,
-                    action=f"Fix {len(critical_issues)} critical security/logic issues",
-                    issues=[i.id for i in critical_issues],
-                )
-            )
-
-        high_issues = [i for i in issues if i.severity == IssueSeverity.HIGH]
-        if high_issues:
-            steps.append(
-                NextStep(
-                    priority=2,
-                    action=f"Address {len(high_issues)} high priority issues",
-                    issues=[i.id for i in high_issues],
-                )
-            )
-
-        medium_issues = [i for i in issues if i.severity == IssueSeverity.MEDIUM]
-        if medium_issues:
-            steps.append(
-                NextStep(
-                    priority=3,
-                    action=f"Consider {len(medium_issues)} medium priority suggestions",
-                    issues=[i.id for i in medium_issues[:5]],  # Limit
-                )
-            )
-
-        return steps
+    # NOTE: _build_next_steps moved to turbowrap.orchestration.report_utils
 
     async def _refresh_stale_structures(
         self,
@@ -1336,8 +1241,10 @@ class Orchestrator:
 
         # Use StructureGenerator to regenerate
         try:
+            # context.repo_path is guaranteed to be set at this point
+            assert context.repo_path is not None
             generator = StructureGenerator(
-                str(context.repo_path),
+                context.repo_path,
                 gemini_client=None,  # Quick mode without Gemini for refresh
             )
 

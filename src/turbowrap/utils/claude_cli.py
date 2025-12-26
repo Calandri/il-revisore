@@ -13,6 +13,24 @@ Features:
 """
 
 import asyncio
+import sys
+
+# Python 3.11+ has asyncio.timeout, older versions need async_timeout
+if sys.version_info >= (3, 11):
+    asyncio_timeout = asyncio.timeout
+else:
+    try:
+        from async_timeout import timeout as asyncio_timeout
+    except ImportError:
+        # Fallback: create a no-timeout context manager
+        from collections.abc import AsyncIterator
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def asyncio_timeout(seconds: float) -> AsyncIterator[None]:
+            yield
+
+
 import codecs
 import json
 import logging
@@ -20,9 +38,9 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import boto3
 from botocore.exceptions import ClientError
@@ -139,7 +157,7 @@ class ClaudeCLI:
         self._agent_prompt: str | None = None
 
     @property
-    def s3_client(self):
+    def s3_client(self) -> Any:
         """Lazy-load S3 client."""
         if self._s3_client is None:
             self._s3_client = boto3.client("s3", region_name=self.s3_region)
@@ -193,7 +211,7 @@ class ClaudeCLI:
 
         # Generate context ID if not provided
         if context_id is None:
-            context_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            context_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
         # Save prompt to S3 before running
         s3_prompt_url = None
@@ -374,11 +392,12 @@ class ClaudeCLI:
             # Write prompt to stdin
             stdin_error = None
 
-            async def write_stdin():
+            async def write_stdin() -> None:
                 nonlocal stdin_error
                 try:
                     prompt_bytes = prompt.encode()
                     logger.info(f"[CLAUDE CLI] Writing {len(prompt_bytes)} bytes to stdin...")
+                    assert process.stdin is not None
                     process.stdin.write(prompt_bytes)
                     await process.stdin.drain()
                     process.stdin.close()
@@ -396,8 +415,9 @@ class ClaudeCLI:
             # Read stderr
             stderr_chunks = []
 
-            async def read_stderr():
+            async def read_stderr() -> None:
                 stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                assert process.stderr is not None
                 while True:
                     chunk = await process.stderr.read(1024)
                     if not chunk:
@@ -425,8 +445,9 @@ class ClaudeCLI:
             total_bytes = 0
             line_buffer = ""
 
+            assert process.stdout is not None
             try:
-                async with asyncio.timeout(self.timeout):
+                async with asyncio_timeout(self.timeout):
                     while True:
                         chunk = await process.stdout.read(1024)
                         if not chunk:
@@ -579,7 +600,7 @@ class ClaudeCLI:
         content: str,
         artifact_type: str,
         context_id: str,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str | None:
         """Save artifact to S3.
 
@@ -596,14 +617,14 @@ class ClaudeCLI:
             return None
 
         try:
-            timestamp = datetime.now(UTC).strftime("%Y/%m/%d/%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
             s3_key = f"{self.s3_prefix}/{timestamp}/{context_id}_{artifact_type}.md"
 
             # Build markdown content
             md_content = f"""# Claude CLI {artifact_type.title()}
 
 **Context ID**: {context_id}
-**Timestamp**: {datetime.now(UTC).isoformat()}
+**Timestamp**: {datetime.now(timezone.utc).isoformat()}
 **Artifact Type**: {artifact_type}
 **Model**: {metadata.get('model', self.model) if metadata else self.model}
 

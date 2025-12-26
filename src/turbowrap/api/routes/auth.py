@@ -1,5 +1,7 @@
 """Authentication routes."""
 
+from typing import Any, cast
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
@@ -27,7 +29,9 @@ class UserInfo(BaseModel):
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: str | None = None, next: str | None = None):
+async def login_page(
+    request: Request, error: str | None = None, next: str | None = None
+) -> HTMLResponse | RedirectResponse:
     """Render login page."""
     get_settings()
 
@@ -37,13 +41,16 @@ async def login_page(request: Request, error: str | None = None, next: str | Non
         return RedirectResponse(url=next or "/", status_code=302)
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "pages/login.html",
-        {
-            "request": request,
-            "error": error,
-            "next": next or "/",
-        },
+    return cast(
+        HTMLResponse,
+        templates.TemplateResponse(
+            "pages/login.html",
+            {
+                "request": request,
+                "error": error,
+                "next": next or "/",
+            },
+        ),
     )
 
 
@@ -54,7 +61,7 @@ async def login(
     email: str = Form(...),
     password: str = Form(...),
     next: str = Form(default="/"),
-):
+) -> RedirectResponse:
     """
     Authenticate user with Cognito and set session cookie.
 
@@ -100,7 +107,7 @@ async def login(
 
 
 @router.post("/auth/logout")
-async def logout(request: Request):
+async def logout(request: Request) -> RedirectResponse:
     """Clear session cookie and redirect to login."""
     settings = get_settings()
 
@@ -114,7 +121,7 @@ async def logout(request: Request):
 
 
 @router.get("/auth/me", response_model=UserInfo)
-async def me(current_user: dict = Depends(get_current_user)):
+async def me(current_user: dict[str, Any] = Depends(get_current_user)) -> UserInfo:
     """Get current user info (API endpoint)."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")

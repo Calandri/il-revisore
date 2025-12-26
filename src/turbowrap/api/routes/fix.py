@@ -9,6 +9,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -50,7 +51,7 @@ def _load_agent(agent_path: Path) -> str:
 
 # Store for pending clarifications (session_id -> Question)
 _pending_clarifications: dict[str, ClarificationQuestion] = {}
-_clarification_answers: dict[str, asyncio.Future] = {}
+_clarification_answers: dict[str, asyncio.Future[ClarificationAnswer]] = {}
 
 # Idempotency tracking
 IDEMPOTENCY_TTL_SECONDS = 3600  # 1 hour
@@ -64,7 +65,7 @@ class IdempotencyEntry:
     status: str  # "in_progress", "completed", "failed"
     created_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
-    result: dict | None = None
+    result: dict[str, Any] | None = None
     # Metadata for active sessions display
     repository_id: str | None = None
     repository_name: str | None = None
@@ -82,7 +83,7 @@ class IdempotencyStore:
     Uses an idempotency key based on issue IDs or a client-provided header.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._store: dict[str, IdempotencyEntry] = {}
         self._lock = threading.RLock()
 
@@ -116,7 +117,7 @@ class IdempotencyStore:
         self,
         key: str,
         session_id: str,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[bool, IdempotencyEntry | None]:
         """Check if request is duplicate and register if not.
 
@@ -179,7 +180,7 @@ class IdempotencyStore:
         self,
         key: str,
         status: str,
-        result: dict | None = None,
+        result: dict[str, Any] | None = None,
     ) -> None:
         """Update entry status.
 
@@ -265,6 +266,9 @@ class IssueListResponse(BaseModel):
     fixed_at: datetime | None = None
     fixed_by: str | None = None
 
+    class Config:
+        from_attributes = True
+
 
 class IssueUpdateRequest(BaseModel):
     """Request to update issue status."""
@@ -280,7 +284,7 @@ def list_issues(
     severity: str | None = None,
     task_id: str | None = None,
     db: Session = Depends(get_db),
-):
+) -> list[IssueListResponse]:
     """
     List issues for a repository.
 
@@ -303,31 +307,8 @@ def list_issues(
     if task_id:
         query = query.filter(Issue.task_id == task_id)
 
-    issues = query.order_by(Issue.severity, Issue.created_at.desc()).all()
-
-    return [
-        IssueListResponse(
-            id=i.id,
-            issue_code=i.issue_code,
-            severity=i.severity,
-            category=i.category,
-            file=i.file,
-            line=i.line,
-            title=i.title,
-            description=i.description,
-            status=i.status,
-            created_at=i.created_at,
-            # Fix result fields
-            fix_code=i.fix_code,
-            fix_explanation=i.fix_explanation,
-            fix_files_modified=i.fix_files_modified,
-            fix_commit_sha=i.fix_commit_sha,
-            fix_branch=i.fix_branch,
-            fixed_at=i.fixed_at,
-            fixed_by=i.fixed_by,
-        )
-        for i in issues
-    ]
+    issues: list[Issue] = query.order_by(Issue.severity, Issue.created_at.desc()).all()
+    return issues  # type: ignore[return-value]
 
 
 @router.patch("/issues/{issue_id}")
@@ -335,7 +316,7 @@ def update_issue(
     issue_id: str,
     data: IssueUpdateRequest,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """Update issue status."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
@@ -349,12 +330,12 @@ def update_issue(
             detail=f"Invalid status. Valid: {valid_statuses}",
         )
 
-    issue.status = data.status
+    issue.status = data.status  # type: ignore[assignment]
     if data.resolution_note:
-        issue.resolution_note = data.resolution_note
+        issue.resolution_note = data.resolution_note  # type: ignore[assignment]
 
     if data.status == IssueStatus.RESOLVED.value:
-        issue.resolved_at = datetime.utcnow()
+        issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)
@@ -366,13 +347,13 @@ def update_issue(
 async def start_fix(
     request: FixStartRequest,
     db: Session = Depends(get_db),
-    current_user: dict | None = Depends(get_current_user),
+    current_user: dict[str, Any] | None = Depends(get_current_user),
     x_idempotency_key: str | None = Header(
         default=None,
         description="Optional client-provided idempotency key. "
         "If not provided, a key is generated from issue IDs.",
     ),
-):
+) -> EventSourceResponse | dict[str, Any]:
     """
     Start fixing issues with SSE streaming.
 
@@ -387,10 +368,7 @@ async def start_fix(
     - Use X-Idempotency-Key header to track specific requests
     - Idempotency keys expire after 1 hour
     """
-    from ..services.fix_session_service import (
-        DuplicateSessionError,
-        get_fix_session_service,
-    )
+    from ..services.fix_session_service import DuplicateSessionError, get_fix_session_service
 
     # Extract user name for session display
     user_name = None
@@ -416,7 +394,10 @@ async def start_fix(
         if duplicate_response:
             return duplicate_response
 
+        # session_info is guaranteed to be non-None when duplicate_response is falsy
+        assert session_info is not None
         # Execute fixes and stream progress
+        assert session_info is not None  # validated above
         return EventSourceResponse(service.execute_fixes(session_info))
 
     except DuplicateSessionError as e:
@@ -435,7 +416,7 @@ async def start_fix(
 
 
 @router.post("/clarification/answer")
-async def submit_clarification(data: ClarificationAnswerRequest):
+async def submit_clarification(data: ClarificationAnswerRequest) -> dict[str, str]:
     """
     Submit answer to a clarification question.
 
@@ -491,7 +472,7 @@ class ActiveSessionsResponse(BaseModel):
 
 
 @router.get("/sessions/active", response_model=ActiveSessionsResponse)
-def list_active_sessions():
+def list_active_sessions() -> ActiveSessionsResponse:
     """
     List all active (in_progress) fix sessions.
 
@@ -525,7 +506,7 @@ def list_active_sessions():
 
 
 @router.delete("/sessions/{session_id}")
-def cancel_session(session_id: str):
+def cancel_session(session_id: str) -> dict[str, str]:
     """
     Cancel a stuck fix session by session ID.
 
@@ -554,7 +535,7 @@ def cancel_session(session_id: str):
 
 
 @router.delete("/sessions/stale")
-def clear_stale_sessions():
+def clear_stale_sessions() -> dict[str, Any]:
     """
     Clear all stale (stuck) fix sessions.
 
@@ -604,7 +585,7 @@ class PendingBranchesResponse(BaseModel):
 def get_pending_branches(
     repository_id: str,
     db: Session = Depends(get_db),
-):
+) -> PendingBranchesResponse:
     """
     Check if there are unmerged fix branches for a repository.
 
@@ -632,22 +613,26 @@ def get_pending_branches(
     # Group by branch
     branches_map: dict[str, list[Issue]] = {}
     for issue in resolved_issues:
-        branch = issue.fix_branch
+        branch = str(issue.fix_branch)  # Cast Column[str] to str
         if branch not in branches_map:
             branches_map[branch] = []
         branches_map[branch].append(issue)
 
     # Build response
     branches = []
+    repo_name = str(repo.name)  # Cast Column[str] to str
     for branch_name, issues in branches_map.items():
+        # Collect fixed_at times, casting to datetime
+        fixed_times = [cast(datetime, i.fixed_at) for i in issues if i.fixed_at]
+        created_at = min(fixed_times) if fixed_times else datetime.utcnow()
         branches.append(
             PendingBranchInfo(
                 branch_name=branch_name,
                 repository_id=repository_id,
-                repository_name=repo.name,
+                repository_name=repo_name,
                 issues_count=len(issues),
-                issue_codes=[i.issue_code for i in issues],
-                created_at=min(i.fixed_at for i in issues if i.fixed_at) or datetime.utcnow(),
+                issue_codes=[str(i.issue_code) for i in issues],
+                created_at=created_at,
             )
         )
 
@@ -669,7 +654,7 @@ class MergeRequest(BaseModel):
 async def merge_and_push(
     request: MergeRequest,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Merge fix branch to main and push to GitHub.
 
@@ -758,7 +743,7 @@ async def merge_and_push(
                 .all()
             )
             for issue in issues_to_merge:
-                issue.status = IssueStatus.MERGED.value
+                issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
                 merged_count += 1
             db.commit()
             logger.info(f"Updated {merged_count} issues to MERGED status")
@@ -791,7 +776,7 @@ class OpenPRRequest(BaseModel):
 async def open_pull_request(
     request: OpenPRRequest,
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Open a PR on GitHub for the fix branch.
 

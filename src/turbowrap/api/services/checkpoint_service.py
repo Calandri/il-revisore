@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -30,7 +31,7 @@ class CheckpointService:
             )
             .all()
         )
-        return {cp.reviewer_name: cp for cp in checkpoints}
+        return {str(cp.reviewer_name): cp for cp in checkpoints}
 
     def get_all_checkpoints(self, task_id: str) -> list[ReviewCheckpoint]:
         """Get all checkpoints for a task (any status).
@@ -44,10 +45,10 @@ class CheckpointService:
         self,
         task_id: str,
         reviewer_name: str,
-        issues: list,
+        issues: list[Any],
         final_satisfaction: float,
         iterations: int,
-        model_usage: list[dict],
+        model_usage: list[dict[str, Any]],
         started_at: datetime,
         status: str = "completed",
     ) -> ReviewCheckpoint:
@@ -69,7 +70,7 @@ class CheckpointService:
             The saved checkpoint
         """
         # Serialize issues to JSON-compatible format
-        issues_data = []
+        issues_data: list[dict[str, Any]] = []
         for issue in issues:
             if hasattr(issue, "model_dump"):
                 issues_data.append(issue.model_dump(mode="json"))
@@ -92,13 +93,13 @@ class CheckpointService:
 
         if existing:
             # Update existing
-            existing.status = status
-            existing.issues_data = issues_data
-            existing.final_satisfaction = final_satisfaction
-            existing.iterations = iterations
-            existing.model_usage = model_usage
-            existing.started_at = started_at
-            existing.completed_at = datetime.utcnow()
+            existing.status = status  # type: ignore[assignment]
+            existing.issues_data = issues_data  # type: ignore[assignment]
+            existing.final_satisfaction = final_satisfaction  # type: ignore[assignment]
+            existing.iterations = iterations  # type: ignore[assignment]
+            existing.model_usage = model_usage  # type: ignore[assignment]
+            existing.started_at = started_at  # type: ignore[assignment]
+            existing.completed_at = datetime.utcnow()  # type: ignore[assignment]
             checkpoint = existing
         else:
             # Create new
@@ -138,18 +139,19 @@ class CheckpointService:
     def restore_issues_from_checkpoint(
         self,
         checkpoint: ReviewCheckpoint,
-    ) -> tuple[list, float, int]:
+    ) -> tuple[list[Any], float, int]:
         """Restore issues and metadata from a checkpoint.
 
         Returns:
             (issues_data, final_satisfaction, iterations)
             Note: issues_data is a list of dicts, caller should convert to Issue objects
         """
-        return (
-            checkpoint.issues_data or [],
-            checkpoint.final_satisfaction or 0.0,
-            checkpoint.iterations or 1,
+        issues_data: list[Any] = list(checkpoint.issues_data) if checkpoint.issues_data else []
+        satisfaction: float = (
+            float(checkpoint.final_satisfaction) if checkpoint.final_satisfaction else 0.0
         )
+        iters: int = int(checkpoint.iterations) if checkpoint.iterations else 1
+        return (issues_data, satisfaction, iters)
 
 
 def get_checkpoint_service(db: Session) -> CheckpointService:
