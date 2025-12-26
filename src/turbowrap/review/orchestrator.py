@@ -595,22 +595,13 @@ class Orchestrator:
         Only uses .llms/structure.xml (consolidated XML format, optimized for LLM).
         No fallback to STRUCTURE.md.
 
-        If workspace_path is set (monorepo), only loads from that subfolder.
+        Always loads from repo root since structure.xml is repo-wide.
         """
         if not context.repo_path:
             return
 
-        # Determine search base: workspace subfolder or full repo
-        if context.workspace_path:
-            search_base = context.repo_path / context.workspace_path
-            if not search_base.exists():
-                logger.warning(f"Workspace path does not exist: {search_base}")
-                return
-        else:
-            search_base = context.repo_path
-
-        # Load .llms/structure.xml (only supported format)
-        xml_path = search_base / ".llms" / "structure.xml"
+        # Always load from repo root (structure.xml is repo-wide, not per-workspace)
+        xml_path = context.repo_path / ".llms" / "structure.xml"
         if xml_path.exists():
             try:
                 content = xml_path.read_text(encoding="utf-8")
@@ -640,16 +631,9 @@ class Orchestrator:
             logger.error("Cannot generate structure: no repo_path set")
             return
 
-        # Determine target directory: workspace subfolder or full repo
-        if context.workspace_path:
-            target_dir = context.repo_path / context.workspace_path
-            if not target_dir.exists():
-                logger.warning(f"Workspace path does not exist for structure generation: {target_dir}")
-                target_dir = context.repo_path
-            display_name = f"{context.repo_path.name}/{context.workspace_path}"
-        else:
-            target_dir = context.repo_path
-            display_name = context.repo_path.name
+        # Always generate at repo root (structure.xml is repo-wide)
+        target_dir = context.repo_path
+        display_name = context.repo_path.name
 
         # Emit start event
         if emit:

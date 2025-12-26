@@ -287,16 +287,67 @@ def live_status():
     try:
         import psutil
         cli_processes = []
+        now = time.time()
+
         for proc in psutil.process_iter(['name', 'memory_percent', 'cpu_percent']):
             try:
                 name = proc.info['name'].lower()
                 if name in ('claude', 'gemini', 'node'):
-                    cmdline = ' '.join(proc.cmdline()).lower()
+                    cmdline_list = proc.cmdline()
+                    cmdline = ' '.join(cmdline_list).lower()
                     if 'claude' in cmdline or 'gemini' in cmdline:
+                        # Get additional process info
+                        cwd = None
+                        try:
+                            cwd = proc.cwd()
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+
+                        elapsed_seconds = 0
+                        try:
+                            elapsed_seconds = int(now - proc.create_time())
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+
+                        cpu = 0
+                        try:
+                            cpu = proc.cpu_percent(interval=None)
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+
+                        status = "unknown"
+                        try:
+                            status = proc.status()
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+
+                        # Extract repo name from cwd
+                        repo_name = cwd.rstrip('/').split('/')[-1] if cwd else None
+
+                        # Format elapsed time
+                        if elapsed_seconds < 60:
+                            elapsed_str = f"{elapsed_seconds}s"
+                        elif elapsed_seconds < 3600:
+                            elapsed_str = f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s"
+                        else:
+                            elapsed_str = f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
+
+                        # Extract meaningful cmdline info
+                        cmdline_short = ' '.join(cmdline_list[1:4]) if len(cmdline_list) > 1 else ''
+                        if len(cmdline_short) > 60:
+                            cmdline_short = cmdline_short[:57] + '...'
+
                         cli_processes.append({
                             'name': 'claude' if 'claude' in cmdline else 'gemini',
                             'pid': proc.pid,
                             'memory_percent': round(proc.info['memory_percent'] or 0, 1),
+                            'cpu_percent': round(cpu, 1),
+                            'status': status,
+                            'cwd': cwd,
+                            'repo_name': repo_name,
+                            'elapsed': elapsed_str,
+                            'elapsed_seconds': elapsed_seconds,
+                            'cmdline': cmdline_short,
                         })
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
