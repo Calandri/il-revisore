@@ -1,25 +1,22 @@
 """
-Claude CLI-based repository evaluator.
+Claude API-based repository evaluator.
 
 Produces comprehensive quality scores (0-100) for 6 dimensions.
 Runs after all reviewers complete, with full context.
 """
 
-import asyncio
-import codecs
 import json
 import logging
-import os
 import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
 from turbowrap.config import get_settings
+from turbowrap.llm import ClaudeClient
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.report import RepositoryInfo, ReviewerResult
 from turbowrap.review.models.review import Issue
-from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +30,7 @@ EVALUATOR_AGENT = AGENTS_DIR / "evaluator.md"
 
 class ClaudeEvaluator:
     """
-    Repository evaluator using Claude CLI.
+    Repository evaluator using Claude API.
 
     Produces 6 quality metrics (0-100) based on:
     - Repository structure (STRUCTURE.md)
@@ -44,20 +41,18 @@ class ClaudeEvaluator:
 
     def __init__(
         self,
-        cli_path: str = "claude",
         timeout: int = EVALUATOR_TIMEOUT,
     ):
         """
         Initialize Claude evaluator.
 
         Args:
-            cli_path: Path to Claude CLI executable
-            timeout: Timeout in seconds for CLI execution
+            timeout: Timeout in seconds for API call
         """
         self.settings = get_settings()
-        self.cli_path = cli_path
         self.timeout = timeout
         self._agent_prompt: str | None = None
+        self._client: ClaudeClient | None = None
 
     def _load_agent_prompt(self) -> str:
         """Load evaluator agent prompt from MD file."""
@@ -104,10 +99,10 @@ class ClaudeEvaluator:
         """
         prompt = self._build_prompt(structure_docs, issues, reviewer_results, repo_info)
 
-        output = await self._run_claude_cli(prompt, repo_path, on_chunk)
+        output = await self._run_claude_api(prompt, on_chunk)
 
         if output is None:
-            logger.error("Evaluator CLI returned None")
+            logger.error("Evaluator API returned None")
             return None
 
         return self._parse_response(output)
@@ -183,122 +178,54 @@ class ClaudeEvaluator:
 
         return "".join(sections)
 
-    async def _run_claude_cli(
+    def _get_client(self) -> ClaudeClient:
+        """Get or create Claude API client."""
+        if self._client is None:
+            self._client = ClaudeClient(
+                model=self.settings.agents.claude_model,
+                max_tokens=8192,
+                timeout=float(self.timeout),
+            )
+        return self._client
+
+    async def _run_claude_api(
         self,
         prompt: str,
-        repo_path: Path | None,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> str | None:
         """
-        Run Claude CLI with the prompt.
+        Run Claude API with the prompt.
 
         Args:
             prompt: The full prompt to send
-            repo_path: Working directory for the CLI
             on_chunk: Optional callback for streaming chunks
 
         Returns:
-            CLI output or None if failed
+            API response or None if failed
         """
-        cwd = str(repo_path) if repo_path else None
-
         try:
-            # Build environment with API key
-            env = os.environ.copy()
-            api_key = get_anthropic_api_key()
-            if api_key:
-                env["ANTHROPIC_API_KEY"] = api_key
-            # Workaround: Bun file watcher bug on macOS /var/folders
-            env["TMPDIR"] = "/tmp"
+            client = self._get_client()
 
-            # Use model from settings
-            model = self.settings.agents.claude_model
-
-            # Build CLI arguments with stream-json for real-time streaming
-            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
-            args = [
-                self.cli_path,
-                "--print",
-                "--verbose",
-                "--dangerously-skip-permissions",
-                "--model",
-                model,
-                "--output-format",
-                "stream-json",
-            ]
-
-            # Extended thinking via MAX_THINKING_TOKENS env var
-            # NOTE: --settings {"alwaysThinkingEnabled": true} is BUGGY in Claude CLI v2.0.64+
-            # and causes the process to hang indefinitely. Use env var instead.
-            if self.settings.thinking.enabled:
-                env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
-
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
+            # System prompt for evaluation
+            system_prompt = (
+                "You are a senior code quality evaluator. "
+                "Analyze the repository and produce a JSON evaluation with scores 0-100. "
+                "Be objective and provide constructive feedback."
             )
 
-            # Write prompt to stdin
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
-            # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
-            await process.stdin.wait_closed()
-
-            # Read stdout with streaming
-            output_chunks: list[str] = []
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-
-            try:
-                async with asyncio.timeout(self.timeout):
-                    while True:
-                        chunk = await process.stdout.read(1024)
-                        if not chunk:
-                            decoded = decoder.decode(b"", final=True)
-                            if decoded:
-                                output_chunks.append(decoded)
-                                if on_chunk:
-                                    await on_chunk(decoded)
-                            break
-                        decoded = decoder.decode(chunk)
-                        if decoded:
-                            output_chunks.append(decoded)
-                            if on_chunk:
-                                await on_chunk(decoded)
-
-            except asyncio.TimeoutError:
-                logger.error(f"Evaluator CLI timed out after {self.timeout}s")
-                process.kill()
-                return None
-
-            await process.wait()
-
-            if process.returncode != 0:
-                stderr = await process.stderr.read()
-                logger.error(f"Evaluator CLI failed: {stderr.decode()[:500]}")
-                return None
-
-            # Parse stream-json output
-            raw_output = "".join(output_chunks)
-            for line in raw_output.strip().split("\n"):
-                if not line.strip():
-                    continue
-                try:
-                    event = json.loads(line)
-                    if event.get("type") == "result":
-                        return event.get("result", "")
-                except json.JSONDecodeError:
-                    continue
-
-            # Fallback to raw output
-            return raw_output
+            # Use streaming if callback provided
+            if on_chunk:
+                output_chunks: list[str] = []
+                async for chunk in client.agenerate_stream(prompt, system_prompt):
+                    output_chunks.append(chunk)
+                    await on_chunk(chunk)
+                return "".join(output_chunks)
+            else:
+                # Non-streaming call
+                return await client.agenerate(prompt, system_prompt)
 
         except Exception as e:
-            logger.exception(f"Evaluator CLI error: {e}")
+            logger.exception(f"Evaluator API error: {e}")
             return None
 
     def _parse_response(self, response_text: str) -> RepositoryEvaluation | None:
