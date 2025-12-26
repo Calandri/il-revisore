@@ -31,6 +31,40 @@ function toastManager() {
     }
 }
 
+// System monitor for sidebar (CPU, RAM, CLI processes)
+function systemMonitor() {
+    return {
+        cpu: 0,
+        ram: 0,
+        cliCount: 0,
+        processes: [],
+        showProcesses: false,
+        loading: true,
+
+        async init() {
+            await this.refresh();
+            // Poll every 5 seconds
+            setInterval(() => this.refresh(), 5000);
+        },
+
+        async refresh() {
+            try {
+                const res = await fetch('/api/status/live');
+                if (!res.ok) throw new Error('Status API error');
+                const data = await res.json();
+
+                this.cpu = data.system?.cpu_percent || 0;
+                this.ram = data.system?.memory_percent || 0;
+                this.cliCount = data.cli_processes?.count || 0;
+                this.processes = data.cli_processes?.processes || [];
+                this.loading = false;
+            } catch (e) {
+                console.error('System monitor error:', e);
+            }
+        }
+    };
+}
+
 // HTMX configuration
 document.body.addEventListener('htmx:configRequest', function(evt) {
     // Add any custom headers here if needed

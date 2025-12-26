@@ -154,6 +154,11 @@ class ReviewRequestSource(BaseModel):
     commit_sha: str | None = Field(None, description="Specific commit SHA")
     files: list[str] = Field(default_factory=list, description="Specific file paths")
     directory: str | None = Field(None, description="Directory to review")
+    workspace_path: str | None = Field(
+        None,
+        description="Monorepo workspace path (e.g., 'packages/frontend'). "
+        "Limits review scope to this subfolder."
+    )
 
 
 class ReviewRequirements(BaseModel):

@@ -111,6 +111,7 @@ class ReviewStreamService:
         # Capture values for the closure
         local_path = repo.local_path
         review_mode = mode
+        repo_workspace_path = repo.workspace_path  # Monorepo workspace scope
 
         # Create the review coroutine
         async def run_review(session: ReviewSession):
@@ -127,7 +128,10 @@ class ReviewStreamService:
 
                 request = ReviewRequest(
                     type="directory",
-                    source=ReviewRequestSource(directory=local_path),
+                    source=ReviewRequestSource(
+                        directory=local_path,
+                        workspace_path=repo_workspace_path,
+                    ),
                     options=ReviewOptions(
                         mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
                         challenger_enabled=challenger_enabled,

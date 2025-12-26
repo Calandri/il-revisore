@@ -283,6 +283,31 @@ def live_status():
     except Exception as e:
         result["queue"] = {"error": str(e)[:100]}
 
+    # CLI processes (claude/gemini)
+    try:
+        import psutil
+        cli_processes = []
+        for proc in psutil.process_iter(['name', 'memory_percent', 'cpu_percent']):
+            try:
+                name = proc.info['name'].lower()
+                if name in ('claude', 'gemini', 'node'):
+                    cmdline = ' '.join(proc.cmdline()).lower()
+                    if 'claude' in cmdline or 'gemini' in cmdline:
+                        cli_processes.append({
+                            'name': 'claude' if 'claude' in cmdline else 'gemini',
+                            'pid': proc.pid,
+                            'memory_percent': round(proc.info['memory_percent'] or 0, 1),
+                        })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        result["cli_processes"] = {
+            "count": len(cli_processes),
+            "processes": cli_processes[:10],
+        }
+    except Exception as e:
+        result["cli_processes"] = {"count": 0, "error": str(e)[:50]}
+
     return result
 
 

@@ -383,6 +383,11 @@ class Orchestrator:
         else:
             context.repo_path = Path.cwd()
 
+        # Set workspace_path for monorepo scope limiting
+        if source.workspace_path:
+            context.workspace_path = source.workspace_path
+            logger.info(f"Monorepo mode: limiting review to workspace '{source.workspace_path}'")
+
         # Check and regenerate stale STRUCTURE.md files BEFORE loading
         await self._refresh_stale_structures(context, emit)
 
@@ -423,7 +428,20 @@ class Orchestrator:
 
             elif source.directory:
                 # Fallback: scan directory (limited)
-                context.files = self._scan_directory(context.repo_path)
+                # Use workspace subfolder if set (monorepo support)
+                if context.workspace_path:
+                    scan_base = context.repo_path / context.workspace_path
+                    if not scan_base.exists():
+                        logger.warning(f"Workspace path does not exist: {scan_base}")
+                        context.files = self._scan_directory(context.repo_path)
+                    else:
+                        # Scan workspace and prefix paths so they're relative to repo root
+                        workspace_files = self._scan_directory(scan_base)
+                        context.files = [
+                            f"{context.workspace_path}/{f}" for f in workspace_files
+                        ]
+                else:
+                    context.files = self._scan_directory(context.repo_path)
 
             # Load file contents for diff mode
             await self._load_file_contents(context)
@@ -489,17 +507,29 @@ class Orchestrator:
 
         These files contain important documentation about the codebase
         architecture and are loaded into context.structure_docs.
+
+        If workspace_path is set (monorepo), only loads STRUCTURE.md files
+        within that workspace subfolder.
         """
         if not context.repo_path:
             return
 
-        logger.info("Scanning for STRUCTURE.md files...")
+        # Determine search base: workspace subfolder or full repo
+        if context.workspace_path:
+            search_base = context.repo_path / context.workspace_path
+            if not search_base.exists():
+                logger.warning(f"Workspace path does not exist: {search_base}")
+                return
+            logger.info(f"Scanning for STRUCTURE.md files in workspace: {context.workspace_path}")
+        else:
+            search_base = context.repo_path
+            logger.info("Scanning for STRUCTURE.md files...")
 
-        # Find all STRUCTURE.md files
-        structure_files = list(context.repo_path.rglob("STRUCTURE.md"))
+        # Find all STRUCTURE.md files within search base
+        structure_files = list(search_base.rglob("STRUCTURE.md"))
 
         # Also check for structure.md (lowercase)
-        structure_files.extend(context.repo_path.rglob("structure.md"))
+        structure_files.extend(search_base.rglob("structure.md"))
 
         # Filter out common excluded directories
         exclude_dirs = {

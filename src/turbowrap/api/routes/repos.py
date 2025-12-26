@@ -3,11 +3,13 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from github import GithubException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
+from ...utils.github_browse import FolderListResponse, list_repo_folders
 from ..deps import get_db
 from ..schemas.repos import (
     LinkCreate,
@@ -55,6 +57,60 @@ def list_repos(
     """List all repositories, optionally filtered by status or project."""
     manager = RepoManager(db)
     return manager.list(status=status, project_name=project)
+
+
+@router.get("/github/folders", response_model=FolderListResponse)
+def list_github_folders(
+    url: str = Query(..., description="GitHub repository URL"),
+    path: str = Query(default="", description="Subdirectory path to browse"),
+    branch: str = Query(default="main", description="Branch to browse"),
+    db: Session = Depends(get_db),
+):
+    """List folders in a GitHub repository for workspace path selection.
+
+    Uses GitHub API to fetch directory structure before cloning.
+    Useful for selecting monorepo workspace paths.
+
+    Args:
+        url: GitHub repository URL (e.g., https://github.com/owner/repo)
+        path: Subdirectory path to list (default: root)
+        branch: Branch to browse (default: main)
+
+    Returns:
+        List of folders with navigation info.
+
+    Raises:
+        401: GitHub token required for private repositories
+        404: Repository or path not found
+        403: Rate limit exceeded
+    """
+    from ...db.models import Setting
+
+    # Get GitHub token from settings if available
+    token_setting = db.query(Setting).filter(Setting.key == "github_token").first()
+    token = token_setting.value if token_setting else None
+
+    try:
+        return list_repo_folders(url, path, branch, token)
+    except GithubException as e:
+        if e.status == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="Token GitHub richiesto per repository private. Configuralo nelle Impostazioni.",
+            )
+        elif e.status == 404:
+            raise HTTPException(
+                status_code=404,
+                detail="Repository o percorso non trovato. Verifica l'URL e il branch.",
+            )
+        elif e.status == 403:
+            raise HTTPException(
+                status_code=403,
+                detail="Limite API GitHub raggiunto. Riprova tra qualche minuto.",
+            )
+        raise HTTPException(status_code=500, detail=f"Errore GitHub API: {e}")
+    except RepositoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/projects")

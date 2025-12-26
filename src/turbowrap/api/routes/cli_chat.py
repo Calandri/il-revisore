@@ -4,6 +4,7 @@ Endpoints per gestione chat basata su CLI (claude/gemini).
 Supporta multi-chat parallele, agenti custom, MCP servers.
 """
 
+import asyncio
 import json
 import logging
 import traceback
@@ -41,6 +42,92 @@ from ...chat_cli import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cli-chat", tags=["cli-chat"])
+
+
+# ============================================================================
+# Title Generation
+# ============================================================================
+
+
+async def generate_chat_title(
+    cli_type: str,
+    user_message: str,
+    assistant_response: str,
+    timeout: int = 30,
+) -> str | None:
+    """Generate a 3-word title for a chat conversation.
+
+    Args:
+        cli_type: "claude" or "gemini"
+        user_message: First user message
+        assistant_response: First assistant response
+        timeout: Timeout in seconds
+
+    Returns:
+        Generated title (max 3 words) or None on error
+    """
+    # Truncate messages to keep prompt short
+    user_summary = user_message[:300]
+    assistant_summary = assistant_response[:300]
+
+    prompt = f"""Generate a title for this conversation.
+Rules:
+- Maximum 3 words
+- No quotes or punctuation
+- Descriptive of the main topic
+- Title case
+
+User: {user_summary}
+Assistant: {assistant_summary}
+
+Respond with ONLY the title, nothing else."""
+
+    try:
+        if cli_type == "claude":
+            # Use fast model for title generation
+            args = [
+                "claude",
+                "--print",
+                "--model", "claude-sonnet-4-20250514",
+                "-p", prompt,
+            ]
+        else:
+            args = [
+                "gemini",
+                "-m", "gemini-2.5-flash",
+                prompt,
+            ]
+
+        logger.info(f"[TITLE] Generating title with {cli_type}...")
+
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=timeout
+        )
+
+        title = stdout.decode().strip()
+
+        # Clean and limit to 3 words
+        # Remove quotes and extra punctuation
+        title = title.strip('"\'`')
+        words = title.split()[:3]
+        final_title = " ".join(words) if words else None
+
+        logger.info(f"[TITLE] Generated: {final_title}")
+        return final_title
+
+    except asyncio.TimeoutError:
+        logger.warning("[TITLE] Title generation timed out")
+        return None
+    except Exception as e:
+        logger.warning(f"[TITLE] Title generation failed: {e}")
+        return None
 
 
 # ============================================================================
@@ -252,6 +339,9 @@ async def send_message(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Check if this is the first message (for title generation)
+    is_first_message = session.total_messages == 0
+
     # Save user message
     user_message = CLIChatMessage(
         session_id=session_id,
@@ -406,6 +496,24 @@ async def send_message(
                     "total_length": len(content),
                 }),
             }
+
+            # Generate title for first message
+            if is_first_message and not session.display_name:
+                title = await generate_chat_title(
+                    cli_type=session.cli_type,
+                    user_message=data.content,
+                    assistant_response=content,
+                )
+                if title:
+                    session.display_name = title
+                    session.updated_at = datetime.utcnow()
+                    db.commit()
+
+                    # Send title update event
+                    yield {
+                        "event": "title_updated",
+                        "data": json.dumps({"title": title}),
+                    }
 
         except Exception as e:
             logger.error(f"Error in stream: {e}")

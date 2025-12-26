@@ -29,6 +29,7 @@ function chatSidebar() {
         showSystemInfo: false,
         systemInfo: [],
         eventSource: null,
+        abortController: null,
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -191,6 +192,34 @@ function chatSidebar() {
         },
 
         /**
+         * Stop the current streaming response
+         */
+        stopStreaming() {
+            if (this.abortController) {
+                this.abortController.abort();
+                this.abortController = null;
+            }
+            if (this.eventSource) {
+                this.eventSource.close();
+                this.eventSource = null;
+            }
+
+            // If we have partial content, save it as a message
+            if (this.streamContent.trim()) {
+                this.messages.push({
+                    id: 'stopped-' + Date.now(),
+                    role: 'assistant',
+                    content: this.streamContent + '\n\n*[Interrotto]*',
+                    created_at: new Date().toISOString()
+                });
+            }
+
+            this.streamContent = '';
+            this.streaming = false;
+            this.showToast('Risposta interrotta', 'info');
+        },
+
+        /**
          * Send a message and stream response via SSE
          */
         async sendMessage() {
@@ -201,6 +230,9 @@ function chatSidebar() {
             this.streaming = true;
             this.streamContent = '';
             this.systemInfo = [];  // Reset system info for new message
+
+            // Create AbortController for cancellation
+            this.abortController = new AbortController();
 
             // Add user message immediately
             const userMsg = {
@@ -225,7 +257,8 @@ function chatSidebar() {
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content })
+                    body: JSON.stringify({ content }),
+                    signal: this.abortController.signal
                 });
 
                 if (!response.ok) {
@@ -297,6 +330,20 @@ function chatSidebar() {
                                     this.showToast('Errore: ' + data.error, 'error');
                                     this.streaming = false;
                                 }
+
+                                // Handle title update (auto-generated after first message)
+                                if (data.title) {
+                                    console.log('[chatSidebar] Title updated:', data.title);
+                                    // Update active session
+                                    if (this.activeSession) {
+                                        this.activeSession.display_name = data.title;
+                                    }
+                                    // Update in sessions list
+                                    const idx = this.sessions.findIndex(s => s.id === this.activeSession?.id);
+                                    if (idx >= 0) {
+                                        this.sessions[idx].display_name = data.title;
+                                    }
+                                }
                             } catch (e) {
                                 // Ignore parse errors for incomplete chunks
                                 console.debug('[chatSidebar] Parse error (partial chunk):', e.message);
@@ -306,9 +353,16 @@ function chatSidebar() {
                 }
 
             } catch (error) {
+                // Don't show error for user-initiated abort
+                if (error.name === 'AbortError') {
+                    console.log('[chatSidebar] Stream aborted by user');
+                    return;
+                }
                 console.error('Error sending message:', error);
                 this.showToast('Errore invio messaggio', 'error');
                 this.streaming = false;
+            } finally {
+                this.abortController = null;
             }
         },
 
@@ -356,6 +410,51 @@ function chatSidebar() {
                     ${langLabel}
                     <pre class="bg-gray-900 text-gray-100 p-3 rounded-lg text-xs overflow-x-auto font-mono leading-relaxed"><code>${code.trim()}</code></pre>
                 </div>`;
+            });
+
+            // Markdown tables
+            html = html.replace(/^(\|.+\|)\n(\|[-:\s|]+\|)\n((?:\|.+\|\n?)+)/gm, (match, headerRow, separatorRow, bodyRows) => {
+                // Parse header cells
+                const headers = headerRow.split('|').filter(cell => cell.trim()).map(cell => cell.trim());
+
+                // Parse alignment from separator
+                const alignments = separatorRow.split('|').filter(cell => cell.trim()).map(cell => {
+                    const trimmed = cell.trim();
+                    if (trimmed.startsWith(':') && trimmed.endsWith(':')) return 'center';
+                    if (trimmed.endsWith(':')) return 'right';
+                    return 'left';
+                });
+
+                // Parse body rows
+                const rows = bodyRows.trim().split('\n').map(row =>
+                    row.split('|').filter(cell => cell.trim()).map(cell => cell.trim())
+                );
+
+                // Build HTML table
+                let table = '<div class="overflow-x-auto my-3"><table class="min-w-full text-sm border-collapse">';
+
+                // Header
+                table += '<thead><tr class="bg-gray-100 dark:bg-gray-700">';
+                headers.forEach((header, i) => {
+                    const align = alignments[i] || 'left';
+                    table += `<th class="border border-gray-300 dark:border-gray-600 px-3 py-2 text-${align} font-semibold">${header}</th>`;
+                });
+                table += '</tr></thead>';
+
+                // Body
+                table += '<tbody>';
+                rows.forEach((row, rowIndex) => {
+                    const bgClass = rowIndex % 2 === 0 ? '' : 'bg-gray-50 dark:bg-gray-800';
+                    table += `<tr class="${bgClass}">`;
+                    row.forEach((cell, i) => {
+                        const align = alignments[i] || 'left';
+                        table += `<td class="border border-gray-300 dark:border-gray-600 px-3 py-2 text-${align}">${cell}</td>`;
+                    });
+                    table += '</tr>';
+                });
+                table += '</tbody></table></div>';
+
+                return table;
             });
 
             // Inline code
@@ -411,8 +510,8 @@ function chatSidebar() {
             html = html.replace(/\n/g, '<br>');
 
             // Clean up extra <br> after block elements
-            html = html.replace(/<\/(h[1-6]|blockquote|pre|ul|ol|hr|div)><br>/g, '</$1>');
-            html = html.replace(/<br><(h[1-6]|blockquote|pre|ul|ol|hr|div)/g, '<$1');
+            html = html.replace(/<\/(h[1-6]|blockquote|pre|ul|ol|hr|div|table|thead|tbody|tr|th|td)><br>/g, '</$1>');
+            html = html.replace(/<br><(h[1-6]|blockquote|pre|ul|ol|hr|div|table|thead|tbody|tr|th|td)/g, '<$1');
 
             return html;
         },

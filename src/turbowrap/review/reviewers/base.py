@@ -31,6 +31,7 @@ class ReviewContext:
     # Repository info
     repo_path: Path | None = None
     repo_name: str | None = None
+    workspace_path: str | None = None  # Monorepo: subfolder to limit review scope
 
     # Agent system prompt (from markdown files)
     agent_prompt: str | None = None

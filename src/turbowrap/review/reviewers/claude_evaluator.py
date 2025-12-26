@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
@@ -192,6 +193,11 @@ class ClaudeEvaluator:
         """
         Run Claude CLI with the prompt.
 
+        Uses robust pattern with:
+        - Background stdin writing (avoids deadlock on large prompts)
+        - Concurrent stderr reading (real-time error visibility)
+        - Progress logging (debugging aid)
+
         Args:
             prompt: The full prompt to send
             repo_path: Working directory for the CLI
@@ -203,19 +209,26 @@ class ClaudeEvaluator:
         cwd = str(repo_path) if repo_path else None
 
         try:
-            # Build environment with API key
+            # ============================================================
+            # SECTION 1: Environment Setup
+            # - Copy current env to avoid modifying global state
+            # - Add API key from AWS Secrets Manager (or env var fallback)
+            # - Set TMPDIR to /tmp to avoid Bun file watcher bug on macOS
+            # ============================================================
             env = os.environ.copy()
             api_key = get_anthropic_api_key()
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
-            # Workaround: Bun file watcher bug on macOS /var/folders
             env["TMPDIR"] = "/tmp"
 
-            # Use model from settings
+            # ============================================================
+            # SECTION 2: CLI Arguments
+            # - --print: One-shot mode (no interactive session)
+            # - --verbose: Required for stream-json output
+            # - --dangerously-skip-permissions: Skip permission prompts
+            # - --output-format stream-json: NDJSON streaming format
+            # ============================================================
             model = self.settings.agents.claude_model
-
-            # Build CLI arguments with stream-json for real-time streaming
-            # NOTE: --verbose is REQUIRED when using --print + --output-format=stream-json
             args = [
                 self.cli_path,
                 "--print",
@@ -227,12 +240,21 @@ class ClaudeEvaluator:
                 "stream-json",
             ]
 
-            # Extended thinking via MAX_THINKING_TOKENS env var
-            # NOTE: --settings {"alwaysThinkingEnabled": true} is BUGGY in Claude CLI v2.0.64+
-            # and causes the process to hang indefinitely. Use env var instead.
+            # Extended thinking via env var (--settings flag is buggy)
             if self.settings.thinking.enabled:
                 env["MAX_THINKING_TOKENS"] = str(self.settings.thinking.budget_tokens)
+                logger.info(f"[EVALUATOR] Extended thinking: MAX_THINKING_TOKENS={env['MAX_THINKING_TOKENS']}")
 
+            logger.info(f"[EVALUATOR] Starting CLI: {' '.join(args)}")
+            logger.info(f"[EVALUATOR] Working dir: {cwd}")
+            logger.info(f"[EVALUATOR] Prompt length: {len(prompt)} chars")
+
+            # ============================================================
+            # SECTION 3: Start Subprocess
+            # - stdin=PIPE: We'll write the prompt here
+            # - stdout=PIPE: We'll read the response here
+            # - stderr=PIPE: We'll read errors/verbose output here
+            # ============================================================
             process = await asyncio.create_subprocess_exec(
                 *args,
                 stdin=asyncio.subprocess.PIPE,
@@ -241,29 +263,103 @@ class ClaudeEvaluator:
                 cwd=cwd,
                 env=env,
             )
+            logger.info(f"[EVALUATOR] Process started with PID: {process.pid}")
 
-            # Write prompt to stdin
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
-            # CRITICAL: wait_closed() ensures Claude CLI sees EOF on stdin
-            await process.stdin.wait_closed()
+            # ============================================================
+            # SECTION 4: Background Stdin Writer
+            # WHY: Pipe buffer is ~64KB. If prompt > 64KB and we write
+            # synchronously, we'll block waiting for reader to consume.
+            # But we're not reading yet → DEADLOCK!
+            # SOLUTION: Write in background task while reading stdout.
+            # ============================================================
+            prompt_bytes = prompt.encode()
+            stdin_error: str | None = None
 
-            # Read stdout with streaming
+            async def write_stdin():
+                nonlocal stdin_error
+                try:
+                    logger.info(f"[EVALUATOR] Writing {len(prompt_bytes)} bytes to stdin...")
+                    process.stdin.write(prompt_bytes)
+                    await process.stdin.drain()
+                    process.stdin.close()
+                    # CRITICAL: wait_closed() signals EOF to Claude CLI
+                    await process.stdin.wait_closed()
+                    logger.info("[EVALUATOR] Stdin closed (EOF sent)")
+                except BrokenPipeError as e:
+                    stdin_error = f"BrokenPipe: {e}"
+                    logger.error(f"[EVALUATOR] Stdin BrokenPipe: {e}")
+                except Exception as e:
+                    stdin_error = str(e)
+                    logger.error(f"[EVALUATOR] Stdin error: {e}")
+
+            stdin_task = asyncio.create_task(write_stdin())
+
+            # ============================================================
+            # SECTION 5: Background Stderr Reader
+            # WHY: --verbose outputs progress to stderr. Reading it
+            # concurrently lets us see errors in real-time instead of
+            # waiting until process exits (or timeout).
+            # ============================================================
+            stderr_chunks: list[str] = []
+
+            async def read_stderr():
+                stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                while True:
+                    chunk = await process.stderr.read(1024)
+                    if not chunk:
+                        final = stderr_decoder.decode(b"", final=True)
+                        if final:
+                            stderr_chunks.append(final)
+                        break
+                    decoded = stderr_decoder.decode(chunk)
+                    if decoded:
+                        stderr_chunks.append(decoded)
+                        # Log each line for visibility
+                        for line in decoded.split("\n"):
+                            if line.strip():
+                                logger.debug(f"[EVALUATOR STDERR] {line}")
+
+            stderr_task = asyncio.create_task(read_stderr())
+
+            # ============================================================
+            # SECTION 6: Main Loop - Read Stdout with Timeout
+            # - Incremental UTF-8 decoder handles multi-byte chars
+            # - Progress logging every 30 seconds
+            # - Timeout kills process and cancels tasks
+            # ============================================================
             output_chunks: list[str] = []
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            chunks_received = 0
+            total_bytes = 0
+            last_log_time = time.time()
 
             try:
                 async with asyncio.timeout(self.timeout):
                     while True:
                         chunk = await process.stdout.read(1024)
                         if not chunk:
+                            # Flush remaining bytes
                             decoded = decoder.decode(b"", final=True)
                             if decoded:
                                 output_chunks.append(decoded)
                                 if on_chunk:
                                     await on_chunk(decoded)
+                            logger.info(f"[EVALUATOR] Stream ended. Total: {chunks_received} chunks, {total_bytes} bytes")
                             break
+
+                        chunks_received += 1
+                        total_bytes += len(chunk)
+
+                        # Progress log every 30 seconds
+                        now = time.time()
+                        if now - last_log_time > 30:
+                            logger.info(f"[EVALUATOR] Streaming... {chunks_received} chunks, {total_bytes} bytes")
+                            last_log_time = now
+
+                        # Log first chunk (confirms CLI is responding)
+                        if chunks_received == 1:
+                            logger.info(f"[EVALUATOR] First chunk received! ({len(chunk)} bytes)")
+
                         decoded = decoder.decode(chunk)
                         if decoded:
                             output_chunks.append(decoded)
@@ -271,18 +367,39 @@ class ClaudeEvaluator:
                                 await on_chunk(decoded)
 
             except asyncio.TimeoutError:
-                logger.error(f"Evaluator CLI timed out after {self.timeout}s")
+                logger.error(f"[EVALUATOR] TIMEOUT after {self.timeout}s! Received {chunks_received} chunks, {total_bytes} bytes")
+                stdin_task.cancel()
+                stderr_task.cancel()
                 process.kill()
                 return None
 
+            # ============================================================
+            # SECTION 7: Wait for Tasks and Process
+            # ============================================================
+            await stdin_task
+            await stderr_task
+
+            if stdin_error:
+                logger.error(f"[EVALUATOR] Stdin failed: {stdin_error}")
+
+            logger.info("[EVALUATOR] Waiting for process to exit...")
             await process.wait()
+            logger.info(f"[EVALUATOR] Process exited with code {process.returncode}")
+
+            stderr_text = "".join(stderr_chunks)
+            if stderr_text:
+                logger.debug(f"[EVALUATOR] Stderr total: {len(stderr_text)} chars")
 
             if process.returncode != 0:
-                stderr = await process.stderr.read()
-                logger.error(f"Evaluator CLI failed: {stderr.decode()[:500]}")
+                logger.error(f"[EVALUATOR] FAILED with code {process.returncode}")
+                logger.error(f"[EVALUATOR] Stderr: {stderr_text[:1000]}")
                 return None
 
-            # Parse stream-json output
+            # ============================================================
+            # SECTION 8: Parse Stream-JSON Output
+            # Format: One JSON object per line (NDJSON)
+            # Look for {"type": "result", "result": "..."} line
+            # ============================================================
             raw_output = "".join(output_chunks)
             for line in raw_output.strip().split("\n"):
                 if not line.strip():
@@ -290,15 +407,21 @@ class ClaudeEvaluator:
                 try:
                     event = json.loads(line)
                     if event.get("type") == "result":
-                        return event.get("result", "")
+                        result = event.get("result", "")
+                        logger.info(f"[EVALUATOR] Got result: {len(result)} chars")
+                        return result
                 except json.JSONDecodeError:
                     continue
 
-            # Fallback to raw output
+            # Fallback to raw output if no result event found
+            logger.warning("[EVALUATOR] No result event in stream-json, using raw output")
             return raw_output
 
+        except FileNotFoundError:
+            logger.error(f"[EVALUATOR] CLI not found at: {self.cli_path}")
+            return None
         except Exception as e:
-            logger.exception(f"Evaluator CLI error: {e}")
+            logger.exception(f"[EVALUATOR] Exception: {e}")
             return None
 
     def _parse_response(self, response_text: str) -> RepositoryEvaluation | None:

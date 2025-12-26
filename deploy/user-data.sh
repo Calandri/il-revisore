@@ -23,8 +23,9 @@ systemctl enable docker
 echo "Logging in to ECR..."
 aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin 198584570682.dkr.ecr.$REGION.amazonaws.com
 
-# Create app directory
+# Create app directory with correct permissions for appuser (uid 1000)
 mkdir -p /opt/turbowrap/data
+chown -R 1000:1000 /opt/turbowrap/data
 
 # Get secrets from AWS Secrets Manager
 echo "Fetching secrets from Secrets Manager..."
@@ -32,13 +33,26 @@ SECRETS=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --regio
 
 # Parse secrets and create .env file
 echo "Creating environment file..."
+
+# Extract API keys
+ANTHROPIC_KEY=$(echo $SECRETS | jq -r '.ANTHROPIC_API_KEY // empty')
+GOOGLE_KEY=$(echo $SECRETS | jq -r '.GOOGLE_API_KEY // empty')
+GEMINI_KEY=$(echo $SECRETS | jq -r '.GEMINI_API_KEY // empty')
+GITHUB_KEY=$(echo $SECRETS | jq -r '.GITHUB_TOKEN // empty')
+LINEAR_KEY=$(echo $SECRETS | jq -r '.LINEAR_API_KEY // empty')
+
+# If GEMINI_API_KEY is not set, use GOOGLE_API_KEY (they're the same)
+if [ -z "$GEMINI_KEY" ]; then
+  GEMINI_KEY="$GOOGLE_KEY"
+fi
+
 cat > /opt/turbowrap/.env << EOF
 # API Keys from Secrets Manager
-ANTHROPIC_API_KEY=$(echo $SECRETS | jq -r '.ANTHROPIC_API_KEY // empty')
-GOOGLE_API_KEY=$(echo $SECRETS | jq -r '.GOOGLE_API_KEY // empty')
-GEMINI_API_KEY=$(echo $SECRETS | jq -r '.GEMINI_API_KEY // empty')
-GITHUB_TOKEN=$(echo $SECRETS | jq -r '.GITHUB_TOKEN // empty')
-LINEAR_API_KEY=$(echo $SECRETS | jq -r '.LINEAR_API_KEY // empty')
+ANTHROPIC_API_KEY=$ANTHROPIC_KEY
+GOOGLE_API_KEY=$GOOGLE_KEY
+GEMINI_API_KEY=$GEMINI_KEY
+GITHUB_TOKEN=$GITHUB_KEY
+LINEAR_API_KEY=$LINEAR_KEY
 
 # Server config
 TURBOWRAP_SERVER_HOST=0.0.0.0

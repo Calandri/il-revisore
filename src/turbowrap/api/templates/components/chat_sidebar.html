@@ -379,7 +379,7 @@
             <form @submit.prevent="sendMessage()" class="flex items-end gap-3">
                 <div class="flex-1 relative">
                     <textarea x-model="inputMessage"
-                              @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim()) sendMessage()"
+                              @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim() && !streaming) sendMessage()"
                               :disabled="streaming"
                               placeholder="Scrivi un messaggio..."
                               rows="1"
@@ -387,19 +387,29 @@
                               style="min-height: 48px; max-height: 120px;"
                               @input="$el.style.height = '48px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
                 </div>
-                <button type="submit"
-                        :disabled="!inputMessage.trim() || streaming"
-                        :class="inputMessage.trim() && !streaming
+
+                <!-- Send button (when not streaming) -->
+                <button x-show="!streaming"
+                        type="submit"
+                        :disabled="!inputMessage.trim()"
+                        :class="inputMessage.trim()
                             ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25'
                             : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'"
                         class="w-12 h-12 rounded-xl text-white flex items-center justify-center transition-all shrink-0">
-                    <svg x-show="!streaming" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                     </svg>
-                    <svg x-show="streaming" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </button>
+
+                <!-- Stop button (when streaming) -->
+                <button x-show="streaming"
+                        type="button"
+                        @click="stopStreaming()"
+                        class="w-12 h-12 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                        title="Interrompi risposta">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="6" y="6" width="12" height="12" rx="1"/>
                     </svg>
                 </button>
             </form>

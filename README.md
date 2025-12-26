@@ -118,6 +118,11 @@ aws ssm send-command \
   --parameters 'commands=["docker pull <ecr-repo>:latest","docker stop turbowrap","docker rm turbowrap","docker run -d --name turbowrap --restart always -p 8000:8000 -v /opt/turbowrap/data:/data --env-file /opt/turbowrap/.env <ecr-repo>:latest"]'
 ```
 
+> **Note**: The container runs as non-root user (uid 1000). For existing deployments, fix data directory permissions:
+> ```bash
+> sudo chown -R 1000:1000 /opt/turbowrap/data
+> ```
+
 ### Secrets Management
 
 API keys are stored in AWS Secrets Manager:

@@ -17,6 +17,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Claude CLI and Gemini CLI globally
 RUN npm install -g @anthropic-ai/claude-code @google/gemini-cli
 
+# Create non-root user (Claude CLI requires non-root for --dangerously-skip-permissions)
+RUN useradd -m -s /bin/bash appuser
+
 WORKDIR /app
 
 # Copy and install dependencies first (better layer caching)
@@ -28,13 +31,17 @@ COPY src/ ./src/
 COPY config/ ./config/
 COPY agents/ ./agents/
 
-# Setup Claude Code agents and settings
-RUN mkdir -p /root/.claude/agents
-COPY agents/ /root/.claude/agents/
-COPY config/claude-settings.json /root/.claude/settings.json
+# Setup Claude Code agents and settings for appuser
+RUN mkdir -p /home/appuser/.claude/agents
+COPY agents/ /home/appuser/.claude/agents/
+COPY config/claude-settings.json /home/appuser/.claude/settings.json
+RUN chown -R appuser:appuser /home/appuser/.claude
 
 # Create data directory for SQLite
-RUN mkdir -p /data
+RUN mkdir -p /data && chown -R appuser:appuser /data
+
+# Set ownership of app directory
+RUN chown -R appuser:appuser /app
 
 # Environment defaults
 ENV TURBOWRAP_SERVER_HOST=0.0.0.0
@@ -44,6 +51,9 @@ ENV TURBOWRAP_REPOS_DIR=/data/repos
 ENV PYTHONPATH=/app/src
 
 EXPOSE 8000
+
+# Switch to non-root user
+USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
