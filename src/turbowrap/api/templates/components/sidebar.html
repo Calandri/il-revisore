@@ -863,16 +863,15 @@
             </div>
             <!-- Application Logs Button -->
             <div class="relative">
-                <button @click="toggleLogs()"
+                <button @click="$dispatch('toggle-logs')"
                         class="flex items-center gap-1 hover:bg-gray-200 dark:hover:bg-gray-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                        :title="showLogs ? 'Chiudi logs' : 'TurboWrap Logs'">
+                        title="TurboWrap Logs">
                     <!-- Terminal icon -->
-                    <svg class="w-4 h-4" :class="showLogs ? 'text-purple-500' : ''"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
-                    <span class="text-[10px]" :class="showLogs ? 'text-purple-500 font-bold' : ''">LOG</span>
+                    <span class="text-[10px]">LOG</span>
                 </button>
             </div>
 
@@ -911,7 +910,108 @@
 </aside>
 
 <!-- Application Logs Panel (OUTSIDE sidebar, at root level for true fullscreen) -->
-<div x-show="showLogs"
+<div x-data="{
+        showLogs: false,
+        logsExpanded: false,
+        logFilter: 'all',
+        logs: [],
+        logEventSource: null,
+        logConnected: false,
+        logError: null,
+        containerName: null,
+
+        get filteredLogs() {
+            if (this.logFilter === 'all') return this.logs;
+            return this.logs.filter(l => l.level === this.logFilter.toUpperCase());
+        },
+
+        setLogFilter(filter) {
+            this.logFilter = filter;
+        },
+
+        toggleLogs() {
+            this.showLogs = !this.showLogs;
+            if (this.showLogs) {
+                this.startLogStream();
+            } else {
+                this.stopLogStream();
+            }
+        },
+
+        startLogStream() {
+            this.logs = [];
+            this.logError = null;
+            this.logConnected = false;
+
+            try {
+                this.logEventSource = new EventSource('/api/status/docker-logs/stream');
+
+                this.logEventSource.addEventListener('log', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        this.logs.push(data);
+                        if (this.logs.length > 1000) this.logs.shift();
+                        this.$nextTick(() => {
+                            const container = this.$refs.logContainer;
+                            if (container) container.scrollTop = container.scrollHeight;
+                        });
+                    } catch (err) {
+                        console.error('Error parsing log event:', err);
+                    }
+                });
+
+                this.logEventSource.addEventListener('connected', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        this.containerName = data.container || 'turbowrap';
+                    } catch {}
+                    this.logConnected = true;
+                    this.logError = null;
+                });
+
+                this.logEventSource.addEventListener('ping', () => {
+                    this.logConnected = true;
+                });
+
+                this.logEventSource.addEventListener('error', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        this.logError = data.message || 'Connection error';
+                    } catch {
+                        this.logError = 'Connection lost';
+                    }
+                    this.logConnected = false;
+                });
+
+                this.logEventSource.onerror = () => {
+                    this.logConnected = false;
+                    this.logError = 'Stream disconnected';
+                };
+
+            } catch (err) {
+                this.logError = 'Failed to connect: ' + err.message;
+                this.logConnected = false;
+            }
+        },
+
+        stopLogStream() {
+            if (this.logEventSource) {
+                this.logEventSource.close();
+                this.logEventSource = null;
+            }
+            this.logConnected = false;
+        },
+
+        clearLogs() {
+            this.logs = [];
+        },
+
+        toggleLogsExpanded() {
+            this.logsExpanded = !this.logsExpanded;
+        }
+     }"
+     @toggle-logs.window="toggleLogs()"
+     x-show="showLogs"
      x-transition:enter="transition ease-out duration-200"
      x-transition:enter-start="opacity-0 transform translate-y-4"
      x-transition:enter-end="opacity-100 transform translate-y-0"
