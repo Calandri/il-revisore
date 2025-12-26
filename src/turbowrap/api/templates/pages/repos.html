@@ -46,7 +46,7 @@
         this.folderSelector.error = null;
 
         try {
-            const branch = document.querySelector('input[name=\"branch\"]')?.value || 'main';
+            const branch = document.querySelector('input[name=&quot;branch&quot;]')?.value || 'main';
             const response = await fetch(
                 `/api/repos/github/folders?url=${encodeURIComponent(url)}&path=${encodeURIComponent(path)}&branch=${branch}`
             );
@@ -72,7 +72,7 @@
     },
 
     navigateToFolder(path) {
-        const urlInput = document.querySelector('input[name=\"url\"]')?.value;
+        const urlInput = document.querySelector('input[name=&quot;url&quot;]')?.value;
         if (urlInput) {
             this.loadFolders(urlInput, path);
         }
@@ -87,7 +87,7 @@
     toggleFolderSelector() {
         this.folderSelector.enabled = !this.folderSelector.enabled;
         if (this.folderSelector.enabled) {
-            const urlInput = document.querySelector('input[name=\"url\"]')?.value;
+            const urlInput = document.querySelector('input[name=&quot;url&quot;]')?.value;
             if (urlInput) {
                 this.loadFolders(urlInput);
             }

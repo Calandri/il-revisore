@@ -16,7 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from ...core.repo_manager import RepoManager
 from ...core.task_queue import QueuedTask, get_task_queue
-from ...db.models import Issue, Repository, Task
+from ...db.models import Issue, Repository, ReviewCheckpoint, Task
 from ...review.models.progress import ProgressEvent, ProgressEventType
 from ...tasks import TaskContext, get_task_registry
 from ..deps import get_db
@@ -343,6 +343,10 @@ class ReviewStreamRequest(BaseModel):
         default=True,
         description="Include functional analyst reviewer"
     )
+    resume: bool = Field(
+        default=False,
+        description="Resume from checkpoints of the most recent failed review"
+    )
 
 
 @router.post("/{repository_id}/review/stream")
@@ -378,6 +382,7 @@ async def stream_review(
         mode=request_body.mode,
         challenger_enabled=request_body.challenger_enabled,
         include_functional=request_body.include_functional,
+        resume=request_body.resume,
     )
 
     return EventSourceResponse(service.generate_events(session_info))
@@ -667,3 +672,97 @@ async def restart_reviewer(
             session.unsubscribe(queue)
 
     return EventSourceResponse(generate())
+
+
+@router.get("/{task_id}/checkpoints")
+def get_task_checkpoints(
+    task_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get checkpoint status for a task.
+
+    Returns list of reviewers and their checkpoint status.
+    Useful for UI to show which reviewers can be skipped on resume.
+    """
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    checkpoints = (
+        db.query(ReviewCheckpoint)
+        .filter(ReviewCheckpoint.task_id == task_id)
+        .all()
+    )
+
+    return {
+        "task_id": task_id,
+        "task_status": task.status,
+        "checkpoints": [
+            {
+                "reviewer_name": cp.reviewer_name,
+                "status": cp.status,
+                "issues_count": len(cp.issues_data) if cp.issues_data else 0,
+                "satisfaction": cp.final_satisfaction,
+                "iterations": cp.iterations,
+                "completed_at": cp.completed_at.isoformat() if cp.completed_at else None,
+            }
+            for cp in checkpoints
+        ],
+        "resumable": task.status == "failed" and any(
+            cp.status == "completed" for cp in checkpoints
+        ),
+    }
+
+
+@router.get("/{repository_id}/review/resumable")
+def check_resumable(
+    repository_id: str,
+    db: Session = Depends(get_db),
+):
+    """Check if a repository has a resumable failed review.
+
+    Returns info about the most recent failed task and its checkpoints.
+    """
+    # Find most recent failed task
+    failed_task = (
+        db.query(Task)
+        .filter(
+            Task.repository_id == repository_id,
+            Task.type == "review",
+            Task.status == "failed",
+        )
+        .order_by(Task.created_at.desc())
+        .first()
+    )
+
+    if not failed_task:
+        return {
+            "resumable": False,
+            "task_id": None,
+            "checkpoints": [],
+        }
+
+    # Get checkpoints
+    checkpoints = (
+        db.query(ReviewCheckpoint)
+        .filter(
+            ReviewCheckpoint.task_id == failed_task.id,
+            ReviewCheckpoint.status == "completed",
+        )
+        .all()
+    )
+
+    return {
+        "resumable": len(checkpoints) > 0,
+        "task_id": failed_task.id,
+        "task_created_at": failed_task.created_at.isoformat() if failed_task.created_at else None,
+        "task_error": failed_task.error,
+        "checkpoints": [
+            {
+                "reviewer_name": cp.reviewer_name,
+                "issues_count": len(cp.issues_data) if cp.issues_data else 0,
+                "satisfaction": cp.final_satisfaction,
+            }
+            for cp in checkpoints
+        ],
+    }

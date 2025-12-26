@@ -349,6 +349,14 @@ class RepoManager:
         local_path = Path(repo.local_path)
         git_status = get_repo_status(local_path)
 
+        # Parse file stats from metadata if available
+        files_stats = None
+        if repo.metadata_ and isinstance(repo.metadata_, dict):
+            be_count = repo.metadata_.get("be_files")
+            fe_count = repo.metadata_.get("fe_files")
+            if isinstance(be_count, int) and isinstance(fe_count, int):
+                files_stats = {"be_files": be_count, "fe_files": fe_count}
+
         return {
             "id": repo.id,
             "name": repo.name,
@@ -361,7 +369,7 @@ class RepoManager:
                 "modified": git_status.modified,
                 "untracked": git_status.untracked,
             },
-            "files": repo.metadata_,
+            "files": files_stats,
         }
 
     # --- Repository Link Methods ---

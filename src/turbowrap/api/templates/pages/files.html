@@ -62,14 +62,9 @@
                             :class="fileExtension === '.md' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
                         md
                     </button>
-                    <button @click="fileExtension = '.md,.txt'; loadFileTree()"
+                    <button @click="fileExtension = '.json,.yaml,.yml,.toml'; loadFileTree()"
                             class="px-2 py-1 text-xs rounded transition-colors"
-                            :class="fileExtension === '.md,.txt' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
-                        txt
-                    </button>
-                    <button @click="fileExtension = '.json,.yaml,.yml'; loadFileTree()"
-                            class="px-2 py-1 text-xs rounded transition-colors"
-                            :class="fileExtension === '.json,.yaml,.yml' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                            :class="fileExtension === '.json,.yaml,.yml,.toml' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
                         config
                     </button>
                     <button @click="fileExtension = '.py'; loadFileTree()"
@@ -77,10 +72,20 @@
                             :class="fileExtension === '.py' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
                         py
                     </button>
-                    <button @click="fileExtension = '.js,.ts'; loadFileTree()"
+                    <button @click="fileExtension = '.js,.ts,.jsx,.tsx'; loadFileTree()"
                             class="px-2 py-1 text-xs rounded transition-colors"
-                            :class="fileExtension === '.js,.ts' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
-                        js/ts
+                            :class="fileExtension === '.js,.ts,.jsx,.tsx' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        react
+                    </button>
+                    <button @click="fileExtension = '.html,.css'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '.html,.css' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        html
+                    </button>
+                    <button @click="fileExtension = '*'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === '*' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
+                        all
                     </button>
                 </div>
             </div>
@@ -408,6 +413,10 @@ function fileEditor() {
                 if (statusResponse.ok) {
                     const status = await statusResponse.json();
                     this.gitStatus = status.git;
+                    console.log('Git status loaded:', this.gitStatus);
+                } else {
+                    console.error('Failed to load git status:', statusResponse.status);
+                    this.gitStatus = null;
                 }
             } catch (error) {
                 console.error('Error loading file tree:', error);

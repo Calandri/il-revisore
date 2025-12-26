@@ -108,7 +108,7 @@ class AuthSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="TURBOWRAP_AUTH_")
 
-    enabled: bool = Field(default=False, description="Enable authentication")
+    enabled: bool = Field(default=True, description="Enable authentication")
     cognito_region: str = Field(default="eu-west-1", description="AWS Cognito region")
     cognito_user_pool_id: str = Field(default="", description="Cognito User Pool ID")
     cognito_app_client_id: str = Field(default="", description="Cognito App Client ID")

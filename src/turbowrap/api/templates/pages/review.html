@@ -99,6 +99,19 @@
                 <span class="hidden md:inline" x-text="isCancelling ? 'Annullando...' : 'Annulla'"></span>
             </button>
 
+            <!-- Resume button (shown when a failed review has checkpoints) -->
+            <button x-show="isResumable && !isRunning"
+                    @click="startReview(true)"
+                    class="bg-orange-500 text-white p-2 md:px-4 md:py-2 rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-2"
+                    :title="`Riprendi: ${resumableInfo?.checkpoints?.length || 0} reviewer salvati`">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="hidden md:inline">Riprendi</span>
+                <span class="text-xs bg-orange-600 px-1.5 rounded" x-text="resumableInfo?.checkpoints?.length || 0"></span>
+            </button>
+
             <!-- Start button -->
             <button @click="startReview()"
                     :disabled="!selectedRepo || isRunning"
@@ -995,6 +1008,10 @@ function reviewApp() {
         restartingReviewers: {},  // Track which reviewers are being restarted
         toasts: [],  // Log notifications: {id, level, message, timestamp}
 
+        // Resume functionality
+        isResumable: false,
+        resumableInfo: null,  // { task_id, checkpoints: [...], task_error }
+
         // Thinking modal
         showThinkingModal: false,
         thinkingAgent: null,
@@ -1062,12 +1079,43 @@ function reviewApp() {
                     this.issues = [];
                     this.evaluation = null;
                     this.agents = {};
+                    this.isResumable = false;
+                    this.resumableInfo = null;
                 }
 
                 if (repoId && !this.isRunning) {
                     await this.loadLatestReview(repoId);
+                    await this.checkResumable(repoId);
                 }
             });
+        },
+
+        async checkResumable(repoId) {
+            // Check if there's a failed review that can be resumed
+            try {
+                const response = await fetch(`/api/tasks/${repoId}/review/resumable`);
+                if (!response.ok) {
+                    this.isResumable = false;
+                    this.resumableInfo = null;
+                    return;
+                }
+
+                const data = await response.json();
+                this.isResumable = data.resumable;
+                if (data.resumable) {
+                    this.resumableInfo = {
+                        task_id: data.task_id,
+                        task_error: data.task_error,
+                        checkpoints: data.checkpoints,
+                    };
+                } else {
+                    this.resumableInfo = null;
+                }
+            } catch (e) {
+                console.error('Failed to check resumable:', e);
+                this.isResumable = false;
+                this.resumableInfo = null;
+            }
         },
 
         async loadLatestReview(repoId) {
@@ -1247,16 +1295,24 @@ function reviewApp() {
             }
         },
 
-        async startReview() {
+        async startReview(resume = false) {
             if (!this.selectedRepo || this.isRunning) return;
 
             this.isRunning = true;
             this.isCancelling = false;
             this.taskId = null;
             this.reviewStatus = 'running';
-            this.statusMessage = 'Avvio review parallela...';
+            this.statusMessage = resume
+                ? `⚡ Ripresa review con ${this.resumableInfo?.checkpoints?.length || 0} reviewer salvati...`
+                : 'Avvio review parallela...';
             this.agents = {};
             this.abortController = new AbortController();
+
+            // Clear resumable state when starting
+            if (!resume) {
+                this.isResumable = false;
+                this.resumableInfo = null;
+            }
 
             try {
                 // Connect to SSE endpoint with configuration
@@ -1270,6 +1326,7 @@ function reviewApp() {
                         mode: this.reviewMode,
                         challenger_enabled: this.challengerEnabled,
                         include_functional: this.includeFunctional,
+                        resume: resume,
                     }),
                 });
 

@@ -38,6 +38,9 @@ from turbowrap.review.models.review import (
     ReviewOutput,
     ReviewRequest,
 )
+
+# Type alias for checkpoint data (reviewer_name -> checkpoint dict)
+CheckpointData = dict[str, dict]
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
 from turbowrap.review.utils.file_utils import FileUtils
@@ -49,6 +52,13 @@ logger = logging.getLogger(__name__)
 
 # Type alias for progress callback
 ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
+
+# Type alias for checkpoint callback
+# Args: reviewer_name, status, issues, satisfaction, iterations, model_usage, started_at
+CheckpointCallback = Callable[
+    [str, str, list, float, int, list[dict], datetime],
+    Awaitable[None],
+]
 
 
 class Orchestrator:
@@ -73,6 +83,8 @@ class Orchestrator:
         self,
         request: ReviewRequest,
         progress_callback: ProgressCallback | None = None,
+        completed_checkpoints: CheckpointData | None = None,
+        checkpoint_callback: CheckpointCallback | None = None,
     ) -> FinalReport:
         """
         Perform a complete code review.
@@ -80,6 +92,12 @@ class Orchestrator:
         Args:
             request: Review request with source and options
             progress_callback: Optional async callback for progress events
+            completed_checkpoints: Dict of already completed reviewers (for resume).
+                Keys are reviewer names, values are checkpoint dicts with:
+                - issues_data: list of issue dicts
+                - final_satisfaction: float
+                - iterations: int
+            checkpoint_callback: Optional callback to save checkpoint after each reviewer
 
         Returns:
             FinalReport with all findings
@@ -127,11 +145,40 @@ class Orchestrator:
         all_issues: list[Issue] = []
         loop_results: list[ChallengerLoopResult] = []
 
+        # Checkpoint data for resume (default to empty)
+        checkpoints = completed_checkpoints or {}
+
         if request.options.challenger_enabled:
             # Run all reviewers in PARALLEL with progress callbacks
             async def run_reviewer_with_progress(reviewer_name: str):
                 """Run a single reviewer with progress events."""
                 display_name = get_reviewer_display_name(reviewer_name)
+
+                # CHECK FOR CHECKPOINT: Skip if already completed
+                if reviewer_name in checkpoints:
+                    checkpoint = checkpoints[reviewer_name]
+                    issues_count = len(checkpoint.get("issues_data", []))
+                    satisfaction = checkpoint.get("final_satisfaction", 0.0)
+                    iterations = checkpoint.get("iterations", 1)
+
+                    logger.info(f"Skipping {reviewer_name} - restored from checkpoint")
+
+                    await emit(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_COMPLETED,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        iteration=iterations,
+                        satisfaction_score=satisfaction,
+                        issues_found=issues_count,
+                        message=f"⚡ {display_name} restored from checkpoint ({issues_count} issues)",
+                    ))
+
+                    await emit_log(
+                        "INFO",
+                        f"⚡ {display_name}: restored from checkpoint ({issues_count} issues)"
+                    )
+
+                    return (reviewer_name, "checkpoint", checkpoint)
 
                 await emit(ProgressEvent(
                     type=ProgressEventType.REVIEWER_STARTED,
@@ -139,6 +186,8 @@ class Orchestrator:
                     reviewer_display_name=display_name,
                     message=f"Starting {display_name}...",
                 ))
+
+                started_at = datetime.utcnow()
 
                 try:
                     result = await self._run_challenger_loop_with_progress(
@@ -164,6 +213,18 @@ class Orchestrator:
                         f"✓ {display_name}: {result.final_satisfaction:.0f}% ({result.iterations} iter, {len(result.final_review.issues)} issues)"
                     )
 
+                    # SAVE CHECKPOINT on success
+                    if checkpoint_callback:
+                        await checkpoint_callback(
+                            reviewer_name,
+                            "completed",
+                            result.final_review.issues,
+                            result.final_satisfaction,
+                            result.iterations,
+                            [m.model_dump() for m in result.final_review.model_usage],
+                            started_at,
+                        )
+
                     return (reviewer_name, "success", result)
 
                 except Exception as e:
@@ -180,6 +241,18 @@ class Orchestrator:
                     # Toast notification for failed reviewer
                     await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
 
+                    # SAVE FAILED CHECKPOINT (so we know to retry this one)
+                    if checkpoint_callback:
+                        await checkpoint_callback(
+                            reviewer_name,
+                            "failed",
+                            [],  # No issues on failure
+                            0.0,
+                            0,
+                            [],
+                            started_at,
+                        )
+
                     return (reviewer_name, "error", str(e))
 
             # Execute all reviewers in parallel
@@ -193,7 +266,25 @@ class Orchestrator:
 
                 reviewer_name, status, data = result
 
-                if status == "success":
+                if status == "checkpoint":
+                    # Restore from checkpoint
+                    checkpoint = data
+                    issues_data = checkpoint.get("issues_data", [])
+                    # Convert issue dicts back to Issue objects
+                    restored_issues = [
+                        Issue.model_validate(issue_dict) for issue_dict in issues_data
+                    ]
+                    all_issues.extend(restored_issues)
+
+                    reviewer_results.append(ReviewerResult(
+                        name=reviewer_name,
+                        status="completed",  # From user perspective, it's completed
+                        issues_found=len(restored_issues),
+                        iterations=checkpoint.get("iterations", 1),
+                        final_satisfaction=checkpoint.get("final_satisfaction", 0.0),
+                    ))
+
+                elif status == "success":
                     loop_result = data
                     loop_results.append(loop_result)
 

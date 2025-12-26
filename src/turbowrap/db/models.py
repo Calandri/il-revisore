@@ -369,6 +369,46 @@ class Issue(Base, SoftDeleteMixin):
         return f"<Issue {self.issue_code} ({self.severity})>"
 
 
+class ReviewCheckpoint(Base):
+    """Checkpoint for a single reviewer in a review task.
+
+    Enables resume functionality: when a review fails, completed reviewers
+    can be skipped on retry using their checkpoint data.
+    """
+
+    __tablename__ = "review_checkpoints"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False)
+    reviewer_name = Column(String(100), nullable=False)  # e.g., 'reviewer_be_architecture'
+
+    # Status
+    status = Column(String(20), nullable=False, default="completed")  # completed, failed
+
+    # Checkpoint data
+    issues_data = Column(JSON, nullable=False)  # Serialized Issue list
+    final_satisfaction = Column(Float, nullable=True)  # Challenger satisfaction 0-100
+    iterations = Column(Integer, nullable=True)  # Challenger loop iterations
+    model_usage = Column(JSON, nullable=True)  # Token/cost info
+
+    # Timing
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    task = relationship("Task", backref="checkpoints")
+
+    __table_args__ = (
+        Index("idx_review_checkpoints_task", "task_id"),
+        Index("idx_review_checkpoints_status", "status"),
+        UniqueConstraint("task_id", "reviewer_name", name="uq_task_reviewer"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReviewCheckpoint {self.reviewer_name} ({self.status})>"
+
+
 class LinearIssue(Base, SoftDeleteMixin):
     """Linear issue imported for development workflow."""
 

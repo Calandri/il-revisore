@@ -565,23 +565,45 @@ def get_file_tree_hierarchy(
 
     # Get flat file list
     files = []
-    for ext in ext_list:
-        if not ext.startswith('.'):
-            ext = '.' + ext
-        for item in repo_path.rglob(f'*{ext}'):
+    seen_paths = set()  # Avoid duplicates when using '*'
+
+    # Handle '*' for all files
+    if '*' in ext_list:
+        for item in repo_path.rglob('*'):
+            if not item.is_file():
+                continue
             rel_path = item.relative_to(repo_path)
             # Skip hidden and .git directories
             if any(part.startswith('.') for part in rel_path.parts):
                 continue
-
             rel_path_str = str(rel_path)
-            files.append(FileInfo(
-                name=item.name,
-                path=rel_path_str,
-                type="file",
-                size=item.stat().st_size,
-                extension=item.suffix,
-            ))
+            if rel_path_str not in seen_paths:
+                seen_paths.add(rel_path_str)
+                files.append(FileInfo(
+                    name=item.name,
+                    path=rel_path_str,
+                    type="file",
+                    size=item.stat().st_size,
+                    extension=item.suffix,
+                ))
+    else:
+        for ext in ext_list:
+            if not ext.startswith('.'):
+                ext = '.' + ext
+            for item in repo_path.rglob(f'*{ext}'):
+                rel_path = item.relative_to(repo_path)
+                # Skip hidden and .git directories
+                if any(part.startswith('.') for part in rel_path.parts):
+                    continue
+
+                rel_path_str = str(rel_path)
+                files.append(FileInfo(
+                    name=item.name,
+                    path=rel_path_str,
+                    type="file",
+                    size=item.stat().st_size,
+                    extension=item.suffix,
+                ))
 
     # Get git status if requested
     modified_files: set[str] = set()

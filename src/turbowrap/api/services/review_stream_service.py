@@ -12,7 +12,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ...db.models import Issue, Repository, Task
+from ...db.models import Issue, Repository, ReviewCheckpoint, Task
 from ...db.session import get_session_local
 from ...review.models.progress import ProgressEvent, ProgressEventType
 from ...review.models.review import (
@@ -23,6 +23,7 @@ from ...review.models.review import (
 )
 from ...review.orchestrator import Orchestrator
 from ..review_manager import ReviewManager, ReviewSession, get_review_manager
+from .checkpoint_service import CheckpointService
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +87,18 @@ class ReviewStreamService:
         mode: str,
         challenger_enabled: bool,
         include_functional: bool,
+        resume: bool = False,
     ) -> ReviewSessionInfo:
         """
         Start a new review or reconnect to an existing one.
+
+        Args:
+            repository_id: The repository ID
+            repo: The repository object
+            mode: Review mode ('initial' or 'diff')
+            challenger_enabled: Whether to enable challenger loop
+            include_functional: Whether to include functional analyst
+            resume: If True, resume from checkpoints of the most recent failed review
 
         Returns:
             ReviewSessionInfo with session details and reconnect status
@@ -104,14 +114,60 @@ class ReviewStreamService:
                 is_reconnect=True,
             )
 
-        # Create new task record
-        task = self.create_task_record(repository_id, mode, challenger_enabled)
-        task_id = task.id
+        # Check for resumable failed task
+        resume_task_id = None
+        completed_checkpoints: dict[str, dict] = {}
+
+        if resume:
+            failed_task = (
+                self.db.query(Task)
+                .filter(
+                    Task.repository_id == repository_id,
+                    Task.type == "review",
+                    Task.status == "failed",
+                )
+                .order_by(Task.created_at.desc())
+                .first()
+            )
+
+            if failed_task:
+                checkpoint_service = CheckpointService(self.db)
+                checkpoints = checkpoint_service.get_completed_reviewers(failed_task.id)
+
+                if checkpoints:
+                    # We can resume! Update the task status
+                    failed_task.status = "running"
+                    failed_task.error = None
+                    failed_task.started_at = datetime.utcnow()
+                    self.db.commit()
+
+                    resume_task_id = failed_task.id
+                    # Convert checkpoints to dict format for orchestrator
+                    for name, cp in checkpoints.items():
+                        completed_checkpoints[name] = {
+                            "issues_data": cp.issues_data,
+                            "final_satisfaction": cp.final_satisfaction,
+                            "iterations": cp.iterations,
+                            "model_usage": cp.model_usage,
+                        }
+
+                    logger.info(
+                        f"Resuming task {resume_task_id} with "
+                        f"{len(completed_checkpoints)} completed reviewers"
+                    )
+
+        # Create new task if not resuming
+        if not resume_task_id:
+            task = self.create_task_record(repository_id, mode, challenger_enabled)
+            task_id = task.id
+        else:
+            task_id = resume_task_id
 
         # Capture values for the closure
         local_path = repo.local_path
         review_mode = mode
         repo_workspace_path = repo.workspace_path  # Monorepo workspace scope
+        checkpoints_for_closure = completed_checkpoints  # Capture for closure
 
         # Create the review coroutine
         async def run_review(session: ReviewSession):
@@ -121,10 +177,32 @@ class ReviewStreamService:
 
             try:
                 orchestrator = Orchestrator()
+                checkpoint_service = CheckpointService(review_db)
 
                 async def progress_callback(event: ProgressEvent):
                     """Callback to add events to session."""
                     session.add_event(event)
+
+                async def checkpoint_callback(
+                    reviewer_name: str,
+                    status: str,
+                    issues: list,
+                    satisfaction: float,
+                    iterations: int,
+                    model_usage: list[dict],
+                    started_at: datetime,
+                ):
+                    """Callback to save checkpoint after each reviewer."""
+                    checkpoint_service.save_checkpoint(
+                        task_id=task_id,
+                        reviewer_name=reviewer_name,
+                        issues=issues,
+                        final_satisfaction=satisfaction,
+                        iterations=iterations,
+                        model_usage=model_usage,
+                        started_at=started_at,
+                        status=status,
+                    )
 
                 request = ReviewRequest(
                     type="directory",
@@ -139,7 +217,12 @@ class ReviewStreamService:
                     ),
                 )
 
-                report = await orchestrator.review(request, progress_callback)
+                report = await orchestrator.review(
+                    request,
+                    progress_callback,
+                    completed_checkpoints=checkpoints_for_closure,
+                    checkpoint_callback=checkpoint_callback,
+                )
 
                 # Save results
                 await self._save_review_results(
