@@ -387,6 +387,7 @@ class Orchestrator:
             reviewer_results=reviewer_results,
             repo_info=repo_info,
             emit=emit,
+            review_id=report_id,
         )
 
         if evaluation:
@@ -905,6 +906,7 @@ class Orchestrator:
         reviewer_results: list[ReviewerResult],
         repo_info: RepositoryInfo,
         emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
+        review_id: str | None = None,
     ) -> RepositoryEvaluation | None:
         """
         Run the final repository evaluator.
@@ -915,6 +917,7 @@ class Orchestrator:
             reviewer_results: Results from each reviewer
             repo_info: Repository metadata
             emit: Optional callback for progress events
+            review_id: Review ID for S3 logging
 
         Returns:
             RepositoryEvaluation with 6 scores, or None if failed
@@ -939,6 +942,7 @@ class Orchestrator:
                 repo_info=repo_info,
                 repo_path=context.repo_path,
                 on_chunk=on_chunk,
+                review_id=review_id,
             )
 
             if evaluation:

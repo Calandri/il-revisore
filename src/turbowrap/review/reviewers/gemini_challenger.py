@@ -4,11 +4,15 @@ Gemini 3 CLI challenger implementation.
 
 import asyncio
 import json
+import logging
 import subprocess
 import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+
+import boto3
+from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.review.models.challenger import (
@@ -20,6 +24,8 @@ from turbowrap.review.models.challenger import (
 )
 from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiChallenger(BaseReviewer):
@@ -53,6 +59,98 @@ class GeminiChallenger(BaseReviewer):
         self.cli_path = cli_path
         self.threshold = settings.challenger.satisfaction_threshold  # From config
 
+        # S3 config
+        self.s3_bucket = settings.thinking.s3_bucket
+        self.s3_region = settings.thinking.s3_region
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_challenge_to_s3(
+        self,
+        prompt: str,
+        response: str,
+        feedback: ChallengerFeedback,
+        review_id: str | None = None,
+        context: ReviewContext | None = None,
+    ) -> str | None:
+        """
+        Save challenge prompt and response to S3.
+
+        Args:
+            prompt: The prompt sent to Gemini
+            response: Raw response from Gemini
+            feedback: Parsed ChallengerFeedback
+            review_id: Review ID for grouping
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.s3_bucket:
+            return None
+
+        try:
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            review_id = review_id or f"challenge_{int(datetime.utcnow().timestamp())}"
+            s3_key = f"challenges/{timestamp}/{review_id}_iteration{feedback.iteration}.md"
+
+            feedback_json = feedback.model_dump_json(indent=2)
+
+            content = f"""# Gemini Challenge - Iteration {feedback.iteration}
+
+**Review ID**: {review_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: {self.model}
+**Satisfaction Score**: {feedback.satisfaction_score}
+**Status**: {feedback.status.value}
+
+---
+
+## Prompt
+
+```
+{prompt}
+```
+
+---
+
+## Raw Response
+
+```
+{response}
+```
+
+---
+
+## Parsed Feedback
+
+```json
+{feedback_json}
+```
+"""
+
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[GEMINI_CHALLENGER] Saved challenge to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save challenge to S3: {e}")
+            return None
+
     async def review(self, context: ReviewContext) -> ReviewOutput:
         """
         Not used for challenger - use challenge() instead.
@@ -75,6 +173,7 @@ class GeminiChallenger(BaseReviewer):
         context: ReviewContext,
         review: ReviewOutput,
         iteration: int = 1,
+        review_id: str | None = None,
     ) -> ChallengerFeedback:
         """
         Challenge a review produced by the reviewer.
@@ -83,6 +182,7 @@ class GeminiChallenger(BaseReviewer):
             context: Original review context
             review: Review output to challenge
             iteration: Current challenger iteration
+            review_id: Review ID for S3 logging
 
         Returns:
             ChallengerFeedback with evaluation and suggestions
@@ -98,6 +198,11 @@ class GeminiChallenger(BaseReviewer):
         # Parse the response
         feedback = self._parse_response(response, iteration)
         feedback.threshold = self.threshold
+
+        # Save to S3 in background
+        asyncio.create_task(
+            self._save_challenge_to_s3(prompt, response, feedback, review_id, context)
+        )
 
         return feedback
 

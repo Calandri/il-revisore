@@ -6,8 +6,13 @@ import logging
 import os
 import re
 from collections.abc import AsyncIterator
+from datetime import datetime
 from pathlib import Path
 
+import boto3
+from botocore.exceptions import ClientError
+
+from turbowrap.config import settings
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
 
@@ -32,6 +37,92 @@ class LinearIssueAnalyzer:
         self.last_analysis_summary: str | None = None
         self.last_repository_recommendations: list[str] = []
 
+        # S3 config
+        self.s3_bucket = settings.thinking.s3_bucket
+        self.s3_region = settings.thinking.s3_region
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_analysis_to_s3(
+        self,
+        phase: str,
+        issue_id: str,
+        prompt: str,
+        output: str,
+        parsed_result: dict | list | None = None,
+    ) -> str | None:
+        """Save analysis prompt and output to S3.
+
+        Args:
+            phase: "phase1" or "phase2"
+            issue_id: Linear issue identifier
+            prompt: The prompt sent to Claude
+            output: Raw output from Claude
+            parsed_result: Parsed result (questions or analysis)
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.s3_bucket:
+            return None
+
+        try:
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"linear-analysis/{timestamp}/{issue_id}_{phase}.md"
+
+            content = f"""# Linear Issue Analysis - {phase.upper()}
+
+**Issue ID**: {issue_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Phase**: {phase}
+
+---
+
+## Prompt
+
+```
+{prompt}
+```
+
+---
+
+## Raw Output
+
+```
+{output}
+```
+
+---
+
+## Parsed Result
+
+```json
+{json.dumps(parsed_result, indent=2, default=str) if parsed_result else "N/A"}
+```
+"""
+
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[LINEAR ANALYZER] Saved {phase} to S3: {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save analysis to S3: {e}")
+            return None
+
     async def analyze_phase1_questions(self, issue: LinearIssue) -> list[dict]:
         """Phase 1: Generate 5-10 clarifying questions.
 
@@ -48,6 +139,11 @@ class LinearIssueAnalyzer:
         try:
             output = await self._run_claude_cli(prompt, timeout=120)
             questions = self._parse_questions(output)
+
+            # Save to S3 for debugging
+            await self._save_analysis_to_s3(
+                "phase1", issue.linear_identifier, prompt, output, questions
+            )
 
             logger.info(f"Generated {len(questions)} questions for {issue.linear_identifier}")
             return questions
@@ -82,6 +178,12 @@ class LinearIssueAnalyzer:
 
             yield "Parsing analysis results..."
             improved_desc, analysis_summary, metadata = self._parse_analysis(output)
+
+            # Save to S3 for debugging
+            await self._save_analysis_to_s3(
+                "phase2", issue.linear_identifier, prompt, output,
+                {"improved_desc": improved_desc, "summary": analysis_summary, "metadata": metadata}
+            )
 
             # Store for later DB update
             self.last_improved_description = improved_desc

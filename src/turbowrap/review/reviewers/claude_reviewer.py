@@ -138,6 +138,95 @@ class ClaudeReviewer(BaseReviewer):
             logger.warning(f"Failed to save thinking to S3: {e}")
             return None
 
+    async def _save_review_to_s3(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_text: str,
+        review_output: ReviewOutput,
+        review_id: str,
+        context: ReviewContext,
+    ) -> str | None:
+        """
+        Save complete prompt and review output to S3.
+
+        Args:
+            system_prompt: The system prompt sent to Claude
+            user_prompt: The user prompt sent to Claude
+            response_text: Raw response from Claude
+            review_output: Parsed ReviewOutput
+            review_id: Unique identifier for this review
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.s3_bucket:
+            return None
+
+        try:
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"reviews/{timestamp}/{review_id}_{self.name}.md"
+
+            review_json = review_output.model_dump_json(indent=2)
+
+            content = f"""# Code Review - {self.name}
+
+**Review ID**: {review_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: {self.model}
+**Files Reviewed**: {len(context.files)}
+**Duration**: {review_output.duration_seconds:.2f}s
+
+---
+
+## System Prompt
+
+```
+{system_prompt}
+```
+
+---
+
+## User Prompt
+
+```
+{user_prompt}
+```
+
+---
+
+## Raw Response
+
+```
+{response_text}
+```
+
+---
+
+## Parsed Review Output
+
+```json
+{review_json}
+```
+"""
+
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[CLAUDE_REVIEWER] Saved review to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save review to S3: {e}")
+            return None
+
     async def review(
         self,
         context: ReviewContext,
@@ -181,6 +270,14 @@ class ClaudeReviewer(BaseReviewer):
         review_output.duration_seconds = time.time() - start_time
         review_output.reviewer = self.name
         review_output.timestamp = datetime.utcnow()
+
+        # Save complete review to S3 in background
+        asyncio.create_task(
+            self._save_review_to_s3(
+                system_prompt, user_prompt, response_text,
+                review_output, review_id, context
+            )
+        )
 
         return review_output
 
@@ -285,6 +382,14 @@ class ClaudeReviewer(BaseReviewer):
             "added_issues": len(feedback.missed_issues),
             "satisfaction_before": feedback.satisfaction_score,
         })
+
+        # Save complete refinement to S3 in background
+        asyncio.create_task(
+            self._save_review_to_s3(
+                system_prompt, user_prompt, response_text,
+                review_output, review_id, context
+            )
+        )
 
         return review_output
 

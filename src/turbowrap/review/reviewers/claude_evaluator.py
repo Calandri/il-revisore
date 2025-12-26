@@ -16,6 +16,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
+import boto3
+from botocore.exceptions import ClientError
+
 from turbowrap.config import get_settings
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.report import RepositoryInfo, ReviewerResult
@@ -60,6 +63,95 @@ class ClaudeEvaluator:
         self.timeout = timeout
         self._agent_prompt: str | None = None
 
+        # S3 config
+        self.s3_bucket = self.settings.thinking.s3_bucket
+        self.s3_region = self.settings.thinking.s3_region
+        self._s3_client = None
+
+    @property
+    def s3_client(self):
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_evaluation_to_s3(
+        self,
+        prompt: str,
+        output: str,
+        evaluation: RepositoryEvaluation | None,
+        repo_name: str | None = None,
+        review_id: str | None = None,
+    ) -> str | None:
+        """Save evaluation prompt and output to S3.
+
+        Args:
+            prompt: The prompt sent to Claude
+            output: Raw output from Claude
+            evaluation: Parsed evaluation result
+            repo_name: Repository name for identification
+            review_id: Review ID for grouping
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.s3_bucket:
+            return None
+
+        try:
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            review_id = review_id or f"eval_{int(datetime.utcnow().timestamp())}"
+            s3_key = f"evaluations/{timestamp}/{review_id}_evaluation.md"
+
+            eval_json = evaluation.model_dump_json(indent=2) if evaluation else "Failed to parse"
+
+            content = f"""# Repository Evaluation
+
+**Review ID**: {review_id}
+**Repository**: {repo_name or 'Unknown'}
+**Timestamp**: {datetime.utcnow().isoformat()}
+
+---
+
+## Prompt
+
+```
+{prompt}
+```
+
+---
+
+## Raw Output
+
+```
+{output}
+```
+
+---
+
+## Parsed Evaluation
+
+```json
+{eval_json}
+```
+"""
+
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[EVALUATOR] Saved evaluation to S3: {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save evaluation to S3: {e}")
+            return None
+
     def _load_agent_prompt(self) -> str:
         """Load evaluator agent prompt from MD file."""
         if self._agent_prompt is not None:
@@ -88,6 +180,7 @@ class ClaudeEvaluator:
         repo_info: RepositoryInfo,
         repo_path: Path | None = None,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
+        review_id: str | None = None,
     ) -> RepositoryEvaluation | None:
         """
         Evaluate repository and produce quality scores.
@@ -99,6 +192,7 @@ class ClaudeEvaluator:
             repo_info: Repository metadata
             repo_path: Path to repository (for Claude CLI cwd)
             on_chunk: Optional callback for streaming output
+            review_id: Review ID for S3 logging
 
         Returns:
             RepositoryEvaluation with 6 scores, or None if evaluation failed
@@ -109,9 +203,16 @@ class ClaudeEvaluator:
 
         if output is None:
             logger.error("Evaluator CLI returned None")
+            # Save failed attempt to S3 for debugging
+            await self._save_evaluation_to_s3(prompt, "CLI returned None", None, repo_info.name, review_id)
             return None
 
-        return self._parse_response(output)
+        evaluation = self._parse_response(output)
+
+        # Save to S3 for debugging
+        await self._save_evaluation_to_s3(prompt, output, evaluation, repo_info.name, review_id)
+
+        return evaluation
 
     def _build_prompt(
         self,
