@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html lang="it" x-data="{ sidebarOpen: window.innerWidth >= 768, darkMode: localStorage.getItem('darkMode') === 'true' }"
+<html lang="it" x-data="{ sidebarOpen: window.innerWidth >= 768, darkMode: localStorage.getItem('darkMode') === 'true', chatMode: localStorage.getItem('chatMode') || 'hidden' }"
       :class="{ 'dark': darkMode }"
-      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val))">
+      x-init="$watch('darkMode', val => localStorage.setItem('darkMode', val)); $watch('chatMode', val => localStorage.setItem('chatMode', val))">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -93,20 +93,30 @@
 
     <!-- Layout -->
     <div class="flex h-screen overflow-hidden">
-        <!-- Sidebar -->
+        <!-- Left Sidebar -->
         {% include "components/sidebar.html" %}
 
         <!-- Main content -->
         <main class="flex-1 overflow-auto transition-all duration-300 pt-14 md:pt-0"
-              :class="sidebarOpen ? 'md:ml-64' : 'md:ml-16'">
+              :class="{
+                  'md:ml-64': sidebarOpen,
+                  'md:ml-16': !sidebarOpen,
+                  'md:mr-96': chatMode === 'full',
+                  'md:mr-80': chatMode === 'third',
+                  'md:mr-14': chatMode === 'icons'
+              }">
             <div class="p-6">
                 {% block content %}{% endblock %}
             </div>
         </main>
+
+        <!-- Right Chat Sidebar -->
+        {% include "components/chat_sidebar.html" %}
     </div>
 
     <!-- Custom JS -->
     <script src="/static/js/app.js"></script>
+    <script src="/static/js/cli-chat.js"></script>
 
     <!-- HTMX event handlers -->
     <script>

@@ -1,0 +1,319 @@
+<!-- Right Chat Sidebar -->
+<aside x-show="chatMode !== 'hidden'"
+       x-data="chatSidebar()"
+       x-init="init()"
+       class="fixed right-0 top-0 h-full bg-white dark:bg-gray-800 shadow-lg transition-all duration-300 z-40 flex flex-col border-l dark:border-gray-700"
+       :class="{
+           'w-96': chatMode === 'full',
+           'w-80': chatMode === 'third',
+           'w-14': chatMode === 'icons'
+       }"
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 transform translate-x-8"
+       x-transition:enter-end="opacity-100 transform translate-x-0"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0 transform translate-x-8">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between p-3 border-b dark:border-gray-700">
+        <!-- Mode Toggle -->
+        <div x-show="chatMode !== 'icons'" class="flex items-center gap-1">
+            <button @click="chatMode = 'full'"
+                    :class="chatMode === 'full' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
+                    class="px-2 py-1 rounded text-xs font-medium transition-colors">
+                Full
+            </button>
+            <button @click="chatMode = 'third'"
+                    :class="chatMode === 'third' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
+                    class="px-2 py-1 rounded text-xs font-medium transition-colors">
+                1/3
+            </button>
+            <button @click="chatMode = 'icons'"
+                    :class="chatMode === 'icons' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'"
+                    class="px-2 py-1 rounded text-xs font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Close button -->
+        <button @click="chatMode = 'hidden'"
+                class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Sessions List -->
+    <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <template x-for="session in sessions" :key="session.id">
+            <div @click="selectSession(session)"
+                 :class="{
+                     'bg-primary/10 border-primary': activeSession?.id === session.id,
+                     'hover:bg-gray-100 dark:hover:bg-gray-700 border-transparent': activeSession?.id !== session.id
+                 }"
+                 class="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors border">
+
+                <!-- CLI Icon -->
+                <div :class="session.cli_type === 'claude' ? 'bg-orange-500' : 'bg-blue-500'"
+                     :style="'background-color: ' + session.color"
+                     class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0">
+                    <span x-text="session.cli_type === 'claude' ? 'C' : 'G'"></span>
+                </div>
+
+                <!-- Session Info (hidden in icons mode) -->
+                <div x-show="chatMode !== 'icons'" class="flex-1 min-w-0">
+                    <div class="font-medium text-sm truncate"
+                         x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude Chat' : 'Gemini Chat')"></div>
+                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                        <span :class="{
+                            'text-green-500': session.status === 'running' || session.status === 'streaming',
+                            'text-yellow-500': session.status === 'starting',
+                            'text-red-500': session.status === 'error'
+                        }" x-text="session.status"></span>
+                        <span x-show="session.agent_name" class="text-purple-500" x-text="session.agent_name"></span>
+                    </div>
+                </div>
+
+                <!-- Status indicator -->
+                <div x-show="chatMode !== 'icons'"
+                     :class="{
+                         'bg-green-500': session.status === 'running' || session.status === 'streaming',
+                         'bg-yellow-500': session.status === 'starting',
+                         'bg-red-500': session.status === 'error',
+                         'bg-gray-400': session.status === 'idle'
+                     }"
+                     class="w-2 h-2 rounded-full shrink-0"></div>
+            </div>
+        </template>
+
+        <!-- Empty state -->
+        <div x-show="sessions.length === 0 && !loading" class="text-center py-8 text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+            <p x-show="chatMode !== 'icons'" class="text-sm">Nessuna chat attiva</p>
+        </div>
+    </div>
+
+    <!-- New Chat Buttons -->
+    <div class="p-2 border-t dark:border-gray-700 space-y-1">
+        <!-- Claude button -->
+        <button @click="createSession('claude')"
+                x-show="chatMode !== 'icons'"
+                :disabled="creating"
+                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white transition-colors disabled:opacity-50">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span class="font-medium">+ Claude</span>
+        </button>
+
+        <!-- Gemini button -->
+        <button @click="createSession('gemini')"
+                x-show="chatMode !== 'icons'"
+                :disabled="creating"
+                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-50">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span class="font-medium">+ Gemini</span>
+        </button>
+
+        <!-- Icons mode: combined button -->
+        <button @click="showNewChatMenu = !showNewChatMenu"
+                x-show="chatMode === 'icons'"
+                class="w-full flex items-center justify-center p-2 rounded-lg bg-primary hover:bg-primary/80 text-white transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+        </button>
+
+        <!-- Icons mode: dropdown menu -->
+        <div x-show="chatMode === 'icons' && showNewChatMenu"
+             @click.away="showNewChatMenu = false"
+             class="absolute bottom-16 right-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 p-2 space-y-1 w-40">
+            <button @click="createSession('claude'); showNewChatMenu = false"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-orange-500">
+                <span class="font-bold">C</span>
+                <span>Claude</span>
+            </button>
+            <button @click="createSession('gemini'); showNewChatMenu = false"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-blue-500">
+                <span class="font-bold">G</span>
+                <span>Gemini</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Chat Panel (slides in when session selected) -->
+    <div x-show="activeSession && chatMode !== 'icons'"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="absolute inset-0 bg-white dark:bg-gray-800 flex flex-col">
+
+        <!-- Chat Header -->
+        <div class="flex items-center justify-between p-3 border-b dark:border-gray-700">
+            <div class="flex items-center gap-2">
+                <button @click="activeSession = null" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <div :class="activeSession?.cli_type === 'claude' ? 'bg-orange-500' : 'bg-blue-500'"
+                     :style="'background-color: ' + (activeSession?.color || '')"
+                     class="w-6 h-6 rounded flex items-center justify-center text-white font-bold text-xs">
+                    <span x-text="activeSession?.cli_type === 'claude' ? 'C' : 'G'"></span>
+                </div>
+                <span class="font-medium text-sm" x-text="activeSession?.display_name || 'Chat'"></span>
+            </div>
+
+            <!-- Settings dropdown -->
+            <div class="relative">
+                <button @click="showSettings = !showSettings"
+                        class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </button>
+
+                <!-- Settings Panel -->
+                <div x-show="showSettings"
+                     @click.away="showSettings = false"
+                     class="absolute right-0 top-full mt-1 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 p-3 z-50">
+
+                    <!-- Model Selection -->
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Modello</label>
+                        <select x-model="activeSession.model"
+                                @change="updateSession()"
+                                class="w-full text-sm rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700">
+                            <template x-if="activeSession?.cli_type === 'claude'">
+                                <optgroup label="Claude">
+                                    <option value="claude-opus-4-5-20251101">Opus 4.5</option>
+                                    <option value="claude-sonnet-4-20250514">Sonnet 4</option>
+                                </optgroup>
+                            </template>
+                            <template x-if="activeSession?.cli_type === 'gemini'">
+                                <optgroup label="Gemini">
+                                    <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
+                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                </optgroup>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Agent Selection (Claude only) -->
+                    <div x-show="activeSession?.cli_type === 'claude'" class="mb-3">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Agent</label>
+                        <select x-model="activeSession.agent_name"
+                                @change="updateSession()"
+                                class="w-full text-sm rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700">
+                            <option value="">Nessuno</option>
+                            <template x-for="agent in agents" :key="agent.name">
+                                <option :value="agent.name" x-text="agent.name"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Extended Thinking (Claude only) -->
+                    <div x-show="activeSession?.cli_type === 'claude'" class="mb-3">
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox"
+                                   x-model="activeSession.thinking_enabled"
+                                   @change="updateSession()"
+                                   class="rounded border-gray-300 text-primary focus:ring-primary">
+                            <span>Extended Thinking</span>
+                        </label>
+                        <div x-show="activeSession?.thinking_enabled" class="mt-2">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">
+                                Budget: <span x-text="activeSession?.thinking_budget || 8000"></span>
+                            </label>
+                            <input type="range"
+                                   x-model="activeSession.thinking_budget"
+                                   @change="updateSession()"
+                                   min="1000" max="50000" step="1000"
+                                   class="w-full">
+                        </div>
+                    </div>
+
+                    <!-- Deep Reasoning (Gemini only) -->
+                    <div x-show="activeSession?.cli_type === 'gemini'" class="mb-3">
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox"
+                                   x-model="activeSession.reasoning_enabled"
+                                   @change="updateSession()"
+                                   class="rounded border-gray-300 text-primary focus:ring-primary">
+                            <span>Deep Reasoning</span>
+                        </label>
+                    </div>
+
+                    <!-- Delete Session -->
+                    <button @click="deleteSession(activeSession); showSettings = false"
+                            class="w-full mt-2 px-3 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm">
+                        Elimina Chat
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto p-3 space-y-3" id="chat-messages">
+            <template x-for="msg in messages" :key="msg.id">
+                <div :class="msg.role === 'user' ? 'ml-8' : 'mr-8'">
+                    <div :class="msg.role === 'user' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700'"
+                         class="rounded-lg p-3 text-sm">
+                        <div x-html="formatMessage(msg.content)"></div>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1"
+                         x-text="new Date(msg.created_at).toLocaleTimeString()"></div>
+                </div>
+            </template>
+
+            <!-- Streaming response -->
+            <div x-show="streaming" class="mr-8">
+                <div class="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 text-sm">
+                    <div x-html="formatMessage(streamContent)"></div>
+                    <span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input -->
+        <div class="p-3 border-t dark:border-gray-700">
+            <form @submit.prevent="sendMessage()" class="flex gap-2">
+                <textarea x-model="inputMessage"
+                          @keydown.enter.prevent="if(!$event.shiftKey) sendMessage()"
+                          :disabled="streaming"
+                          placeholder="Scrivi un messaggio..."
+                          rows="1"
+                          class="flex-1 resize-none rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 text-sm focus:ring-primary focus:border-primary"></textarea>
+                <button type="submit"
+                        :disabled="!inputMessage.trim() || streaming"
+                        class="px-4 py-2 rounded-lg bg-primary text-white disabled:opacity-50 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </div>
+</aside>
+
+<!-- Toggle button (visible when chat is hidden) -->
+<button x-show="chatMode === 'hidden'"
+        @click="chatMode = 'third'"
+        class="fixed right-4 bottom-4 w-12 h-12 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/80 transition-colors z-40">
+    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+    </svg>
+</button>

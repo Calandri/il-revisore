@@ -15,6 +15,7 @@ from .tasks import router as tasks_router
 from .thinking import router as thinking_router
 from .users import router as users_router
 from .web import router as web_router
+from .cli_chat import router as cli_chat_router
 
 __all__ = [
     "repos_router",
@@ -32,4 +33,5 @@ __all__ = [
     "relationships_router",
     "analysis_router",
     "git_router",
+    "cli_chat_router",
 ]

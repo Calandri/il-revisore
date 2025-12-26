@@ -29,17 +29,6 @@
             <p class="text-gray-500 dark:text-gray-400 mt-1">Problemi trovati nelle code review</p>
         </div>
         <div class="flex items-center gap-2">
-            <!-- Lint Analysis Button -->
-            <button @click="runLintAnalysis()"
-                    :disabled="isAnalyzing || !filters.repository_id"
-                    class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    :title="!filters.repository_id ? 'Seleziona prima una repository' : 'Esegui analisi linting'">
-                <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-                </svg>
-                Analizza Codice
-            </button>
             <button @click="refresh()"
                     :disabled="loading"
                     class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
@@ -127,6 +116,25 @@
                     <option value="{{ repo.id }}">{{ repo.name }}</option>
                     {% endfor %}
                 </select>
+            </div>
+
+            <!-- Lint+Fix Button -->
+            <div class="flex items-end gap-2">
+                <select x-model="lintFixCategory" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="BE">Backend (Ruff/Mypy)</option>
+                    <option value="FE">Frontend (TSC/ESLint)</option>
+                    <option value="all">Tutti</option>
+                </select>
+                <button @click="runLintFix()"
+                        :disabled="isAnalyzing || !filters.repository_id"
+                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        :title="!filters.repository_id ? 'Seleziona prima una repository' : 'Trova e correggi issues linting'">
+                    <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Lint+Fix
+                </button>
             </div>
 
             <!-- Severity filter -->
@@ -1057,6 +1065,7 @@ function issuesApp() {
         pendingBranchLoading: false,
         confirmMerge: false,  // Double opt-in for Main Merge
         pendingFixRequest: null,  // Store the fix request to resume after handling pending
+        lintFixCategory: 'BE',  // Default to Backend linting
         lintProgress: {
             status: 'idle',
             phase: '',
@@ -1727,6 +1736,91 @@ function issuesApp() {
         closeLintModal() {
             if (!this.isAnalyzing) {
                 this.showLintModal = false;
+            }
+        },
+
+        async runLintFix() {
+            if (!this.filters.repository_id || this.isAnalyzing) return;
+
+            this.isAnalyzing = true;
+            this.showLintModal = true;
+            this.lintProgress = {
+                status: 'running',
+                phase: '',
+                message: `Avvio Lint+Fix (${this.lintFixCategory})...`,
+                issuesFound: 0,
+                issuesCreated: 0,
+                error: null,
+                logs: []
+            };
+
+            try {
+                const response = await fetch('/api/analysis/lint-fix', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: this.filters.repository_id,
+                        category: this.lintFixCategory
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(`API error: ${response.status} - ${error}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                this.handleLintFixEvent(data);
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+                if (this.lintProgress.status !== 'error') {
+                    this.lintProgress.status = 'completed';
+                }
+            } catch (error) {
+                console.error('Lint-fix error:', error);
+                this.lintProgress.status = 'error';
+                this.lintProgress.error = error.message;
+            }
+
+            this.isAnalyzing = false;
+            await this.refresh();
+        },
+
+        handleLintFixEvent(data) {
+            if (data.message) {
+                this.lintProgress.message = data.message;
+                this.lintProgress.logs.push({
+                    type: data.phase === 'error' ? 'error' : 'info',
+                    message: data.message,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            }
+            if (data.total_fixed !== undefined) {
+                this.lintProgress.issuesCreated = data.total_fixed;
+            }
+            if (data.error) {
+                this.lintProgress.status = 'error';
+                this.lintProgress.error = data.error;
+            }
+            // Keep only last 30 logs
+            if (this.lintProgress.logs.length > 30) {
+                this.lintProgress.logs = this.lintProgress.logs.slice(-30);
             }
         },
 

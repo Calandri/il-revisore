@@ -15,17 +15,25 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from ..deps import get_db
+from ...config import get_settings
 from ...db.models import Issue, IssueStatus, Repository, Task
 from ...utils.aws_secrets import get_anthropic_api_key
-from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
-# Agent file path
+# Agent file paths
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "agents"
 LINTER_ANALYZER_AGENT = AGENTS_DIR / "linter_analyzer.md"
+LINT_FIXER_AGENT = AGENTS_DIR / "lint_fixer.md"
+
+# Linting types by category
+LINT_TYPES = {
+    "FE": ["typescript", "eslint"],  # Frontend linting
+    "BE": ["ruff", "mypy"],          # Backend linting
+}
 
 
 def _load_agent(agent_path: Path) -> str:
@@ -174,6 +182,7 @@ async def run_lint_analysis(
             process = await asyncio.create_subprocess_exec(
                 cli_path,
                 "--print",
+                "--verbose",
                 "--dangerously-skip-permissions",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
@@ -380,3 +389,315 @@ async def get_lint_results(
             for i in issues
         ],
     }
+
+
+class LintFixRequest(BaseModel):
+    """Request to run lint + fix flow."""
+
+    repository_id: str = Field(..., description="Repository ID")
+    category: str = Field(default="all", description="Category to lint: 'FE', 'BE', or 'all'")
+    workspace_path: Optional[str] = Field(default=None, description="Workspace path to scope changes")
+
+
+class LintFixResult(BaseModel):
+    """Result of a single lint-fix run."""
+
+    lint_type: str
+    issues_found: int
+    issues_fixed: int
+    files_modified: list[str]
+    commit_sha: Optional[str] = None
+    status: str
+
+
+@router.post("/lint-fix")
+async def run_lint_fix(
+    request: LintFixRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Run lint + fix flow on a repository.
+
+    Orchestrates linting by category (FE/BE), running one lint type at a time.
+    For each type:
+    1. Runs linting tool
+    2. Identifies issues
+    3. Fixes them directly
+    4. Commits changes
+    5. Creates a macro-issue marked as RESOLVED
+
+    Returns SSE stream with progress updates.
+    """
+    # Verify repository
+    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+    if not repo_path.exists():
+        raise HTTPException(status_code=400, detail="Repository path not found")
+
+    # Determine which lint types to run
+    if request.category == "all":
+        lint_types = LINT_TYPES["BE"] + LINT_TYPES["FE"]
+    elif request.category in LINT_TYPES:
+        lint_types = LINT_TYPES[request.category]
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {request.category}")
+
+    # Create task
+    task_id = str(uuid.uuid4())
+    task = Task(
+        id=task_id,
+        repository_id=request.repository_id,
+        type="lint_fix",
+        status="running",
+        config={"category": request.category, "lint_types": lint_types},
+        created_at=datetime.utcnow(),
+    )
+    db.add(task)
+    db.commit()
+
+    async def generate() -> AsyncIterator[dict]:
+        """Generate SSE events from lint-fix orchestration."""
+        results: list[LintFixResult] = []
+        total_fixed = 0
+
+        try:
+            yield {
+                "event": "lint_fix_start",
+                "data": json.dumps({
+                    "message": f"Starting lint-fix for {request.category}...",
+                    "task_id": task_id,
+                    "lint_types": lint_types,
+                }),
+            }
+
+            # Load agent prompt
+            agent_prompt = _load_agent(LINT_FIXER_AGENT)
+            if not agent_prompt:
+                yield {
+                    "event": "lint_fix_error",
+                    "data": json.dumps({"error": "Lint fixer agent not found"}),
+                }
+                return
+
+            # Build environment with extended thinking
+            settings = get_settings()
+            env = os.environ.copy()
+            api_key = get_anthropic_api_key()
+            if api_key:
+                env["ANTHROPIC_API_KEY"] = api_key
+            env["TMPDIR"] = "/tmp"
+
+            # Enable extended thinking via env var (NOT --settings which is buggy)
+            if settings.thinking.enabled:
+                env["MAX_THINKING_TOKENS"] = str(settings.thinking.budget_tokens)
+                logger.info(f"Extended thinking enabled: {settings.thinking.budget_tokens} tokens")
+
+            # Find Claude CLI
+            cli_path = "/Users/niccolocalandri/.claude/local/claude"
+            if not Path(cli_path).exists():
+                cli_path = "claude"
+
+            # Get model from settings
+            model = settings.agents.claude_model
+
+            # Process each lint type sequentially
+            for lint_type in lint_types:
+                yield {
+                    "event": "lint_fix_progress",
+                    "data": json.dumps({
+                        "message": f"Running {lint_type} linting and fixing (with extended thinking)...",
+                        "lint_type": lint_type,
+                        "phase": "running",
+                    }),
+                }
+
+                # Prepare prompt with variables
+                prompt = agent_prompt.replace("{lint_type}", lint_type)
+                if request.workspace_path:
+                    prompt = prompt.replace("{workspace_path}", request.workspace_path)
+
+                # Run Claude CLI with extended thinking and stream-json
+                process = await asyncio.create_subprocess_exec(
+                    cli_path,
+                    "--print",
+                    "--verbose",
+                    "--dangerously-skip-permissions",
+                    "--model", model,
+                    "--output-format", "stream-json",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(repo_path),
+                    env=env,
+                )
+
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(input=prompt.encode()),
+                    timeout=600,  # 10 minutes per lint type
+                )
+
+                output = stdout.decode() if stdout else ""
+                error = stderr.decode() if stderr else ""
+
+                if process.returncode != 0:
+                    logger.error(f"Lint-fix failed for {lint_type}: {error}")
+                    yield {
+                        "event": "lint_fix_progress",
+                        "data": json.dumps({
+                            "message": f"{lint_type}: failed - {error[:200]}",
+                            "lint_type": lint_type,
+                            "phase": "error",
+                        }),
+                    }
+                    results.append(LintFixResult(
+                        lint_type=lint_type,
+                        issues_found=0,
+                        issues_fixed=0,
+                        files_modified=[],
+                        status="failed",
+                    ))
+                    continue
+
+                # Parse result from output
+                result = _parse_lint_fix_output(output, lint_type)
+                results.append(result)
+                total_fixed += result.issues_fixed
+
+                yield {
+                    "event": "lint_fix_progress",
+                    "data": json.dumps({
+                        "message": f"{lint_type}: fixed {result.issues_fixed} issues",
+                        "lint_type": lint_type,
+                        "phase": "completed",
+                        "issues_fixed": result.issues_fixed,
+                        "commit_sha": result.commit_sha,
+                    }),
+                }
+
+                # Create macro-issue for tracking (marked as RESOLVED)
+                if result.issues_fixed > 0:
+                    # Use first modified file or placeholder for the required 'file' field
+                    first_file = result.files_modified[0] if result.files_modified else "(multiple files)"
+                    issue = Issue(
+                        id=str(uuid.uuid4()),
+                        task_id=task_id,
+                        repository_id=request.repository_id,
+                        issue_code=f"LINT-FIX-{lint_type.upper()}",
+                        severity="LOW",
+                        category="linting",
+                        file=first_file,
+                        line=1,
+                        title=f"[{lint_type}] Fixed {result.issues_fixed} linting issues",
+                        description=f"Automatically fixed {result.issues_fixed} {lint_type} issues.\n\nFiles modified:\n" + "\n".join(f"- {f}" for f in result.files_modified[:20]),
+                        status=IssueStatus.RESOLVED.value,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(issue)
+                    db.commit()
+
+            # Update task status
+            task_obj = db.query(Task).filter(Task.id == task_id).first()
+            if task_obj:
+                task_obj.status = "completed"
+                task_obj.result = {
+                    "total_fixed": total_fixed,
+                    "results": [r.model_dump() for r in results],
+                }
+                db.commit()
+
+            yield {
+                "event": "lint_fix_complete",
+                "data": json.dumps({
+                    "message": f"Lint-fix complete! Fixed {total_fixed} issues total.",
+                    "task_id": task_id,
+                    "total_fixed": total_fixed,
+                    "results": [r.model_dump() for r in results],
+                }),
+            }
+
+        except asyncio.TimeoutError:
+            yield {
+                "event": "lint_fix_error",
+                "data": json.dumps({"error": "Lint-fix timed out"}),
+            }
+        except Exception as e:
+            logger.exception("Lint-fix failed")
+            yield {
+                "event": "lint_fix_error",
+                "data": json.dumps({"error": str(e)}),
+            }
+
+    return EventSourceResponse(generate())
+
+
+def _parse_lint_fix_output(output: str, lint_type: str) -> LintFixResult:
+    """Parse JSON result from lint-fixer agent output (stream-json format)."""
+    # Stream-json output is NDJSON - parse each line to find the result
+    result_text = ""
+    for line in output.strip().split("\n"):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+            if event.get("type") == "result":
+                # Check for errors
+                if event.get("is_error"):
+                    logger.error(f"Claude CLI error for {lint_type}: {event.get('result', 'Unknown error')}")
+                    return LintFixResult(
+                        lint_type=lint_type,
+                        issues_found=0,
+                        issues_fixed=0,
+                        files_modified=[],
+                        status="error",
+                    )
+                result_text = event.get("result", "")
+                # Log usage
+                total_cost = event.get("total_cost_usd", 0)
+                if total_cost:
+                    logger.info(f"Claude CLI cost for {lint_type}: ${total_cost:.4f}")
+                break
+        except json.JSONDecodeError:
+            continue
+
+    # If no result event found, use raw output
+    if not result_text:
+        result_text = output
+
+    # Now parse the actual result (JSON from agent)
+    json_text = result_text.strip()
+
+    # Handle markdown code blocks
+    if "```" in json_text:
+        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", json_text)
+        if json_match:
+            json_text = json_match.group(1).strip()
+
+    # Try to find JSON object
+    if not json_text.startswith("{"):
+        obj_match = re.search(r"\{[\s\S]*\"status\"[\s\S]*\}", json_text)
+        if obj_match:
+            json_text = obj_match.group()
+
+    try:
+        data = json.loads(json_text)
+        return LintFixResult(
+            lint_type=data.get("lint_type", lint_type),
+            issues_found=data.get("issues_found", 0),
+            issues_fixed=data.get("issues_fixed", 0),
+            files_modified=data.get("files_modified", []),
+            commit_sha=data.get("commit_sha"),
+            status=data.get("status", "success"),
+        )
+    except json.JSONDecodeError:
+        logger.warning(f"Could not parse lint-fix output for {lint_type}: {json_text[:200]}")
+        return LintFixResult(
+            lint_type=lint_type,
+            issues_found=0,
+            issues_fixed=0,
+            files_modified=[],
+            status="unknown",
+        )

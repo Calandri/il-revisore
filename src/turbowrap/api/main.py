@@ -19,6 +19,7 @@ from .routes import (
     analysis_router,
     auth_router,
     chat_router,
+    cli_chat_router,
     fix_router,
     git_router,
     issues_router,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(relationships_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
     app.include_router(git_router, prefix="/api")
+    app.include_router(cli_chat_router, prefix="/api")
 
     # Web routes (no prefix - these are the HTML pages)
     app.include_router(web_router)
