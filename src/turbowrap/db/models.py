@@ -17,7 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import declared_attr, relationship
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from .base import Base
 
@@ -47,9 +47,9 @@ class SoftDeleteMixin:
     """
 
     @declared_attr
-    def deleted_at(cls) -> Column:  # type: ignore[type-arg]
+    def deleted_at(cls) -> Mapped[datetime | None]:  # noqa: N805
         """Timestamp when the record was soft-deleted. None means active."""
-        return Column(DateTime, nullable=True, default=None, index=True)
+        return mapped_column(DateTime, nullable=True, default=None, index=True)
 
     @property
     def is_deleted(self) -> bool:
