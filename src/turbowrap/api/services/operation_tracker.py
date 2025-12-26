@@ -32,6 +32,7 @@ class OperationType(str, Enum):
     REVIEW = "review"
 
     # Git write operations (medium duration)
+    GIT_COMMIT = "git_commit"
     GIT_MERGE = "git_merge"
     GIT_PUSH = "git_push"
     GIT_PULL = "git_pull"

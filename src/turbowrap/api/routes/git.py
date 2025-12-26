@@ -643,3 +643,173 @@ def reset_changes(repo_id: str, db: Session = Depends(get_db)):
         return GitOperationResult(success=True, message="All changes discarded")
     except HTTPException as e:
         return GitOperationResult(success=False, message=e.detail)
+
+
+# --- Commit with AI Message Generation ---
+
+
+class CommitRequest(BaseModel):
+    """Commit request with message."""
+
+    message: str
+
+
+class GeneratedCommitMessage(BaseModel):
+    """AI-generated commit message."""
+
+    message: str
+    summary: str  # Short summary of changes
+
+
+@router.post("/repositories/{repo_id}/commit/generate-message", response_model=GeneratedCommitMessage)
+def generate_commit_message(repo_id: str, db: Session = Depends(get_db)):
+    """Generate a commit message using AI (Gemini Flash).
+
+    Analyzes the current diff and generates a descriptive commit message.
+    """
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+
+    # Get the diff of all changes (staged + unstaged)
+    try:
+        # First get status to see what files changed
+        status_output = run_git_command(repo_path, ["status", "--porcelain"])
+        if not status_output.strip():
+            raise HTTPException(status_code=400, detail="No changes to commit")
+
+        # Get diff for modified files
+        diff_output = ""
+        try:
+            diff_output = run_git_command(repo_path, ["diff", "HEAD"])
+        except HTTPException:
+            # If HEAD doesn't exist (new repo), get diff of staged files
+            try:
+                diff_output = run_git_command(repo_path, ["diff", "--cached"])
+            except HTTPException:
+                pass
+
+        # If no diff, list untracked files
+        if not diff_output.strip():
+            untracked_output = run_git_command(repo_path, ["ls-files", "--others", "--exclude-standard"])
+            if untracked_output.strip():
+                diff_output = f"New untracked files:\n{untracked_output}"
+
+        # Truncate diff if too long (Gemini has context limits)
+        max_diff_length = 15000
+        if len(diff_output) > max_diff_length:
+            diff_output = diff_output[:max_diff_length] + "\n\n... (diff truncated)"
+
+    except HTTPException as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get diff: {e.detail}")
+
+    # Generate commit message with Gemini
+    try:
+        from ...llm.gemini import GeminiClient
+
+        client = GeminiClient()
+
+        prompt = f"""Analyze this git diff and generate a commit message.
+
+**Git Status:**
+```
+{status_output}
+```
+
+**Diff:**
+```
+{diff_output}
+```
+
+**Instructions:**
+1. Write a concise commit message following conventional commits format
+2. First line should be the type and short description (max 72 chars)
+3. Types: feat, fix, docs, style, refactor, test, chore, build, ci
+4. Use imperative mood ("add feature" not "added feature")
+5. If multiple changes, use bullet points in body
+
+**Response format (JSON):**
+```json
+{{
+  "message": "type: short description\\n\\n- bullet point 1\\n- bullet point 2",
+  "summary": "brief one-line summary of what changed"
+}}
+```
+
+Return ONLY the JSON, no markdown code blocks or explanations."""
+
+        response = client.generate(prompt)
+
+        # Parse JSON response
+        import json
+        import re
+
+        # Clean response - remove markdown code blocks if present
+        cleaned = response.strip()
+        cleaned = re.sub(r'^```json\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+
+        try:
+            result = json.loads(cleaned)
+            return GeneratedCommitMessage(
+                message=result.get("message", "chore: update files"),
+                summary=result.get("summary", "Changes committed")
+            )
+        except json.JSONDecodeError:
+            # Fallback: use the response as-is
+            return GeneratedCommitMessage(
+                message=response.strip()[:500],
+                summary="Changes committed"
+            )
+
+    except Exception as e:
+        logger.error(f"Failed to generate commit message: {e}")
+        # Fallback to a simple message based on file count
+        file_count = len(status_output.strip().split("\n"))
+        return GeneratedCommitMessage(
+            message=f"chore: update {file_count} file(s)",
+            summary=f"Updated {file_count} file(s)"
+        )
+
+
+@router.post("/repositories/{repo_id}/commit", response_model=GitOperationResult)
+def commit_changes(repo_id: str, request: CommitRequest, db: Session = Depends(get_db)):
+    """Commit all changes with the provided message.
+
+    Stages all changes (git add -A) and commits with the message.
+    """
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+    repo_name = _extract_repo_name(repo)
+
+    # Get current branch for tracking
+    try:
+        current_branch = run_git_command(repo_path, ["branch", "--show-current"])
+    except HTTPException:
+        current_branch = None
+
+    # Register with unified OperationTracker
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.GIT_COMMIT,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=current_branch,
+        details={"message_preview": request.message[:100]},
+    )
+
+    try:
+        # Stage all changes
+        run_git_command(repo_path, ["add", "-A"])
+
+        # Commit
+        output = run_git_command(repo_path, ["commit", "-m", request.message])
+
+        tracker.complete(op_id, result={"output": output[:200] if output else None})
+        return GitOperationResult(success=True, message="Changes committed", output=output)
+
+    except HTTPException as e:
+        tracker.fail(op_id, error=e.detail)
+        # Check if it's "nothing to commit"
+        if "nothing to commit" in e.detail.lower():
+            return GitOperationResult(success=False, message="Nothing to commit - working tree clean")
+        return GitOperationResult(success=False, message=e.detail)

@@ -422,6 +422,18 @@
                     </button>
                     <!-- Git Actions (mini toolbar) -->
                     <div class="flex items-center gap-1" x-show="selectedRepoId">
+                        <!-- Commit (AI) - prominente quando ci sono changes -->
+                        <button @click="openAiCommitModal()"
+                                x-show="(gitStatus?.modified?.length > 0 || gitStatus?.untracked?.length > 0)"
+                                title="Commit con messaggio AI"
+                                class="px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium flex items-center gap-1"
+                                :disabled="gitOperationLoading || generatingCommitMessage">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            <span>Commit</span>
+                        </button>
+                        <div class="w-px h-4 bg-gray-600 mx-1" x-show="(gitStatus?.modified?.length > 0 || gitStatus?.untracked?.length > 0)"></div>
                         <button @click="gitFetch()" title="Fetch" class="p-1 hover:bg-blue-500 dark:hover:bg-blue-800 rounded" :disabled="gitOperationLoading">
                             <svg class="w-3.5 h-3.5" :class="{'animate-spin': gitOperationLoading}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -496,6 +508,105 @@
                         class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
                     Salva
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Commit Modal -->
+    <div x-show="showAiCommitModal"
+         x-transition
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="showAiCommitModal = false"
+         @keydown.escape.window="showAiCommitModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <h3 class="font-semibold">Commit (AI)</h3>
+                </div>
+                <button @click="showAiCommitModal = false" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-4 space-y-4">
+                <!-- Loading state -->
+                <div x-show="generatingCommitMessage" class="flex flex-col items-center justify-center py-8 gap-3">
+                    <svg class="animate-spin w-8 h-8 text-purple-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    <p class="text-sm text-gray-500">Gemini sta analizzando le modifiche...</p>
+                </div>
+
+                <!-- Generated message -->
+                <div x-show="!generatingCommitMessage">
+                    <!-- Summary -->
+                    <div x-show="aiCommitSummary" class="mb-3 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <p class="text-sm text-purple-700 dark:text-purple-300" x-text="aiCommitSummary"></p>
+                    </div>
+
+                    <!-- Commit message textarea -->
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Messaggio commit</label>
+                    <textarea x-model="aiCommitMessage"
+                              rows="6"
+                              class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg font-mono text-sm resize-none focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                              placeholder="Generando messaggio..."></textarea>
+
+                    <!-- Regenerate button -->
+                    <button @click="regenerateCommitMessage()"
+                            class="mt-2 text-sm text-purple-600 hover:text-purple-700 flex items-center gap-1"
+                            :disabled="generatingCommitMessage">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        Rigenera messaggio
+                    </button>
+
+                    <!-- Changed files preview -->
+                    <div class="mt-4 pt-4 border-t dark:border-gray-700">
+                        <p class="text-xs text-gray-500 mb-2">File che verranno committati:</p>
+                        <div class="max-h-32 overflow-y-auto space-y-1">
+                            <template x-for="file in changedFiles" :key="file.path">
+                                <div class="flex items-center gap-2 text-xs">
+                                    <span class="w-4 text-center"
+                                          :class="file.status === 'modified' ? 'text-orange-500' : 'text-green-500'"
+                                          x-text="file.status === 'modified' ? 'M' : 'A'"></span>
+                                    <span class="truncate font-mono" x-text="file.path"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t dark:border-gray-700 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" x-model="pushAfterCommit" id="pushAfterCommit" class="rounded">
+                    <label for="pushAfterCommit" class="text-sm text-gray-600 dark:text-gray-400">Push dopo commit</label>
+                </div>
+                <div class="flex gap-2">
+                    <button @click="showAiCommitModal = false"
+                            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        Annulla
+                    </button>
+                    <button @click="confirmAiCommit()"
+                            :disabled="generatingCommitMessage || !aiCommitMessage.trim()"
+                            class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-2">
+                        <svg x-show="committingChanges" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="committingChanges ? 'Commit...' : 'Commit'"></span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -664,6 +775,14 @@ function fileEditor() {
 
         // Git operations
         gitOperationLoading: false,
+
+        // AI Commit
+        showAiCommitModal: false,
+        generatingCommitMessage: false,
+        aiCommitMessage: '',
+        aiCommitSummary: '',
+        pushAfterCommit: false,
+        committingChanges: false,
 
         // Commits
         commits: [],
@@ -1328,6 +1447,102 @@ function fileEditor() {
                 this.showToast('Push failed', 'error');
             }
             this.gitOperationLoading = false;
+        },
+
+        // --- AI Commit ---
+
+        async openAiCommitModal() {
+            if (!this.selectedRepoId) return;
+
+            // Check if there are changes
+            if (!this.changedFiles || this.changedFiles.length === 0) {
+                this.showToast('Nessuna modifica da committare', 'error');
+                return;
+            }
+
+            this.showAiCommitModal = true;
+            this.aiCommitMessage = '';
+            this.aiCommitSummary = '';
+            this.committingChanges = false;
+
+            // Generate commit message
+            await this.generateCommitMessage();
+        },
+
+        async generateCommitMessage() {
+            this.generatingCommitMessage = true;
+
+            try {
+                const res = await fetch(`/api/git/repositories/${this.selectedRepoId}/commit/generate-message`, {
+                    method: 'POST'
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    this.aiCommitMessage = data.message;
+                    this.aiCommitSummary = data.summary;
+                } else {
+                    const error = await res.json();
+                    this.showToast(error.detail || 'Errore generazione messaggio', 'error');
+                    // Fallback message
+                    this.aiCommitMessage = 'chore: update files';
+                    this.aiCommitSummary = '';
+                }
+            } catch (e) {
+                console.error('Error generating commit message:', e);
+                this.showToast('Errore generazione messaggio', 'error');
+                this.aiCommitMessage = 'chore: update files';
+                this.aiCommitSummary = '';
+            }
+
+            this.generatingCommitMessage = false;
+        },
+
+        async regenerateCommitMessage() {
+            await this.generateCommitMessage();
+        },
+
+        async confirmAiCommit() {
+            if (!this.aiCommitMessage.trim() || this.committingChanges) return;
+
+            this.committingChanges = true;
+
+            try {
+                // Commit
+                const commitRes = await fetch(`/api/git/repositories/${this.selectedRepoId}/commit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: this.aiCommitMessage })
+                });
+
+                const commitData = await commitRes.json();
+
+                if (commitData.success) {
+                    this.showToast('Commit creato!', 'success');
+
+                    // Push if requested
+                    if (this.pushAfterCommit) {
+                        const pushRes = await fetch(`/api/git/repositories/${this.selectedRepoId}/push`, { method: 'POST' });
+                        const pushData = await pushRes.json();
+                        if (pushData.success) {
+                            this.showToast('Pushed to remote', 'success');
+                        } else {
+                            this.showToast(pushData.message || 'Push failed', 'error');
+                        }
+                    }
+
+                    // Close modal and refresh
+                    this.showAiCommitModal = false;
+                    await this.loadFileTree();
+                } else {
+                    this.showToast(commitData.message || 'Commit failed', 'error');
+                }
+            } catch (e) {
+                console.error('Error committing:', e);
+                this.showToast('Errore durante il commit', 'error');
+            }
+
+            this.committingChanges = false;
         },
 
         // --- Commits ---
