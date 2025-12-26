@@ -168,7 +168,7 @@
                 <div x-show="!loadingTree && !selectedRepoId" class="p-4 text-center text-gray-500 text-sm">
                     Seleziona un repository
                 </div>
-                <div x-show="!loadingTree && selectedRepoId && fileExtension !== 'changes' && fileTree && fileTree.children.length === 0" class="p-4 text-center text-gray-500 text-sm">
+                <div x-show="!loadingTree && selectedRepoId && fileExtension !== 'changes' && fileTree && fileTree.children?.length === 0" class="p-4 text-center text-gray-500 text-sm">
                     Nessun file trovato
                 </div>
                 <div x-show="!loadingTree && selectedRepoId && fileExtension === 'changes' && changedFiles.length === 0" class="p-4 text-center text-gray-500 text-sm">
@@ -192,8 +192,8 @@
                 </div>
 
                 <!-- Tree View -->
-                <div x-show="!loadingTree && fileExtension !== 'changes' && fileTree && fileTree.children.length > 0" class="py-1">
-                    <template x-for="node in fileTree.children" :key="node.path">
+                <div x-show="!loadingTree && fileExtension !== 'changes' && fileTree?.children?.length > 0" class="py-1">
+                    <template x-for="node in (fileTree?.children || [])" :key="node.path">
                         <div x-data="{ node: node }" x-html="renderTreeNode(node, 0)"></div>
                     </template>
                 </div>
@@ -439,20 +439,20 @@
                         </button>
                     </div>
                     <!-- Modified count -->
-                    <div x-show="gitStatus && (gitStatus.modified.length > 0 || gitStatus.untracked.length > 0)"
+                    <div x-show="gitStatus?.modified?.length > 0 || gitStatus?.untracked?.length > 0"
                          class="flex items-center gap-2">
-                        <span x-show="gitStatus?.modified?.length > 0" class="text-orange-300" x-text="gitStatus.modified.length + 'M'"></span>
-                        <span x-show="gitStatus?.untracked?.length > 0" class="text-green-300" x-text="gitStatus.untracked.length + 'U'"></span>
+                        <span x-show="gitStatus?.modified?.length > 0" class="text-orange-300" x-text="(gitStatus?.modified?.length || 0) + 'M'"></span>
+                        <span x-show="gitStatus?.untracked?.length > 0" class="text-green-300" x-text="(gitStatus?.untracked?.length || 0) + 'U'"></span>
                     </div>
                     <!-- Ahead/Behind -->
-                    <div x-show="gitStatus && (gitStatus.ahead > 0 || gitStatus.behind > 0)" class="flex items-center gap-1">
+                    <div x-show="gitStatus?.ahead > 0 || gitStatus?.behind > 0" class="flex items-center gap-1">
                         <span x-show="gitStatus?.ahead > 0" class="flex items-center gap-0.5">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7"/></svg>
-                            <span x-text="gitStatus.ahead"></span>
+                            <span x-text="gitStatus?.ahead || 0"></span>
                         </span>
                         <span x-show="gitStatus?.behind > 0" class="flex items-center gap-0.5">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7"/></svg>
-                            <span x-text="gitStatus.behind"></span>
+                            <span x-text="gitStatus?.behind || 0"></span>
                         </span>
                     </div>
                 </div>
