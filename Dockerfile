@@ -31,6 +31,10 @@ COPY src/ ./src/
 COPY config/ ./config/
 COPY agents/ ./agents/
 
+# Copy Alembic migrations
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+
 # Setup Claude Code agents and settings for appuser
 RUN mkdir -p /home/appuser/.claude/agents
 COPY agents/ /home/appuser/.claude/agents/
