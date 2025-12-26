@@ -29,8 +29,13 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
     if not settings.auth.enabled:
         return {"email": "anonymous@local", "username": "anonymous"}
 
-    # Get access token from cookie
-    access_token = request.cookies.get(settings.auth.session_cookie_name)
+    # Check for refreshed token from middleware first
+    access_token = getattr(request.state, "refreshed_access_token", None)
+
+    # Fall back to cookie
+    if not access_token:
+        access_token = request.cookies.get(settings.auth.session_cookie_name)
+
     if not access_token:
         return None
 

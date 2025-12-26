@@ -8,7 +8,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from ...config import get_settings
-from ..auth import verify_token
+from ..auth import refresh_access_token, verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +57,50 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Check for valid session
         access_token = request.cookies.get(settings.auth.session_cookie_name)
+        refresh_token = request.cookies.get(f"{settings.auth.session_cookie_name}_refresh")
 
         if not access_token:
+            # No access token - try refresh if available
+            if refresh_token:
+                new_tokens = refresh_access_token(refresh_token)
+                if new_tokens and new_tokens.get("access_token"):
+                    logger.info(f"Refreshed expired token for path: {path}")
+                    # Store new token in request state for downstream handlers
+                    request.state.refreshed_access_token = new_tokens["access_token"]
+                    # Proceed with request and set new cookie in response
+                    response = await call_next(request)
+                    response.set_cookie(
+                        key=settings.auth.session_cookie_name,
+                        value=new_tokens["access_token"],
+                        max_age=settings.auth.session_max_age,
+                        httponly=True,
+                        secure=settings.auth.secure_cookies,
+                        samesite="lax",
+                    )
+                    return response
             return self._redirect_to_login(request)
 
         # Verify token
         claims = verify_token(access_token)
         if not claims:
+            # Token invalid/expired - try refresh
+            if refresh_token:
+                new_tokens = refresh_access_token(refresh_token)
+                if new_tokens and new_tokens.get("access_token"):
+                    logger.info(f"Refreshed invalid token for path: {path}")
+                    # Store new token in request state for downstream handlers
+                    request.state.refreshed_access_token = new_tokens["access_token"]
+                    # Proceed with request and set new cookie in response
+                    response = await call_next(request)
+                    response.set_cookie(
+                        key=settings.auth.session_cookie_name,
+                        value=new_tokens["access_token"],
+                        max_age=settings.auth.session_max_age,
+                        httponly=True,
+                        secure=settings.auth.secure_cookies,
+                        samesite="lax",
+                    )
+                    return response
             logger.warning(f"Invalid token for path: {path}")
             return self._redirect_to_login(request)
 
