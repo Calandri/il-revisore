@@ -48,6 +48,10 @@ jobs:
               "set -e",
               "echo === BLUE-GREEN DEPLOYMENT ===",
 
+              "echo Step 0: Cleanup old images to free disk space...",
+              "docker image prune -af 2>/dev/null || true",
+              "docker system prune -f 2>/dev/null || true",
+
               "echo Step 1: Pull new image...",
               "aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 198584570682.dkr.ecr.eu-west-3.amazonaws.com 2>/dev/null",
               "docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
