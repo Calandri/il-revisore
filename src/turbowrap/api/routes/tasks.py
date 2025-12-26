@@ -736,12 +736,17 @@ async def restart_reviewer(
             )
 
             # Delete old issues from this reviewer
-            # Use PostgreSQL @> operator for JSON array containment
+            # Use raw SQL with JSONB cast for array containment check
+            # (JSON type doesn't support @> operator, need explicit cast to JSONB)
+            from sqlalchemy import text
+
             old_issues = (
                 restart_db.query(Issue)
                 .filter(
                     Issue.task_id == task_id,
-                    Issue.flagged_by.op("@>")(json.dumps([reviewer_name])),
+                    text("flagged_by::jsonb @> :reviewer_list").bindparams(
+                        reviewer_list=json.dumps([reviewer_name])
+                    ),
                 )
                 .all()
             )
