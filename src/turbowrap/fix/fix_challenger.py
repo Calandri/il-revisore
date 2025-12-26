@@ -180,7 +180,8 @@ You are a meticulous code fix evaluator. Score fixes on 4 dimensions (0-100 each
 
 Status: APPROVED (>=80), NEEDS_IMPROVEMENT (50-79), REJECTED (<50)
 
-Output ONLY valid JSON with: satisfaction_score, status, quality_scores, issues_found, improvements_needed, positive_feedback
+Output ONLY valid JSON with: satisfaction_score, status, quality_scores,
+issues_found, improvements_needed, positive_feedback
 """
 
     def _build_evaluation_prompt(

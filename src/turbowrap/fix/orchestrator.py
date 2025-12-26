@@ -383,7 +383,8 @@ class FixOrchestrator:
             len(all_be_batches) + len(all_fe_batches)
 
             # Track batch results across iterations
-            # Key: "BE-1", "FE-2", etc. Value: {"passed": bool, "score": float, "failed_issues": list}
+            # Key: "BE-1", "FE-2", etc.
+            # Value: {"passed": bool, "score": float, "failed_issues": list}
             batch_results: dict[str, dict[str, Any]] = {}
             for idx in range(len(all_be_batches)):
                 batch_results[f"BE-{idx + 1}"] = {
@@ -441,7 +442,8 @@ class FixOrchestrator:
                         FixProgressEvent(
                             type=FixEventType.FIX_ISSUE_GENERATING,
                             session_id=session_id,
-                            message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n📋 Retrying FAILED batches: {failed_batch_ids}",
+                            message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n"
+                            f"📋 Retrying FAILED batches: {failed_batch_ids}",
                         )
                     )
                 else:
@@ -449,7 +451,9 @@ class FixOrchestrator:
                         FixProgressEvent(
                             type=FixEventType.FIX_ISSUE_GENERATING,
                             session_id=session_id,
-                            message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n📋 Plan: {plan_msg} ({len(batches_to_process)} total, 1 Gemini review per batch)",
+                            message=f"══════ Iteration {iteration}/{self.max_iterations} ══════\n"
+                            f"📋 Plan: {plan_msg} ({len(batches_to_process)} total, "
+                            f"1 Gemini review per batch)",
                         )
                     )
 
@@ -492,7 +496,10 @@ class FixOrchestrator:
                         FixProgressEvent(
                             type=FixEventType.FIX_ISSUE_STREAMING,
                             session_id=session_id,
-                            message=f"🔧 {batch_id} [{completed_batches}/{len(batches_to_process)}] | {len(batch)} issues, workload={batch_workload}\n   Issues: {issue_codes}",
+                            message=f"🔧 {batch_id} "
+                            f"[{completed_batches}/{len(batches_to_process)}] "
+                            f"| {len(batch)} issues, workload={batch_workload}\n"
+                            f"   Issues: {issue_codes}",
                         )
                     )
 
@@ -523,7 +530,8 @@ class FixOrchestrator:
                         base_budget = self.settings.thinking.budget_tokens
                         thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
                         logger.info(
-                            f"Heavy batch (workload={batch_workload}), thinking budget: {thinking_budget}"
+                            f"Heavy batch (workload={batch_workload}), "
+                            f"thinking budget: {thinking_budget}"
                         )
                         await emit_log(
                             "INFO", f"Heavy batch: thinking budget {thinking_budget} tokens"
@@ -555,7 +563,8 @@ class FixOrchestrator:
                                 type=FixEventType.FIX_BILLING_ERROR,
                                 session_id=session_id,
                                 error=str(e),
-                                message=f"💳 BILLING ERROR: {e}\n\nRicarica il credito su console.anthropic.com",
+                                message=f"💳 BILLING ERROR: {e}\n\n"
+                                f"Ricarica il credito su console.anthropic.com",
                             )
                         )
                         raise
@@ -577,7 +586,8 @@ class FixOrchestrator:
                         FixProgressEvent(
                             type=FixEventType.FIX_ISSUE_STREAMING,
                             session_id=session_id,
-                            message=f"   ✅ {batch_id} Claude fix complete, running Gemini review...",
+                            message=f"   ✅ {batch_id} Claude fix complete, "
+                            f"running Gemini review...",
                         )
                     )
 
@@ -631,7 +641,8 @@ class FixOrchestrator:
                             FixProgressEvent(
                                 type=FixEventType.FIX_CHALLENGER_RESULT,
                                 session_id=session_id,
-                                message=f"   📊 {batch_id} score: {score}/100 | Per-issue: {scores_summary}",
+                                message=f"   📊 {batch_id} score: {score}/100 | "
+                                f"Per-issue: {scores_summary}",
                                 quality_scores=quality_scores if quality_scores else None,
                             )
                         )
@@ -664,7 +675,8 @@ class FixOrchestrator:
                         all_passed_this_iteration = False
                         await emit_log(
                             "WARNING",
-                            f"{batch_id} needs retry (score {score} < {self.satisfaction_threshold})",
+                            f"{batch_id} needs retry "
+                            f"(score {score} < {self.satisfaction_threshold})",
                         )
                         # Store feedback for retry
                         if batch_type == "BE":
@@ -680,7 +692,8 @@ class FixOrchestrator:
                             FixProgressEvent(
                                 type=FixEventType.FIX_REGENERATING,
                                 session_id=session_id,
-                                message=f"   ⚠️ {batch_id} NEEDS RETRY ({score} < {self.satisfaction_threshold}){failed_msg}",
+                                message=f"   ⚠️ {batch_id} NEEDS RETRY "
+                                f"({score} < {self.satisfaction_threshold}){failed_msg}",
                             )
                         )
 
@@ -692,7 +705,9 @@ class FixOrchestrator:
                     FixProgressEvent(
                         type=FixEventType.FIX_ISSUE_STREAMING,
                         session_id=session_id,
-                        message=f"══════ Iteration {iteration} Complete ══════\n✅ Passed: {len(passed_batches)} batches | ⚠️ Failed: {len(failed_batches)} batches",
+                        message=f"══════ Iteration {iteration} Complete ══════\n"
+                        f"✅ Passed: {len(passed_batches)} batches | "
+                        f"⚠️ Failed: {len(failed_batches)} batches",
                     )
                 )
 
@@ -751,7 +766,8 @@ class FixOrchestrator:
                     # CRITICAL: Files modified outside workspace!
                     # Revert ALL changes and raise error
                     logger.error(
-                        f"Workspace scope violation! Files outside '{request.workspace_path}': {violations}"
+                        f"Workspace scope violation! Files outside "
+                        f"'{request.workspace_path}': {violations}"
                     )
 
                     await safe_emit(
@@ -759,7 +775,8 @@ class FixOrchestrator:
                             type=FixEventType.FIX_SESSION_ERROR,
                             session_id=session_id,
                             error="🚫 BLOCKED: Modified files outside workspace scope",
-                            message=f"Violations: {', '.join(violations[:5])}{'...' if len(violations) > 5 else ''}",
+                            message=f"Violations: {', '.join(violations[:5])}"
+                            f"{'...' if len(violations) > 5 else ''}",
                         )
                     )
 
@@ -780,7 +797,8 @@ class FixOrchestrator:
                     FixProgressEvent(
                         type=FixEventType.FIX_ISSUE_STREAMING,
                         session_id=session_id,
-                        message=f"✅ Workspace scope validated ({len(uncommitted_files)} files in scope)",
+                        message=f"✅ Workspace scope validated "
+                        f"({len(uncommitted_files)} files in scope)",
                     )
                 )
 
@@ -810,12 +828,14 @@ class FixOrchestrator:
 
             # Count issues based on batch_results (Gemini approval is the source of truth)
             # If Gemini approved a batch (score >= threshold), those issues are COMPLETED
-            # This is more reliable than file-path matching which can fail with path format differences
+            # This is more reliable than file-path matching which can fail
+            # with path format differences
             actually_fixed_count = len(successful_issues)
             failed_count = len(failed_issues)
 
             logger.info(
-                f"Fix results: {actually_fixed_count} successful, {failed_count} failed (based on batch_results)"
+                f"Fix results: {actually_fixed_count} successful, "
+                f"{failed_count} failed (based on batch_results)"
             )
             logger.info(f"Modified files in commit: {modified_files}")
 
@@ -854,7 +874,8 @@ class FixOrchestrator:
                     issue_id=str(issue.id),
                     issue_code=str(issue.issue_code),
                     status=FixStatus.FAILED,
-                    error=f"Batch did not pass Gemini review (score < {self.satisfaction_threshold}){batch_info}",
+                    error=f"Batch did not pass Gemini review "
+                    f"(score < {self.satisfaction_threshold}){batch_info}",
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                 )
@@ -956,7 +977,8 @@ class FixOrchestrator:
 
 This is a MONOREPO with restricted workspace: `{workspace_path}/`
 
-**CRITICAL**: When reviewing `git diff`, verify that ALL modified files are within the workspace scope.
+**CRITICAL**: When reviewing `git diff`, verify that ALL modified files
+are within the workspace scope.
 If any files outside `{workspace_path}/` were modified, this is a CRITICAL failure - score 0.
 
 """
@@ -982,7 +1004,8 @@ BATCH_SCORE: <number>
 Then list EACH issue with its individual score:
 ISSUE_SCORES:
 - {issue_codes_list.split(", ")[0] if issue_codes else "ISSUE-XXX"}: <score> | <brief reason>
-{chr(10).join(f"- {code}: <score> | <brief reason>" for code in issue_codes[1:]) if len(issue_codes) > 1 else ""}
+{chr(10).join(f"- {code}: <score> | <brief reason>" for code in issue_codes[1:])}
+{" " if len(issue_codes) > 1 else ""}
 
 Issues with score < 95 need to be re-fixed in the next iteration.
 List which specific issues FAILED (score < 95):
