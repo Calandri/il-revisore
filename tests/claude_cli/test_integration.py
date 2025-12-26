@@ -19,7 +19,6 @@ import pytest
 
 from turbowrap.utils.claude_cli import ClaudeCLI, ModelUsage
 
-
 # =============================================================================
 # Full Execution Pipeline
 # =============================================================================
@@ -102,11 +101,13 @@ class TestSyncWrapper:
     def test_run_sync_from_non_async_context(self):
         """run_sync should work from non-async code."""
         with patch.object(ClaudeCLI, "_execute_cli") as mock_execute:
+
             async def mock_execute_cli(*args, **kwargs):
                 return ("Sync output", [], None, None, None)
 
             mock_execute.side_effect = mock_execute_cli
             with patch.object(ClaudeCLI, "_save_to_s3") as mock_s3:
+
                 async def mock_save(*args, **kwargs):
                     return "s3://bucket/key"
 
@@ -230,6 +231,7 @@ class TestConcurrencyScenarios:
 
         async def run_cli(index):
             with patch.object(ClaudeCLI, "_execute_cli") as mock_execute:
+
                 async def mock_exec(*args, **kwargs):
                     await asyncio.sleep(0.01)  # Simulate work
                     return (f"Output {index}", [], None, None, None)

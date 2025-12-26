@@ -22,10 +22,7 @@ from turbowrap.review.reviewers.utils.response_parsers import (
     parse_challenger_feedback,
     parse_review_output,
 )
-from turbowrap.review.reviewers.utils.s3_logger import (
-    S3ArtifactMetadata,
-    S3Logger,
-)
+from turbowrap.review.reviewers.utils.s3_logger import S3ArtifactMetadata, S3Logger
 
 __all__ = [
     # JSON extraction

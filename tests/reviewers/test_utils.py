@@ -1,7 +1,7 @@
 """
 Tests for reviewer utilities (refactored modules).
 
-Run with: uv run pytest tests/test_reviewers_utils.py -v
+Run with: uv run pytest tests/reviewers/test_utils.py -v
 
 These tests verify the reviewer utilities refactoring is correct:
 1. JSON extraction from LLM responses
@@ -34,6 +34,7 @@ from turbowrap.review.reviewers.utils import (
 # =============================================================================
 # Test 1: JSON Extraction - Basic Cases
 # =============================================================================
+@pytest.mark.unit
 class TestJsonExtractionBasic:
     """Test 1: Basic JSON extraction from LLM responses."""
 
@@ -88,6 +89,7 @@ That's my review."""
 # =============================================================================
 # Test 2: JSON Extraction - LLM Edge Cases
 # =============================================================================
+@pytest.mark.unit
 class TestJsonExtractionLLMEdgeCases:
     """Test 2: Real LLM response edge cases."""
 
@@ -165,6 +167,7 @@ Wait, let me reconsider:
 # =============================================================================
 # Test 3: Truncated JSON Repair
 # =============================================================================
+@pytest.mark.unit
 class TestTruncatedJsonRepair:
     """Test 3: Repair truncated JSON from token limits."""
 
@@ -223,6 +226,7 @@ class TestTruncatedJsonRepair:
 # =============================================================================
 # Test 4: parse_review_output - Real Reviewer Responses
 # =============================================================================
+@pytest.mark.unit
 class TestParseReviewOutput:
     """Test 4: Parse ReviewOutput from real reviewer responses."""
 
@@ -335,6 +339,7 @@ class TestParseReviewOutput:
 # =============================================================================
 # Test 5: parse_challenger_feedback - Real Challenger Responses
 # =============================================================================
+@pytest.mark.unit
 class TestParseChallengerFeedback:
     """Test 5: Parse ChallengerFeedback from real challenger responses."""
 
@@ -433,6 +438,7 @@ class TestParseChallengerFeedback:
 # =============================================================================
 # Test 6: Prompt Builders
 # =============================================================================
+@pytest.mark.unit
 class TestPromptBuilders:
     """Test 6: Challenge prompt builders."""
 
@@ -480,6 +486,7 @@ class TestPromptBuilders:
 # =============================================================================
 # Test 7: S3Logger
 # =============================================================================
+@pytest.mark.integration
 class TestS3Logger:
     """Test 7: S3Logger functionality."""
 
@@ -565,6 +572,7 @@ class TestS3Logger:
 # =============================================================================
 # Test 8: GeminiChallenger Unified Modes
 # =============================================================================
+@pytest.mark.unit
 class TestGeminiChallengerModes:
     """Test 8: GeminiChallenger with SDK and CLI modes."""
 
@@ -649,6 +657,7 @@ class TestGeminiChallengerModes:
 # =============================================================================
 # Test 9: Deprecated GeminiCLIChallenger Wrapper
 # =============================================================================
+@pytest.mark.unit
 class TestDeprecatedGeminiCLIChallenger:
     """Test 9: Deprecated wrapper backward compatibility."""
 
@@ -713,6 +722,7 @@ class TestDeprecatedGeminiCLIChallenger:
 # =============================================================================
 # Test 10: Edge Cases - Malformed LLM Responses
 # =============================================================================
+@pytest.mark.edge_case
 class TestMalformedLLMResponses:
     """Test 10: Handle malformed LLM responses gracefully."""
 
@@ -769,6 +779,7 @@ class TestMalformedLLMResponses:
 # =============================================================================
 # Test 11: Real Review JSON Structures
 # =============================================================================
+@pytest.mark.unit
 class TestRealReviewStructures:
     """Test 11: Parse real-world review JSON structures."""
 
@@ -841,6 +852,7 @@ class TestRealReviewStructures:
 # =============================================================================
 # Test 12: Challenger Dimension Score Calculations
 # =============================================================================
+@pytest.mark.unit
 class TestChallengerDimensionScores:
     """Test 12: Challenger dimension score edge cases."""
 
@@ -874,6 +886,7 @@ class TestChallengerDimensionScores:
 # =============================================================================
 # Test 13: S3LoggingMixin Integration
 # =============================================================================
+@pytest.mark.integration
 class TestS3LoggingMixin:
     """Test 13: S3LoggingMixin in base.py."""
 
@@ -915,6 +928,7 @@ class TestS3LoggingMixin:
 # =============================================================================
 # Test 14: JSON Extraction Error Handling
 # =============================================================================
+@pytest.mark.edge_case
 class TestJsonExtractionErrors:
     """Test 14: JSON extraction error handling."""
 
@@ -950,6 +964,7 @@ class TestJsonExtractionErrors:
 # =============================================================================
 # Test 15: Integration - Full Pipeline
 # =============================================================================
+@pytest.mark.integration
 class TestFullPipelineIntegration:
     """Test 15: Full pipeline integration tests."""
 

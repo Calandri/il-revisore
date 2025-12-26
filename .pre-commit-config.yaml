@@ -13,12 +13,7 @@ repos:
     hooks:
       - id: flake8
 
-  # isort - import sorting
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: [--profile, black]
+  # Note: isort removed - ruff already handles import sorting with "I" rule
 
   # Black - code formatting
   - repo: https://github.com/psf/black

@@ -27,7 +27,6 @@ from turbowrap.utils.claude_cli import (
     ModelUsage,
 )
 
-
 # =============================================================================
 # Model Resolution
 # =============================================================================
@@ -727,7 +726,7 @@ class TestSpecialCharactersInPrompts:
     def test_quotes_preserved(self):
         """Quotes should be preserved."""
         cli = ClaudeCLI(model="opus")
-        prompt = 'He said "hello" and \'goodbye\''
+        prompt = "He said \"hello\" and 'goodbye'"
         full = cli._build_full_prompt(prompt)
         assert 'He said "hello"' in full
 

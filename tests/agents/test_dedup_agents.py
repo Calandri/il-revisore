@@ -17,6 +17,7 @@ import yaml
 AGENTS_DIR = Path(__file__).parent.parent.parent / "agents"
 
 
+@pytest.mark.unit
 class TestDedupAgentFiles:
     """Test 1: Agent files exist and have correct structure."""
 
@@ -92,6 +93,7 @@ class TestDedupAgentFiles:
         assert metadata["model"] in valid_models, f"Invalid model: {metadata['model']}"
 
 
+@pytest.mark.unit
 class TestDedupAgentContent:
     """Test 2: Agent content has correct sections."""
 
@@ -140,6 +142,7 @@ class TestDedupAgentContent:
         assert "duplications" in first_block, "JSON schema missing 'duplications' field"
 
 
+@pytest.mark.unit
 class TestDedupAgentConsistency:
     """Test 3: Both dedup agents are consistent with each other."""
 
@@ -193,6 +196,7 @@ class TestDedupAgentConsistency:
         assert be_metadata["tools"] == fe_metadata["tools"], "Tools mismatch between BE and FE"
 
 
+@pytest.mark.integration
 class TestDedupAgentIntegration:
     """Test 4: Agent integration with AgentLoader."""
 
@@ -230,6 +234,7 @@ class TestDedupAgentIntegration:
         assert "reviewer-dedup-fe" in agent_names, "reviewer_dedup_fe not in list"
 
 
+@pytest.mark.integration
 class TestOrchestratorIntegration:
     """Test 5: Orchestrator correctly references dedup agents."""
 
@@ -275,6 +280,7 @@ class TestOrchestratorIntegration:
         ), "Flow missing FE dedup"
 
 
+@pytest.mark.unit
 class TestDedupAgentSpecificContent:
     """Test 6: Agent-specific content checks."""
 

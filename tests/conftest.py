@@ -84,10 +84,7 @@ def sample_stream_json_with_thinking():
         '{"type":"assistant","message":{"content":[{"type":"thinking",'
         '"thinking":"Let me analyze this problem step by step..."}]}}\n'
     )
-    content = (
-        '{"type":"content_block_delta",'
-        '"delta":{"text":"Based on my analysis"}}\n'
-    )
+    content = '{"type":"content_block_delta",' '"delta":{"text":"Based on my analysis"}}\n'
     result = (
         '{"type":"result","result":"Based on my analysis, the answer is 42.",'
         '"modelUsage":{"claude-opus-4-5-20251101":{'

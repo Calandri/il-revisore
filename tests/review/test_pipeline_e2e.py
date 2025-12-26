@@ -28,7 +28,7 @@ from turbowrap.review.models.review import (
     ReviewOptions,
     ReviewOutput,
     ReviewRequest,
-    ReviewSource,
+    ReviewRequestSource,
 )
 from turbowrap.review.orchestrator import Orchestrator
 
@@ -302,7 +302,7 @@ class TestBackendRepoReview:
             # Also mock the evaluator
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -335,7 +335,7 @@ class TestBackendRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -365,7 +365,7 @@ class TestBackendRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -406,7 +406,7 @@ class TestFrontendRepoReview:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(frontend_repo)),
+                    source=ReviewRequestSource(directory=str(frontend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -439,7 +439,7 @@ class TestFrontendRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(frontend_repo)),
+                    source=ReviewRequestSource(directory=str(frontend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -486,7 +486,7 @@ class TestFullstackRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(fullstack_repo)),
+                    source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -528,7 +528,7 @@ class TestFullstackRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(fullstack_repo)),
+                    source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -573,7 +573,7 @@ class TestProgressCallbacks:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -616,7 +616,7 @@ class TestProgressCallbacks:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -694,7 +694,7 @@ class TestCheckpointResume:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -751,7 +751,7 @@ class TestCheckpointResume:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -814,7 +814,7 @@ class TestIssueHandling:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -860,7 +860,7 @@ class TestIssueHandling:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -901,7 +901,7 @@ class TestScoreAndRecommendation:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -941,7 +941,7 @@ class TestScoreAndRecommendation:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
@@ -978,7 +978,7 @@ class TestReportSaving:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
-                    source=ReviewSource(directory=str(backend_repo)),
+                    source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
                         challenger_enabled=True,
