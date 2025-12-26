@@ -10,11 +10,7 @@ Provides common functions for:
 
 from typing import Any
 
-from turbowrap.review.models.report import (
-    NextStep,
-    Recommendation,
-    SeveritySummary,
-)
+from turbowrap.review.models.report import NextStep, Recommendation, SeveritySummary
 from turbowrap.review.models.review import Issue, IssueSeverity
 
 # Severity ranking for comparisons

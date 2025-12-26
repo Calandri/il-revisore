@@ -122,17 +122,13 @@ class ProgressEmitter:
 # These are imported lazily to avoid circular imports
 def get_review_progress_types() -> dict[str, Any]:
     """Get review progress event types (lazy import)."""
+    from turbowrap.review.models.progress import REVIEWER_DISPLAY_NAMES
+    from turbowrap.review.models.progress import ProgressEvent as ReviewProgressEvent
+    from turbowrap.review.models.progress import ProgressEventType as ReviewProgressEventType
     from turbowrap.review.models.progress import (
-        REVIEWER_DISPLAY_NAMES,
         ReviewerState,
         ReviewProgress,
         get_reviewer_display_name,
-    )
-    from turbowrap.review.models.progress import (
-        ProgressEvent as ReviewProgressEvent,
-    )
-    from turbowrap.review.models.progress import (
-        ProgressEventType as ReviewProgressEventType,
     )
 
     return {
@@ -147,10 +143,7 @@ def get_review_progress_types() -> dict[str, Any]:
 
 def get_fix_progress_types() -> dict[str, Any]:
     """Get fix progress event types (lazy import)."""
-    from turbowrap.fix.models import (
-        FixEventType,
-        FixProgressEvent,
-    )
+    from turbowrap.fix.models import FixEventType, FixProgressEvent
 
     return {
         "FixProgressEvent": FixProgressEvent,

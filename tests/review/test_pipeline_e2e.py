@@ -13,19 +13,13 @@ detection through to final report generation, including:
 """
 
 import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from turbowrap.review.challenger_loop import ChallengerLoopResult
 from turbowrap.review.models.progress import ProgressEvent, ProgressEventType
-from turbowrap.review.models.report import (
-    ConvergenceStatus,
-    FinalReport,
-    Recommendation,
-    RepoType,
-)
+from turbowrap.review.models.report import ConvergenceStatus, FinalReport, Recommendation, RepoType
 from turbowrap.review.models.review import (
     Issue,
     IssueCategory,
@@ -37,8 +31,6 @@ from turbowrap.review.models.review import (
     ReviewSource,
 )
 from turbowrap.review.orchestrator import Orchestrator
-from turbowrap.review.reviewers.base import ReviewContext
-
 
 # =============================================================================
 # Fixtures
@@ -110,8 +102,12 @@ class User(Base):
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo,
         capture_output=True,
-        env={"GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@test.com",
-             "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        env={
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+        },
     )
 
     return repo
@@ -126,22 +122,22 @@ def frontend_repo(tmp_path):
     # Create TypeScript/React files
     (repo / "src").mkdir()
     (repo / "src" / "App.tsx").write_text(
-        '''
+        """
 import React from "react";
 
 export const App: React.FC = () => {
   return <div>Hello World</div>;
 };
-'''
+"""
     )
     (repo / "src" / "index.tsx").write_text(
-        '''
+        """
 import React from "react";
 import ReactDOM from "react-dom";
 import { App } from "./App";
 
 ReactDOM.render(<App />, document.getElementById("root"));
-'''
+"""
     )
     (repo / "package.json").write_text('{"name": "frontend", "dependencies": {"react": "^18.0.0"}}')
 
@@ -174,8 +170,12 @@ ReactDOM.render(<App />, document.getElementById("root"));
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo,
         capture_output=True,
-        env={"GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@test.com",
-             "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        env={
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+        },
     )
 
     return repo
@@ -190,19 +190,19 @@ def fullstack_repo(tmp_path):
     # Backend files
     (repo / "backend").mkdir()
     (repo / "backend" / "app.py").write_text(
-        '''
+        """
 from flask import Flask
 app = Flask(__name__)
-'''
+"""
     )
 
     # Frontend files
     (repo / "frontend").mkdir()
     (repo / "frontend" / "App.tsx").write_text(
-        '''
+        """
 import React from "react";
 export const App = () => <div>App</div>;
-'''
+"""
     )
 
     # Create structure.xml
@@ -228,8 +228,12 @@ export const App = () => <div>App</div>;
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo,
         capture_output=True,
-        env={"GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@test.com",
-             "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+        env={
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+        },
     )
 
     return repo
@@ -287,9 +291,7 @@ class TestBackendRepoReview:
         orchestrator = Orchestrator()
 
         # Mock the challenger loop to avoid actual LLM calls
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
                 iterations=1,
@@ -394,9 +396,7 @@ class TestFrontendRepoReview:
         """Frontend repo is correctly detected as FRONTEND type."""
         orchestrator = Orchestrator()
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
                 iterations=1,
@@ -563,9 +563,7 @@ class TestProgressCallbacks:
         async def collect_events(event: ProgressEvent):
             events.append(event)
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
                 iterations=1,
@@ -608,9 +606,7 @@ class TestProgressCallbacks:
         async def collect_events(event: ProgressEvent):
             events.append(event)
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
                 iterations=1,
@@ -632,9 +628,7 @@ class TestProgressCallbacks:
 
                 # Get reviewer names from events
                 started_reviewers = {
-                    e.reviewer_name
-                    for e in events
-                    if e.type == ProgressEventType.REVIEWER_STARTED
+                    e.reviewer_name for e in events if e.type == ProgressEventType.REVIEWER_STARTED
                 }
                 completed_reviewers = {
                     e.reviewer_name
@@ -669,16 +663,16 @@ class TestCheckpointResume:
         async def checkpoint_callback(
             reviewer_name, status, issues, satisfaction, iterations, model_usage, started_at
         ):
-            checkpoints_saved.append({
-                "reviewer": reviewer_name,
-                "status": status,
-                "issues_count": len(issues),
-                "satisfaction": satisfaction,
-            })
+            checkpoints_saved.append(
+                {
+                    "reviewer": reviewer_name,
+                    "status": status,
+                    "issues_count": len(issues),
+                    "satisfaction": satisfaction,
+                }
+            )
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(
                     issues=[
@@ -897,9 +891,7 @@ class TestScoreAndRecommendation:
         """No issues results in perfect score and APPROVE recommendation."""
         orchestrator = Orchestrator()
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
                 iterations=1,
@@ -935,9 +927,7 @@ class TestScoreAndRecommendation:
             message="Critical vulnerability",
         )
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(
                     issues=[critical_issue],
@@ -978,9 +968,7 @@ class TestReportSaving:
         """Report is saved to .reviews directory."""
         orchestrator = Orchestrator()
 
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress"
-        ) as mock_loop:
+        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
                 iterations=1,

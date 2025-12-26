@@ -29,11 +29,7 @@ from turbowrap.orchestration.cli_runner import (
 )
 
 # Progress types
-from turbowrap.orchestration.progress import (
-    BaseProgressEvent,
-    ProgressCallback,
-    ProgressEmitter,
-)
+from turbowrap.orchestration.progress import BaseProgressEvent, ProgressCallback, ProgressEmitter
 from turbowrap.orchestration.report_utils import (
     CATEGORY_MULTIPLIERS,
     SEVERITY_DEDUCTIONS,
