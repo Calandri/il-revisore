@@ -184,7 +184,8 @@ class GeminiProClient(GeminiClient):
 
 Identifica e descrivi in dettaglio:
 
-1. **Componenti UI visibili**: Elenca tutti i componenti UI presenti (bottoni, form, input, dropdown, etc.)
+1. **Componenti UI visibili**: Elenca tutti i componenti UI presenti (bottoni, form, input,
+   dropdown, etc.)
 2. **Layout e design**: Struttura della pagina, grid system, spacing, allineamenti
 3. **User flow**: Sequenza di azioni dell'utente visibile negli screenshot
 4. **Requisiti tecnici**: Tecnologie necessarie, pattern UI da implementare

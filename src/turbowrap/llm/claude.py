@@ -10,7 +10,10 @@ from turbowrap.exceptions import ClaudeError
 from turbowrap.llm.base import AgentResponse, BaseAgent
 
 # Default system prompt for code review
-DEFAULT_SYSTEM_PROMPT = "You are a senior code reviewer with expertise in software architecture, security, and best practices."
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a senior code reviewer with expertise in software architecture, "
+    "security, and best practices."
+)
 
 # API timeout configuration (in seconds)
 DEFAULT_TIMEOUT = 120.0  # 2 minutes for complex code analysis
