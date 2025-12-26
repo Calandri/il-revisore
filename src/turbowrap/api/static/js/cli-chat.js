@@ -26,6 +26,8 @@ function chatSidebar() {
         inputMessage: '',
         showSettings: false,
         showNewChatMenu: false,
+        showSystemInfo: false,
+        systemInfo: [],
         eventSource: null,
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
@@ -165,18 +167,19 @@ function chatSidebar() {
 
         /**
          * Delete a session
+         * @param {string} sessionId - Session ID to delete
          */
-        async deleteSession(session) {
+        async deleteSession(sessionId) {
             if (!confirm('Eliminare questa chat?')) return;
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${session.id}`, {
+                const res = await fetch(`/api/cli-chat/sessions/${sessionId}`, {
                     method: 'DELETE'
                 });
 
                 if (res.ok) {
-                    this.sessions = this.sessions.filter(s => s.id !== session.id);
-                    if (this.activeSession?.id === session.id) {
+                    this.sessions = this.sessions.filter(s => s.id !== sessionId);
+                    if (this.activeSession?.id === sessionId) {
                         this.activeSession = null;
                     }
                     this.showToast('Chat eliminata', 'success');
@@ -197,6 +200,7 @@ function chatSidebar() {
             this.inputMessage = '';
             this.streaming = true;
             this.streamContent = '';
+            this.systemInfo = [];  // Reset system info for new message
 
             // Add user message immediately
             const userMsg = {
@@ -244,17 +248,34 @@ function chatSidebar() {
                     buffer = lines.pop() || '';
 
                     for (const line of lines) {
+                        // Handle SSE event format
+                        if (line.startsWith('event: ')) {
+                            const eventType = line.slice(7).trim();
+                            console.log('[chatSidebar] SSE event:', eventType);
+                            continue;
+                        }
+
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.slice(6));
 
+                                // Handle system events - show collapsible
+                                if (data.type === 'system') {
+                                    console.log('[chatSidebar] System event:', data.subtype);
+                                    // Add as collapsible system message
+                                    if (!this.systemInfo) this.systemInfo = [];
+                                    this.systemInfo.push(data);
+                                    continue;
+                                }
+
+                                // Handle content chunks
                                 if (data.content) {
                                     this.streamContent += data.content;
                                     this.$nextTick(() => this.scrollToBottom());
                                 }
 
+                                // Handle stream completion
                                 if (data.message_id) {
-                                    // Stream complete
                                     this.messages.push({
                                         id: data.message_id,
                                         role: 'assistant',
@@ -265,6 +286,12 @@ function chatSidebar() {
                                     this.streaming = false;
                                 }
 
+                                // Handle total_length (done event)
+                                if (data.total_length !== undefined) {
+                                    console.log('[chatSidebar] Stream done, length:', data.total_length);
+                                }
+
+                                // Handle errors
                                 if (data.error) {
                                     console.error('Stream error:', data.error);
                                     this.showToast('Errore: ' + data.error, 'error');
@@ -272,6 +299,7 @@ function chatSidebar() {
                                 }
                             } catch (e) {
                                 // Ignore parse errors for incomplete chunks
+                                console.debug('[chatSidebar] Parse error (partial chunk):', e.message);
                             }
                         }
                     }
@@ -285,33 +313,106 @@ function chatSidebar() {
         },
 
         /**
-         * Format message content (basic markdown support)
+         * Format message content (full markdown support)
          */
         formatMessage(content) {
             if (!content) return '';
 
-            // Escape HTML
+            // Check if content is JSON (system message)
+            const trimmed = content.trim();
+            if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                try {
+                    const json = JSON.parse(trimmed);
+                    // Filter out system/init messages
+                    if (json.type === 'system' || json.subtype === 'init' || json.tools || json.mcpServers) {
+                        // Show as collapsible system info
+                        return `<details class="my-2">
+                            <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Info di sistema
+                            </summary>
+                            <pre class="mt-2 bg-gray-800 text-gray-300 p-2 rounded text-[10px] overflow-x-auto max-h-32">${JSON.stringify(json, null, 2)}</pre>
+                        </details>`;
+                    }
+                    // Regular JSON - format nicely
+                    return `<pre class="bg-gray-900 text-gray-100 p-3 rounded-lg text-xs overflow-x-auto font-mono my-2"><code>${JSON.stringify(json, null, 2)}</code></pre>`;
+                } catch (e) {
+                    // Not valid JSON, continue with normal formatting
+                }
+            }
+
+            // Escape HTML first
             let html = content
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
 
-            // Code blocks
+            // Code blocks with language label
             html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-                return `<pre class="bg-gray-800 text-gray-100 p-2 rounded text-xs overflow-x-auto my-2"><code>${code.trim()}</code></pre>`;
+                const langLabel = lang ? `<div class="text-[10px] text-gray-400 mb-1 font-mono">${lang}</div>` : '';
+                return `<div class="relative my-3">
+                    ${langLabel}
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded-lg text-xs overflow-x-auto font-mono leading-relaxed"><code>${code.trim()}</code></pre>
+                </div>`;
             });
 
             // Inline code
-            html = html.replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-600 px-1 rounded text-xs">$1</code>');
+            html = html.replace(/`([^`]+)`/g,
+                '<code class="bg-gray-200 dark:bg-gray-700 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
 
-            // Bold
-            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            // Headers (process before other inline elements)
+            html = html.replace(/^######\s+(.+)$/gm, '<h6 class="text-xs font-bold mt-3 mb-1 text-gray-600 dark:text-gray-400">$1</h6>');
+            html = html.replace(/^#####\s+(.+)$/gm, '<h5 class="text-xs font-bold mt-3 mb-1">$1</h5>');
+            html = html.replace(/^####\s+(.+)$/gm, '<h4 class="text-sm font-bold mt-3 mb-1">$1</h4>');
+            html = html.replace(/^###\s+(.+)$/gm, '<h3 class="text-sm font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">$1</h3>');
+            html = html.replace(/^##\s+(.+)$/gm, '<h2 class="text-base font-bold mt-4 mb-2 text-gray-900 dark:text-gray-100">$1</h2>');
+            html = html.replace(/^#\s+(.+)$/gm, '<h1 class="text-lg font-bold mt-4 mb-2 text-gray-900 dark:text-gray-100">$1</h1>');
 
-            // Italic
-            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            // Blockquotes
+            html = html.replace(/^&gt;\s+(.+)$/gm,
+                '<blockquote class="border-l-4 border-gray-300 dark:border-gray-600 pl-3 py-1 my-2 text-gray-600 dark:text-gray-400 italic">$1</blockquote>');
 
-            // Line breaks
+            // Horizontal rules
+            html = html.replace(/^---+$/gm, '<hr class="my-4 border-gray-300 dark:border-gray-600">');
+            html = html.replace(/^\*\*\*+$/gm, '<hr class="my-4 border-gray-300 dark:border-gray-600">');
+
+            // Unordered lists (simple single-level)
+            html = html.replace(/^[-*]\s+(.+)$/gm,
+                '<li class="ml-4 list-disc text-sm">$1</li>');
+
+            // Ordered lists
+            html = html.replace(/^\d+\.\s+(.+)$/gm,
+                '<li class="ml-4 list-decimal text-sm">$1</li>');
+
+            // Wrap consecutive list items
+            html = html.replace(/(<li class="ml-4 list-disc[^>]*>.*<\/li>\n?)+/g,
+                '<ul class="my-2 space-y-1">$&</ul>');
+            html = html.replace(/(<li class="ml-4 list-decimal[^>]*>.*<\/li>\n?)+/g,
+                '<ol class="my-2 space-y-1">$&</ol>');
+
+            // Links [text](url)
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+                '<a href="$2" target="_blank" class="text-blue-500 hover:text-blue-600 dark:text-blue-400 underline">$1</a>');
+
+            // Bold **text** or __text__
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>');
+            html = html.replace(/__([^_]+)__/g, '<strong class="font-semibold">$1</strong>');
+
+            // Italic *text* or _text_
+            html = html.replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
+            html = html.replace(/_([^_]+)_/g, '<em class="italic">$1</em>');
+
+            // Strikethrough ~~text~~
+            html = html.replace(/~~([^~]+)~~/g, '<del class="line-through text-gray-500">$1</del>');
+
+            // Line breaks (but not inside pre/code blocks)
             html = html.replace(/\n/g, '<br>');
+
+            // Clean up extra <br> after block elements
+            html = html.replace(/<\/(h[1-6]|blockquote|pre|ul|ol|hr|div)><br>/g, '</$1>');
+            html = html.replace(/<br><(h[1-6]|blockquote|pre|ul|ol|hr|div)/g, '<$1');
 
             return html;
         },

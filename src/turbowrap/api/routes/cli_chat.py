@@ -6,6 +6,7 @@ Supporta multi-chat parallele, agenti custom, MCP servers.
 
 import json
 import logging
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -28,7 +29,14 @@ from ..schemas.cli_chat import (
     MCPConfigResponse,
 )
 from ...db.models import CLIChatSession, CLIChatMessage
-from ...chat_cli import get_agent_loader, get_process_manager, get_mcp_manager, CLIType
+from ...chat_cli import (
+    get_agent_loader,
+    get_process_manager,
+    get_mcp_manager,
+    get_cached_context,
+    get_context_for_session,
+    CLIType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +280,14 @@ async def send_message(
                 # Spawn new process
                 cli_type = CLIType(session.cli_type)
 
+                # Generate context for this session
+                context = get_context_for_session(
+                    db,
+                    repo_id=session.repository_id,
+                    linear_issue_id=None,  # TODO: support linear issue context
+                )
+                logger.info(f"Generated context: {len(context)} chars")
+
                 if cli_type == CLIType.CLAUDE:
                     agent_path = None
                     if session.agent_name:
@@ -283,6 +299,7 @@ async def send_message(
                         model=session.model or "claude-opus-4-5-20251101",
                         agent_path=agent_path,
                         thinking_budget=session.thinking_budget if session.thinking_enabled else None,
+                        context=context,
                     )
                 else:
                     proc = await manager.spawn_gemini(
@@ -290,16 +307,79 @@ async def send_message(
                         working_dir=Path(session.repository.local_path if session.repository else "."),
                         model=session.model or "gemini-3-pro-preview",
                         reasoning=session.reasoning_enabled,
+                        context=context,
                     )
 
-            # Stream response
+            # Stream response - parse stream-json line by line
             full_content = []
-            async for chunk in manager.send_message(session_id, data.content):
-                full_content.append(chunk)
-                yield {
-                    "event": "chunk",
-                    "data": json.dumps({"content": chunk}),
-                }
+            system_events = []
+
+            async for line in manager.send_message(session_id, data.content):
+                line = line.strip()
+                if not line:
+                    continue
+
+                logger.debug(f"[STREAM] Line: {line[:100]}...")
+
+                # Try to parse as JSON (stream-json format)
+                try:
+                    event = json.loads(line)
+                    event_type = event.get("type", "unknown")
+
+                    # Collect system events separately
+                    if event_type == "system":
+                        system_events.append(event)
+                        yield {
+                            "event": "system",
+                            "data": json.dumps(event),
+                        }
+                        continue
+
+                    # Extract content from different event types
+                    content = None
+
+                    if event_type == "assistant":
+                        # Assistant message with content blocks
+                        if "message" in event and "content" in event["message"]:
+                            for block in event["message"]["content"]:
+                                if block.get("type") == "text":
+                                    content = block.get("text", "")
+                                    break
+
+                    elif event_type == "content_block_delta":
+                        # Streaming delta - this is the main streaming event!
+                        delta = event.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            content = delta.get("text", "")
+
+                    elif event_type == "content_block_start":
+                        block = event.get("content_block", {})
+                        if block.get("type") == "text":
+                            content = block.get("text", "")
+
+                    elif event_type == "result":
+                        # Final result (--print mode)
+                        if "result" in event:
+                            content = event["result"]
+
+                    # Yield content immediately
+                    if content:
+                        full_content.append(content)
+                        yield {
+                            "event": "chunk",
+                            "data": json.dumps({"content": content}),
+                        }
+
+                except json.JSONDecodeError:
+                    # Not JSON - raw text (gemini)
+                    if line:
+                        full_content.append(line + "\n")
+                        yield {
+                            "event": "chunk",
+                            "data": json.dumps({"content": line + "\n"}),
+                        }
+
+            logger.info(f"[STREAM] Done. System: {len(system_events)}, Content: {len(''.join(full_content))} chars")
 
             # Save assistant message
             content = "".join(full_content)
@@ -329,6 +409,7 @@ async def send_message(
 
         except Exception as e:
             logger.error(f"Error in stream: {e}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
             yield {
                 "event": "error",
                 "data": json.dumps({"error": str(e)}),
@@ -366,6 +447,14 @@ async def start_cli(
     try:
         cli_type = CLIType(session.cli_type)
 
+        # Generate context for this session
+        context = get_context_for_session(
+            db,
+            repo_id=session.repository_id,
+            linear_issue_id=None,
+        )
+        logger.info(f"[START] Generated context: {len(context)} chars")
+
         if cli_type == CLIType.CLAUDE:
             agent_path = None
             if session.agent_name:
@@ -377,6 +466,7 @@ async def start_cli(
                 model=session.model or "claude-opus-4-5-20251101",
                 agent_path=agent_path,
                 thinking_budget=session.thinking_budget if session.thinking_enabled else None,
+                context=context,
             )
         else:
             proc = await manager.spawn_gemini(
@@ -384,6 +474,7 @@ async def start_cli(
                 working_dir=Path(session.repository.local_path if session.repository else "."),
                 model=session.model or "gemini-3-pro-preview",
                 reasoning=session.reasoning_enabled,
+                context=context,
             )
 
         session.status = "running"

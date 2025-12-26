@@ -32,6 +32,8 @@ import codecs
 import json
 import logging
 import os
+import tempfile
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +61,11 @@ class CLIProcess:
     agent_name: str | None = None
     started_at: datetime = field(default_factory=datetime.utcnow)
     status: SessionStatus = SessionStatus.RUNNING
+    temp_prompt_file: Path | None = None  # Temp file for combined context+agent
+    # Fields for respawning with --resume
+    claude_session_id: str | None = None  # Claude CLI's session ID for --resume
+    thinking_budget: int | None = None
+    mcp_config: Path | None = None
 
     @property
     def pid(self) -> int | None:
@@ -69,6 +76,15 @@ class CLIProcess:
     def is_running(self) -> bool:
         """Check if process is still running."""
         return self.process and self.process.returncode is None
+
+    def cleanup(self) -> None:
+        """Cleanup temporary files."""
+        if self.temp_prompt_file and self.temp_prompt_file.exists():
+            try:
+                self.temp_prompt_file.unlink()
+                logger.debug(f"Cleaned up temp file: {self.temp_prompt_file}")
+            except Exception as e:
+                logger.warning(f"Failed to cleanup temp file: {e}")
 
 
 class CLIProcessManager:
@@ -96,6 +112,7 @@ class CLIProcessManager:
         agent_path: Path | None = None,
         thinking_budget: int | None = None,
         mcp_config: Path | None = None,
+        context: str | None = None,
     ) -> CLIProcess:
         """Spawn a new Claude CLI process.
 
@@ -123,17 +140,24 @@ class CLIProcessManager:
         # Build environment
         env = os.environ.copy()
         env["TMPDIR"] = "/tmp"  # Workaround for Bun file watcher bug
+        env["PYTHONUNBUFFERED"] = "1"  # Disable Python buffering
+        env["NODE_OPTIONS"] = "--no-warnings"  # Less noise from node
 
         # Set thinking budget if enabled
         if thinking_budget:
             env["MAX_THINKING_TOKENS"] = str(thinking_budget)
             logger.info(f"[CLAUDE] Extended thinking: {thinking_budget} tokens")
 
+        # Generate a unique session ID for Claude CLI (for --resume support)
+        claude_session_id = str(uuid.uuid4())
+
         # Build CLI arguments
         # Using --print mode for non-interactive chat
         args = [
             "claude",
             "--print",
+            "--session-id",
+            claude_session_id,  # Set session ID for later --resume
             "--verbose",
             "--dangerously-skip-permissions",
             "--model",
@@ -142,10 +166,31 @@ class CLIProcessManager:
             "stream-json",
         ]
 
-        # Add agent system prompt if provided
+        # Create system prompt file combining context and agent
+        temp_prompt_file = None
+        system_prompt_parts = []
+
+        # Add context if provided
+        if context:
+            system_prompt_parts.append(context)
+            logger.info(f"[CLAUDE] Context added: {len(context)} chars")
+
+        # Add agent prompt if provided
         if agent_path and agent_path.exists():
-            args.extend(["--system-prompt-file", str(agent_path)])
+            agent_content = agent_path.read_text()
+            system_prompt_parts.append(f"\n\n---\n\n# Agent Instructions\n\n{agent_content}")
             logger.info(f"[CLAUDE] Using agent: {agent_path.stem}")
+
+        # Create temp file if we have any system prompt content
+        if system_prompt_parts:
+            combined_prompt = "\n".join(system_prompt_parts)
+            # Create temp file that persists until explicitly deleted
+            fd, temp_path = tempfile.mkstemp(suffix=".md", prefix="turbowrap_prompt_")
+            temp_prompt_file = Path(temp_path)
+            with os.fdopen(fd, "w") as f:
+                f.write(combined_prompt)
+            args.extend(["--system-prompt-file", str(temp_prompt_file)])
+            logger.info(f"[CLAUDE] System prompt file: {temp_prompt_file} ({len(combined_prompt)} chars)")
 
         # Add MCP config if provided
         if mcp_config and mcp_config.exists():
@@ -170,12 +215,16 @@ class CLIProcessManager:
             model=model,
             agent_name=agent_path.stem if agent_path else None,
             status=SessionStatus.RUNNING,
+            temp_prompt_file=temp_prompt_file,
+            claude_session_id=claude_session_id,
+            thinking_budget=thinking_budget,
+            mcp_config=mcp_config,
         )
 
         async with self._lock:
             self._processes[session_id] = cli_proc
 
-        logger.info(f"[CLAUDE] Spawned process PID={process.pid} for session {session_id}")
+        logger.info(f"[CLAUDE] Spawned process PID={process.pid} for session {session_id} (claude_session={claude_session_id})")
         return cli_proc
 
     async def spawn_gemini(
@@ -184,6 +233,7 @@ class CLIProcessManager:
         working_dir: Path,
         model: str = "gemini-3-pro-preview",
         reasoning: bool = False,
+        context: str | None = None,
     ) -> CLIProcess:
         """Spawn a new Gemini CLI process.
 
@@ -192,6 +242,7 @@ class CLIProcessManager:
             working_dir: Working directory for CLI
             model: Gemini model to use
             reasoning: Enable deep reasoning mode
+            context: Context to prepend to first message (Gemini doesn't have system-prompt-file)
 
         Returns:
             CLIProcess instance
@@ -199,6 +250,7 @@ class CLIProcessManager:
         Note:
             Gemini CLI doesn't support stdin input like Claude.
             Each message spawns a new process with prompt as argument.
+            Context is stored and prepended to the first message.
         """
         async with self._lock:
             if session_id in self._processes:
@@ -222,11 +274,76 @@ class CLIProcessManager:
             status=SessionStatus.IDLE,
         )
 
+        # Store context for Gemini (will be prepended to first message)
+        if context:
+            cli_proc._gemini_context = context
+            cli_proc._context_used = False
+            logger.info(f"[GEMINI] Context stored: {len(context)} chars (will prepend to first msg)")
+
         async with self._lock:
             self._processes[session_id] = cli_proc
 
         logger.info(f"[GEMINI] Session {session_id} created (process spawns per message)")
         return cli_proc
+
+    async def _respawn_claude_with_resume(self, proc: CLIProcess) -> None:
+        """Respawn Claude process with --resume to continue conversation.
+
+        When a Claude process ends (after processing a message), this method
+        spawns a new process that resumes the same conversation using
+        Claude CLI's --resume flag.
+
+        Args:
+            proc: The CLIProcess to respawn
+        """
+        if not proc.claude_session_id:
+            raise RuntimeError("Cannot respawn: no claude_session_id")
+
+        # Build environment
+        env = os.environ.copy()
+        env["TMPDIR"] = "/tmp"
+        env["PYTHONUNBUFFERED"] = "1"
+        env["NODE_OPTIONS"] = "--no-warnings"
+
+        if proc.thinking_budget:
+            env["MAX_THINKING_TOKENS"] = str(proc.thinking_budget)
+
+        # Build args with --resume instead of --session-id
+        args = [
+            "claude",
+            "--print",
+            "--resume",
+            proc.claude_session_id,  # Continue existing conversation
+            "--verbose",
+            "--dangerously-skip-permissions",
+            "--model",
+            proc.model,
+            "--output-format",
+            "stream-json",
+        ]
+
+        # Add MCP config if available
+        if proc.mcp_config and proc.mcp_config.exists():
+            args.extend(["--mcp-config", str(proc.mcp_config)])
+
+        # Spawn new process
+        new_process = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(proc.working_dir),
+            env=env,
+        )
+
+        # Replace the old process
+        proc.process = new_process
+        proc.status = SessionStatus.RUNNING
+
+        logger.info(
+            f"[CLAUDE] Respawned process PID={new_process.pid} with --resume "
+            f"(claude_session={proc.claude_session_id})"
+        )
 
     async def send_message(
         self,
@@ -270,9 +387,10 @@ class CLIProcessManager:
         process = proc.process
 
         if not process or process.returncode is not None:
-            # Process ended, need to respawn
-            # For now, raise error - respawn logic can be added later
-            raise RuntimeError("Claude process has ended")
+            # Process ended, respawn with --resume to continue conversation
+            logger.info("[CLAUDE] Process ended, respawning with --resume")
+            await self._respawn_claude_with_resume(proc)
+            process = proc.process  # Get the new process
 
         proc.status = SessionStatus.STREAMING
 
@@ -289,26 +407,22 @@ class CLIProcessManager:
             logger.error(f"[CLAUDE] Stdin error: {e}")
             raise
 
-        # Read stdout with streaming
-        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        output_chunks = []
-
+        # Read stdout LINE BY LINE for proper streaming
+        # stream-json outputs one JSON object per line
         try:
             async with asyncio.timeout(timeout):
                 while True:
-                    chunk = await process.stdout.read(1024)
-                    if not chunk:
-                        # Flush remaining
-                        decoded = decoder.decode(b"", final=True)
-                        if decoded:
-                            output_chunks.append(decoded)
-                            yield decoded
+                    # Read line by line - this is key for streaming!
+                    line_bytes = await process.stdout.readline()
+                    if not line_bytes:
                         break
 
-                    decoded = decoder.decode(chunk)
-                    if decoded:
-                        output_chunks.append(decoded)
-                        yield decoded
+                    line = line_bytes.decode("utf-8", errors="replace")
+                    logger.debug(f"[CLAUDE] Line: {len(line)} chars")
+
+                    # Yield each line immediately
+                    if line:
+                        yield line
 
         except asyncio.TimeoutError:
             logger.error(f"[CLAUDE] Timeout after {timeout}s")
@@ -338,13 +452,27 @@ class CLIProcessManager:
         # Build environment
         env = os.environ.copy()
 
+        # Prepend context to first message if available
+        full_message = message
+        if hasattr(proc, "_gemini_context") and not getattr(proc, "_context_used", True):
+            context = proc._gemini_context
+            full_message = f"""<context>
+{context}
+</context>
+
+---
+
+{message}"""
+            proc._context_used = True
+            logger.info(f"[GEMINI] Context prepended to message ({len(context)} chars)")
+
         # Gemini expects prompt as positional argument
         args = [
             "gemini",
             "-m",
             proc.model,
             "--yolo",
-            message,
+            full_message,
         ]
 
         process = await asyncio.create_subprocess_exec(
@@ -415,6 +543,9 @@ class CLIProcessManager:
             except asyncio.TimeoutError:
                 logger.warning(f"[{proc.cli_type.value.upper()}] Force killing PID={proc.pid}")
                 proc.process.kill()
+
+        # Cleanup temporary files
+        proc.cleanup()
 
         return True
 

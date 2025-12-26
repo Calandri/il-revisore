@@ -89,6 +89,102 @@
     background: #0f172a;
 }
 
+/* Chat message markdown styling */
+.chat-message-content {
+    line-height: 1.6;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+/* Ensure long content doesn't break layout */
+.chat-message-content * {
+    max-width: 100%;
+}
+
+/* Collapsible details styling */
+.chat-message-content details {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+}
+
+.dark .chat-message-content details {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-message-content details summary {
+    list-style: none;
+    user-select: none;
+}
+
+.chat-message-content details summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-message-content details[open] summary svg {
+    transform: rotate(90deg);
+}
+
+.chat-message-content pre {
+    margin: 0.75rem 0;
+    border-radius: 0.5rem;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-message-content pre code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.chat-message-content code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.chat-message-content blockquote {
+    border-left-width: 4px;
+    padding-left: 1rem;
+    margin: 0.75rem 0;
+    font-style: italic;
+}
+
+.chat-message-content ul,
+.chat-message-content ol {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+}
+
+.chat-message-content li {
+    margin: 0.25rem 0;
+}
+
+.chat-message-content h1,
+.chat-message-content h2,
+.chat-message-content h3 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.chat-message-content a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.chat-message-content a:hover {
+    text-decoration-thickness: 2px;
+}
+
+/* Code block syntax highlighting colors */
+.chat-message-content pre .keyword { color: #c678dd; }
+.chat-message-content pre .string { color: #98c379; }
+.chat-message-content pre .number { color: #d19a66; }
+.chat-message-content pre .comment { color: #5c6370; font-style: italic; }
+.chat-message-content pre .function { color: #61afef; }
+.chat-message-content pre .class { color: #e5c07b; }
+
 /* Button hover effects */
 button, a {
     transition: all 0.15s ease;

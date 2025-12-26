@@ -10,6 +10,13 @@ from .agent_loader import AgentLoader, AgentContent, get_agent_loader
 from .process_manager import CLIProcessManager, CLIProcess, get_process_manager
 from .mcp_manager import MCPManager, MCPServer, get_mcp_manager
 from .hooks import ChatHooks, HookRegistry, get_hook_registry, register_hook, trigger_hooks
+from .context_generator import (
+    generate_context,
+    get_context_for_session,
+    get_cached_context,
+    save_context_file,
+    invalidate_context_cache,
+)
 
 __all__ = [
     # Models
@@ -36,4 +43,10 @@ __all__ = [
     "get_hook_registry",
     "register_hook",
     "trigger_hooks",
+    # Context Generator
+    "generate_context",
+    "get_context_for_session",
+    "get_cached_context",
+    "save_context_file",
+    "invalidate_context_cache",
 ]

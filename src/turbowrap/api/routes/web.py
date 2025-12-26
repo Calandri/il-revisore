@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from ...db.models import ChatSession, Repository, Setting, Task
+from ...db.models import Repository, Setting, Task
 from ...utils.aws_secrets import get_anthropic_api_key
 from ...utils.git_utils import smart_push_with_conflict_resolution
 from ..deps import get_current_user, get_db
@@ -45,22 +45,13 @@ async def repos_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request, db: Session = Depends(get_db)):
-    """Chat interface page."""
-    sessions = (
-        db.query(ChatSession)
-        .order_by(ChatSession.updated_at.desc())
-        .limit(20)
-        .all()
-    )
+async def chat_page(request: Request):
+    """Chat CLI interface page - opens sidebar in page mode."""
     templates = request.app.state.templates
     return templates.TemplateResponse(
         "pages/chat.html",
         {
             "request": request,
-            "sessions": sessions,
-            "session": None,
-            "messages": [],
             "active_page": "chat",
             "current_user": get_current_user(request),
         }
@@ -71,38 +62,9 @@ async def chat_page(request: Request, db: Session = Depends(get_db)):
 async def chat_session_page(
     request: Request,
     session_id: str,
-    db: Session = Depends(get_db)
 ):
-    """Specific chat session page."""
-    session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
-    templates = request.app.state.templates
-    current_user = get_current_user(request)
-
-    if not session:
-        return templates.TemplateResponse(
-            "pages/chat.html",
-            {
-                "request": request,
-                "sessions": [],
-                "session": None,
-                "messages": [],
-                "active_page": "chat",
-                "error": "Session not found",
-                "current_user": current_user,
-            },
-            status_code=404
-        )
-
-    return templates.TemplateResponse(
-        "pages/chat.html",
-        {
-            "request": request,
-            "session": session,
-            "messages": session.messages,
-            "active_page": "chat",
-            "current_user": current_user,
-        }
-    )
+    """Redirect old chat session URLs to main chat page."""
+    return RedirectResponse(url="/chat", status_code=302)
 
 
 @router.get("/system-status", response_class=HTMLResponse)

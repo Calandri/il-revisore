@@ -4,7 +4,8 @@
        x-init="init()"
        class="fixed right-0 top-0 h-full bg-white dark:bg-gray-900 shadow-2xl transition-all duration-300 z-40 flex flex-col border-l border-gray-200 dark:border-gray-700"
        :class="{
-           'w-[420px]': chatMode === 'full',
+           'w-[calc(100vw-16rem)]': chatMode === 'page',
+           'w-[520px]': chatMode === 'full',
            'w-[340px]': chatMode === 'third',
            'w-16': chatMode === 'icons'
        }"
@@ -19,6 +20,14 @@
     <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/20 dark:to-purple-500/20">
         <!-- Mode Toggle -->
         <div x-show="chatMode !== 'icons'" class="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm">
+            <button @click="chatMode = 'page'"
+                    :class="chatMode === 'page' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                    class="px-2 py-1.5 rounded-md text-xs font-semibold transition-all"
+                    title="2/3 schermo">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM9 4v16"/>
+                </svg>
+            </button>
             <button @click="chatMode = 'full'"
                     :class="chatMode === 'full' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
                     class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
@@ -159,6 +168,16 @@
                             <span x-show="session.agent_name" class="text-xs text-purple-500 bg-purple-100 dark:bg-purple-500/20 px-1.5 py-0.5 rounded-md" x-text="session.agent_name"></span>
                         </div>
                     </div>
+
+                    <!-- Delete button (visible on hover) -->
+                    <button @click.stop="deleteSession(session.id)"
+                            x-show="chatMode !== 'icons'"
+                            class="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-all shrink-0"
+                            title="Elimina chat">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
                 </div>
             </template>
 
@@ -303,7 +322,7 @@
                             ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md'
                             : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm'"
                          class="max-w-[85%] px-4 py-3">
-                        <div class="text-sm leading-relaxed whitespace-pre-wrap" x-html="formatMessage(msg.content)"></div>
+                        <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content)"></div>
                         <div :class="msg.role === 'user' ? 'text-white/60' : 'text-gray-400'"
                              class="text-xs mt-2"
                              x-text="new Date(msg.created_at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})"></div>
@@ -311,11 +330,32 @@
                 </div>
             </template>
 
+            <!-- System Info (collapsible) -->
+            <div x-show="systemInfo.length > 0" class="flex justify-center">
+                <details class="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-xs max-w-[90%]">
+                    <summary class="cursor-pointer flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 select-none">
+                        <svg class="w-4 h-4 transition-transform" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        <span class="font-medium">Info sistema</span>
+                        <span class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px]" x-text="systemInfo.length + ' eventi'"></span>
+                    </summary>
+                    <div class="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                        <template x-for="(info, idx) in systemInfo" :key="idx">
+                            <div class="bg-gray-200 dark:bg-gray-700 rounded p-2 text-[10px] font-mono overflow-x-auto">
+                                <div class="text-gray-600 dark:text-gray-300 mb-1" x-text="info.subtype || info.type"></div>
+                                <pre class="text-gray-500 dark:text-gray-400 whitespace-pre-wrap" x-text="JSON.stringify(info, null, 2).slice(0, 500) + (JSON.stringify(info).length > 500 ? '...' : '')"></pre>
+                            </div>
+                        </template>
+                    </div>
+                </details>
+            </div>
+
             <!-- Streaming response -->
             <div x-show="streaming" class="flex justify-start">
                 <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm max-w-[85%] px-4 py-3">
-                    <div class="text-sm leading-relaxed whitespace-pre-wrap" x-html="formatMessage(streamContent)"></div>
-                    <div class="flex items-center gap-1 mt-2">
+                    <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent)"></div>
+                    <div class="flex items-center gap-1" :class="streamContent ? 'mt-2' : ''">
                         <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
                         <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
                         <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
