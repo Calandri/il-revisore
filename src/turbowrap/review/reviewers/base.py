@@ -36,7 +36,7 @@ class ReviewContext:
     # Agent system prompt (from markdown files)
     agent_prompt: str | None = None
 
-    # Structure documentation (STRUCTURE.md files found in repo)
+    # Structure documentation (.llms/structure.xml)
     structure_docs: dict[str, str] = field(default_factory=dict)
 
     # Business context (extracted from structure.xml or provided)

@@ -333,7 +333,7 @@ class ReviewStreamRequest(BaseModel):
     """Request body for streaming review."""
     mode: Literal["initial", "diff"] = Field(
         default="initial",
-        description="Review mode: 'initial' for STRUCTURE.md only, 'diff' for changed files"
+        description="Review mode: 'initial' for .llms/structure.xml only, 'diff' for changed files"
     )
     challenger_enabled: bool = Field(
         default=True,
@@ -363,7 +363,7 @@ async def stream_review(
 
     Args:
         repository_id: Repository UUID
-        mode: 'initial' (STRUCTURE.md architecture review) or 'diff' (changed files)
+        mode: 'initial' (.llms/structure.xml architecture review) or 'diff' (changed files)
 
     Returns server-sent events with progress updates from all parallel reviewers.
     """
@@ -515,28 +515,18 @@ async def restart_reviewer(
             context.files = files[:100]  # Limit to 100 files
             logger.info(f"[RESTART] Found {len(context.files)} files to review")
 
-            # Check and regenerate stale STRUCTURE.md files
-            from ...tools.structure_generator import StructureGenerator
-
-            generator = StructureGenerator(context.repo_path)
-            stale_dirs = generator.check_stale_structures()
-
-            if stale_dirs:
-                logger.info(f"[RESTART] Found {len(stale_dirs)} stale STRUCTURE.md files, regenerating...")
-                regenerated = generator.regenerate_stale(verbose=False)
-                logger.info(f"[RESTART] Regenerated {len(regenerated)} STRUCTURE.md files")
-
-            # Load STRUCTURE.md files
-            structure_files = list(context.repo_path.rglob("STRUCTURE.md"))
-            for structure_file in structure_files:
-                rel_path = structure_file.relative_to(context.repo_path)
-                if any(part in exclude_dirs for part in rel_path.parts):
-                    continue
+            # Load .llms/structure.xml (consolidated XML format, optimized for LLM)
+            # Note: Always load from repo root since structure.xml is repo-wide
+            xml_path = context.repo_path / ".llms" / "structure.xml"
+            if xml_path.exists():
                 try:
-                    content = structure_file.read_text(encoding="utf-8")
-                    context.structure_docs[str(rel_path)] = content
-                except Exception:
-                    pass
+                    content = xml_path.read_text(encoding="utf-8")
+                    context.structure_docs["structure.xml"] = content
+                    logger.info(f"[RESTART] Loaded .llms/structure.xml ({xml_path.stat().st_size:,} bytes)")
+                except Exception as e:
+                    logger.warning(f"[RESTART] Failed to read {xml_path}: {e}")
+            else:
+                logger.info("[RESTART] No .llms/structure.xml found - structure docs not available")
 
             # Create progress callbacks
             async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
