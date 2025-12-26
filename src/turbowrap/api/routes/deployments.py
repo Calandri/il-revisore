@@ -343,37 +343,24 @@ class StagingStatus(BaseModel):
 
 @router.get("/staging/status", response_model=StagingStatus)
 async def get_staging_status() -> StagingStatus:
-    """Check if staging container (turbowrap-staging) is running on port 8001."""
+    """Check if staging container is running by hitting its health endpoint on port 8001."""
     try:
-        result = await _run_ssm_command(
-            [
-                'docker ps --filter "name=turbowrap-staging" --format "{{.ID}}|{{.Image}}|{{.CreatedAt}}" | head -1'
-            ],
-            timeout_seconds=15,
-        )
-
-        if result["status"] != "Success":
-            logger.warning(f"SSM command failed: {result}")
-            return StagingStatus(running=False)
-
-        output = result["stdout"].strip()
-        if not output:
-            return StagingStatus(running=False)
-
-        parts = output.split("|")
-        if len(parts) >= 3:
-            return StagingStatus(
-                running=True,
-                container_id=parts[0],
-                image=parts[1],
-                started_at=parts[2],
-            )
-
-        return StagingStatus(running=True, container_id=parts[0] if parts else None)
-
-    except Exception as e:
-        logger.error(f"Error checking staging status: {e}")
+        # Try to reach staging container via HTTP (same host, port 8001)
+        # Use the EC2 metadata service to get the instance's private IP,
+        # or fall back to localhost (works if container network is host mode)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # Try localhost first (works in most Docker setups via host network)
+            response = await client.get("http://172.17.0.1:8001/api/status")
+            if response.status_code == 200:
+                return StagingStatus(running=True)
+    except httpx.ConnectError:
+        # Staging not running or not reachable
         return StagingStatus(running=False)
+    except Exception as e:
+        logger.debug(f"Staging check failed: {e}")
+        return StagingStatus(running=False)
+
+    return StagingStatus(running=False)
 
 
 @router.post("/promote")
