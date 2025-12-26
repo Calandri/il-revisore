@@ -59,3 +59,9 @@ class DatabaseError(TurboWrapError):
     """Database operation error."""
 
     pass
+
+
+class SecurityError(TurboWrapError):
+    """Security violation error."""
+
+    pass
