@@ -503,13 +503,13 @@ class Orchestrator:
 
     def _load_structure_docs(self, context: ReviewContext) -> None:
         """
-        Find and load all STRUCTURE.md files in the repository.
+        Load repository structure documentation for LLM context.
 
-        These files contain important documentation about the codebase
-        architecture and are loaded into context.structure_docs.
+        Priority order:
+        1. .llms/structure.xml (consolidated XML format, optimized for LLM)
+        2. STRUCTURE.md files (legacy markdown format, fallback)
 
-        If workspace_path is set (monorepo), only loads STRUCTURE.md files
-        within that workspace subfolder.
+        If workspace_path is set (monorepo), only loads from that subfolder.
         """
         if not context.repo_path:
             return
@@ -520,10 +520,22 @@ class Orchestrator:
             if not search_base.exists():
                 logger.warning(f"Workspace path does not exist: {search_base}")
                 return
-            logger.info(f"Scanning for STRUCTURE.md files in workspace: {context.workspace_path}")
         else:
             search_base = context.repo_path
-            logger.info("Scanning for STRUCTURE.md files...")
+
+        # Priority 1: .llms/structure.xml (consolidated XML format)
+        xml_path = search_base / ".llms" / "structure.xml"
+        if xml_path.exists():
+            try:
+                content = xml_path.read_text(encoding="utf-8")
+                context.structure_docs["structure.xml"] = content
+                logger.info(f"Loaded .llms/structure.xml ({xml_path.stat().st_size:,} bytes)")
+                return  # Use XML exclusively, don't load STRUCTURE.md
+            except Exception as e:
+                logger.warning(f"Failed to read {xml_path}: {e}")
+
+        # Fallback: STRUCTURE.md files (legacy format)
+        logger.info("No .llms/structure.xml found, falling back to STRUCTURE.md files...")
 
         # Find all STRUCTURE.md files within search base
         structure_files = list(search_base.rglob("STRUCTURE.md"))
@@ -562,16 +574,17 @@ class Orchestrator:
         emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
     ) -> None:
         """
-        Auto-generate STRUCTURE.md files using Gemini Flash.
+        Auto-generate structure documentation using Gemini Flash.
 
-        Called when INITIAL mode review is requested but no STRUCTURE.md exists.
+        Generates both .llms/structure.xml (for LLM) and STRUCTURE.md (for humans).
+        Called when INITIAL mode review is requested but no structure docs exist.
 
         Args:
             context: Review context with repo_path set
             emit: Optional callback for progress events
         """
         if not context.repo_path:
-            logger.error("Cannot generate STRUCTURE.md: no repo_path set")
+            logger.error("Cannot generate structure: no repo_path set")
             return
 
         # Determine target directory: workspace subfolder or full repo
@@ -589,7 +602,7 @@ class Orchestrator:
         if emit:
             await emit(ProgressEvent(
                 type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
-                message=f"Generating STRUCTURE.md for {display_name}...",
+                message=f"Generating structure documentation for {display_name}...",
             ))
 
         try:
@@ -607,6 +620,7 @@ class Orchestrator:
                 ))
 
             # Run generation (sync method, run in executor)
+            # Generates both XML (.llms/structure.xml) and Markdown (STRUCTURE.md)
             loop = asyncio.get_event_loop()
             generated_files = await loop.run_in_executor(
                 None,
@@ -617,18 +631,18 @@ class Orchestrator:
             if emit:
                 await emit(ProgressEvent(
                     type=ProgressEventType.STRUCTURE_GENERATION_COMPLETED,
-                    message=f"Generated {len(generated_files)} STRUCTURE.md file(s)",
+                    message=f"Generated {len(generated_files)} structure file(s)",
                 ))
 
-            logger.info(f"Auto-generated {len(generated_files)} STRUCTURE.md files")
+            logger.info(f"Auto-generated {len(generated_files)} structure files")
 
         except Exception as e:
-            logger.error(f"Failed to auto-generate STRUCTURE.md: {e}")
+            logger.error(f"Failed to auto-generate structure: {e}")
             if emit:
                 await emit(ProgressEvent(
                     type=ProgressEventType.REVIEW_ERROR,
                     error=f"Structure generation failed: {str(e)}",
-                    message="Failed to generate STRUCTURE.md - proceeding without it",
+                    message="Failed to generate structure docs - proceeding without them",
                 ))
 
     async def _load_file_contents(self, context: ReviewContext) -> None:

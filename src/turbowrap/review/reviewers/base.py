@@ -66,12 +66,26 @@ class ReviewContext:
         """
         Get structure documentation context.
 
+        Handles both XML (.llms/structure.xml) and Markdown (STRUCTURE.md) formats.
+        XML is wrapped in semantic tags for better LLM parsing.
+
         Returns:
-            Formatted STRUCTURE.md contents
+            Formatted structure documentation
         """
         if not self.structure_docs:
             return ""
 
+        # Check if we have XML format (single consolidated file)
+        if "structure.xml" in self.structure_docs:
+            xml_content = self.structure_docs["structure.xml"]
+            return f"""## Repository Structure
+
+<repository-structure>
+{xml_content}
+</repository-structure>
+"""
+
+        # Fallback: Markdown format (multiple STRUCTURE.md files)
         sections = ["## Repository Structure Documentation\n"]
         sections.append("The following STRUCTURE.md files describe the codebase architecture:\n")
 

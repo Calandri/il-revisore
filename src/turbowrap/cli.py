@@ -432,6 +432,134 @@ def check():
 
 
 # ============================================================================
+# Auto-Update Commands
+# ============================================================================
+
+autoupdate_app = typer.Typer(help="Auto-update functionality discovery")
+app.add_typer(autoupdate_app, name="autoupdate")
+
+
+@autoupdate_app.command("run")
+def autoupdate_run(
+    repo_path: Path = typer.Argument(Path.cwd(), help="Repository path"),
+    step: int | None = typer.Option(None, "--step", "-s", help="Run single step (1-4)"),
+    resume: bool = typer.Option(False, "--resume", "-r", help="Resume from checkpoint"),
+    run_id: str | None = typer.Option(None, "--run-id", help="Existing run ID for resume"),
+):
+    """Run auto-update workflow to discover new features."""
+    import asyncio
+
+    from .tools.auto_update import AutoUpdateOrchestrator
+
+    # Check API keys
+    if not _check_api_keys(require_claude=True, require_gemini=True):
+        raise typer.Exit(1)
+
+    console.print("=" * 60)
+    console.print("[bold blue]TurboWrap[/] - Auto-Update Workflow")
+    console.print("=" * 60)
+    console.print(f"  Repository: {repo_path}")
+    if run_id:
+        console.print(f"  Run ID: {run_id}")
+    console.print("=" * 60)
+
+    orchestrator = AutoUpdateOrchestrator(
+        repo_path=repo_path,
+        run_id=run_id,
+    )
+
+    async def progress(step_name: str, number: int, message: str):
+        console.print(f"[dim]Step {number}:[/] {message}")
+
+    try:
+        if resume:
+            result = asyncio.run(orchestrator.resume())
+        elif step:
+            result = asyncio.run(orchestrator.run_step(step))
+        else:
+            result = asyncio.run(orchestrator.run_all(progress_callback=progress))
+
+        # Summary
+        console.print("\n[bold green]Auto-Update Complete![/]")
+        console.print(f"  Run ID: {result.run_id}")
+
+        if result.step1 and result.step1.functionalities:
+            console.print(f"  Functionalities found: {len(result.step1.functionalities)}")
+
+        if result.step3 and result.step3.proposed_features:
+            console.print(f"  Features proposed: {len(result.step3.proposed_features)}")
+
+        if result.step4 and result.step4.created_issues:
+            console.print(f"  Issues created: {len(result.step4.created_issues)}")
+            for issue in result.step4.created_issues:
+                console.print(f"    - {issue.linear_identifier}: {issue.title}")
+
+    except Exception as e:
+        console.print(f"[bold red]Error:[/] {e}")
+        raise typer.Exit(1)
+
+
+@autoupdate_app.command("status")
+def autoupdate_status(
+    run_id: str = typer.Argument(..., help="Run ID to check"),
+):
+    """Check status of auto-update run."""
+    import asyncio
+
+    from .tools.auto_update.storage import S3CheckpointManager
+
+    manager = S3CheckpointManager()
+    status = asyncio.run(manager.get_run_status(run_id))
+
+    if not status:
+        console.print(f"[bold red]✗[/] Run not found: {run_id}")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold]Run:[/] {status['run_id']}")
+    console.print(f"[bold]Current Step:[/] {status['current_step']}")
+    console.print(f"[bold]Completed:[/] {'Yes' if status['completed'] else 'No'}")
+
+    console.print("\n[bold]Steps:[/]")
+    for step_name, step_info in status.get("steps", {}).items():
+        status_icon = "✓" if step_info["status"] == "completed" else "○"
+        console.print(f"  [{status_icon}] {step_name}: {step_info['status']}")
+        if step_info.get("error"):
+            console.print(f"      Error: {step_info['error']}")
+
+
+@autoupdate_app.command("list")
+def autoupdate_list(
+    limit: int = typer.Option(10, "--limit", "-l", help="Number of runs to show"),
+):
+    """List recent auto-update runs."""
+    import asyncio
+
+    from .tools.auto_update.storage import S3CheckpointManager
+
+    manager = S3CheckpointManager()
+    runs = asyncio.run(manager.list_runs(limit=limit))
+
+    if not runs:
+        console.print("[yellow]No runs found.[/]")
+        return
+
+    table = Table(title="Recent Auto-Update Runs")
+    table.add_column("Run ID", style="dim")
+    table.add_column("Started At")
+    table.add_column("Steps Completed")
+
+    for run in runs:
+        steps = ", ".join(run.get("steps_completed", []))
+        table.add_row(
+            run["run_id"],
+            run["started_at"][:19],
+            steps or "-",
+        )
+
+    console.print(table)
+
+
+# ============================================================================
 # Main
 # ============================================================================
 

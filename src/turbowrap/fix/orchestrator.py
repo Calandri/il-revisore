@@ -31,6 +31,7 @@ from turbowrap.fix.models import (
     ScopeValidationError,
 )
 from turbowrap.utils.aws_secrets import get_anthropic_api_key, get_google_api_key
+from turbowrap.chat_cli.context_generator import load_structure_documentation
 
 # S3 bucket for fix logs (same as thinking logs)
 S3_BUCKET = "turbowrap-thinking"
@@ -976,6 +977,17 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         return batch_score, failed_issues, per_issue_scores, quality_scores
 
+    def _load_structure_doc(self, workspace_path: str | None = None) -> str | None:
+        """Load structure documentation for context.
+
+        Args:
+            workspace_path: Optional monorepo workspace path
+
+        Returns:
+            Structure documentation content, or None if not found
+        """
+        return load_structure_documentation(self.repo_path, workspace_path)
+
     def _build_fix_prompt(
         self,
         issues: list[Issue],
@@ -1001,6 +1013,33 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         # Build task with all issues
         task_parts = ["# Task: Fix Code Issues\n"]
+
+        # Add structure documentation for repository context
+        structure_doc = self._load_structure_doc(workspace_path)
+        if structure_doc:
+            # Wrap XML in semantic tags for better LLM parsing
+            if structure_doc.strip().startswith("<?xml"):
+                task_parts.append(f"""
+## Repository Structure
+
+Use this structure documentation to understand the codebase architecture:
+
+<repository-structure>
+{structure_doc}
+</repository-structure>
+
+---
+""")
+            else:
+                task_parts.append(f"""
+## Repository Structure
+
+Use this structure documentation to understand the codebase architecture:
+
+{structure_doc}
+
+---
+""")
 
         # Add workspace scope restriction if set
         if workspace_path:

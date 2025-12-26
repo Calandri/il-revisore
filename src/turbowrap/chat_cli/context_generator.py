@@ -17,6 +17,61 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def load_structure_documentation(
+    repo_path: Path | str,
+    workspace_path: str | None = None,
+) -> str | None:
+    """
+    Load repository structure documentation for context injection.
+
+    Prioritizes XML format over Markdown for better LLM parsing.
+
+    Args:
+        repo_path: Path to the repository root
+        workspace_path: Optional monorepo workspace subfolder
+
+    Returns:
+        Structure documentation content, or None if not found
+    """
+    base = Path(repo_path)
+    if workspace_path:
+        workspace_base = base / workspace_path
+        if workspace_base.exists():
+            base = workspace_base
+
+    # Priority 1: .llms/structure.xml (consolidated XML format)
+    xml_path = base / ".llms" / "structure.xml"
+    if xml_path.exists():
+        try:
+            content = xml_path.read_text(encoding="utf-8")
+            logger.info(f"Loaded structure from {xml_path} ({xml_path.stat().st_size:,} bytes)")
+            return content
+        except Exception as e:
+            logger.warning(f"Failed to read {xml_path}: {e}")
+
+    # Fallback: Concatenate STRUCTURE.md files
+    structure_docs: list[str] = []
+    for structure_file in base.rglob("STRUCTURE.md"):
+        # Skip common ignored directories
+        rel_path = structure_file.relative_to(base)
+        if any(part.startswith(".") or part in {
+            "node_modules", "__pycache__", ".venv", "venv", "dist", "build"
+        } for part in rel_path.parts):
+            continue
+
+        try:
+            content = structure_file.read_text(encoding="utf-8")
+            structure_docs.append(f"### {rel_path}\n\n{content}")
+        except Exception as e:
+            logger.warning(f"Failed to read {structure_file}: {e}")
+
+    if structure_docs:
+        logger.info(f"Loaded {len(structure_docs)} STRUCTURE.md files")
+        return "\n\n---\n\n".join(structure_docs)
+
+    return None
+
 # Template del context
 CONTEXT_TEMPLATE = """# TurboWrap Context
 Generated: {timestamp}
@@ -306,6 +361,28 @@ Stai lavorando su **{repo.name}** ({repo.repo_type or 'generic'}).
 - **URL**: {repo.url}
 
 Quando modifichi file, usa path relativi a: `{repo.local_path}`
+""")
+            # Load structure documentation if available
+            if repo.local_path:
+                structure_doc = load_structure_documentation(
+                    repo.local_path,
+                    workspace_path=getattr(repo, 'workspace_path', None),
+                )
+                if structure_doc:
+                    # Wrap XML in semantic tags for better LLM parsing
+                    if structure_doc.strip().startswith("<?xml"):
+                        extras.append(f"""
+## Repository Structure
+
+<repository-structure>
+{structure_doc}
+</repository-structure>
+""")
+                    else:
+                        extras.append(f"""
+## Repository Structure
+
+{structure_doc}
 """)
 
     if linear_issue_id:
