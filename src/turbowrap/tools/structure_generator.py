@@ -141,6 +141,7 @@ class StructureGenerator:
     def __init__(
         self,
         repo_path: Path,
+        workspace_path: str | None = None,
         max_depth: int = MAX_TREE_DEPTH,
         max_workers: int = 5,
         gemini_client: object | None = None,
@@ -150,11 +151,18 @@ class StructureGenerator:
 
         Args:
             repo_path: Path to repository root
+            workspace_path: Optional workspace subfolder for monorepo (e.g., "apps/helpdesk")
             max_depth: Maximum directory depth to process
             max_workers: Number of parallel workers for file analysis
             gemini_client: Optional Gemini client for element extraction
         """
         self.repo_path = Path(repo_path).resolve()
+        self.workspace_path = workspace_path
+        # For monorepo: scan only the workspace, not the entire repo
+        if workspace_path:
+            self.scan_root = self.repo_path / workspace_path
+        else:
+            self.scan_root = self.repo_path
         self.max_depth = max_depth
         self.max_workers = max_workers
         self.gemini_client = gemini_client
@@ -503,7 +511,8 @@ models: Data models and schemas
 
             return dir_struct if (dir_struct.files or dir_struct.subdirectories) else None
 
-        root = scan_dir(self.repo_path, 1)
+        # Use scan_root for monorepo workspace support
+        root = scan_dir(self.scan_root, 1)
         if root:
             # Flatten for processing (BFS order)
             queue = [root]
@@ -930,7 +939,8 @@ Be concise. Only list the most important elements (max 10).
         ]
 
         # Create .llms directory and write file
-        llms_dir = self.repo_path / ".llms"
+        # For monorepo: put in workspace/.llms/, otherwise repo_root/.llms/
+        llms_dir = self.scan_root / ".llms"
         llms_dir.mkdir(parents=True, exist_ok=True)
 
         output_path = llms_dir / "structure.xml"

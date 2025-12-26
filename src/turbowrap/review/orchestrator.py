@@ -493,9 +493,20 @@ class Orchestrator:
             if not context.structure_docs:
                 logger.warning("Structure generation completed but .llms/structure.xml not found!")
 
-        # INITIAL mode: Only use structure docs, no code files
+        # INITIAL mode: Use structure docs + file list (no file contents)
         if mode == ReviewMode.INITIAL:
             logger.info("INITIAL mode: Reviewing architecture via .llms/structure.xml only")
+            # Scan files for reference (challenger needs file list)
+            if context.workspace_path:
+                scan_base = context.repo_path / context.workspace_path
+                if scan_base.exists():
+                    workspace_files = self._scan_directory(scan_base)
+                    context.files = [f"{context.workspace_path}/{f}" for f in workspace_files]
+                else:
+                    logger.warning(f"Workspace path does not exist: {scan_base}")
+                    context.files = self._scan_directory(context.repo_path)
+            else:
+                context.files = self._scan_directory(context.repo_path)
             # No file contents loaded - reviewers use only structure docs
 
         # DIFF mode: Load only changed/specified files
@@ -596,22 +607,26 @@ class Orchestrator:
         Only uses .llms/structure.xml (consolidated XML format, optimized for LLM).
         No fallback to STRUCTURE.md.
 
-        Always loads from repo root since structure.xml is repo-wide.
+        For monorepo: loads from workspace/.llms/structure.xml if workspace_path is set.
         """
         if not context.repo_path:
             return
 
-        # Always load from repo root (structure.xml is repo-wide, not per-workspace)
-        xml_path = context.repo_path / ".llms" / "structure.xml"
+        # For monorepo: load from workspace/.llms/structure.xml
+        if context.workspace_path:
+            xml_path = context.repo_path / context.workspace_path / ".llms" / "structure.xml"
+        else:
+            xml_path = context.repo_path / ".llms" / "structure.xml"
+
         if xml_path.exists():
             try:
                 content = xml_path.read_text(encoding="utf-8")
                 context.structure_docs["structure.xml"] = content
-                logger.info(f"Loaded .llms/structure.xml ({xml_path.stat().st_size:,} bytes)")
+                logger.info(f"Loaded {xml_path.relative_to(context.repo_path)} ({xml_path.stat().st_size:,} bytes)")
             except Exception as e:
                 logger.warning(f"Failed to read {xml_path}: {e}")
         else:
-            logger.info("No .llms/structure.xml found - structure docs not available")
+            logger.info(f"No {xml_path.relative_to(context.repo_path)} found - structure docs not available")
 
     async def _auto_generate_structure(
         self,
@@ -632,9 +647,13 @@ class Orchestrator:
             logger.error("Cannot generate structure: no repo_path set")
             return
 
-        # Always generate at repo root (structure.xml is repo-wide)
-        target_dir = context.repo_path
-        display_name = context.repo_path.name
+        # For monorepo: generate structure.xml only for the workspace
+        if context.workspace_path:
+            target_dir = context.repo_path / context.workspace_path
+            display_name = context.workspace_path
+        else:
+            target_dir = context.repo_path
+            display_name = context.repo_path.name
 
         # Emit start event
         if emit:
@@ -645,8 +664,10 @@ class Orchestrator:
 
         try:
             # Create generator with GeminiClient for semantic analysis
+            # Pass workspace_path for monorepo support
             generator = StructureGenerator(
-                str(target_dir),
+                str(context.repo_path),
+                workspace_path=context.workspace_path,
                 gemini_client=GeminiClient(),
             )
 

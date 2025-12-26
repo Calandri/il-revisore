@@ -159,6 +159,9 @@ class ChallengerLoop:
             # Step 1: Reviewer performs/refines review
             # CLI reviewers receive file list (not contents) and explore autonomously
             file_list = context.files
+            # For monorepo: ensure only workspace files are included (safety filter)
+            if context.workspace_path:
+                file_list = [f for f in file_list if f.startswith(f"{context.workspace_path}/")]
             logger.info(f"[LOOP] Files to review: {len(file_list)}")
 
             if current_review is None:
