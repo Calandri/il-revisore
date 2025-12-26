@@ -1,11 +1,13 @@
 """Authentication middleware."""
 
 import logging
+from collections.abc import Awaitable, Callable
+from typing import cast
 from urllib.parse import quote
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from ...config import get_settings
 from ..auth import refresh_access_token, verify_token
@@ -40,22 +42,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
     Redirects unauthenticated users to /login with a next parameter.
     """
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         settings = get_settings()
 
         # Skip if auth is disabled
         if not settings.auth.enabled:
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         path = request.url.path
 
         # Skip public paths
         if path in PUBLIC_PATHS:
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         # Skip public prefixes
         if any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES):
-            return await call_next(request)
+            return cast(Response, await call_next(request))
 
         # Check for valid session
         access_token = request.cookies.get(settings.auth.session_cookie_name)
@@ -71,8 +75,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         # Store new token in request state for downstream handlers
                         request.state.refreshed_access_token = new_tokens["access_token"]
                         # Proceed with request and set new cookie in response
-                        response = await call_next(request)
-                        response.set_cookie(
+                        refreshed_response: Response = await call_next(request)
+                        refreshed_response.set_cookie(
                             key=settings.auth.session_cookie_name,
                             value=new_tokens["access_token"],
                             max_age=settings.auth.session_max_age,
@@ -80,7 +84,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             secure=settings.auth.secure_cookies,
                             samesite="lax",
                         )
-                        return response
+                        return refreshed_response
                 except Exception as e:
                     logger.error(f"Token refresh error: {e}")
             return self._redirect_to_login(request)
@@ -97,8 +101,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         # Store new token in request state for downstream handlers
                         request.state.refreshed_access_token = new_tokens["access_token"]
                         # Proceed with request and set new cookie in response
-                        response = await call_next(request)
-                        response.set_cookie(
+                        invalid_token_response: Response = await call_next(request)
+                        invalid_token_response.set_cookie(
                             key=settings.auth.session_cookie_name,
                             value=new_tokens["access_token"],
                             max_age=settings.auth.session_max_age,
@@ -106,14 +110,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             secure=settings.auth.secure_cookies,
                             samesite="lax",
                         )
-                        return response
+                        return invalid_token_response
                 except Exception as e:
                     logger.error(f"Token refresh error: {e}")
             logger.warning(f"Invalid token for path: {path}")
             return self._redirect_to_login(request)
 
         # User is authenticated, proceed
-        return await call_next(request)
+        return cast(Response, await call_next(request))
 
     def _redirect_to_login(self, request: Request) -> RedirectResponse:
         """Create redirect response to login page."""

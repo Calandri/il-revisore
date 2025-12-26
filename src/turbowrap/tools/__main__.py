@@ -10,9 +10,10 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Literal
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="TurboWrap tools",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -65,8 +66,9 @@ with file statistics, extracted elements, and repository type detection.
         sys.exit(1)
 
 
-def run_structure_generator(args):
+def run_structure_generator(args: argparse.Namespace) -> None:
     """Run structure generator command."""
+    from turbowrap.llm.base import AgentResponse, BaseAgent
     from turbowrap.tools.structure_generator import StructureGenerator
 
     repo_path = args.repo_path.resolve()
@@ -84,7 +86,7 @@ def run_structure_generator(args):
     print("=" * 60)
 
     # Initialize Gemini client (default: enabled)
-    gemini_client = None
+    gemini_client: BaseAgent | None = None
     if not args.no_gemini:
         try:
             import os
@@ -94,17 +96,43 @@ def run_structure_generator(args):
             api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
             if api_key:
                 # Simple client wrapper for generate() method
-                class SimpleGeminiClient:
-                    def __init__(self):
-                        self.client = genai.Client(api_key=api_key)
-                        self.model = "gemini-3-flash-preview"
+                class SimpleGeminiClient(BaseAgent):
+                    def __init__(self) -> None:
+                        self._client = genai.Client(api_key=api_key)
+                        self._model = "gemini-3-flash-preview"
 
-                    def generate(self, prompt: str) -> str:
-                        response = self.client.models.generate_content(
-                            model=self.model,
+                    @property
+                    def name(self) -> str:
+                        return "SimpleGeminiClient"
+
+                    @property
+                    def model(self) -> str:
+                        return self._model
+
+                    @property
+                    def agent_type(self) -> Literal["gemini", "claude"]:
+                        return "gemini"
+
+                    def generate(self, prompt: str, system_prompt: str = "") -> str:
+                        response = self._client.models.generate_content(
+                            model=self._model,
                             contents=[{"role": "user", "parts": [{"text": prompt}]}],
                         )
-                        return response.text
+                        text: str = response.text or ""
+                        return text
+
+                    def generate_with_metadata(
+                        self, prompt: str, system_prompt: str = ""
+                    ) -> "AgentResponse":
+                        response = self._client.models.generate_content(
+                            model=self._model,
+                            contents=[{"role": "user", "parts": [{"text": prompt}]}],
+                        )
+                        return AgentResponse(
+                            content=response.text or "",
+                            model=self._model,
+                            agent_type="gemini",
+                        )
 
                 gemini_client = SimpleGeminiClient()
                 print("   Gemini Flash client initialized")

@@ -556,7 +556,7 @@ class TestExtremeEdgeCases:
         """Handle deeply nested JSON (potential stack overflow)."""
         cli = ClaudeCLI(model="opus")
         # 50 levels of nesting in result
-        nested = '{"a":' * 50 + '"deep"' + '}' * 50
+        nested = '{"a":' * 50 + '"deep"' + "}" * 50
         raw_output = f'{{"type":"result","result":{nested},"modelUsage":{{}}}}'
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
@@ -568,7 +568,9 @@ class TestExtremeEdgeCases:
         """Handle JSON with trailing comma (common user mistake)."""
         cli = ClaudeCLI(model="opus")
         # Invalid JSON with trailing comma - should skip this line
-        raw_output = '{"type":"result","result":"oops",}\n{"type":"result","result":"valid","modelUsage":{}}'
+        raw_output = (
+            '{"type":"result","result":"oops",}\n{"type":"result","result":"valid","modelUsage":{}}'
+        )
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
 
@@ -618,8 +620,6 @@ class TestPathTraversalAndInjection:
 
     def test_context_id_path_traversal(self):
         """Context ID with path traversal should be handled."""
-        cli = ClaudeCLI(model="opus")
-
         # Malicious context_id with path traversal
         context_id = "../../../etc/passwd"
 
@@ -633,8 +633,6 @@ class TestPathTraversalAndInjection:
 
     def test_context_id_with_s3_special_chars(self):
         """Context ID with control characters should be handled."""
-        cli = ClaudeCLI(model="opus")
-
         # Control characters in context_id
         context_id = "test\x00id\x1fwith\x7fcontrol"
 
@@ -675,7 +673,7 @@ class TestResourceLimits:
 
         # 10 billion tokens - absurd but should not crash
         # The _build_cli_args would use this value
-        assert hasattr(cli, 'settings')
+        assert hasattr(cli, "settings")
 
 
 class TestAgentFileCorruption:

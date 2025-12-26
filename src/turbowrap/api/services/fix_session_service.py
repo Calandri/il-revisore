@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from sqlalchemy.orm import Session
 
@@ -34,14 +34,14 @@ class IdempotencyStoreProtocol(Protocol):
         self,
         key: str,
         session_id: str,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[bool, Any]: ...
 
     def update_status(
         self,
         key: str,
         status: str,
-        result: dict | None = None,
+        result: dict[str, Any] | None = None,
     ) -> None: ...
 
     def update_branch_name(self, key: str, branch_name: str) -> None: ...
@@ -49,18 +49,19 @@ class IdempotencyStoreProtocol(Protocol):
     def remove(self, key: str) -> None: ...
 
 
-from ...db.models import Issue, IssueStatus, LinearIssue, Repository, Setting, Task
-from ...db.session import get_session_local
-from ...fix import (
+from ...db.models import Issue, IssueStatus, LinearIssue, Repository, Setting, Task  # noqa: E402
+from ...db.session import get_session_local  # noqa: E402
+from ...fix import (  # noqa: E402
     FixEventType,
     FixOrchestrator,
     FixProgressEvent,
     FixRequest,
+    IssueFixResult,
     ScopeValidationError,
 )
-from ...linear import LinearStateManager
-from ...review.integrations.linear import LinearClient
-from .operation_tracker import OperationType, get_tracker
+from ...linear import LinearStateManager  # noqa: E402
+from ...review.integrations.linear import LinearClient  # noqa: E402
+from .operation_tracker import OperationType, get_tracker  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class FixSessionService:
     - Auto-transitioning linked Linear issues
     """
 
-    def __init__(self, db: Session, idempotency_store: IdempotencyStoreProtocol):
+    def __init__(self, db: Session, idempotency_store: IdempotencyStoreProtocol) -> None:
         self.db = db
         self.idempotency = idempotency_store
 
@@ -112,7 +113,7 @@ class FixSessionService:
         force: bool = False,
         user_name: str | None = None,
         user_notes: str | None = None,
-    ) -> tuple[FixSessionInfo, dict | None]:
+    ) -> tuple[FixSessionInfo | None, dict[str, Any] | None]:
         """
         Validate request and prepare fix session.
 
@@ -167,16 +168,17 @@ class FixSessionService:
 
         # Build metadata for active sessions display
         # Extract repo name from url (e.g., "https://github.com/org/repo" -> "repo")
-        repo_name = repo.url.rstrip("/").split("/")[-1] if repo.url else "unknown"
+        repo_url: str = cast(str, repo.url) if repo.url else ""
+        repo_name = repo_url.rstrip("/").split("/")[-1] if repo_url else "unknown"
         if repo_name.endswith(".git"):
             repo_name = repo_name[:-4]
 
-        session_metadata = {
+        session_metadata: dict[str, Any] = {
             "repository_id": repository_id,
             "repository_name": repo_name,
             "task_id": task_id,
             "issue_count": len(issues),
-            "issue_codes": [i.issue_code for i in issues],
+            "issue_codes": [cast(str, i.issue_code) for i in issues],
             "user_name": user_name,
         }
 
@@ -220,22 +222,22 @@ class FixSessionService:
                 }
 
         # Order issues by the requested order
-        issue_order = {id: i for i, id in enumerate(issue_ids)}
-        issues = sorted(issues, key=lambda x: issue_order.get(x.id, 999))
+        issue_order: dict[str, int] = {id: i for i, id in enumerate(issue_ids)}
+        issues = sorted(issues, key=lambda x: issue_order.get(cast(str, x.id), 999))
 
         # Set issues to in_progress immediately
         for issue in issues:
-            issue.status = IssueStatus.IN_PROGRESS.value
+            issue.status = IssueStatus.IN_PROGRESS.value  # type: ignore[assignment]
         self.db.commit()
 
         # Create fix request
         fix_request = FixRequest(
             repository_id=repository_id,
             task_id=task_id,
-            issue_ids=[i.id for i in issues],
+            issue_ids=[cast(str, i.id) for i in issues],
             use_existing_branch=use_existing_branch,
             existing_branch_name=existing_branch_name,
-            workspace_path=repo.workspace_path,  # Monorepo: restrict fixes to this folder
+            workspace_path=cast(str | None, repo.workspace_path),  # Monorepo: restrict fixes
             user_notes=user_notes,  # User-provided context/instructions
         )
 
@@ -251,7 +253,7 @@ class FixSessionService:
             details={
                 "task_id": task_id,
                 "issue_count": len(issues),
-                "issue_codes": [i.issue_code for i in issues],
+                "issue_codes": [cast(str, i.issue_code) for i in issues],
             },
         )
 
@@ -270,7 +272,7 @@ class FixSessionService:
     async def update_issue_statuses(
         self,
         db: Session,
-        results: list,
+        results: list[IssueFixResult],
         branch_name: str,
         session_id: str,
     ) -> tuple[int, int]:
@@ -293,26 +295,27 @@ class FixSessionService:
             db_issue = db.query(Issue).filter(Issue.id == issue_result.issue_id).first()
             if db_issue:
                 if issue_result.status.value == "completed":
-                    db_issue.status = IssueStatus.RESOLVED.value
-                    db_issue.resolved_at = datetime.utcnow()
-                    db_issue.resolution_note = (
+                    db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
+                    db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+                    resolution_note_val = (
                         f"Fixed in commit {issue_result.commit_sha}"
                         if issue_result.commit_sha
                         else "Fixed"
                     )
+                    db_issue.resolution_note = resolution_note_val  # type: ignore[assignment]
                     # Save fix result fields
-                    db_issue.fix_code = issue_result.fix_code
-                    db_issue.fix_explanation = issue_result.fix_explanation
-                    db_issue.fix_files_modified = issue_result.fix_files_modified
-                    db_issue.fix_commit_sha = issue_result.commit_sha
-                    db_issue.fix_branch = branch_name
-                    db_issue.fix_session_id = session_id  # For S3 log retrieval
-                    db_issue.fixed_at = datetime.utcnow()
-                    db_issue.fixed_by = "fixer_claude"
+                    db_issue.fix_code = issue_result.fix_code  # type: ignore[assignment]
+                    db_issue.fix_explanation = issue_result.fix_explanation  # type: ignore[assignment]
+                    db_issue.fix_files_modified = issue_result.fix_files_modified  # type: ignore[assignment]
+                    db_issue.fix_commit_sha = issue_result.commit_sha  # type: ignore[assignment]
+                    db_issue.fix_branch = branch_name  # type: ignore[assignment]
+                    db_issue.fix_session_id = session_id  # type: ignore[assignment]
+                    db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
+                    db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
                     completed_count += 1
                 elif issue_result.status.value == "failed":
-                    db_issue.status = IssueStatus.OPEN.value  # Reset to open on failure
-                    db_issue.resolution_note = f"Fix failed: {issue_result.error}"
+                    db_issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
+                    db_issue.resolution_note = f"Fix failed: {issue_result.error}"  # type: ignore[assignment]
                     failed_count += 1
 
         db.commit()
@@ -358,7 +361,7 @@ class FixSessionService:
             if not linear_api_key or not linear_api_key.value:
                 return
 
-            linear_client = LinearClient(api_key=linear_api_key.value)
+            linear_client = LinearClient(api_key=cast(str, linear_api_key.value))
             state_manager = LinearStateManager(linear_client)
 
             for linear_issue in linear_issues:
@@ -399,15 +402,15 @@ class FixSessionService:
         for issue in issues:
             db_issue = db.query(Issue).filter(Issue.id == issue.id).first()
             if db_issue and db_issue.status == IssueStatus.IN_PROGRESS.value:
-                db_issue.status = IssueStatus.OPEN.value
+                db_issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
                 if error_message:
-                    db_issue.resolution_note = error_message
+                    db_issue.resolution_note = error_message  # type: ignore[assignment]
         db.commit()
 
     async def execute_fixes(
         self,
         session_info: FixSessionInfo,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[dict[str, Any]]:
         """
         Execute fixes and yield SSE progress events.
 
@@ -417,15 +420,15 @@ class FixSessionService:
         Yields:
             SSE-formatted event dictionaries
         """
-        event_queue: asyncio.Queue[FixProgressEvent] = asyncio.Queue()
+        event_queue: asyncio.Queue[FixProgressEvent | None] = asyncio.Queue()
         session_id = session_info.session_id
-        repo_path = Path(session_info.repository.local_path)
+        repo_path = Path(cast(str, session_info.repository.local_path))
         idempotency_key = session_info.idempotency_key
 
         # Get tracker reference for callbacks
         tracker = get_tracker()
 
-        async def progress_callback(event: FixProgressEvent):
+        async def progress_callback(event: FixProgressEvent) -> None:
             """Enqueue progress events."""
             nonlocal session_id
             if event.session_id:
@@ -437,7 +440,7 @@ class FixSessionService:
                 tracker.update(session_info.session_id, branch=event.branch_name)
             await event_queue.put(event)
 
-        async def run_fix():
+        async def run_fix() -> None:
             """Run fix in background."""
             SessionLocal = get_session_local()
             fix_db = SessionLocal()
@@ -511,7 +514,7 @@ class FixSessionService:
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
-                        error="🚫 WORKSPACE SCOPE VIOLATION",
+                        error="WORKSPACE SCOPE VIOLATION",
                         message=f"Modified files outside '{e.workspace_path}': {', '.join(e.files_outside_scope[:3])}",
                     )
                 )
@@ -554,7 +557,7 @@ class FixSessionService:
 class DuplicateSessionError(Exception):
     """Raised when a duplicate fix session is detected."""
 
-    def __init__(self, session_id: str, status: str, created_at: datetime):
+    def __init__(self, session_id: str, status: str, created_at: datetime) -> None:
         self.session_id = session_id
         self.status = status
         self.created_at = created_at

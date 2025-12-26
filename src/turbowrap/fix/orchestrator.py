@@ -8,15 +8,14 @@ Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
 """
 
 import asyncio
-import codecs
 import json
 import logging
-import os
 import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -33,7 +32,9 @@ from turbowrap.fix.models import (
     IssueFixResult,
     ScopeValidationError,
 )
-from turbowrap.utils.aws_secrets import get_google_api_key
+
+# Import GeminiCLI from shared orchestration utilities
+from turbowrap.orchestration.cli_runner import GeminiCLI
 from turbowrap.utils.claude_cli import ClaudeCLI
 
 # S3 bucket for fix logs (same as thinking logs)
@@ -107,6 +108,12 @@ class FixOrchestrator:
         # S3 client for logging
         self.s3_client = boto3.client("s3")
         self.s3_bucket = S3_BUCKET
+
+        # Gemini CLI for review (using shared orchestration utility)
+        self.gemini_cli = GeminiCLI(
+            working_dir=repo_path,
+            timeout=GEMINI_CLI_TIMEOUT,
+        )
 
     def _load_agent(self, agent_path: Path) -> str:
         """Load agent prompt from MD file, stripping frontmatter."""
@@ -199,11 +206,13 @@ class FixOrchestrator:
         """
         if issue.current_code:
             # Already have the code, return it with line info
+            # fmt: off
             line_info = (
                 f"(lines {issue.line}-{issue.end_line})"
                 if issue.line and issue.end_line
                 else f"(line {issue.line})" if issue.line else ""
             )
+            # fmt: on
             return f"{line_info}\n{issue.current_code}"
 
         if not issue.line:
@@ -217,15 +226,15 @@ class FixOrchestrator:
             with open(file_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
-            start_line = max(1, issue.line - context_lines)
-            end_line = min(len(lines), (issue.end_line or issue.line) + context_lines)
+            issue_line: int = issue.line  # type: ignore[assignment]
+            issue_end_line: int = int(issue.end_line) if issue.end_line else issue_line
+            start_line = max(1, issue_line - context_lines)
+            end_line = min(len(lines), issue_end_line + context_lines)
 
             snippet_lines = []
             for i in range(start_line - 1, end_line):
                 line_num = i + 1
-                marker = (
-                    ">>>" if issue.line <= line_num <= (issue.end_line or issue.line) else "   "
-                )
+                marker = ">>>" if issue_line <= line_num <= issue_end_line else "   "
                 snippet_lines.append(f"{marker} {line_num:4d} | {lines[i].rstrip()}")
 
             return "\n".join(snippet_lines)
@@ -332,14 +341,18 @@ class FixOrchestrator:
             last_gemini_output: str | None = None  # Store for fix explanation
 
             # Collect prompts for S3 logging
-            claude_prompts: list[dict] = []  # [{type: "be"|"fe", batch: N, prompt: str}]
+            claude_prompts: list[dict[str, Any]] = []  # [{type: "be"|"fe", batch: N, prompt: str}]
             gemini_prompt: str | None = None
 
             # Helper functions for batch processing
             def get_issue_workload(issue: Issue) -> int:
                 """Calculate workload points for an issue based on estimates."""
-                effort = issue.estimated_effort or DEFAULT_EFFORT
-                files = issue.estimated_files_count or DEFAULT_FILES
+                effort = int(issue.estimated_effort) if issue.estimated_effort else DEFAULT_EFFORT
+                files = (
+                    int(issue.estimated_files_count)
+                    if issue.estimated_files_count
+                    else DEFAULT_FILES
+                )
                 return effort * files
 
             def batch_issues_by_workload(issues_to_batch: list[Issue]) -> list[list[Issue]]:
@@ -371,16 +384,16 @@ class FixOrchestrator:
 
             # Track batch results across iterations
             # Key: "BE-1", "FE-2", etc. Value: {"passed": bool, "score": float, "failed_issues": list}
-            batch_results: dict[str, dict] = {}
+            batch_results: dict[str, dict[str, Any]] = {}
             for idx in range(len(all_be_batches)):
-                batch_results[f"BE-{idx+1}"] = {
+                batch_results[f"BE-{idx + 1}"] = {
                     "passed": False,
                     "score": 0.0,
                     "failed_issues": [],
                     "issues": all_be_batches[idx],
                 }
             for idx in range(len(all_fe_batches)):
-                batch_results[f"FE-{idx+1}"] = {
+                batch_results[f"FE-{idx + 1}"] = {
                     "passed": False,
                     "score": 0.0,
                     "failed_issues": [],
@@ -464,7 +477,7 @@ class FixOrchestrator:
                     feedback = feedback_be if batch_type == "BE" else feedback_fe
 
                     # Create streaming callback for this batch
-                    async def on_chunk_claude(chunk: str, bt=batch_type) -> None:
+                    async def on_chunk_claude(chunk: str, bt: str = batch_type) -> None:
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_ISSUE_STREAMING,
@@ -583,9 +596,11 @@ class FixOrchestrator:
                     if iteration == 1 and completed_batches == 1:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
-                    gemini_output = await self._run_gemini_cli(
+                    # Use shared GeminiCLI from orchestration utilities
+                    gemini_result = await self.gemini_cli.run(
                         review_prompt, on_chunk=on_chunk_gemini
                     )
+                    gemini_output = gemini_result.output if gemini_result.success else None
                     last_gemini_output = gemini_output
 
                     if gemini_output is None:
@@ -811,7 +826,7 @@ class FixOrchestrator:
                 fix_code = await self._get_diff_for_file(issue_file)
 
                 issue_result = IssueFixResult(
-                    issue_id=issue.id,
+                    issue_id=str(issue.id),
                     issue_code=str(issue.issue_code),
                     status=FixStatus.COMPLETED,
                     commit_sha=commit_sha,
@@ -836,7 +851,7 @@ class FixOrchestrator:
 
                 logger.warning(f"Issue {issue.issue_code} batch failed Gemini review{batch_info}")
                 issue_result = IssueFixResult(
-                    issue_id=issue.id,
+                    issue_id=str(issue.id),
                     issue_code=str(issue.issue_code),
                     status=FixStatus.FAILED,
                     error=f"Batch did not pass Gemini review (score < {self.satisfaction_threshold}){batch_info}",
@@ -918,7 +933,7 @@ class FixOrchestrator:
         issue_details = []
         issue_codes = []
         for issue in issues:
-            issue_codes.append(issue.issue_code)
+            issue_codes.append(str(issue.issue_code))
             detail = f"""### {issue.issue_code}: {issue.title}
 - **File**: {issue.file}
 - **Severity**: {issue.severity}
@@ -966,8 +981,8 @@ BATCH_SCORE: <number>
 
 Then list EACH issue with its individual score:
 ISSUE_SCORES:
-- {issue_codes_list.split(', ')[0] if issue_codes else 'ISSUE-XXX'}: <score> | <brief reason>
-{chr(10).join(f'- {code}: <score> | <brief reason>' for code in issue_codes[1:]) if len(issue_codes) > 1 else ''}
+- {issue_codes_list.split(", ")[0] if issue_codes else "ISSUE-XXX"}: <score> | <brief reason>
+{chr(10).join(f"- {code}: <score> | <brief reason>" for code in issue_codes[1:]) if len(issue_codes) > 1 else ""}
 
 Issues with score < 95 need to be re-fixed in the next iteration.
 List which specific issues FAILED (score < 95):
@@ -1023,7 +1038,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         # Parse per-issue scores
         for issue in issues:
-            code = issue.issue_code
+            code = str(issue.issue_code)
             # Look for pattern: - ISSUE-123: 95 | reason
             pattern = rf"-\s*{re.escape(code)}:\s*(\d+)"
             match = re.search(pattern, output, re.IGNORECASE)
@@ -1327,81 +1342,8 @@ The reviewer found issues with the previous fix. Address this feedback:
 
         return result.output
 
-    async def _run_gemini_cli(
-        self,
-        prompt: str,
-        timeout: int = GEMINI_CLI_TIMEOUT,
-        on_chunk: Callable[[str], Awaitable[None]] | None = None,
-    ) -> str | None:
-        """Run Gemini CLI with prompt and optional streaming callback."""
-        try:
-            # Build environment with API key from AWS Secrets Manager
-            env = os.environ.copy()
-            api_key = get_google_api_key()
-            if api_key:
-                env["GEMINI_API_KEY"] = api_key
-
-            # Use Pro model from settings (for better reasoning in review)
-            model = self.settings.agents.gemini_pro_model
-
-            # Gemini CLI expects prompt as positional argument, not stdin
-            # Use --yolo to auto-approve any tool calls
-            process = await asyncio.create_subprocess_exec(
-                "gemini",
-                "-m",
-                model,
-                "--yolo",
-                prompt,  # Prompt as positional argument
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.repo_path),
-                env=env,
-            )
-
-            # Read stdout in streaming mode with incremental UTF-8 decoder
-            # This handles multi-byte UTF-8 characters split across chunk boundaries
-            output_chunks: list[str] = []
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            try:
-                async with asyncio.timeout(timeout):
-                    while True:
-                        chunk = await process.stdout.read(1024)
-                        if not chunk:
-                            # Flush remaining bytes
-                            decoded = decoder.decode(b"", final=True)
-                            if decoded:
-                                output_chunks.append(decoded)
-                                if on_chunk:
-                                    await on_chunk(decoded)
-                            break
-                        # Incremental decode - handles partial multi-byte chars
-                        decoded = decoder.decode(chunk)
-                        if decoded:
-                            output_chunks.append(decoded)
-                            # Emit chunk for streaming
-                            if on_chunk:
-                                await on_chunk(decoded)
-
-            except asyncio.TimeoutError:
-                logger.error(f"Gemini CLI timed out after {timeout}s")
-                process.kill()
-                return None
-
-            await process.wait()
-
-            if process.returncode != 0:
-                stderr = await process.stderr.read()
-                logger.error(f"Gemini CLI failed: {stderr.decode()}")
-                return None
-
-            return "".join(output_chunks)
-
-        except asyncio.TimeoutError:
-            logger.error(f"Gemini CLI timed out after {timeout}s")
-            return None
-        except Exception:
-            logger.exception("Gemini CLI error")
-            return None
+    # NOTE: _run_gemini_cli method moved to turbowrap.orchestration.cli_runner.GeminiCLI
+    # Now using self.gemini_cli.run() instead
 
     async def _get_git_info(self) -> tuple[str | None, list[str], str | None]:
         """Get git info after commit.
@@ -1693,10 +1635,10 @@ The reviewer found issues with the previous fix. Address this feedback:
         result: FixSessionResult,
         issues: list[Issue],
         gemini_output: str | None,
-        claude_prompts: list[dict] | None = None,
+        claude_prompts: list[dict[str, Any]] | None = None,
         gemini_prompt: str | None = None,
         # Incremental save params
-        batch_results: dict[str, dict] | None = None,
+        batch_results: dict[str, dict[str, Any]] | None = None,
         current_iteration: int | None = None,
         is_partial: bool = False,
     ) -> str | None:
