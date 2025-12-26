@@ -555,6 +555,15 @@ async def restart_reviewer(
             else:
                 # Auto-generate structure.xml if missing - GeminiClient is REQUIRED
                 logger.error(f"[RESTART] CRITICAL: {xml_path.relative_to(context.repo_path)} NOT FOUND - attempting auto-generation...")
+
+                # Notify user via WebSocket that structure generation is starting
+                session.add_event(ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STREAMING,
+                    reviewer_name=reviewer_name,
+                    reviewer_display_name=display_name,
+                    content="⚙️ Generating repository structure analysis (this may take 1-2 minutes)...\n",
+                ))
+
                 try:
                     from ...tools.structure_generator import StructureGenerator
                     from ...llm.gemini import GeminiClient
@@ -573,6 +582,14 @@ async def restart_reviewer(
                     )
                     logger.info(f"[RESTART] scan_root={generator.scan_root}")
 
+                    # Send progress update
+                    session.add_event(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        content=f"📂 Scanning {generator.scan_root}...\n",
+                    ))
+
                     generated_files = generator.generate(verbose=True, formats=["xml"])
 
                     if not generated_files:
@@ -585,6 +602,13 @@ async def restart_reviewer(
                         content = xml_path.read_text(encoding="utf-8")
                         context.structure_docs["structure.xml"] = content
                         logger.info(f"[RESTART] SUCCESS: Loaded structure.xml ({len(content)} chars)")
+                        # Notify success
+                        session.add_event(ProgressEvent(
+                            type=ProgressEventType.REVIEWER_STREAMING,
+                            reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
+                            content=f"✅ Structure analysis complete ({len(content):,} bytes)\n\n",
+                        ))
                     else:
                         raise RuntimeError(f"Generation completed but file NOT FOUND at {xml_path}! Generated files: {generated_files}")
 
@@ -593,6 +617,13 @@ async def restart_reviewer(
                     logger.error(f"[RESTART] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
                     logger.error(f"[RESTART] Error: {e}")
                     logger.error(f"[RESTART] Traceback:\n{traceback.format_exc()}")
+                    # Notify failure
+                    session.add_event(ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        content=f"❌ Structure generation failed: {e}\n",
+                    ))
                     # DON'T swallow the error - let it propagate so the user sees it
                     raise
 
