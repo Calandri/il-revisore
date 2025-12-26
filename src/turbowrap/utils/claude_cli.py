@@ -455,7 +455,8 @@ class ClaudeCLI:
                             if decoded:
                                 output_chunks.append(decoded)
                             logger.info(
-                                f"[CLAUDE CLI] Stream ended: {chunks_received} chunks, {total_bytes} bytes"
+                                f"[CLAUDE CLI] Stream ended: {chunks_received} chunks, "
+                                f"{total_bytes} bytes"
                             )
                             break
 

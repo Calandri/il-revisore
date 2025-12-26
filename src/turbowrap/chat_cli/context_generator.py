@@ -81,7 +81,8 @@ Gestisce repository GitHub, analizza issue da Linear, e usa Claude/Gemini per:
 ## Funzionalità Chiave
 
 ### Code Review
-- **Multi-Agent**: Gemini Flash (analisi veloce) → Claude Opus (review profonda) → Gemini Pro (validazione)
+- **Multi-Agent**: Gemini Flash (analisi veloce) → Claude Opus (review profonda) →
+  Gemini Pro (validazione)
 - **Loop Iterativo**: Raffina fino a 50%+ approval
 - **Output**: STRUCTURE.md, REVIEW_TODO.md, REPO_DESCRIPTION.md
 

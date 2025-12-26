@@ -344,7 +344,8 @@ class CLIProcessManager:
             self._processes[session_id] = cli_proc
 
         logger.info(
-            f"[CLAUDE] Spawned process PID={process.pid} for session {session_id} (claude_session={claude_session_id})"
+            f"[CLAUDE] Spawned process PID={process.pid} for session {session_id} "
+            f"(claude_session={claude_session_id})"
         )
         return cli_proc
 
