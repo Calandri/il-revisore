@@ -183,18 +183,21 @@ class StructureGenerator:
         """
         Detect repository type based on file distribution.
 
+        Uses scan_root for monorepo workspace support.
+
         Returns:
             RepoType enum value
         """
         be_count = 0
         fe_count = 0
 
-        for file_path in self.repo_path.rglob("*"):
+        # Use scan_root to only scan the workspace (not entire monorepo)
+        for file_path in self.scan_root.rglob("*"):
             if not file_path.is_file():
                 continue
             # Use relative path to avoid issues with parent dirs like .turbowrap
             try:
-                rel_path = file_path.relative_to(self.repo_path)
+                rel_path = file_path.relative_to(self.scan_root)
             except ValueError:
                 continue
             if should_ignore(rel_path):
@@ -235,8 +238,11 @@ class StructureGenerator:
         return self.metadata
 
     def _parse_pyproject(self) -> None:
-        """Parse pyproject.toml for Python projects."""
-        pyproject_path = self.repo_path / "pyproject.toml"
+        """Parse pyproject.toml for Python projects.
+
+        Uses scan_root for monorepo workspace support.
+        """
+        pyproject_path = self.scan_root / "pyproject.toml"
         if not pyproject_path.exists():
             return
 
@@ -287,8 +293,11 @@ class StructureGenerator:
             pass
 
     def _parse_package_json(self) -> None:
-        """Parse package.json for JS/TS projects."""
-        package_path = self.repo_path / "package.json"
+        """Parse package.json for JS/TS projects.
+
+        Uses scan_root for monorepo workspace support.
+        """
+        package_path = self.scan_root / "package.json"
         if not package_path.exists():
             return
 
@@ -319,7 +328,10 @@ class StructureGenerator:
             pass
 
     def _find_entry_points(self) -> None:
-        """Find main entry point files."""
+        """Find main entry point files.
+
+        Uses scan_root for monorepo workspace support.
+        """
         entry_patterns = [
             "main.py", "app.py", "cli.py", "__main__.py",
             "index.ts", "index.tsx", "main.ts", "App.tsx",
@@ -327,9 +339,11 @@ class StructureGenerator:
         ]
 
         for pattern in entry_patterns:
-            for match in self.repo_path.rglob(pattern):
+            # Only search within scan_root (workspace for monorepo)
+            for match in self.scan_root.rglob(pattern):
                 if not should_ignore(match):
-                    rel_path = str(match.relative_to(self.repo_path))
+                    # Relative path from scan_root, not repo_path
+                    rel_path = str(match.relative_to(self.scan_root))
                     if rel_path not in self.metadata.entry_points:
                         self.metadata.entry_points.append(rel_path)
 
@@ -337,11 +351,14 @@ class StructureGenerator:
         self.metadata.entry_points = self.metadata.entry_points[:10]
 
     def _find_env_vars(self) -> None:
-        """Find environment variables from .env.example or .env.template."""
+        """Find environment variables from .env.example or .env.template.
+
+        Uses scan_root for monorepo workspace support.
+        """
         env_files = [".env.example", ".env.template", ".env.sample"]
 
         for env_file in env_files:
-            env_path = self.repo_path / env_file
+            env_path = self.scan_root / env_file
             if env_path.exists():
                 try:
                     content = env_path.read_text()
@@ -359,16 +376,22 @@ class StructureGenerator:
         self.metadata.env_vars = self.metadata.env_vars[:20]
 
     def _analyze_architecture(self) -> None:
-        """Use Gemini to analyze architecture pattern."""
-        # Build context from directory structure
+        """Use Gemini to analyze architecture pattern.
+
+        Uses scan_root for monorepo workspace support.
+        """
+        # Build context from directory structure (within scan_root only)
         dirs = []
-        for item in self.repo_path.iterdir():
+        for item in self.scan_root.iterdir():
             if item.is_dir() and not should_ignore(item):
                 dirs.append(item.name)
 
+        # Use scan_root name for workspace, otherwise repo_path name
+        project_name = self.scan_root.name if self.workspace_path else self.repo_path.name
+
         prompt = f"""Analyze this project structure and describe its architecture.
 
-Project: {self.repo_path.name}
+Project: {project_name}
 Language: {self.metadata.language or 'Unknown'}
 Framework: {self.metadata.framework or 'Unknown'}
 Directories: {', '.join(sorted(dirs))}
@@ -849,8 +872,10 @@ Be concise. Only list the most important elements (max 10).
         from xml.dom import minidom
 
         # Create root element
+        # For monorepo workspace, use workspace name (e.g., "helpdesk") not repo name
+        repo_name = self.scan_root.name if self.workspace_path else self.repo_path.name
         root = ET.Element("repository")
-        root.set("name", self.repo_path.name)
+        root.set("name", repo_name)
         root.set("type", repo_type.value)
         root.set("lang", self.metadata.language or "unknown")
 
