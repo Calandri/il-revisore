@@ -94,6 +94,11 @@ class RepoResponse(BaseModel):
     metadata: dict[str, Any] | None = Field(default=None, description="Additional metadata")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+    # Disk usage fields (computed from metadata)
+    disk_size_bytes: int | None = Field(default=None, description="Disk space used in bytes")
+    estimated_cost_usd: float | None = Field(
+        default=None, description="Estimated monthly AWS S3 storage cost in USD"
+    )
 
     @field_validator("local_path", mode="before")
     @classmethod
@@ -120,6 +125,13 @@ class RepoResponse(BaseModel):
         """Override to handle SQLAlchemy metadata_ attribute."""
         # If it's a SQLAlchemy model, extract metadata_ manually
         if hasattr(obj, "metadata_") and not hasattr(obj, "metadata"):
+            metadata = obj.metadata_ or {}
+            # Extract disk size from metadata
+            disk_size = metadata.get("disk_size_bytes")
+            # Calculate AWS S3 cost: $0.023/GB/month
+            estimated_cost = None
+            if disk_size is not None:
+                estimated_cost = round((disk_size / (1024**3)) * 0.023, 4)
             # Create a dict with the data
             data = {
                 "id": obj.id,
@@ -135,6 +147,8 @@ class RepoResponse(BaseModel):
                 "metadata": obj.metadata_,  # Map metadata_ to metadata
                 "created_at": obj.created_at,
                 "updated_at": obj.updated_at,
+                "disk_size_bytes": disk_size,
+                "estimated_cost_usd": estimated_cost,
             }
             return super().model_validate(data, **kwargs)
         return super().model_validate(obj, **kwargs)

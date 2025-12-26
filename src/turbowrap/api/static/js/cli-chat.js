@@ -119,18 +119,29 @@ function chatSidebar() {
          * Select a session and load its messages
          */
         async selectSession(session) {
+            console.log('[selectSession] Loading session:', session.id, session.display_name);
             this.activeSession = session;
             this.messages = [];
             this.showSettings = false;
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${session.id}/messages`);
+                const url = `/api/cli-chat/sessions/${session.id}/messages`;
+                console.log('[selectSession] Fetching:', url);
+                const res = await fetch(url);
+                console.log('[selectSession] Response status:', res.status);
+
                 if (res.ok) {
                     this.messages = await res.json();
+                    console.log('[selectSession] Loaded messages:', this.messages.length);
                     this.$nextTick(() => this.scrollToBottom());
+                } else {
+                    const errorText = await res.text();
+                    console.error('[selectSession] Failed to load messages:', res.status, errorText);
+                    this.showToast('Errore caricamento messaggi', 'error');
                 }
             } catch (error) {
-                console.error('Error loading messages:', error);
+                console.error('[selectSession] Error:', error);
+                this.showToast('Errore connessione', 'error');
             }
         },
 

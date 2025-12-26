@@ -52,6 +52,33 @@ def _calculate_token_totals(repo_path: Path, files: list) -> dict:
     }
 
 
+def get_directory_size(path: Path, skip_git: bool = True) -> int:
+    """Get total size of directory in bytes.
+
+    Args:
+        path: Directory path to measure.
+        skip_git: If True, skip .git directory (default True).
+
+    Returns:
+        Total size in bytes.
+    """
+    import os
+
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(path):
+        # Skip .git directory for actual code size
+        if skip_git:
+            dirnames[:] = [d for d in dirnames if d != ".git"]
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            try:
+                if os.path.isfile(fp):
+                    total += os.path.getsize(fp)
+            except (OSError, IOError):
+                pass  # Skip files we can't access
+    return total
+
+
 class RepoManager:
     """Manages repository operations."""
 
@@ -194,6 +221,9 @@ class RepoManager:
         be_stats = _calculate_token_totals(scan_path, be_files)
         fe_stats = _calculate_token_totals(scan_path, fe_files)
 
+        # Calculate disk size
+        disk_size = get_directory_size(scan_path)
+
         # Create DB record with detailed stats
         # If workspace_path is set, append it to the name for display
         display_name = repo_info.full_name
@@ -214,6 +244,7 @@ class RepoManager:
                 "fe_files": fe_stats,
                 "total_tokens": be_stats["tokens"] + fe_stats["tokens"],
                 "total_files": be_stats["count"] + fe_stats["count"],
+                "disk_size_bytes": disk_size,
             },
         )
 
@@ -326,6 +357,9 @@ class RepoManager:
         be_stats = _calculate_token_totals(scan_path, be_files)
         fe_stats = _calculate_token_totals(scan_path, fe_files)
 
+        # Calculate disk size
+        disk_size = get_directory_size(scan_path)
+
         # Update repo record
         repo.local_path = str(local_path)
         repo.status = "active"
@@ -336,6 +370,7 @@ class RepoManager:
             "fe_files": fe_stats,
             "total_tokens": be_stats["tokens"] + fe_stats["tokens"],
             "total_files": be_stats["count"] + fe_stats["count"],
+            "disk_size_bytes": disk_size,
         }
 
         self.db.commit()
@@ -434,6 +469,9 @@ class RepoManager:
             be_stats = _calculate_token_totals(scan_path, be_files)
             fe_stats = _calculate_token_totals(scan_path, fe_files)
 
+            # Calculate disk size for the scanned path
+            disk_size = get_directory_size(scan_path)
+
             repo.status = "active"
             repo.last_synced_at = datetime.utcnow()
             repo.metadata_ = {
@@ -441,6 +479,7 @@ class RepoManager:
                 "fe_files": fe_stats,
                 "total_tokens": be_stats["tokens"] + fe_stats["tokens"],
                 "total_files": be_stats["count"] + fe_stats["count"],
+                "disk_size_bytes": disk_size,
             }
             self.db.commit()
             self.db.refresh(repo)

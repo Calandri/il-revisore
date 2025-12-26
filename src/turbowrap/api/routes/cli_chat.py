@@ -302,9 +302,13 @@ def get_messages(
     query = db.query(CLIChatMessage).filter(CLIChatMessage.session_id == session_id)
 
     if not include_thinking:
-        query = query.filter(not CLIChatMessage.is_thinking)
+        # IMPORTANT: Use SQLAlchemy's == operator, not Python's `not`
+        # `not CLIChatMessage.is_thinking` evaluates to False immediately!
+        query = query.filter(CLIChatMessage.is_thinking == False)  # noqa: E712
 
-    return query.order_by(CLIChatMessage.created_at.asc()).limit(limit).all()
+    messages = query.order_by(CLIChatMessage.created_at.asc()).limit(limit).all()
+    logger.info(f"[MESSAGES] Session {session_id}: loaded {len(messages)} messages")
+    return messages
 
 
 @router.post("/sessions/{session_id}/message")
@@ -335,7 +339,17 @@ async def send_message(
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Check if this is the first message (for title generation)
-    is_first_message = session.total_messages == 0
+    # Count actual messages in DB instead of relying on total_messages counter
+    actual_message_count = (
+        db.query(CLIChatMessage)
+        .filter(CLIChatMessage.session_id == session_id)
+        .count()
+    )
+    is_first_message = actual_message_count == 0
+    logger.info(
+        f"[MESSAGE] Session {session_id}: actual_count={actual_message_count}, "
+        f"is_first={is_first_message}, total_messages={session.total_messages}"
+    )
 
     # Save user message
     user_message = CLIChatMessage(
@@ -504,6 +518,7 @@ async def send_message(
 
             # Generate title for first message
             if is_first_message and not session.display_name:
+                logger.info(f"[TITLE] Generating title for session {session_id}")
                 title = await generate_chat_title(
                     cli_type=session.cli_type,
                     user_message=data.content,
@@ -513,12 +528,20 @@ async def send_message(
                     session.display_name = title
                     session.updated_at = datetime.utcnow()
                     db.commit()
+                    logger.info(f"[TITLE] Session {session_id} title set to: {title}")
 
                     # Send title update event
                     yield {
                         "event": "title_updated",
                         "data": json.dumps({"title": title}),
                     }
+                else:
+                    logger.warning(f"[TITLE] Session {session_id}: title generation returned None")
+            else:
+                logger.debug(
+                    f"[TITLE] Skipping title generation: is_first={is_first_message}, "
+                    f"display_name={session.display_name}"
+                )
 
         except Exception as e:
             logger.error(f"Error in stream: {e}")

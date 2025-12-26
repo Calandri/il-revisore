@@ -25,6 +25,21 @@
                         <span>•</span>
                         <span>{{ (repo.metadata_.total_tokens / 1000)|round(1) }}k tokens</span>
                         {% endif %}
+                        {% if repo.metadata_ and repo.metadata_.disk_size_bytes %}
+                        <span>•</span>
+                        {% set size_bytes = repo.metadata_.disk_size_bytes %}
+                        {% if size_bytes >= 1073741824 %}
+                        <span title="Disk size">{{ (size_bytes / 1073741824)|round(2) }} GB</span>
+                        {% elif size_bytes >= 1048576 %}
+                        <span title="Disk size">{{ (size_bytes / 1048576)|round(1) }} MB</span>
+                        {% else %}
+                        <span title="Disk size">{{ (size_bytes / 1024)|round(0)|int }} KB</span>
+                        {% endif %}
+                        <span>•</span>
+                        <span class="text-green-600 dark:text-green-400" title="AWS S3 storage cost/month">
+                            ${{ ((size_bytes / 1073741824) * 0.023)|round(4) }}/mese
+                        </span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
