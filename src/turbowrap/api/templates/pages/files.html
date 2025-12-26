@@ -423,6 +423,9 @@ function fileEditor() {
         commitMessage: '',
         toast: { show: false, message: '', type: 'success' },
 
+        // Go to Definition
+        definitionPopup: { show: false, x: 0, y: 0, definitions: [], loading: false },
+
         init() {
             // Check URL for repo parameter
             const params = new URLSearchParams(window.location.search);
@@ -436,8 +439,22 @@ function fileEditor() {
             this.$nextTick(() => {
                 const textarea = document.querySelector('textarea');
                 if (textarea) {
-                    textarea.addEventListener('click', () => this.updateCursorPosition(textarea));
+                    textarea.addEventListener('click', (e) => {
+                        this.updateCursorPosition(textarea);
+                        // Ctrl+Click for Go to Definition
+                        if (e.ctrlKey || e.metaKey) {
+                            e.preventDefault();
+                            this.goToDefinition(textarea, e);
+                        }
+                    });
                     textarea.addEventListener('keyup', () => this.updateCursorPosition(textarea));
+                }
+            });
+
+            // Close definition popup on click outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.definition-popup')) {
+                    this.definitionPopup.show = false;
                 }
             });
         },
@@ -773,6 +790,155 @@ function fileEditor() {
             setTimeout(() => {
                 this.toast.show = false;
             }, 3000);
+        },
+
+        // --- Go to Definition ---
+
+        getWordAtPosition(text, position) {
+            // Find word boundaries around cursor position
+            const wordChars = /[\w_]/;
+            let start = position;
+            let end = position;
+
+            // Find start of word
+            while (start > 0 && wordChars.test(text[start - 1])) {
+                start--;
+            }
+
+            // Find end of word
+            while (end < text.length && wordChars.test(text[end])) {
+                end++;
+            }
+
+            if (start === end) return null;
+
+            return {
+                word: text.substring(start, end),
+                start,
+                end
+            };
+        },
+
+        async goToDefinition(textarea, event) {
+            if (!this.selectedRepoId || !this.currentFilePath) return;
+
+            const position = textarea.selectionStart;
+            const wordInfo = this.getWordAtPosition(textarea.value, position);
+
+            if (!wordInfo || wordInfo.word.length < 2) {
+                this.showToast('Seleziona un simbolo valido', 'error');
+                return;
+            }
+
+            const symbol = wordInfo.word;
+
+            // Show loading popup near cursor
+            const rect = textarea.getBoundingClientRect();
+            this.definitionPopup = {
+                show: true,
+                x: event.clientX,
+                y: event.clientY,
+                definitions: [],
+                loading: true,
+                symbol: symbol
+            };
+
+            try {
+                const response = await fetch(
+                    `/api/repos/${this.selectedRepoId}/files/find-definition?symbol=${encodeURIComponent(symbol)}&current_file=${encodeURIComponent(this.currentFilePath)}`
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.definitionPopup.loading = false;
+
+                    if (data.found && data.definitions.length > 0) {
+                        if (data.definitions.length === 1) {
+                            // Single result: navigate directly
+                            this.definitionPopup.show = false;
+                            await this.navigateToDefinition(data.definitions[0]);
+                        } else {
+                            // Multiple results: show picker
+                            this.definitionPopup.definitions = data.definitions;
+                        }
+                    } else {
+                        this.definitionPopup.show = false;
+                        this.showToast(`Nessuna definizione per "${symbol}"`, 'error');
+                    }
+                } else {
+                    this.definitionPopup.show = false;
+                    this.showToast('Errore ricerca', 'error');
+                }
+            } catch (error) {
+                console.error('Error finding definition:', error);
+                this.definitionPopup.show = false;
+                this.showToast('Errore connessione', 'error');
+            }
+        },
+
+        async navigateToDefinition(definition) {
+            // Load the file
+            await this.loadFile(definition.path);
+
+            // After file loads, scroll to line
+            this.$nextTick(() => {
+                const textarea = document.querySelector('textarea');
+                if (textarea && definition.line) {
+                    const lines = textarea.value.split('\n');
+                    let position = 0;
+
+                    // Calculate position of target line
+                    for (let i = 0; i < Math.min(definition.line - 1, lines.length); i++) {
+                        position += lines[i].length + 1; // +1 for newline
+                    }
+
+                    // Set cursor and scroll
+                    textarea.focus();
+                    textarea.setSelectionRange(position, position);
+
+                    // Scroll to line (approximate)
+                    const lineHeight = 20; // Approximate line height
+                    const scrollTop = (definition.line - 5) * lineHeight;
+                    textarea.scrollTop = Math.max(0, scrollTop);
+
+                    this.updateCursorPosition(textarea);
+                }
+            });
+
+            this.showToast(`Vai a ${definition.path}:${definition.line}`, 'success');
+        },
+
+        selectDefinition(definition) {
+            this.definitionPopup.show = false;
+            this.navigateToDefinition(definition);
+        },
+
+        getDefinitionIcon(type) {
+            const icons = {
+                'function': 'f',
+                'method': 'm',
+                'class': 'C',
+                'variable': 'v',
+                'import': 'i',
+                'interface': 'I',
+                'type': 'T',
+                'export': 'E'
+            };
+            return icons[type] || '?';
+        },
+
+        getDefinitionColor(type) {
+            const colors = {
+                'function': 'text-purple-500 bg-purple-100 dark:bg-purple-900/30',
+                'method': 'text-purple-400 bg-purple-100 dark:bg-purple-900/30',
+                'class': 'text-orange-500 bg-orange-100 dark:bg-orange-900/30',
+                'variable': 'text-blue-500 bg-blue-100 dark:bg-blue-900/30',
+                'import': 'text-green-500 bg-green-100 dark:bg-green-900/30',
+                'interface': 'text-cyan-500 bg-cyan-100 dark:bg-cyan-900/30',
+                'type': 'text-cyan-400 bg-cyan-100 dark:bg-cyan-900/30',
+                'export': 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30'
+            };
+            return colors[type] || 'text-gray-500 bg-gray-100 dark:bg-gray-700';
         }
     }
 }

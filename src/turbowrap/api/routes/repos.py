@@ -761,6 +761,252 @@ def get_file_diff(
     )
 
 
+# --- Symbol Definition / Go to Definition ---
+
+import re
+
+
+def _parse_python_imports(content: str) -> list[dict]:
+    """Parse Python import statements and return structured data."""
+    imports = []
+
+    # Pattern for: from module import name1, name2
+    from_import_pattern = r"^from\s+([\w.]+)\s+import\s+(.+)$"
+    # Pattern for: import module1, module2
+    import_pattern = r"^import\s+(.+)$"
+
+    for line_num, line in enumerate(content.split("\n"), 1):
+        line = line.strip()
+
+        # from X import Y
+        match = re.match(from_import_pattern, line)
+        if match:
+            module = match.group(1)
+            names = [n.strip().split(" as ")[0].strip() for n in match.group(2).split(",")]
+            for name in names:
+                if name and name != "*":
+                    imports.append({
+                        "type": "from_import",
+                        "module": module,
+                        "name": name,
+                        "line": line_num,
+                    })
+            continue
+
+        # import X
+        match = re.match(import_pattern, line)
+        if match:
+            modules = [m.strip().split(" as ")[0].strip() for m in match.group(1).split(",")]
+            for module in modules:
+                if module:
+                    imports.append({
+                        "type": "import",
+                        "module": module,
+                        "name": module.split(".")[-1],
+                        "line": line_num,
+                    })
+
+    return imports
+
+
+def _resolve_python_module(module_path: str, repo_path: Path, current_file: str | None = None) -> Path | None:
+    """Resolve a Python module path to a file path."""
+    parts = module_path.split(".")
+
+    # Try different resolution strategies
+    candidates = []
+
+    # 1. Direct path: module.submodule -> module/submodule.py
+    direct_path = repo_path / "/".join(parts)
+    candidates.append(direct_path.with_suffix(".py"))
+    candidates.append(direct_path / "__init__.py")
+
+    # 2. Try with 'src' prefix (common pattern)
+    src_path = repo_path / "src" / "/".join(parts)
+    candidates.append(src_path.with_suffix(".py"))
+    candidates.append(src_path / "__init__.py")
+
+    # 3. If current_file is provided, try relative imports
+    if current_file:
+        current_dir = (repo_path / current_file).parent
+        rel_path = current_dir / "/".join(parts)
+        candidates.append(rel_path.with_suffix(".py"))
+        candidates.append(rel_path / "__init__.py")
+
+    # 4. Search recursively for the module
+    module_file = parts[-1] + ".py"
+    for item in repo_path.rglob(module_file):
+        if not any(p.startswith(".") for p in item.relative_to(repo_path).parts):
+            candidates.append(item)
+
+    # Return first existing candidate
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+
+    return None
+
+
+def _find_symbol_definitions(
+    symbol: str,
+    repo_path: Path,
+    file_extensions: list[str] | None = None,
+) -> list[SymbolDefinition]:
+    """Search for symbol definitions in the repository."""
+    if file_extensions is None:
+        file_extensions = [".py", ".js", ".ts", ".jsx", ".tsx"]
+
+    definitions = []
+
+    # Patterns for different languages
+    patterns = {
+        ".py": [
+            (rf"^def\s+{re.escape(symbol)}\s*\(", "function"),
+            (rf"^class\s+{re.escape(symbol)}\s*[:\(]", "class"),
+            (rf"^{re.escape(symbol)}\s*=", "variable"),
+            (rf"^\s+def\s+{re.escape(symbol)}\s*\(", "method"),
+        ],
+        ".js": [
+            (rf"function\s+{re.escape(symbol)}\s*\(", "function"),
+            (rf"const\s+{re.escape(symbol)}\s*=", "variable"),
+            (rf"let\s+{re.escape(symbol)}\s*=", "variable"),
+            (rf"class\s+{re.escape(symbol)}\s*[{{\s]", "class"),
+            (rf"{re.escape(symbol)}\s*:\s*function", "method"),
+            (rf"{re.escape(symbol)}\s*\([^)]*\)\s*{{", "method"),
+        ],
+        ".ts": [
+            (rf"function\s+{re.escape(symbol)}\s*[<\(]", "function"),
+            (rf"const\s+{re.escape(symbol)}\s*[=:]", "variable"),
+            (rf"let\s+{re.escape(symbol)}\s*[=:]", "variable"),
+            (rf"class\s+{re.escape(symbol)}\s*[{{\s<]", "class"),
+            (rf"interface\s+{re.escape(symbol)}\s*[{{\s<]", "interface"),
+            (rf"type\s+{re.escape(symbol)}\s*[=<]", "type"),
+            (rf"export\s+(?:default\s+)?(?:function|class|const|let|interface|type)\s+{re.escape(symbol)}", "export"),
+        ],
+    }
+    # Apply JS patterns to JSX/TSX too
+    patterns[".jsx"] = patterns[".js"]
+    patterns[".tsx"] = patterns[".ts"]
+
+    for ext in file_extensions:
+        if ext not in patterns:
+            continue
+
+        for file_path in repo_path.rglob(f"*{ext}"):
+            # Skip hidden dirs and node_modules
+            rel_path = file_path.relative_to(repo_path)
+            if any(p.startswith(".") or p == "node_modules" for p in rel_path.parts):
+                continue
+
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                lines = content.split("\n")
+
+                for line_num, line in enumerate(lines, 1):
+                    for pattern, symbol_type in patterns[ext]:
+                        if re.search(pattern, line):
+                            definitions.append(SymbolDefinition(
+                                symbol=symbol,
+                                path=str(rel_path),
+                                line=line_num,
+                                type=symbol_type,
+                                preview=line.strip()[:100],
+                                confidence=1.0 if line.strip().startswith(("def ", "class ", "function ", "const ", "let ")) else 0.8,
+                            ))
+                            break  # Only one match per line
+
+            except (UnicodeDecodeError, OSError):
+                continue
+
+    # Sort by confidence descending
+    definitions.sort(key=lambda d: (-d.confidence, d.path, d.line))
+    return definitions
+
+
+@router.get("/{repo_id}/files/find-definition", response_model=SymbolSearchResult)
+def find_definition(
+    repo_id: str,
+    symbol: str = Query(..., description="Symbol name to find (function, class, variable)"),
+    current_file: str | None = Query(default=None, description="Current file path for context"),
+    db: Session = Depends(get_db),
+):
+    """Find symbol definition (Go to Definition).
+
+    Searches for function, class, and variable definitions.
+    Also resolves Python imports to their source files.
+
+    Returns the file path and line number of definitions.
+    """
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+    definitions: list[SymbolDefinition] = []
+
+    # 1. If current_file is provided and is Python, check if symbol is an import
+    if current_file and current_file.endswith(".py"):
+        file_path = repo_path / current_file
+        if file_path.exists():
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                imports = _parse_python_imports(content)
+
+                for imp in imports:
+                    if imp["name"] == symbol:
+                        # Try to resolve the import
+                        if imp["type"] == "from_import":
+                            # from module import symbol -> find symbol in module
+                            module_file = _resolve_python_module(imp["module"], repo_path, current_file)
+                            if module_file:
+                                # Search for the symbol in the module file
+                                module_content = module_file.read_text(encoding="utf-8")
+                                for line_num, line in enumerate(module_content.split("\n"), 1):
+                                    if re.match(rf"^(def|class)\s+{re.escape(symbol)}\s*[\(:]", line):
+                                        definitions.append(SymbolDefinition(
+                                            symbol=symbol,
+                                            path=str(module_file.relative_to(repo_path)),
+                                            line=line_num,
+                                            type="function" if line.strip().startswith("def") else "class",
+                                            preview=line.strip()[:100],
+                                            confidence=1.0,
+                                        ))
+                                        break
+
+                        elif imp["type"] == "import":
+                            # import module -> go to module file
+                            module_file = _resolve_python_module(imp["module"], repo_path, current_file)
+                            if module_file:
+                                definitions.append(SymbolDefinition(
+                                    symbol=symbol,
+                                    path=str(module_file.relative_to(repo_path)),
+                                    line=1,
+                                    type="import",
+                                    preview=f"Module: {imp['module']}",
+                                    confidence=1.0,
+                                ))
+            except Exception:
+                pass
+
+    # 2. Search for symbol definitions in the codebase
+    if not definitions:
+        definitions = _find_symbol_definitions(symbol, repo_path)
+
+    if definitions:
+        return SymbolSearchResult(
+            found=True,
+            definitions=definitions[:10],  # Limit to 10 results
+            message=f"Found {len(definitions)} definition(s) for '{symbol}'",
+        )
+
+    return SymbolSearchResult(
+        found=False,
+        definitions=[],
+        message=f"No definition found for '{symbol}'",
+    )
+
+
 @router.get("/{repo_id}/structure")
 def get_structure_files(
     repo_id: str,
