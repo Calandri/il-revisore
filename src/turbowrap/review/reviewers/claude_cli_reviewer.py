@@ -225,8 +225,9 @@ class ClaudeCLIReviewer(BaseReviewer):
         if thinking_content:
             await self._save_thinking_to_s3(thinking_content, review_id, context)
 
-        # Strategy 1: Read from file (Claude should have written it)
+        # Strategy 1: Read from file at expected path (Claude should have written it)
         output = None
+        output_filename = f".turbowrap_review_{self.name}.json"
         if output_file.exists():
             try:
                 file_content = output_file.read_text(encoding="utf-8").strip()
@@ -242,6 +243,26 @@ class ClaudeCLIReviewer(BaseReviewer):
                 # Clean up output file
                 with contextlib.suppress(Exception):
                     output_file.unlink()
+
+        # Strategy 1b: Search recursively if file not found at expected path (monorepo workaround)
+        if output is None and context.repo_path:
+            try:
+                found_files = list(context.repo_path.rglob(output_filename))
+                if found_files:
+                    # Use the most recently modified file
+                    found_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+                    found_file = found_files[0]
+                    logger.warning(f"[CLAUDE CLI] File not at expected path, found at: {found_file}")
+                    file_content = found_file.read_text(encoding="utf-8").strip()
+                    if file_content.startswith("{") and file_content.endswith("}"):
+                        output = file_content
+                        logger.info(f"[CLAUDE CLI] Read JSON from fallback path: {len(output)} chars")
+                    # Clean up all found files
+                    for f in found_files:
+                        with contextlib.suppress(Exception):
+                            f.unlink()
+            except Exception as e:
+                logger.warning(f"[CLAUDE CLI] Recursive file search failed: {e}")
 
         # Strategy 2: Fallback to extracting from stdout
         if output is None and cli_result and "{" in cli_result:
@@ -370,8 +391,12 @@ class ClaudeCLIReviewer(BaseReviewer):
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        # Output file for this reviewer
-        output_file = f".turbowrap_review_{self.name}.json"
+        # Output file for this reviewer - use ABSOLUTE path to prevent issues with monorepos
+        output_filename = f".turbowrap_review_{self.name}.json"
+        if context.repo_path:
+            output_file = str(context.repo_path / output_filename)
+        else:
+            output_file = output_filename
 
         sections.append(f"""
 ## Important Instructions
@@ -379,6 +404,7 @@ class ClaudeCLIReviewer(BaseReviewer):
 1. **Read the files** listed above using your file reading capabilities
 2. **Explore freely** - you can read other files (imports, dependencies, tests) if needed
 3. **Apply your expertise** from the system prompt above
+4. **CRITICAL**: Always save output to the ABSOLUTE path specified below, not a relative path
 
 ## Output Format
 
@@ -462,8 +488,12 @@ After writing, confirm with: "Review saved to {output_file}"
         for f in file_list:
             sections.append(f"- {f}\n")
 
-        # Output file for this reviewer
-        output_file = f".turbowrap_review_{self.name}.json"
+        # Output file for this reviewer - use ABSOLUTE path to prevent issues with monorepos
+        output_filename = f".turbowrap_review_{self.name}.json"
+        if context.repo_path:
+            output_file = str(context.repo_path / output_filename)
+        else:
+            output_file = output_filename
 
         sections.append(f"""
 ## Refinement Instructions
@@ -473,6 +503,7 @@ After writing, confirm with: "Review saved to {output_file}"
 3. Re-evaluate challenged issues and adjust if warranted
 4. Incorporate suggested improvements
 5. Maintain valid issues from the previous review
+6. **CRITICAL**: Always save output to the ABSOLUTE path specified below
 
 ## IMPORTANT: Save output to file
 

@@ -17,6 +17,92 @@
 .animate-slide-in {
     animation: slide-in 0.3s ease-out;
 }
+
+/* Markdown rendering styles */
+.markdown-content {
+    line-height: 1.6;
+}
+.markdown-content h1, .markdown-content h2, .markdown-content h3 {
+    font-weight: 600;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+.markdown-content h1 { font-size: 1.5em; }
+.markdown-content h2 { font-size: 1.25em; }
+.markdown-content h3 { font-size: 1.1em; }
+.markdown-content p { margin-bottom: 1em; }
+.markdown-content ul, .markdown-content ol {
+    margin-left: 1.5em;
+    margin-bottom: 1em;
+}
+.markdown-content li { margin-bottom: 0.25em; }
+.markdown-content ul { list-style-type: disc; }
+.markdown-content ol { list-style-type: decimal; }
+.markdown-content pre {
+    background: #1e1e1e;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 1em 0;
+    font-size: 0.875rem;
+}
+.markdown-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.markdown-content :not(pre) > code {
+    background: rgba(99, 102, 241, 0.1);
+    color: #818cf8;
+    padding: 0.125em 0.375em;
+    border-radius: 0.25rem;
+    font-size: 0.875em;
+}
+.dark .markdown-content :not(pre) > code {
+    background: rgba(99, 102, 241, 0.2);
+}
+.markdown-content blockquote {
+    border-left: 4px solid #6366f1;
+    padding-left: 1em;
+    margin: 1em 0;
+    color: #6b7280;
+}
+.dark .markdown-content blockquote {
+    color: #9ca3af;
+}
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+}
+.markdown-content th, .markdown-content td {
+    border: 1px solid #e5e7eb;
+    padding: 0.5em 1em;
+    text-align: left;
+}
+.dark .markdown-content th, .dark .markdown-content td {
+    border-color: #374151;
+}
+.markdown-content th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+.dark .markdown-content th {
+    background: #374151;
+}
+.markdown-content a {
+    color: #6366f1;
+    text-decoration: underline;
+}
+.markdown-content a:hover {
+    color: #4f46e5;
+}
+.markdown-content hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.5em 0;
+}
+.dark .markdown-content hr {
+    border-color: #374151;
+}
 </style>
 {% endblock %}
 
@@ -180,7 +266,7 @@
                 <select x-model="reviewMode"
                         :disabled="isRunning"
                         class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary disabled:opacity-50">
-                    <option value="initial">INITIAL - Solo STRUCTURE.md</option>
+                    <option value="initial">INITIAL - Solo Struttura (.llms/)</option>
                     <option value="diff">DIFF - File modificati</option>
                 </select>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400"
@@ -220,8 +306,8 @@
                        x-text="reviewMode === 'initial' ? 'Review Architetturale (INITIAL)' : 'Review Codice (DIFF)'"></p>
                     <p class="text-sm mt-1" :class="reviewMode === 'initial' ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400'"
                        x-text="reviewMode === 'initial'
-                           ? 'Analizza la struttura del progetto usando i file STRUCTURE.md. Ideale per review iniziali o architetturali senza esaminare il codice sorgente.'
-                           : 'Analizza i file di codice modificati. Richiede che la repository abbia file STRUCTURE.md e codice accessibile.'"></p>
+                           ? 'Analizza la struttura del progetto usando .llms/structure.xml (o STRUCTURE.md come fallback). Ideale per review architetturali senza esaminare il codice.'
+                           : 'Analizza i file di codice modificati insieme alla struttura del repository.'"></p>
                 </div>
             </div>
         </div>
@@ -476,7 +562,7 @@
                                 Analisi in corso...
                             </div>
                             <div x-show="agent.content"
-                                 class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap"
+                                 class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap markdown-content"
                                  x-html="agent.status === 'completed' ? renderMarkdown(agent.content) : escapeHtml(agent.content.slice(-2000))"></div>
                             <span x-show="agent.status === 'running'" class="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1"></span>
                         </div>
@@ -773,7 +859,7 @@
                 </button>
             </div>
             <div class="p-4 overflow-y-auto max-h-[60vh]">
-                <div class="prose dark:prose-invert max-w-none"
+                <div class="prose dark:prose-invert max-w-none markdown-content"
                      x-html="renderMarkdown(agents[expandedAgent]?.content || '')"></div>
             </div>
         </div>
@@ -836,7 +922,7 @@
                             Il thinking mostra come l'AI ha ragionato per arrivare alle conclusioni della review.
                         </p>
                     </div>
-                    <div x-html="renderMarkdown(thinkingContent)"></div>
+                    <div class="prose dark:prose-invert max-w-none markdown-content" x-html="renderMarkdown(thinkingContent)"></div>
                 </div>
             </div>
         </div>
@@ -988,7 +1074,43 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Highlight.js for syntax highlighting -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/typescript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/json.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/sql.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/languages/dockerfile.min.js"></script>
+
+<!-- Marked.js for markdown -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- Configure marked with highlight.js -->
+<script>
+// Configure marked with syntax highlighting
+marked.setOptions({
+    highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+            try {
+                return hljs.highlight(code, { language: lang }).value;
+            } catch (e) {}
+        }
+        // Auto-detect language
+        try {
+            return hljs.highlightAuto(code).value;
+        } catch (e) {}
+        return code;
+    },
+    breaks: true,
+    gfm: true,
+    headerIds: false,
+    mangle: false
+});
+</script>
 <script>
 function reviewApp() {
     return {
