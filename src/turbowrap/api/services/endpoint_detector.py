@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from turbowrap.config import get_settings
 from turbowrap.utils.claude_cli import ClaudeCLI
 
 logger = logging.getLogger(__name__)

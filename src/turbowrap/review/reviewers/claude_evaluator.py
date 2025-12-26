@@ -108,8 +108,7 @@ class ClaudeEvaluator:
             logger.error(f"Evaluator CLI failed: {result.error}")
             return None
 
-        evaluation = self._parse_response(result.output)
-        return evaluation
+        return self._parse_response(result.output)
 
     def _build_prompt(
         self,

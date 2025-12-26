@@ -7,10 +7,8 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
-from datetime import datetime
 from pathlib import Path
 
-from turbowrap.config import get_settings
 from turbowrap.db.models import LinearIssue
 from turbowrap.review.integrations.linear import LinearClient
 from turbowrap.utils.claude_cli import ClaudeCLI
