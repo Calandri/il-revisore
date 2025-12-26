@@ -24,6 +24,7 @@ from .routes import (
     deployments_router,
     fix_router,
     git_router,
+    github_router,
     issues_router,
     linear_router,
     relationships_router,
@@ -263,6 +264,7 @@ def create_app() -> FastAPI:
     app.include_router(relationships_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
     app.include_router(git_router, prefix="/api")
+    app.include_router(github_router, prefix="/api")
     app.include_router(cli_chat_router, prefix="/api")
     app.include_router(deployments_router, prefix="/api")
 

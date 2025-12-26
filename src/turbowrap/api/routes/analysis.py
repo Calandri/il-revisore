@@ -18,6 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 from ...config import get_settings
 from ...db.models import Issue, IssueStatus, Repository, Task
 from ...utils.aws_secrets import get_anthropic_api_key
+from ...utils.git_utils import get_current_branch
 from ..deps import get_db
 
 logger = logging.getLogger(__name__)
@@ -619,6 +620,12 @@ async def run_lint_fix(
                     first_file = (
                         result.files_modified[0] if result.files_modified else "(multiple files)"
                     )
+                    # Get current branch for merge functionality
+                    try:
+                        current_branch = get_current_branch(repo_path)
+                    except Exception:
+                        current_branch = repo.default_branch or "main"
+
                     issue = Issue(
                         id=str(uuid.uuid4()),
                         task_id=task_id,
@@ -632,6 +639,8 @@ async def run_lint_fix(
                         description=f"Automatically fixed {result.issues_fixed} {lint_type} issues.\n\nFiles modified:\n"
                         + "\n".join(f"- {f}" for f in result.files_modified[:20]),
                         status=IssueStatus.RESOLVED.value,
+                        fix_commit_sha=result.commit_sha,
+                        fix_branch=current_branch,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
                     )
