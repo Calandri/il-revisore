@@ -1,6 +1,16 @@
 # TurboWrap - AI-Powered Repository Orchestrator
 FROM python:3.11-slim
 
+# Build arguments for commit info
+ARG COMMIT_SHA=unknown
+ARG BUILD_DATE=unknown
+
+# Labels for container identification
+LABEL org.opencontainers.image.revision=$COMMIT_SHA
+LABEL org.opencontainers.image.created=$BUILD_DATE
+LABEL org.opencontainers.image.title="TurboWrap"
+LABEL org.opencontainers.image.description="AI-Powered Repository Orchestrator"
+
 # Install git, Node.js, and dependencies for Claude CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \

@@ -557,7 +557,7 @@ async def restart_reviewer(
                 logger.info(f"[RESTART] No {xml_path.relative_to(context.repo_path)} found - auto-generating...")
                 try:
                     from ...tools.structure_generator import StructureGenerator
-                    from ...llm.gemini_client import GeminiClient
+                    from ...llm.gemini import GeminiClient
 
                     generator = StructureGenerator(
                         str(context.repo_path),

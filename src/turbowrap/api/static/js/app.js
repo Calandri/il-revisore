@@ -31,7 +31,7 @@ function toastManager() {
     }
 }
 
-// System monitor for sidebar (CPU, RAM, CLI processes)
+// System monitor for sidebar (CPU, RAM, CLI processes, deployments)
 function systemMonitor() {
     return {
         cpu: 0,
@@ -42,12 +42,21 @@ function systemMonitor() {
         buildCount: 0,
         buildProcesses: [],
         showBuilds: false,
+        // Deployments
+        showDeploys: false,
+        deployments: [],
+        currentDeploy: null,
+        inProgressDeploy: null,
+        deployLoading: true,
         loading: true,
 
         async init() {
             await this.refresh();
-            // Poll every 5 seconds
+            await this.refreshDeployments();
+            // Poll system status every 5 seconds
             setInterval(() => this.refresh(), 5000);
+            // Poll deployments every 30 seconds
+            setInterval(() => this.refreshDeployments(), 30000);
         },
 
         async refresh() {
@@ -66,6 +75,29 @@ function systemMonitor() {
             } catch (e) {
                 console.error('System monitor error:', e);
             }
+        },
+
+        async refreshDeployments() {
+            try {
+                const res = await fetch('/api/deployments/status');
+                if (!res.ok) throw new Error('Deployments API error');
+                const data = await res.json();
+
+                this.currentDeploy = data.current;
+                this.inProgressDeploy = data.in_progress;
+                this.deployments = data.recent || [];
+                this.deployLoading = false;
+            } catch (e) {
+                console.error('Deployments error:', e);
+                this.deployLoading = false;
+            }
+        },
+
+        formatDuration(seconds) {
+            if (!seconds) return '-';
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${m}m ${s}s`;
         }
     };
 }
