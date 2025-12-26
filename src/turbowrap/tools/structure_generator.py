@@ -6,6 +6,7 @@ with file statistics, extracted elements, and repo type detection.
 """
 
 import json
+import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Literal
 
 import tiktoken
+
+logger = logging.getLogger(__name__)
 
 try:
     import tomllib
@@ -962,41 +965,30 @@ Be concise. Only list the most important elements (max 10).
         """
         if formats is None:
             formats = ["markdown", "xml"]
-        if verbose:
-            print("\n[StructureGenerator] Generating documentation tree...")
+
+        logger.info("[StructureGenerator] Starting generation...")
+        logger.info(f"[StructureGenerator] repo_path={self.repo_path}, scan_root={self.scan_root}")
+        logger.info(f"[StructureGenerator] workspace_path={self.workspace_path}, formats={formats}")
 
         # 1. Detect repo type
         repo_type = self.detect_repo_type()
-        if verbose:
-            print(f"   Repository type: {repo_type.value.upper()}")
-            print(f"   Backend files: {self.be_file_count}")
-            print(f"   Frontend files: {self.fe_file_count}")
+        logger.info(f"[StructureGenerator] Repo type: {repo_type.value}, BE files: {self.be_file_count}, FE files: {self.fe_file_count}")
 
         # 2. Extract metadata
-        if verbose:
-            print("   Extracting metadata...")
+        logger.info("[StructureGenerator] Extracting metadata...")
         self.extract_metadata()
-        if verbose:
-            if self.metadata.language:
-                print(f"   Language: {self.metadata.language}")
-            if self.metadata.framework:
-                print(f"   Framework: {self.metadata.framework}")
-            if self.metadata.architecture_pattern:
-                print(f"   Architecture: {self.metadata.architecture_pattern}")
+        logger.info(f"[StructureGenerator] Language: {self.metadata.language}, Framework: {self.metadata.framework}")
 
         # 3. Discover directories
-        if verbose:
-            print("   Discovering directories...")
+        logger.info("[StructureGenerator] Discovering directories...")
         directories = self.discover_directories()
 
         if not directories:
-            if verbose:
-                print("   No directories with processable files found.")
+            logger.warning("[StructureGenerator] No directories with processable files found!")
             return []
 
         total_files = sum(len(d.files) for d in directories)
-        if verbose:
-            print(f"   Found {len(directories)} directories with {total_files} files")
+        logger.info(f"[StructureGenerator] Found {len(directories)} directories with {total_files} files")
 
         # 4. Collect all files to process
         all_files: list[FileStructure] = []
@@ -1004,8 +996,7 @@ Be concise. Only list the most important elements (max 10).
             all_files.extend(dir_struct.files)
 
         # 5. Extract elements in parallel
-        if verbose:
-            print(f"\n   Extracting elements from {len(all_files)} files...")
+        logger.info(f"[StructureGenerator] Extracting elements from {len(all_files)} files...")
 
         processed_files: dict[Path, FileStructure] = {}
 
@@ -1024,11 +1015,10 @@ Be concise. Only list the most important elements (max 10).
                 try:
                     result = future.result()
                     processed_files[result.path] = result
-                    if verbose and (completed % 10 == 0 or completed == len(all_files)):
-                        print(f"      Processed {completed}/{len(all_files)} files")
+                    if completed % 20 == 0 or completed == len(all_files):
+                        logger.info(f"[StructureGenerator] Processed {completed}/{len(all_files)} files")
                 except Exception as e:
-                    if verbose:
-                        print(f"      Error processing {original.path}: {e}")
+                    logger.error(f"[StructureGenerator] Error processing {original.path}: {e}")
                     processed_files[original.path] = original
 
         # 6. Update directory structures with results
@@ -1039,8 +1029,7 @@ Be concise. Only list the most important elements (max 10).
 
         # 6b. Analyze directory purposes
         if self.gemini_client:
-            if verbose:
-                print("   Analyzing directory purposes...")
+            logger.info("[StructureGenerator] Analyzing directory purposes...")
             self._analyze_directory_purposes(directories)
 
         # 7. Generate output files based on requested formats
@@ -1049,8 +1038,7 @@ Be concise. Only list the most important elements (max 10).
         # 7a. Generate STRUCTURE.md files (markdown format)
         if "markdown" in formats:
             dirs_to_generate = [d for d in directories if d.depth <= self.max_depth]
-            if verbose:
-                print(f"\n   Generating {len(dirs_to_generate)} STRUCTURE.md files...")
+            logger.info(f"[StructureGenerator] Generating {len(dirs_to_generate)} STRUCTURE.md files...")
 
             for _i, dir_struct in enumerate(dirs_to_generate):
                 try:
@@ -1059,32 +1047,26 @@ Be concise. Only list the most important elements (max 10).
                         dir_struct, repo_type, is_root=is_root
                     )
                     generated_files.append(output_path)
-                    if verbose:
-                        rel_path = output_path.relative_to(self.repo_path)
-                        print(f"      {rel_path}")
                 except Exception as e:
-                    if verbose:
-                        print(f"      Error generating for {dir_struct.path}: {e}")
+                    logger.error(f"[StructureGenerator] Error generating STRUCTURE.md for {dir_struct.path}: {e}")
 
         # 7b. Generate .llms/structure.xml (XML format for LLM)
         if "xml" in formats:
-            if verbose:
-                print("\n   Generating .llms/structure.xml...")
+            logger.info("[StructureGenerator] Generating .llms/structure.xml...")
 
             try:
                 xml_path = self._generate_structure_xml(directories, repo_type)
                 generated_files.append(xml_path)
-                if verbose:
-                    rel_path = xml_path.relative_to(self.repo_path)
-                    xml_size = xml_path.stat().st_size
-                    print(f"      {rel_path} ({xml_size:,} bytes)")
+                xml_size = xml_path.stat().st_size
+                logger.info(f"[StructureGenerator] SUCCESS: Generated {xml_path} ({xml_size:,} bytes)")
             except Exception as e:
-                if verbose:
-                    print(f"      Error generating XML: {e}")
+                import traceback
+                logger.error(f"[StructureGenerator] FAILED to generate XML: {e}")
+                logger.error(f"[StructureGenerator] Traceback:\n{traceback.format_exc()}")
+                # Re-raise so caller knows it failed!
+                raise RuntimeError(f"Failed to generate structure.xml: {e}") from e
 
-        if verbose:
-            print(f"\n   Generated {len(generated_files)} files")
-            print(f"   Total: {self.total_lines:,} lines, {self.total_tokens:,} tokens")
+        logger.info(f"[StructureGenerator] Complete! Generated {len(generated_files)} files, {self.total_lines:,} lines, {self.total_tokens:,} tokens")
 
         return generated_files
 
