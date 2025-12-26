@@ -177,6 +177,101 @@ function systemMonitor() {
             const m = Math.floor(seconds / 60);
             const s = seconds % 60;
             return `${m}m ${s}s`;
+        },
+
+        // Docker Logs Streaming
+        showLogs: false,
+        logFilter: 'all',
+        logs: [],
+        logEventSource: null,
+        logConnected: false,
+        logError: null,
+        containerName: null,
+
+        get filteredLogs() {
+            if (this.logFilter === 'all') return this.logs;
+            return this.logs.filter(l => l.level === this.logFilter.toUpperCase());
+        },
+
+        setLogFilter(filter) {
+            this.logFilter = filter;
+        },
+
+        toggleLogs() {
+            this.showLogs = !this.showLogs;
+            if (this.showLogs) {
+                this.startLogStream();
+            } else {
+                this.stopLogStream();
+            }
+        },
+
+        startLogStream() {
+            this.logs = [];
+            this.logError = null;
+            this.logConnected = false;
+
+            try {
+                this.logEventSource = new EventSource('/api/status/docker-logs/stream');
+
+                this.logEventSource.addEventListener('log', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        this.logs.push(data);
+                        // Keep max 1000 lines
+                        if (this.logs.length > 1000) this.logs.shift();
+                        // Auto-scroll to bottom
+                        this.$nextTick(() => {
+                            const container = this.$refs.logContainer;
+                            if (container) {
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        });
+                    } catch (err) {
+                        console.error('Error parsing log event:', err);
+                    }
+                });
+
+                this.logEventSource.addEventListener('connected', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        this.containerName = data.container || null;
+                    } catch {}
+                    this.logConnected = true;
+                    this.logError = null;
+                });
+
+                this.logEventSource.addEventListener('error', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        this.logError = data.message || 'Connection error';
+                    } catch {
+                        this.logError = 'Connection lost';
+                    }
+                    this.logConnected = false;
+                });
+
+                this.logEventSource.onerror = () => {
+                    this.logConnected = false;
+                    this.logError = 'Stream disconnected';
+                };
+
+            } catch (err) {
+                this.logError = 'Failed to connect: ' + err.message;
+                this.logConnected = false;
+            }
+        },
+
+        stopLogStream() {
+            if (this.logEventSource) {
+                this.logEventSource.close();
+                this.logEventSource = null;
+            }
+            this.logConnected = false;
+        },
+
+        clearLogs() {
+            this.logs = [];
         }
     };
 }

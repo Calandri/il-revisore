@@ -1,13 +1,16 @@
 """Status and health routes."""
 
+import asyncio
+import json
 import platform
 import time
 from datetime import datetime
-from typing import Literal
+from typing import AsyncIterator, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sse_starlette.sse import EventSourceResponse
 
 from ...config import get_settings
 from ...core.task_queue import get_task_queue
@@ -704,3 +707,180 @@ def get_active_development(db: Session = Depends(get_db)):
         )
 
     return active_issues
+
+
+# =============================================================================
+# Docker Logs Streaming
+# =============================================================================
+
+
+async def find_main_container() -> str | None:
+    """
+    Find the main TurboWrap Docker container.
+
+    Looks for containers with 'turbowrap' in the name, otherwise returns the first running container.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "ps",
+            "--format",
+            "{{.Names}}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+
+        if proc.returncode != 0:
+            return None
+
+        containers = [c.strip() for c in stdout.decode().strip().split("\n") if c.strip()]
+
+        if not containers:
+            return None
+
+        # Look for container with 'turbowrap' in name
+        for name in containers:
+            if "turbowrap" in name.lower():
+                return name
+
+        # Fallback to first container
+        return containers[0]
+
+    except Exception:
+        return None
+
+
+def detect_log_level(line: str) -> str:
+    """
+    Detect log level from a log line.
+
+    Returns: 'ERROR', 'WARNING', or 'INFO'
+    """
+    line_upper = line.upper()
+
+    # Error patterns
+    if any(
+        kw in line_upper
+        for kw in ["ERROR", "EXCEPTION", "TRACEBACK", "CRITICAL", "FATAL", "FAILED"]
+    ):
+        return "ERROR"
+
+    # Warning patterns
+    if any(kw in line_upper for kw in ["WARNING", "WARN", "DEPRECATED"]):
+        return "WARNING"
+
+    return "INFO"
+
+
+async def generate_docker_logs(level: str = "all") -> AsyncIterator[dict]:
+    """
+    Generator that streams Docker logs via SSE.
+
+    Args:
+        level: Filter level - 'all', 'warning', 'error'
+    """
+    container = await find_main_container()
+
+    if not container:
+        yield {
+            "event": "error",
+            "data": json.dumps(
+                {
+                    "message": "No Docker container found",
+                    "level": "ERROR",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            ),
+        }
+        return
+
+    # Notify which container we're tailing
+    yield {
+        "event": "connected",
+        "data": json.dumps(
+            {
+                "message": f"Connected to container: {container}",
+                "container": container,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        ),
+    }
+
+    try:
+        # Start docker logs with --follow
+        process = await asyncio.create_subprocess_exec(
+            "docker",
+            "logs",
+            "--follow",
+            "--tail",
+            "100",
+            "--timestamps",
+            container,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        # Stream lines as they come
+        async for line in process.stdout:
+            log_line = line.decode(errors="replace").strip()
+            if not log_line:
+                continue
+
+            log_level = detect_log_level(log_line)
+
+            # Apply filter
+            if level != "all":
+                if level.lower() == "error" and log_level != "ERROR":
+                    continue
+                if level.lower() == "warning" and log_level not in ("WARNING", "ERROR"):
+                    continue
+
+            yield {
+                "event": "log",
+                "data": json.dumps(
+                    {
+                        "content": log_line,
+                        "level": log_level,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                ),
+            }
+
+    except asyncio.CancelledError:
+        # Client disconnected
+        if process:
+            process.terminate()
+            await process.wait()
+        raise
+
+    except Exception as e:
+        yield {
+            "event": "error",
+            "data": json.dumps(
+                {
+                    "message": f"Error streaming logs: {e}",
+                    "level": "ERROR",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            ),
+        }
+
+
+@router.get("/docker-logs/stream")
+async def stream_docker_logs(level: str = "all"):
+    """
+    Stream Docker container logs via Server-Sent Events.
+
+    Args:
+        level: Filter level - 'all' (default), 'warning', or 'error'
+
+    Returns:
+        EventSourceResponse with log events
+
+    Events:
+        - info: Connection info (container name)
+        - log: Log line with content, level, timestamp
+        - error: Error message
+    """
+    return EventSourceResponse(generate_docker_logs(level))
