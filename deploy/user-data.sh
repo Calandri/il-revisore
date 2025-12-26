@@ -27,6 +27,39 @@ aws ecr get-login-password --region $REGION | docker login --username AWS --pass
 mkdir -p /opt/turbowrap/data
 chown -R 1000:1000 /opt/turbowrap/data
 
+# Mount EBS volume for repos (if attached)
+REPOS_DEVICE="/dev/xvdf"
+REPOS_MOUNT="/mnt/repos"
+
+if [ -b "$REPOS_DEVICE" ]; then
+  echo "Found repos EBS volume at $REPOS_DEVICE"
+
+  # Format if not already formatted
+  if ! blkid "$REPOS_DEVICE" | grep -q ext4; then
+    echo "Formatting volume as ext4..."
+    mkfs.ext4 "$REPOS_DEVICE"
+  fi
+
+  # Create mount point and mount
+  mkdir -p "$REPOS_MOUNT"
+  mount "$REPOS_DEVICE" "$REPOS_MOUNT"
+
+  # Ensure correct permissions for appuser (uid 1000)
+  chown -R 1000:1000 "$REPOS_MOUNT"
+
+  # Add to fstab for persistence across reboots
+  if ! grep -q "$REPOS_DEVICE" /etc/fstab; then
+    echo "$REPOS_DEVICE $REPOS_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
+  fi
+
+  echo "Repos volume mounted at $REPOS_MOUNT"
+else
+  echo "No repos EBS volume found, using local storage"
+  REPOS_MOUNT="/opt/turbowrap/data/repos"
+  mkdir -p "$REPOS_MOUNT"
+  chown -R 1000:1000 "$REPOS_MOUNT"
+fi
+
 # Get secrets from AWS Secrets Manager
 echo "Fetching secrets from Secrets Manager..."
 SECRETS=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --region "$REGION" --query SecretString --output text)
