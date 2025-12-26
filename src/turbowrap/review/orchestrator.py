@@ -574,17 +574,28 @@ class Orchestrator:
             logger.error("Cannot generate STRUCTURE.md: no repo_path set")
             return
 
+        # Determine target directory: workspace subfolder or full repo
+        if context.workspace_path:
+            target_dir = context.repo_path / context.workspace_path
+            if not target_dir.exists():
+                logger.warning(f"Workspace path does not exist for structure generation: {target_dir}")
+                target_dir = context.repo_path
+            display_name = f"{context.repo_path.name}/{context.workspace_path}"
+        else:
+            target_dir = context.repo_path
+            display_name = context.repo_path.name
+
         # Emit start event
         if emit:
             await emit(ProgressEvent(
                 type=ProgressEventType.STRUCTURE_GENERATION_STARTED,
-                message=f"Generating STRUCTURE.md for {context.repo_path.name}...",
+                message=f"Generating STRUCTURE.md for {display_name}...",
             ))
 
         try:
             # Create generator with GeminiClient for semantic analysis
             generator = StructureGenerator(
-                str(context.repo_path),
+                str(target_dir),
                 gemini_client=GeminiClient(),
             )
 
@@ -1067,10 +1078,19 @@ class Orchestrator:
         if not context.repo_path or not context.repo_path.exists():
             return
 
+        # Determine search base: workspace subfolder or full repo
+        if context.workspace_path:
+            search_base = context.repo_path / context.workspace_path
+            if not search_base.exists():
+                logger.warning(f"Workspace path does not exist for stale check: {search_base}")
+                return
+        else:
+            search_base = context.repo_path
+
         stale_dirs: list[Path] = []
 
-        # Find all STRUCTURE.md files
-        for structure_file in context.repo_path.rglob("STRUCTURE.md"):
+        # Find all STRUCTURE.md files within search base
+        for structure_file in search_base.rglob("STRUCTURE.md"):
             rel_path = structure_file.relative_to(context.repo_path)
             # Skip ignored directories (use relative path, not absolute)
             if any(part.startswith(".") or part in {
