@@ -181,6 +181,67 @@ class ClaudeCLIReviewer(BaseReviewer):
             logger.warning(f"Failed to save review to S3: {e}")
             return None
 
+    async def _save_prompt_to_s3(
+        self,
+        prompt: str,
+        review_id: str,
+        context: ReviewContext,
+    ) -> str | None:
+        """
+        Save the complete prompt to S3 for debugging.
+
+        Args:
+            prompt: The complete prompt sent to Claude CLI
+            review_id: Unique identifier for this review
+            context: Review context for metadata
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not prompt or not self.s3_bucket:
+            return None
+
+        try:
+            # Create S3 key with timestamp
+            timestamp = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"prompts/{timestamp}/{review_id}_{self.name}.md"
+
+            # Create markdown content with metadata
+            model = self.settings.agents.claude_model
+            content = f"""# Review Prompt - {self.name}
+
+**Review ID**: {review_id}
+**Timestamp**: {datetime.utcnow().isoformat()}
+**Model**: {model}
+**Reviewer**: {self.name}
+**Files to Review**: {len(context.files) if context.files else 0}
+**Workspace Path**: {context.workspace_path or 'N/A'}
+**Has Structure Docs**: {bool(context.structure_docs)}
+
+---
+
+## Complete Prompt
+
+{prompt}
+"""
+
+            # Upload to S3
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[CLAUDE CLI] Prompt saved to S3: {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"Failed to save prompt to S3: {e}")
+            return None
+
     async def _run_cli_and_read_output(
         self,
         prompt: str,
@@ -211,15 +272,18 @@ class ClaudeCLIReviewer(BaseReviewer):
             with contextlib.suppress(Exception):
                 output_file.unlink()
 
+        # Get review_id for S3 logging (before running CLI so we can log prompt even if it fails)
+        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+
+        # Save prompt to S3 for debugging
+        await self._save_prompt_to_s3(prompt, review_id, context)
+
         # Run Claude CLI with streaming
         cli_result, model_usage, thinking_content, _ = await self._run_claude_cli(prompt, context.repo_path, on_chunk)
 
         # Check if CLI failed
         if cli_result is None:
             return None, model_usage, "Claude CLI failed to execute"
-
-        # Get review_id for S3 logging
-        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
 
         # Save thinking to S3 if available
         if thinking_content:

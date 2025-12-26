@@ -359,6 +359,117 @@ def live_status():
     except Exception as e:
         result["cli_processes"] = {"count": 0, "error": str(e)[:50]}
 
+    # Docker/Container build processes
+    try:
+        import psutil
+        build_processes = []
+        now = time.time()
+
+        for proc in psutil.process_iter(['name', 'memory_percent', 'cpu_percent']):
+            try:
+                name = proc.info['name'].lower()
+                # Detect docker, docker-compose, buildx, podman, buildah
+                if name in ('docker', 'docker-compose', 'podman', 'buildah', 'buildx', 'containerd'):
+                    cmdline_list = proc.cmdline()
+                    cmdline = ' '.join(cmdline_list).lower()
+
+                    # Check if it's a build operation
+                    is_build = any(kw in cmdline for kw in ['build', 'push', 'pull', 'compose up', 'run'])
+                    if not is_build:
+                        continue
+
+                    # Get additional process info
+                    cwd = None
+                    try:
+                        cwd = proc.cwd()
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        pass
+
+                    elapsed_seconds = 0
+                    try:
+                        elapsed_seconds = int(now - proc.create_time())
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        pass
+
+                    cpu = 0
+                    try:
+                        cpu = proc.cpu_percent(interval=None)
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        pass
+
+                    status = "unknown"
+                    try:
+                        status = proc.status()
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        pass
+
+                    # Determine operation type
+                    if 'build' in cmdline:
+                        op_type = 'build'
+                    elif 'push' in cmdline:
+                        op_type = 'push'
+                    elif 'pull' in cmdline:
+                        op_type = 'pull'
+                    elif 'compose up' in cmdline or 'up -d' in cmdline:
+                        op_type = 'up'
+                    elif 'run' in cmdline:
+                        op_type = 'run'
+                    else:
+                        op_type = 'other'
+
+                    # Extract image/service name from cmdline
+                    image_name = None
+                    # Try to find -t flag for build
+                    if '-t ' in cmdline:
+                        parts = cmdline.split('-t ')
+                        if len(parts) > 1:
+                            image_name = parts[1].split()[0].split(':')[0]
+                    # Or look for Dockerfile context
+                    elif '-f ' in cmdline:
+                        parts = cmdline.split('-f ')
+                        if len(parts) > 1:
+                            image_name = parts[1].split()[0]
+
+                    # Extract repo/project name from cwd
+                    project_name = cwd.rstrip('/').split('/')[-1] if cwd else None
+
+                    # Format elapsed time
+                    if elapsed_seconds < 60:
+                        elapsed_str = f"{elapsed_seconds}s"
+                    elif elapsed_seconds < 3600:
+                        elapsed_str = f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s"
+                    else:
+                        elapsed_str = f"{elapsed_seconds // 3600}h {(elapsed_seconds % 3600) // 60}m"
+
+                    # Extract meaningful cmdline info
+                    cmdline_short = ' '.join(cmdline_list[:5]) if cmdline_list else ''
+                    if len(cmdline_short) > 80:
+                        cmdline_short = cmdline_short[:77] + '...'
+
+                    build_processes.append({
+                        'tool': name,  # docker, podman, etc
+                        'operation': op_type,
+                        'pid': proc.pid,
+                        'memory_percent': round(proc.info['memory_percent'] or 0, 1),
+                        'cpu_percent': round(cpu, 1),
+                        'status': status,
+                        'cwd': cwd,
+                        'project_name': project_name,
+                        'image_name': image_name,
+                        'elapsed': elapsed_str,
+                        'elapsed_seconds': elapsed_seconds,
+                        'cmdline': cmdline_short,
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        result["build_processes"] = {
+            "count": len(build_processes),
+            "processes": build_processes[:10],
+        }
+    except Exception as e:
+        result["build_processes"] = {"count": 0, "error": str(e)[:50]}
+
     return result
 
 
