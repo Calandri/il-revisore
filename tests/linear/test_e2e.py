@@ -25,6 +25,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
@@ -154,9 +156,8 @@ async def test_linear_create_issue():
             team_id=team_id,
             title=f"[TEST] {TEST_ISSUE['title']}",
             description=(
-                f"{TEST_ISSUE['description']}" 
-                "\n\n**This is a test issue created by test script**" 
-            ), 
+                f"{TEST_ISSUE['description']}" "\n\n**This is a test issue created by test script**"
+            ),
             priority=0,
         )
 
@@ -189,6 +190,8 @@ async def test_linear_create_issue():
 # ==============================================================================
 
 
+@pytest.mark.slow
+@pytest.mark.e2e
 def test_claude_question_generator():
     """Test Claude question generator agent."""
     print_header("Claude Agent - Question Generator", step=3)
@@ -261,6 +264,8 @@ Target touch area dell'icona è 20x20px, sotto il minimo consigliato di 44x44px.
         return False
 
 
+@pytest.mark.slow
+@pytest.mark.e2e
 def test_claude_finalizer():
     """Test Claude finalizer agent."""
     print_header("Claude Agent - Finalizer", step=3)

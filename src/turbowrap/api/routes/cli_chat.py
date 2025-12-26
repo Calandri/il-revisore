@@ -367,9 +367,7 @@ def fork_session(
                 f"from {session_id} to {forked.id}"
             )
 
-    logger.info(
-        f"[FORK] Created fork {forked.id} from {session_id} " f"with {message_count} messages"
-    )
+    logger.info(f"[FORK] Created fork {forked.id} from {session_id} with {message_count} messages")
 
     return forked
 

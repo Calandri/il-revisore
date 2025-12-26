@@ -226,7 +226,7 @@ class FixStartRequest(BaseModel):
     force: bool = Field(
         default=False,
         description=(
-            "Force restart even if a session is already in progress " "(use when session is stuck)"
+            "Force restart even if a session is already in progress (use when session is stuck)"
         ),
     )
 

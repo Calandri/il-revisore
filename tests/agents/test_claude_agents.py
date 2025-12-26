@@ -2,13 +2,20 @@
 """Test script for Claude agent prompts.
 
 Tests both linear_question_generator and linear_finalizer agents.
+
+Run with: uv run pytest tests/agents/test_claude_agents.py -v
+Skip slow tests: uv run pytest tests/agents/ -m "not slow"
 """
 
 import json
 import subprocess
 import sys
 
+import pytest
 
+
+@pytest.mark.slow
+@pytest.mark.e2e
 def test_question_generator():
     """Test the question generator agent."""
     print("=" * 80)
@@ -71,6 +78,8 @@ Su iPhone 12 il bottone appare più piccolo del target touch raccomandato (44x44
         return False
 
 
+@pytest.mark.slow
+@pytest.mark.e2e
 def test_finalizer():
     """Test the finalizer agent."""
     print("\n\n" + "=" * 80)

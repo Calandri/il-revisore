@@ -350,10 +350,10 @@ def get_context_for_session(
                 f"""
 ## Repository Corrente
 
-Stai lavorando su **{repo.name}** ({repo.repo_type or 'generic'}).
+Stai lavorando su **{repo.name}** ({repo.repo_type or "generic"}).
 
 - **Path locale**: `{repo.local_path}`
-- **Progetto**: {repo.project_name or 'N/A'}
+- **Progetto**: {repo.project_name or "N/A"}
 - **URL**: {repo.url}
 
 Quando modifichi file, usa path relativi a: `{repo.local_path}`
@@ -399,10 +399,10 @@ Quando modifichi file, usa path relativi a: `{repo.local_path}`
 **{issue.linear_identifier}**: {issue.title}
 
 **Descrizione**:
-{issue.description or '_Nessuna descrizione_'}
+{issue.description or "_Nessuna descrizione_"}
 
 **Stato TurboWrap**: {issue.turbowrap_state}
-**Stato Linear**: {issue.linear_state_name or 'N/A'}
+**Stato Linear**: {issue.linear_state_name or "N/A"}
 **URL**: {issue.linear_url}
 """
             )

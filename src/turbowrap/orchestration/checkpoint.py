@@ -115,8 +115,7 @@ class CheckpointManager(Generic[T]):
 
         if self.use_local:
             return await self._save_local(key, body)
-        else:
-            return await self._save_s3(key, body)
+        return await self._save_s3(key, body)
 
     async def load(
         self,
@@ -220,9 +219,7 @@ class CheckpointManager(Generic[T]):
         matches = list(self.local_dir.glob(pattern))
 
         if not matches:
-            logger.debug(
-                f"No checkpoint found for run_id={run_id}, checkpoint={checkpoint_name}"
-            )
+            logger.debug(f"No checkpoint found for run_id={run_id}, checkpoint={checkpoint_name}")
             return None
 
         # Return most recent
@@ -273,9 +270,7 @@ class CheckpointManager(Generic[T]):
                     if run_id not in runs:
                         runs[run_id] = {
                             "run_id": run_id,
-                            "started_at": datetime.fromtimestamp(
-                                path.stat().st_mtime
-                            ).isoformat(),
+                            "started_at": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
                             "checkpoints": [],
                         }
                     checkpoint_name = path.stem

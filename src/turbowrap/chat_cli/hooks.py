@@ -305,8 +305,7 @@ class ChatHooks:
 
                 if result["exceeded"]:
                     logger.warning(
-                        f"Session {session_id[:8]} exceeded threshold: "
-                        f"{total} > {threshold_tokens}"
+                        f"Session {session_id[:8]} exceeded threshold: {total} > {threshold_tokens}"
                     )
 
         return result

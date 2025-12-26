@@ -95,8 +95,7 @@ def with_rate_limit_retry(func: Callable[..., T]) -> Callable[..., T]:
                     raise
 
         raise GitHubRateLimitError(
-            f"GitHub rate limit exceeded after {MAX_RETRIES} retries. "
-            f"Last error: {last_exception}",
+            f"GitHub rate limit exceeded after {MAX_RETRIES} retries. Last error: {last_exception}",
             reset_time=getattr(last_exception, "reset_time", None),
         )
 

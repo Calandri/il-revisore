@@ -109,7 +109,7 @@ def build_analysis_prompt(repos: list[RepoStructure]) -> str:
         prompt += f"""
 ### Repository: {repo.name}
 - ID: {repo.id}
-- Tipo: {repo.repo_type or 'unknown'}
+- Tipo: {repo.repo_type or "unknown"}
 
 **STRUCTURE.md:**
 ```

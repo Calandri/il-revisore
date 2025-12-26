@@ -818,11 +818,11 @@ async def analyze_for_creation(
 
 Titolo: {title}
 Descrizione: {description}
-Figma: {figma_link or 'N/A'}
-Sito: {website_link or 'N/A'}
+Figma: {figma_link or "N/A"}
+Sito: {website_link or "N/A"}
 
 Analisi Gemini:
-{gemini_insights if gemini_insights else 'Nessuno screenshot fornito'}
+{gemini_insights if gemini_insights else "Nessuno screenshot fornito"}
 
 Output JSON: {{"questions": [{{"id": 1, "question": "...", "why": "..."}}]}}
 """
@@ -913,8 +913,8 @@ async def finalize_creation(
 
 Titolo: {request.title}
 Descrizione iniziale: {request.description}
-Figma: {request.figma_link or 'N/A'}
-Sito: {request.website_link or 'N/A'}
+Figma: {request.figma_link or "N/A"}
+Sito: {request.website_link or "N/A"}
 
 Analisi Gemini:
 {request.gemini_insights}

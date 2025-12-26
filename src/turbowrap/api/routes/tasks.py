@@ -687,8 +687,7 @@ async def restart_reviewer(
                                 reviewer_name=reviewer_name,
                                 reviewer_display_name=display_name,
                                 content=(
-                                    f"✅ Structure analysis complete "
-                                    f"({len(content):,} bytes)\n\n"
+                                    f"✅ Structure analysis complete ({len(content):,} bytes)\n\n"
                                 ),
                             )
                         )

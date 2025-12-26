@@ -166,7 +166,7 @@ class LinearIssueAnalyzer:
 {issue.description or "No description provided"}
 
 **Priority**: {self._format_priority(cast(int, issue.priority))}
-**Labels**: {', '.join([label.get('name', '') for label in cast(list[dict[str, Any]], issue.labels or [])])}
+**Labels**: {", ".join([label.get("name", "") for label in cast(list[dict[str, Any]], issue.labels or [])])}
 **Assignee**: {issue.assignee_name or "Unassigned"}
 **State**: {issue.linear_state_name or "Unknown"}
 
@@ -203,7 +203,7 @@ class LinearIssueAnalyzer:
 {issue.description or "No description provided"}
 
 **Priority**: {self._format_priority(cast(int, issue.priority))}
-**Labels**: {', '.join([label.get('name', '') for label in cast(list[dict[str, Any]], issue.labels or [])])}
+**Labels**: {", ".join([label.get("name", "") for label in cast(list[dict[str, Any]], issue.labels or [])])}
 **Assignee**: {issue.assignee_name or "Unassigned"}
 **State**: {issue.linear_state_name or "Unknown"}
 

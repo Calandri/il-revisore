@@ -76,8 +76,7 @@ class LinearStateManager:
         if not force and new_state not in self.ALLOWED_TRANSITIONS.get(current_state, []):
             allowed = self.ALLOWED_TRANSITIONS.get(current_state, [])
             raise ValueError(
-                f"Invalid transition from '{current_state}' to '{new_state}'. "
-                f"Allowed: {allowed}"
+                f"Invalid transition from '{current_state}' to '{new_state}'. Allowed: {allowed}"
             )
 
         # Additional validation based on target state

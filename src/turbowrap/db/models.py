@@ -47,7 +47,7 @@ class SoftDeleteMixin:
     """
 
     @declared_attr
-    def deleted_at(cls):  # type: ignore[override]
+    def deleted_at(cls) -> Column:  # type: ignore[type-arg]
         """Timestamp when the record was soft-deleted. None means active."""
         return Column(DateTime, nullable=True, default=None, index=True)
 

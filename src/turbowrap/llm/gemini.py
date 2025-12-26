@@ -175,10 +175,10 @@ class GeminiProClient(GeminiClient):
         prompt = f"""Analizza questi screenshot per una issue di sviluppo.
 
 **Contesto:**
-- **Titolo**: {context.get('title', 'N/A')}
-- **Descrizione**: {context.get('description', 'N/A')}
-- **Link Figma**: {context.get('figma_link', 'N/A')}
-- **Link Sito**: {context.get('website_link', 'N/A')}
+- **Titolo**: {context.get("title", "N/A")}
+- **Descrizione**: {context.get("description", "N/A")}
+- **Link Figma**: {context.get("figma_link", "N/A")}
+- **Link Sito**: {context.get("website_link", "N/A")}
 
 **Analisi richiesta:**
 

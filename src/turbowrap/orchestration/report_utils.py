@@ -17,7 +17,6 @@ from turbowrap.review.models.report import (
 )
 from turbowrap.review.models.review import Issue, IssueSeverity
 
-
 # Severity ranking for comparisons
 SEVERITY_RANKS = {
     IssueSeverity.CRITICAL: 4,
@@ -156,9 +155,7 @@ def calculate_overall_score(issues: list[Issue]) -> float:
     if not issues:
         return 10.0
 
-    total_deduction = sum(
-        SEVERITY_DEDUCTIONS.get(issue.severity, 0.1) for issue in issues
-    )
+    total_deduction = sum(SEVERITY_DEDUCTIONS.get(issue.severity, 0.1) for issue in issues)
 
     return max(0.0, round(10.0 - total_deduction, 1))
 

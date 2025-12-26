@@ -726,10 +726,15 @@ class TestRealWorldStreamJson:
             "First, I need to understand the problem...\\n\\n"
             "Let me analyze step by step:\\n1. Check the input\\n2. Validate the format"
         )
-        raw_output = f"""\
-{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"thinking","thinking":"{thinking_content}"}}]}}}}
-{{"type":"content_block_delta","delta":{{"type":"text_delta","text":"Based on my analysis"}}}}
-{{"type":"result","result":"Based on my analysis, the solution is X.","modelUsage":{{"claude-opus-4-5-20251101":{{"inputTokens":500,"outputTokens":200}}}}}}"""
+        raw_output = (
+            '{"type":"assistant","message":{"role":"assistant",'
+            f'"content":[{{"type":"thinking","thinking":"{thinking_content}"}}]}}}}\n'
+            '{"type":"content_block_delta","delta":{"type":"text_delta",'
+            '"text":"Based on my analysis"}}\n'
+            '{"type":"result","result":"Based on my analysis, the solution is X.",'
+            '"modelUsage":{"claude-opus-4-5-20251101":{'
+            '"inputTokens":500,"outputTokens":200}}}'
+        )
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
 
@@ -745,7 +750,8 @@ class TestRealWorldStreamJson:
         raw_output = """\
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_123","name":"Read","input":{"file_path":"/test.py"}}]}}
 {"type":"tool_result","tool_use_id":"toolu_123","content":"file content here"}
-{"type":"content_block_delta","delta":{"type":"text_delta","text":"After reading the file, I found"}}
+{"type":"content_block_delta","delta":{"type":"text_delta",
+"text":"After reading the file, I found"}}
 {"type":"result","result":"After reading the file, I found the issue.","modelUsage":{}}"""
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)

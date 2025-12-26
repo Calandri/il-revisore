@@ -36,9 +36,7 @@ class BaseProgressEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     message: str | None = Field(default=None, description="Human-readable status message")
     error: str | None = Field(default=None, description="Error message if failed")
-    log_level: str | None = Field(
-        default=None, description="Log level: INFO, WARNING, ERROR"
-    )
+    log_level: str | None = Field(default=None, description="Log level: INFO, WARNING, ERROR")
 
     # Streaming content (for real-time updates)
     content: str | None = Field(default=None, description="Streaming content chunk")
@@ -125,12 +123,16 @@ class ProgressEmitter:
 def get_review_progress_types() -> dict[str, Any]:
     """Get review progress event types (lazy import)."""
     from turbowrap.review.models.progress import (
-        ProgressEvent as ReviewProgressEvent,
-        ProgressEventType as ReviewProgressEventType,
+        REVIEWER_DISPLAY_NAMES,
         ReviewerState,
         ReviewProgress,
         get_reviewer_display_name,
-        REVIEWER_DISPLAY_NAMES,
+    )
+    from turbowrap.review.models.progress import (
+        ProgressEvent as ReviewProgressEvent,
+    )
+    from turbowrap.review.models.progress import (
+        ProgressEventType as ReviewProgressEventType,
     )
 
     return {
@@ -146,8 +148,8 @@ def get_review_progress_types() -> dict[str, Any]:
 def get_fix_progress_types() -> dict[str, Any]:
     """Get fix progress event types (lazy import)."""
     from turbowrap.fix.models import (
-        FixProgressEvent,
         FixEventType,
+        FixProgressEvent,
     )
 
     return {

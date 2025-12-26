@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import cast
 from urllib.parse import quote
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -49,17 +48,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Skip if auth is disabled
         if not settings.auth.enabled:
-            return cast(Response, await call_next(request))
+            return await call_next(request)
 
         path = request.url.path
 
         # Skip public paths
         if path in PUBLIC_PATHS:
-            return cast(Response, await call_next(request))
+            return await call_next(request)
 
         # Skip public prefixes
         if any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES):
-            return cast(Response, await call_next(request))
+            return await call_next(request)
 
         # Check for valid session
         access_token = request.cookies.get(settings.auth.session_cookie_name)
@@ -117,7 +116,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return self._redirect_to_login(request)
 
         # User is authenticated, proceed
-        return cast(Response, await call_next(request))
+        return await call_next(request)
 
     def _redirect_to_login(self, request: Request) -> RedirectResponse:
         """Create redirect response to login page."""

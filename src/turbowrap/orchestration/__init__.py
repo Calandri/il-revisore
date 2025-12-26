@@ -12,6 +12,28 @@ the review, fix, and auto-update orchestrators:
 """
 
 # Report utilities
+# Base orchestrator
+from turbowrap.orchestration.base import BaseOrchestrator
+
+# Checkpoint management
+from turbowrap.orchestration.checkpoint import CheckpointManager
+
+# CLI runners
+from turbowrap.orchestration.cli_runner import (
+    ClaudeCLI,
+    ClaudeCLIResult,
+    CLIRunner,
+    GeminiCLI,
+    GeminiCLIResult,
+    ModelUsage,
+)
+
+# Progress types
+from turbowrap.orchestration.progress import (
+    BaseProgressEvent,
+    ProgressCallback,
+    ProgressEmitter,
+)
 from turbowrap.orchestration.report_utils import (
     CATEGORY_MULTIPLIERS,
     SEVERITY_DEDUCTIONS,
@@ -26,29 +48,6 @@ from turbowrap.orchestration.report_utils import (
     prioritize_issues,
     process_issues,
 )
-
-# Checkpoint management
-from turbowrap.orchestration.checkpoint import CheckpointManager
-
-# Progress types
-from turbowrap.orchestration.progress import (
-    BaseProgressEvent,
-    ProgressCallback,
-    ProgressEmitter,
-)
-
-# CLI runners
-from turbowrap.orchestration.cli_runner import (
-    CLIRunner,
-    ClaudeCLI,
-    ClaudeCLIResult,
-    GeminiCLI,
-    GeminiCLIResult,
-    ModelUsage,
-)
-
-# Base orchestrator
-from turbowrap.orchestration.base import BaseOrchestrator
 
 __all__ = [
     # report_utils

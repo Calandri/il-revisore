@@ -183,6 +183,14 @@ warn_required_dynamic_aliases = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --cov=turbowrap --cov-report=term-missing"
+markers = [
+    "unit: Unit tests (isolated, mocked dependencies)",
+    "integration: Integration tests (multiple components)",
+    "functional: Functional tests (business logic verification)",
+    "e2e: End-to-end tests (real external APIs)",
+    "edge_case: Edge case and boundary tests",
+    "slow: Slow tests (>5s execution time)",
+]
 
 [tool.coverage.run]
 source = ["src/turbowrap"]

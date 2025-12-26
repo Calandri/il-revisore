@@ -627,7 +627,7 @@ class ClaudeCLI:
 **Context ID**: {context_id}
 **Timestamp**: {datetime.now(timezone.utc).isoformat()}
 **Artifact Type**: {artifact_type}
-**Model**: {metadata.get('model', self.model) if metadata else self.model}
+**Model**: {metadata.get("model", self.model) if metadata else self.model}
 
 ---
 
