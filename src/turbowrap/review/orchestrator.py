@@ -668,19 +668,29 @@ class Orchestrator:
             ))
 
         try:
-            # Create generator with GeminiClient for semantic analysis
+            # Try to create GeminiClient for semantic analysis (optional)
+            gemini_client = None
+            try:
+                gemini_client = GeminiClient()
+                logger.info("[ORCHESTRATOR] GeminiClient available for semantic analysis")
+            except Exception as gemini_err:
+                logger.warning(f"[ORCHESTRATOR] GeminiClient not available (will use basic analysis): {gemini_err}")
+
+            # Create generator with optional GeminiClient
             # Pass workspace_path for monorepo support
             generator = StructureGenerator(
                 str(context.repo_path),
                 workspace_path=context.workspace_path,
-                gemini_client=GeminiClient(),
+                gemini_client=gemini_client,
             )
+            logger.info(f"[ORCHESTRATOR] StructureGenerator scan_root={generator.scan_root}")
 
             # Emit progress update
             if emit:
+                message = "Analyzing repository structure with Gemini Flash..." if gemini_client else "Generating basic structure documentation..."
                 await emit(ProgressEvent(
                     type=ProgressEventType.STRUCTURE_GENERATION_PROGRESS,
-                    message="Analyzing repository structure with Gemini Flash...",
+                    message=message,
                 ))
 
             # Run generation (sync method, run in executor)

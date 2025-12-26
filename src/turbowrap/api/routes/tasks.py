@@ -557,23 +557,37 @@ async def restart_reviewer(
                 logger.info(f"[RESTART] No {xml_path.relative_to(context.repo_path)} found - auto-generating...")
                 try:
                     from ...tools.structure_generator import StructureGenerator
-                    from ...llm.gemini import GeminiClient
 
+                    # Try to create GeminiClient for semantic analysis (optional)
+                    gemini_client = None
+                    try:
+                        from ...llm.gemini import GeminiClient
+                        gemini_client = GeminiClient()
+                        logger.info("[RESTART] GeminiClient available for semantic analysis")
+                    except Exception as gemini_err:
+                        logger.warning(f"[RESTART] GeminiClient not available (will use basic analysis): {gemini_err}")
+
+                    # Generate structure.xml (works with or without GeminiClient)
+                    logger.info(f"[RESTART] Creating StructureGenerator for {context.repo_path} (workspace={context.workspace_path})")
                     generator = StructureGenerator(
                         str(context.repo_path),
                         workspace_path=context.workspace_path,
-                        gemini_client=GeminiClient(),
+                        gemini_client=gemini_client,
                     )
+                    logger.info(f"[RESTART] scan_root={generator.scan_root}")
                     generated_files = generator.generate(verbose=True, formats=["xml"])
-                    logger.info(f"[RESTART] Auto-generated {len(generated_files)} structure file(s)")
+                    logger.info(f"[RESTART] Auto-generated {len(generated_files)} structure file(s): {generated_files}")
 
                     # Reload after generation
                     if xml_path.exists():
                         content = xml_path.read_text(encoding="utf-8")
                         context.structure_docs["structure.xml"] = content
-                        logger.info(f"[RESTART] Loaded auto-generated structure.xml")
+                        logger.info(f"[RESTART] Loaded auto-generated structure.xml ({len(content)} chars)")
+                    else:
+                        logger.error(f"[RESTART] structure.xml still not found at {xml_path} after generation!")
                 except Exception as e:
-                    logger.warning(f"[RESTART] Failed to auto-generate structure.xml: {e}")
+                    import traceback
+                    logger.error(f"[RESTART] Failed to auto-generate structure.xml: {e}\n{traceback.format_exc()}")
 
             # Create progress callbacks
             async def on_iteration(iteration: int, satisfaction: float, issues_count: int):
