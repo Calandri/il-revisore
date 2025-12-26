@@ -736,9 +736,13 @@ async def restart_reviewer(
             )
 
             # Delete old issues from this reviewer
+            # Use PostgreSQL @> operator for JSON array containment
             old_issues = (
                 restart_db.query(Issue)
-                .filter(Issue.task_id == task_id, Issue.flagged_by.contains([reviewer_name]))
+                .filter(
+                    Issue.task_id == task_id,
+                    Issue.flagged_by.op("@>")(json.dumps([reviewer_name])),
+                )
                 .all()
             )
             for old_issue in old_issues:

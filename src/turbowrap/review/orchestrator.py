@@ -631,9 +631,10 @@ class Orchestrator:
             ".tox",
             "htmlcov",
             ".reviews",
+            ".llms",  # Structure docs directory
         }
-        # Exclude previous review output files
-        exclude_patterns = {".turbowrap_review"}
+        # Exclude previous review output files and temp files
+        exclude_patterns = {".turbowrap_review_"}
 
         for path in directory.rglob("*"):
             if path.is_file():

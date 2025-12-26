@@ -666,7 +666,7 @@ Be concise. Only list the most important elements (max 10).
                     if "-" in rest:
                         name_part, desc_part = rest.split("-", 1)
                         name = name_part.strip().strip("`").strip("*")
-                        description = desc_part.strip()[:40]  # Reduced from 80 to save tokens
+                        description = desc_part.strip()[:30]  # Reduced to 30 chars to save tokens
 
                         if name:  # Only if has valid name
                             elements.append(
@@ -946,7 +946,7 @@ Be concise. Only list the most important elements (max 10).
                 file_elem.set("lines", str(file_struct.lines))
                 file_elem.set("tokens", str(file_struct.tokens))
 
-                # Add elements (functions, classes, etc.)
+                # Add elements (functions, classes, components - skip constants/decorators)
                 for elem in file_struct.elements:
                     if elem.type.lower() in ("class",):
                         class_elem = ET.SubElement(file_elem, "class")
@@ -963,11 +963,7 @@ Be concise. Only list the most important elements (max 10).
                         comp_elem.set("name", elem.name)
                         if elem.description:
                             comp_elem.set("desc", elem.description)
-                    elif elem.type.lower() in ("constant", "decorator"):
-                        const_elem = ET.SubElement(file_elem, "constant")
-                        const_elem.set("name", elem.name)
-                        if elem.description:
-                            const_elem.set("desc", elem.description)
+                    # Skip constants and decorators - they add bulk without much value
 
         # Pretty print XML (xml_string is self-generated, not untrusted input)
         xml_string = ET.tostring(root, encoding="unicode")

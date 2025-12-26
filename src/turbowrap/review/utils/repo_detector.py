@@ -162,9 +162,15 @@ class RepoDetector:
         if current_depth > max_depth:
             return
 
+        # Patterns to exclude from file list (review outputs, temp files)
+        exclude_file_patterns = {".turbowrap_review_", ".llms"}
+
         try:
             for item in current.iterdir():
                 if item.is_file():
+                    # Skip files matching exclude patterns
+                    if any(pattern in item.name for pattern in exclude_file_patterns):
+                        continue
                     files.append(str(item.relative_to(root)))
                 elif item.is_dir() and item.name not in exclude_dirs:
                     self._scan_directory(
