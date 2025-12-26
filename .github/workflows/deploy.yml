@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Prevent parallel deploys - cancel in-progress if new one starts
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   AWS_REGION: eu-west-3
   ECR_REPOSITORY: turbowrap
