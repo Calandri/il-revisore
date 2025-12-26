@@ -1035,12 +1035,13 @@ After writing, confirm with: "Review saved to {output_file}"
             # Clamp to valid range
             normalized_score = max(0.0, min(10.0, raw_score))
 
+            # Handle field name variations (Claude sometimes uses shorter names)
             summary = ReviewSummary(
                 files_reviewed=summary_data.get("files_reviewed", len(file_list)),
-                critical_issues=summary_data.get("critical_issues", 0),
-                high_issues=summary_data.get("high_issues", 0),
-                medium_issues=summary_data.get("medium_issues", 0),
-                low_issues=summary_data.get("low_issues", 0),
+                critical_issues=summary_data.get("critical_issues", summary_data.get("critical", 0)),
+                high_issues=summary_data.get("high_issues", summary_data.get("high", 0)),
+                medium_issues=summary_data.get("medium_issues", summary_data.get("medium", 0)),
+                low_issues=summary_data.get("low_issues", summary_data.get("low", 0)),
                 score=normalized_score,
             )
 
@@ -1048,14 +1049,30 @@ After writing, confirm with: "Review saved to {output_file}"
             issues = []
             # Category normalization for common aliases
             category_map = {
+                # Logic-related
                 "business_logic": "logic",
                 "business": "logic",
                 "functional": "logic",
-                "code_quality": "style",
-                "quality": "style",
-                "maintainability": "architecture",
                 "error_handling": "logic",
                 "data_integrity": "logic",
+                "reliability": "logic",
+                "validation": "logic",
+                # Security-related
+                "access_control": "security",
+                "authentication": "security",
+                "authorization": "security",
+                # Performance-related
+                "scalability": "performance",
+                "efficiency": "performance",
+                "optimization": "performance",
+                # Architecture-related
+                "maintainability": "architecture",
+                "design": "architecture",
+                "structure": "architecture",
+                # Style-related
+                "code_quality": "style",
+                "quality": "style",
+                "readability": "style",
             }
             for issue_data in data.get("issues", []):
                 try:
@@ -1076,9 +1093,9 @@ After writing, confirm with: "Review saved to {output_file}"
                         suggested_fix=issue_data.get("suggested_fix"),
                         references=issue_data.get("references", []),
                         flagged_by=[self.name],
-                        # Effort estimation for fix batching
-                        estimated_effort=issue_data.get("estimated_effort"),
-                        estimated_files_count=issue_data.get("estimated_files_count"),
+                        # Effort estimation for fix batching (handle field name variations)
+                        estimated_effort=issue_data.get("estimated_effort", issue_data.get("effort")),
+                        estimated_files_count=issue_data.get("estimated_files_count", issue_data.get("estimated_files_to_fix")),
                     )
                     issues.append(issue)
                 except Exception as e:
