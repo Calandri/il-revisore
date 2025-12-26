@@ -10,26 +10,38 @@
        }">
 
     <!-- Logo / Toggle -->
-    <div class="flex items-center justify-between p-4 border-b dark:border-gray-700">
-        <a href="/" class="flex items-center gap-2" x-show="sidebarOpen" @click="if(window.innerWidth < 768) sidebarOpen = false">
-            <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold">T</div>
-            <span class="font-bold text-lg">TurboWrap</span>
-        </a>
-        <!-- Toggle button - hidden on mobile, visible on desktop -->
-        <button @click="sidebarOpen = !sidebarOpen"
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors hidden md:block">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 6h16M4 12h16M4 18h16"/>
-            </svg>
-        </button>
-        <!-- Close button - visible only on mobile -->
-        <button @click="sidebarOpen = false"
-                class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors md:hidden">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-        </button>
+    <div class="relative p-4 border-b dark:border-gray-700">
+        <!-- Expanded state -->
+        <div x-show="sidebarOpen" class="flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2" @click="if(window.innerWidth < 768) sidebarOpen = false">
+                <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold">T</div>
+                <span class="font-bold text-lg">TurboWrap</span>
+            </a>
+            <!-- Toggle to collapse - desktop only -->
+            <button @click.stop="sidebarOpen = false"
+                    class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors font-mono text-lg font-bold hidden md:flex"
+                    title="Comprimi sidebar">
+                <span>‹</span>
+            </button>
+            <!-- Close button - mobile only -->
+            <button @click="sidebarOpen = false"
+                    class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors md:hidden">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <!-- Collapsed state - desktop only -->
+        <div x-show="!sidebarOpen" class="hidden md:flex flex-col items-center gap-2">
+            <a href="/">
+                <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold">T</div>
+            </a>
+            <button @click.stop="sidebarOpen = true"
+                    class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors font-mono text-lg font-bold"
+                    title="Espandi sidebar">
+                <span>›</span>
+            </button>
+        </div>
     </div>
 
     <!-- Scrollable content area -->

@@ -38,25 +38,68 @@
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0">
+    <div class="flex-1 flex gap-4 min-h-0">
         <!-- Sidebar: File Tree Explorer -->
-        <div class="lg:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col"
-             :class="{ 'hidden lg:flex': activeTab !== 'files' }">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col transition-all duration-200"
+             :class="{
+                 'hidden lg:flex': activeTab !== 'files',
+                 'w-12': sidebarCollapsed,
+                 'w-80': !sidebarCollapsed
+             }">
 
-            <!-- Repository Selector -->
-            <div class="p-3 border-b dark:border-gray-700 shrink-0">
-                <select x-model="selectedRepoId" @change="loadFileTree()"
-                        class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="">Seleziona repository</option>
-                    {% for repo in repos %}
-                    <option value="{{ repo.id }}">{{ repo.name }}</option>
-                    {% endfor %}
-                </select>
+            <!-- Collapse Toggle (always visible) -->
+            <div class="p-2 border-b dark:border-gray-700 shrink-0 flex items-center"
+                 :class="sidebarCollapsed ? 'justify-center' : 'justify-between'">
+                <span x-show="!sidebarCollapsed" class="text-xs text-gray-500 uppercase tracking-wide px-1">Explorer</span>
+                <button @click.stop="sidebarCollapsed = !sidebarCollapsed"
+                        class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors font-mono text-sm font-bold"
+                        :title="sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'">
+                    <span x-text="sidebarCollapsed ? '›' : '‹'"></span>
+                </button>
             </div>
+
+            <!-- Collapsed state: only icons -->
+            <div x-show="sidebarCollapsed" class="flex-1 flex flex-col items-center py-2 gap-1">
+                <button @click="sidebarCollapsed = false; fileExtension = 'changes'; loadFileTree()"
+                        class="p-2 rounded-lg transition-colors"
+                        :class="fileExtension === 'changes' ? 'bg-orange-500 text-white' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'"
+                        title="Changes">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                </button>
+                <button @click="sidebarCollapsed = false"
+                        class="p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        title="Esplora file">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Expanded state: full sidebar -->
+            <template x-if="!sidebarCollapsed">
+                <div class="flex-1 flex flex-col min-h-0">
+                    <!-- Repository Selector -->
+                    <div class="p-3 border-b dark:border-gray-700 shrink-0">
+                        <select x-model="selectedRepoId" @change="loadFileTree()"
+                                class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                            <option value="">Seleziona repository</option>
+                            {% for repo in repos %}
+                            <option value="{{ repo.id }}">{{ repo.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
 
             <!-- Quick Filters -->
             <div class="p-3 border-b dark:border-gray-700 shrink-0">
                 <div class="flex flex-wrap gap-1">
+                    <!-- Changes filter (special) -->
+                    <button @click="fileExtension = 'changes'; loadFileTree()"
+                            class="px-2 py-1 text-xs rounded transition-colors"
+                            :class="fileExtension === 'changes' ? 'bg-orange-500 text-white' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50'">
+                        changes
+                    </button>
                     <button @click="fileExtension = '.md'; loadFileTree()"
                             class="px-2 py-1 text-xs rounded transition-colors"
                             :class="fileExtension === '.md' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
@@ -125,21 +168,42 @@
                 <div x-show="!loadingTree && !selectedRepoId" class="p-4 text-center text-gray-500 text-sm">
                     Seleziona un repository
                 </div>
-                <div x-show="!loadingTree && selectedRepoId && fileTree && fileTree.children.length === 0" class="p-4 text-center text-gray-500 text-sm">
+                <div x-show="!loadingTree && selectedRepoId && fileExtension !== 'changes' && fileTree && fileTree.children.length === 0" class="p-4 text-center text-gray-500 text-sm">
                     Nessun file trovato
+                </div>
+                <div x-show="!loadingTree && selectedRepoId && fileExtension === 'changes' && changedFiles.length === 0" class="p-4 text-center text-gray-500 text-sm">
+                    Nessuna modifica
+                </div>
+
+                <!-- Changes View (flat list) -->
+                <div x-show="!loadingTree && fileExtension === 'changes' && changedFiles.length > 0" class="py-1">
+                    <template x-for="file in changedFiles" :key="file.path">
+                        <div class="file-tree-item flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer"
+                             :class="currentFilePath === file.path ? 'bg-primary/10 border-l-2 border-primary' : ''"
+                             @click="loadFile(file.path); if(window.innerWidth < 1024) activeTab = 'editor'">
+                            <span class="w-1.5 h-1.5 rounded-full shrink-0"
+                                  :class="file.status === 'modified' ? 'bg-orange-500' : 'bg-green-500'"></span>
+                            <span class="text-xs px-1 rounded"
+                                  :class="file.status === 'modified' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600' : 'bg-green-100 dark:bg-green-900/30 text-green-600'"
+                                  x-text="file.status === 'modified' ? 'M' : 'U'"></span>
+                            <span class="text-sm truncate" x-text="file.path"></span>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- Tree View -->
-                <div x-show="!loadingTree && fileTree && fileTree.children.length > 0" class="py-1">
+                <div x-show="!loadingTree && fileExtension !== 'changes' && fileTree && fileTree.children.length > 0" class="py-1">
                     <template x-for="node in fileTree.children" :key="node.path">
                         <div x-data="{ node: node }" x-html="renderTreeNode(node, 0)"></div>
                     </template>
                 </div>
             </div>
-        </div>
+                </div><!-- end flex-1 -->
+            </template><!-- end x-if !sidebarCollapsed -->
+        </div><!-- end sidebar -->
 
         <!-- Editor Area -->
-        <div class="lg:col-span-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col"
+        <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col"
              :class="{ 'hidden lg:flex': activeTab !== 'editor' }">
 
             <!-- Tab Bar -->
@@ -322,12 +386,16 @@ function fileEditor() {
         // Tab state (mobile)
         activeTab: 'files',
 
+        // Sidebar state
+        sidebarCollapsed: false,
+
         // Repository and files
         selectedRepoId: '',
         fileExtension: '.md',
         fileTree: null,
         expandedFolders: {},
         loadingTree: false,
+        changedFiles: [],  // For 'changes' filter
 
         // Git status
         gitStatus: null,
@@ -386,37 +454,53 @@ function fileEditor() {
             if (!this.selectedRepoId) {
                 this.fileTree = null;
                 this.gitStatus = null;
+                this.changedFiles = [];
                 return;
             }
 
             this.loadingTree = true;
             try {
-                // Load hierarchical tree with git status
-                const response = await fetch(
-                    `/api/repos/${this.selectedRepoId}/files/tree-hierarchy?extensions=${encodeURIComponent(this.fileExtension)}&include_git_status=true`
-                );
-                if (response.ok) {
-                    this.fileTree = await response.json();
-                    // Auto-expand first level
-                    if (this.fileTree && this.fileTree.children) {
-                        for (const child of this.fileTree.children) {
-                            if (child.type === 'directory') {
-                                this.expandedFolders[child.path] = true;
-                                break; // Only first directory
-                            }
-                        }
-                    }
-                }
-
-                // Load git status for status bar
+                // Load git status first (needed for both tree and changes view)
                 const statusResponse = await fetch(`/api/repos/${this.selectedRepoId}/status`);
                 if (statusResponse.ok) {
                     const status = await statusResponse.json();
                     this.gitStatus = status.git;
-                    console.log('Git status loaded:', this.gitStatus);
                 } else {
-                    console.error('Failed to load git status:', statusResponse.status);
                     this.gitStatus = null;
+                }
+
+                // Handle 'changes' filter specially
+                if (this.fileExtension === 'changes') {
+                    this.changedFiles = [];
+                    if (this.gitStatus) {
+                        // Add modified files
+                        for (const path of (this.gitStatus.modified || [])) {
+                            this.changedFiles.push({ path, status: 'modified' });
+                        }
+                        // Add untracked files
+                        for (const path of (this.gitStatus.untracked || [])) {
+                            this.changedFiles.push({ path, status: 'untracked' });
+                        }
+                    }
+                    this.fileTree = null;
+                } else {
+                    // Load hierarchical tree with git status
+                    const response = await fetch(
+                        `/api/repos/${this.selectedRepoId}/files/tree-hierarchy?extensions=${encodeURIComponent(this.fileExtension)}&include_git_status=true`
+                    );
+                    if (response.ok) {
+                        this.fileTree = await response.json();
+                        // Auto-expand first level
+                        if (this.fileTree && this.fileTree.children) {
+                            for (const child of this.fileTree.children) {
+                                if (child.type === 'directory') {
+                                    this.expandedFolders[child.path] = true;
+                                    break; // Only first directory
+                                }
+                            }
+                        }
+                    }
+                    this.changedFiles = [];
                 }
             } catch (error) {
                 console.error('Error loading file tree:', error);
