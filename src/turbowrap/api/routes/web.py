@@ -127,6 +127,20 @@ async def issues_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/live-tasks", response_class=HTMLResponse)
+async def live_tasks_page(request: Request):
+    """Live tasks page - shows active fix sessions."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        "pages/live_tasks.html",
+        {
+            "request": request,
+            "active_page": "live_tasks",
+            "current_user": get_current_user(request),
+        },
+    )
+
+
 @router.get("/linear", response_class=HTMLResponse)
 async def linear_page(request: Request, db: Session = Depends(get_db)):
     """Linear issues page."""

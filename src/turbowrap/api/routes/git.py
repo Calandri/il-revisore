@@ -31,6 +31,22 @@ class BranchInfo(BaseModel):
     branch: str
 
 
+class BranchListInfo(BaseModel):
+    """List of all branches."""
+
+    current: str
+    branches: list[str]
+
+
+class CommitFileInfo(BaseModel):
+    """File changed in a commit."""
+
+    filename: str
+    status: str  # A=added, M=modified, D=deleted, R=renamed
+    additions: int
+    deletions: int
+
+
 class CommitDiff(BaseModel):
     """Commit diff content."""
 

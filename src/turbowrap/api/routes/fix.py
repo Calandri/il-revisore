@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from turbowrap.api.deps import get_db
+from turbowrap.api.deps import get_current_user, get_db
 from turbowrap.db.models import Issue, IssueStatus, Repository
 from turbowrap.fix import ClarificationAnswer, ClarificationQuestion
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
@@ -65,6 +65,14 @@ class IdempotencyEntry:
     created_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
     result: dict | None = None
+    # Metadata for active sessions display
+    repository_id: str | None = None
+    repository_name: str | None = None
+    task_id: str | None = None
+    issue_count: int = 0
+    issue_codes: list[str] = field(default_factory=list)
+    user_name: str | None = None
+    branch_name: str | None = None
 
 
 class IdempotencyStore:
@@ -108,12 +116,15 @@ class IdempotencyStore:
         self,
         key: str,
         session_id: str,
+        metadata: dict | None = None,
     ) -> tuple[bool, IdempotencyEntry | None]:
         """Check if request is duplicate and register if not.
 
         Args:
             key: Idempotency key.
             session_id: New session ID.
+            metadata: Optional metadata dict with repository_id, repository_name,
+                      task_id, issue_count, issue_codes, user_name.
 
         Returns:
             Tuple of (is_duplicate, existing_entry).
@@ -121,6 +132,7 @@ class IdempotencyStore:
         """
         now = datetime.utcnow()
         cutoff = now - timedelta(seconds=IDEMPOTENCY_TTL_SECONDS)
+        metadata = metadata or {}
 
         with self._lock:
             # Clean up expired entries
@@ -139,12 +151,29 @@ class IdempotencyStore:
                     logger.info(f"Duplicate fix request detected (recent): {key}")
                     return True, existing
 
-            # Register new entry
+            # Register new entry with metadata
             self._store[key] = IdempotencyEntry(
                 session_id=session_id,
                 status="in_progress",
+                repository_id=metadata.get("repository_id"),
+                repository_name=metadata.get("repository_name"),
+                task_id=metadata.get("task_id"),
+                issue_count=metadata.get("issue_count", 0),
+                issue_codes=metadata.get("issue_codes", []),
+                user_name=metadata.get("user_name"),
             )
             return False, None
+
+    def update_branch_name(self, key: str, branch_name: str) -> None:
+        """Update branch name for a session.
+
+        Args:
+            key: Idempotency key.
+            branch_name: Branch name to set.
+        """
+        with self._lock:
+            if key in self._store:
+                self._store[key].branch_name = branch_name
 
     def update_status(
         self,
@@ -331,6 +360,7 @@ def update_issue(
 async def start_fix(
     request: FixStartRequest,
     db: Session = Depends(get_db),
+    current_user: dict | None = Depends(get_current_user),
     x_idempotency_key: str | None = Header(
         default=None,
         description="Optional client-provided idempotency key. "
@@ -356,6 +386,11 @@ async def start_fix(
         get_fix_session_service,
     )
 
+    # Extract user name for session display
+    user_name = None
+    if current_user:
+        user_name = current_user.get("username") or current_user.get("email") or "unknown"
+
     service = get_fix_session_service(db)
 
     try:
@@ -367,6 +402,7 @@ async def start_fix(
             existing_branch_name=request.existing_branch_name,
             client_idempotency_key=x_idempotency_key,
             force=request.force,
+            user_name=user_name,
         )
 
         # Handle duplicate request (already processed)
@@ -430,6 +466,14 @@ class ActiveSessionInfo(BaseModel):
     status: str
     started_at: datetime
     is_stale: bool  # True if session is older than STALE_SESSION_TIMEOUT
+    # Rich metadata for banner/live tasks display
+    repository_id: str | None = None
+    repository_name: str | None = None
+    task_id: str | None = None
+    branch_name: str | None = None
+    user_name: str | None = None
+    issue_count: int = 0
+    issue_codes: list[str] = []
 
 
 class ActiveSessionsResponse(BaseModel):
@@ -445,6 +489,7 @@ def list_active_sessions():
     List all active (in_progress) fix sessions.
 
     Sessions older than 30 minutes are marked as stale.
+    Includes metadata for banner display: repo, branch, user, issues.
     """
     now = datetime.utcnow()
     stale_cutoff = now - timedelta(seconds=STALE_SESSION_TIMEOUT_SECONDS)
@@ -459,6 +504,13 @@ def list_active_sessions():
                         status=entry.status,
                         started_at=entry.created_at,
                         is_stale=entry.created_at < stale_cutoff,
+                        repository_id=entry.repository_id,
+                        repository_name=entry.repository_name,
+                        task_id=entry.task_id,
+                        branch_name=entry.branch_name,
+                        user_name=entry.user_name,
+                        issue_count=entry.issue_count,
+                        issue_codes=entry.issue_codes,
                     )
                 )
 

@@ -1,0 +1,108 @@
+<!-- Active Fix Sessions Banner -->
+<!-- This banner shows when CLI instances are fixing issues -->
+<div x-data="activeFixBanner()"
+     x-init="startPolling()"
+     x-show="sessions.length > 0"
+     x-cloak
+     class="fixed top-0 left-0 right-0 z-[60] bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-lg">
+
+    <a href="/live-tasks"
+       class="block px-4 py-2 hover:bg-white/10 transition-colors">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <!-- Left: Icon + Info -->
+            <div class="flex items-center gap-3">
+                <!-- Animated gear icon -->
+                <div class="relative">
+                    <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <!-- Pulse ring -->
+                    <span class="absolute inset-0 animate-ping opacity-30">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="8" stroke-width="2"/>
+                        </svg>
+                    </span>
+                </div>
+
+                <!-- Session info -->
+                <template x-if="sessions.length === 1">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="font-medium" x-text="sessions[0].user_name || 'CLI'"></span>
+                        <span class="opacity-80">fixing</span>
+                        <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold"
+                              x-text="sessions[0].issue_count + ' issue' + (sessions[0].issue_count !== 1 ? 's' : '')"></span>
+                        <span class="opacity-80">on</span>
+                        <code class="bg-black/20 px-2 py-0.5 rounded text-xs font-mono"
+                              x-text="sessions[0].branch_name || 'new branch'"></code>
+                        <span class="opacity-80">in</span>
+                        <span class="font-semibold" x-text="sessions[0].repository_name"></span>
+                    </div>
+                </template>
+
+                <!-- Multiple sessions -->
+                <template x-if="sessions.length > 1">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold"
+                              x-text="sessions.length + ' active fixes'"></span>
+                        <span class="opacity-80">across</span>
+                        <span class="font-semibold" x-text="uniqueRepos + ' repo' + (uniqueRepos !== 1 ? 's' : '')"></span>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Right: View details link -->
+            <div class="flex items-center gap-2 text-sm opacity-80 hover:opacity-100 transition-opacity">
+                <span>View details</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+            </div>
+        </div>
+    </a>
+</div>
+
+<script>
+function activeFixBanner() {
+    return {
+        sessions: [],
+        pollInterval: null,
+
+        get uniqueRepos() {
+            const repos = new Set(this.sessions.map(s => s.repository_id));
+            return repos.size;
+        },
+
+        async fetchSessions() {
+            try {
+                const response = await fetch('/api/fix/sessions/active');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.sessions = data.sessions || [];
+                }
+            } catch (error) {
+                console.error('Error fetching active sessions:', error);
+            }
+        },
+
+        startPolling() {
+            // Initial fetch
+            this.fetchSessions();
+            // Poll every 5 seconds
+            this.pollInterval = setInterval(() => this.fetchSessions(), 5000);
+        },
+
+        stopPolling() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+            }
+        }
+    };
+}
+</script>
+
+<style>
+[x-cloak] { display: none !important; }
+</style>

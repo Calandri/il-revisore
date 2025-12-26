@@ -34,6 +34,7 @@ class IdempotencyStoreProtocol(Protocol):
         self,
         key: str,
         session_id: str,
+        metadata: dict | None = None,
     ) -> tuple[bool, Any]: ...
 
     def update_status(
@@ -42,6 +43,8 @@ class IdempotencyStoreProtocol(Protocol):
         status: str,
         result: dict | None = None,
     ) -> None: ...
+
+    def update_branch_name(self, key: str, branch_name: str) -> None: ...
 
     def remove(self, key: str) -> None: ...
 
@@ -106,6 +109,7 @@ class FixSessionService:
         existing_branch_name: str | None = None,
         client_idempotency_key: str | None = None,
         force: bool = False,
+        user_name: str | None = None,
     ) -> tuple[FixSessionInfo, dict | None]:
         """
         Validate request and prepare fix session.
@@ -118,6 +122,7 @@ class FixSessionService:
             existing_branch_name: Name of existing branch to use
             client_idempotency_key: Optional client-provided idempotency key
             force: Force restart even if a session is already in progress
+            user_name: Name of user starting the fix (for active sessions display)
 
         Returns:
             Tuple of (FixSessionInfo, None) for new sessions, or
@@ -129,6 +134,27 @@ class FixSessionService:
         """
         session_id = str(uuid.uuid4())
 
+        # Verify repository FIRST (need data for metadata)
+        repo = self.db.query(Repository).filter(Repository.id == repository_id).first()
+        if not repo:
+            raise ValueError("Repository not found")
+
+        # Verify task
+        task = self.db.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            raise ValueError("Task not found")
+
+        # Load issues
+        issues = (
+            self.db.query(Issue)
+            .filter(Issue.id.in_(issue_ids))
+            .filter(Issue.repository_id == repository_id)
+            .all()
+        )
+
+        if not issues:
+            raise ValueError("No valid issues found")
+
         # Generate idempotency key
         idempotency_key = self.idempotency.generate_key(
             repository_id=repository_id,
@@ -137,10 +163,26 @@ class FixSessionService:
             client_key=client_idempotency_key,
         )
 
-        # Check for duplicate request
+        # Build metadata for active sessions display
+        # Extract repo name from git_url (e.g., "https://github.com/org/repo" -> "repo")
+        repo_name = repo.git_url.rstrip("/").split("/")[-1] if repo.git_url else "unknown"
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+
+        session_metadata = {
+            "repository_id": repository_id,
+            "repository_name": repo_name,
+            "task_id": task_id,
+            "issue_count": len(issues),
+            "issue_codes": [i.issue_code for i in issues],
+            "user_name": user_name,
+        }
+
+        # Check for duplicate request (with metadata for new sessions)
         is_duplicate, existing = self.idempotency.check_and_register(
             key=idempotency_key,
             session_id=session_id,
+            metadata=session_metadata,
         )
 
         if is_duplicate and existing:
@@ -151,10 +193,11 @@ class FixSessionService:
                         f"Force restart requested, removing stuck session: {existing.session_id}"
                     )
                     self.idempotency.remove(idempotency_key)
-                    # Re-register with new session
+                    # Re-register with new session and metadata
                     self.idempotency.check_and_register(
                         key=idempotency_key,
                         session_id=session_id,
+                        metadata=session_metadata,
                     )
                 else:
                     raise DuplicateSessionError(
@@ -173,30 +216,6 @@ class FixSessionService:
                         existing.completed_at.isoformat() if existing.completed_at else None
                     ),
                 }
-
-        # Verify repository
-        repo = self.db.query(Repository).filter(Repository.id == repository_id).first()
-        if not repo:
-            self.idempotency.remove(idempotency_key)
-            raise ValueError("Repository not found")
-
-        # Verify task
-        task = self.db.query(Task).filter(Task.id == task_id).first()
-        if not task:
-            self.idempotency.remove(idempotency_key)
-            raise ValueError("Task not found")
-
-        # Load issues
-        issues = (
-            self.db.query(Issue)
-            .filter(Issue.id.in_(issue_ids))
-            .filter(Issue.repository_id == repository_id)
-            .all()
-        )
-
-        if not issues:
-            self.idempotency.remove(idempotency_key)
-            raise ValueError("No valid issues found")
 
         # Order issues by the requested order
         issue_order = {id: i for i, id in enumerate(issue_ids)}
@@ -389,6 +408,9 @@ class FixSessionService:
             nonlocal session_id
             if event.session_id:
                 session_id = event.session_id
+            # Update branch_name in session metadata when fix starts
+            if event.type == FixEventType.FIX_SESSION_STARTED and event.branch_name:
+                self.idempotency.update_branch_name(idempotency_key, event.branch_name)
             await event_queue.put(event)
 
         async def run_fix():

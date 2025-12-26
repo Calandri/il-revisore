@@ -53,6 +53,9 @@
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
 
+    <!-- Active Fix Sessions Banner -->
+    {% include "components/active_fix_banner.html" %}
+
     <!-- Mobile Header - visible only on mobile -->
     <header class="fixed top-0 left-0 right-0 h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 z-30 flex items-center justify-between px-4 md:hidden">
         <button @click="sidebarOpen = !sidebarOpen"

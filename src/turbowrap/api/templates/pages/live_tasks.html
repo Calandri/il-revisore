@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Live Tasks - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="liveTasksApp()">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold flex items-center gap-3">
+                <span>Live Tasks</span>
+                <template x-if="sessions.length > 0">
+                    <span class="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded-full text-sm font-medium">
+                        <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        <span x-text="sessions.length"></span> active
+                    </span>
+                </template>
+            </h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">CLI che stanno fixando issue in tempo reale</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button @click="refresh()"
+                    :disabled="loading"
+                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Aggiorna
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading state -->
+    <template x-if="loading && sessions.length === 0">
+        <div class="flex items-center justify-center py-12">
+            <svg class="w-8 h-8 animate-spin text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+        </div>
+    </template>
+
+    <!-- Empty state -->
+    <template x-if="!loading && sessions.length === 0">
+        <div class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700">
+            <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Nessun fix attivo</h3>
+            <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                Al momento non ci sono CLI che stanno fixando issue.
+                Quando qualcuno avvia un fix dalla pagina Issues, apparira qui.
+            </p>
+        </div>
+    </template>
+
+    <!-- Sessions grouped by repository -->
+    <template x-if="sessions.length > 0">
+        <div class="space-y-6">
+            <template x-for="(repoSessions, repoName) in sessionsByRepo" :key="repoName">
+                <div class="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden">
+                    <!-- Repository header -->
+                    <div class="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-b dark:border-gray-700 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <span class="font-semibold text-lg" x-text="repoName"></span>
+                        </div>
+                        <span class="text-sm text-gray-500 dark:text-gray-400"
+                              x-text="repoSessions.length + ' session' + (repoSessions.length !== 1 ? 's' : '')"></span>
+                    </div>
+
+                    <!-- Sessions list -->
+                    <div class="divide-y dark:divide-gray-700">
+                        <template x-for="session in repoSessions" :key="session.session_id">
+                            <div class="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                <div class="flex items-start justify-between gap-4">
+                                    <!-- Left: Session info -->
+                                    <div class="flex-1 space-y-3">
+                                        <!-- User + Branch -->
+                                        <div class="flex items-center gap-3">
+                                            <!-- Status indicator -->
+                                            <div class="relative">
+                                                <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                                                <div class="absolute inset-0 w-3 h-3 bg-green-500 rounded-full animate-ping opacity-75"></div>
+                                            </div>
+                                            <!-- User -->
+                                            <span class="font-medium" x-text="session.user_name || 'CLI'"></span>
+                                            <span class="text-gray-400">on</span>
+                                            <!-- Branch -->
+                                            <code class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono"
+                                                  x-text="session.branch_name || 'creating branch...'"></code>
+                                        </div>
+
+                                        <!-- Issue chips -->
+                                        <div class="flex flex-wrap gap-2">
+                                            <template x-for="code in session.issue_codes" :key="code">
+                                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                                      x-text="code"></span>
+                                            </template>
+                                        </div>
+
+                                        <!-- Timing -->
+                                        <div class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-4">
+                                            <span>Started <span x-text="formatTime(session.started_at)"></span></span>
+                                            <template x-if="session.is_stale">
+                                                <span class="flex items-center gap-1 text-orange-500">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                                    </svg>
+                                                    Potrebbe essere bloccata
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </div>
+
+                                    <!-- Right: Actions -->
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm font-medium px-3 py-1 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-full"
+                                              x-text="session.issue_count + ' issue' + (session.issue_count !== 1 ? 's' : '')"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </template>
+</div>
+
+<script>
+function liveTasksApp() {
+    return {
+        sessions: [],
+        loading: true,
+        pollInterval: null,
+
+        get sessionsByRepo() {
+            const grouped = {};
+            for (const session of this.sessions) {
+                const repoName = session.repository_name || 'Unknown';
+                if (!grouped[repoName]) {
+                    grouped[repoName] = [];
+                }
+                grouped[repoName].push(session);
+            }
+            return grouped;
+        },
+
+        async refresh() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/fix/sessions/active');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.sessions = data.sessions || [];
+                }
+            } catch (error) {
+                console.error('Error fetching sessions:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        formatTime(isoString) {
+            if (!isoString) return 'N/A';
+            const date = new Date(isoString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+
+            if (diffMins < 1) return 'adesso';
+            if (diffMins < 60) return diffMins + 'm fa';
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return diffHours + 'h fa';
+            return date.toLocaleDateString('it-IT');
+        },
+
+        init() {
+            this.refresh();
+            // Poll every 5 seconds
+            this.pollInterval = setInterval(() => this.refresh(), 5000);
+        },
+
+        destroy() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

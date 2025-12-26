@@ -132,6 +132,36 @@
             <span x-show="sidebarOpen">Chat AI</span>
         </a>
 
+        <!-- Live Tasks -->
+        <div x-data="liveTasksBadge()" x-init="startPolling()">
+            <a href="/live-tasks"
+               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative
+                      {% if active_page == 'live_tasks' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <!-- Gear icon with animation when active -->
+                <div class="relative">
+                    <svg class="w-5 h-5 shrink-0" :class="count > 0 ? 'animate-spin-slow text-green-500' : ''"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </div>
+                <span x-show="sidebarOpen" class="flex items-center gap-2">
+                    Live Tasks
+                    <!-- Badge count -->
+                    <span x-show="count > 0"
+                          x-text="count"
+                          class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-green-500 text-white animate-pulse"></span>
+                </span>
+                <!-- Badge for collapsed sidebar -->
+                <span x-show="!sidebarOpen && count > 0"
+                      x-text="count"
+                      class="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full bg-green-500 text-white flex items-center justify-center animate-pulse"></span>
+            </a>
+        </div>
+
         <!-- Tasks History -->
         <a href="/tasks"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
@@ -1056,3 +1086,53 @@
         </div>
     </div>
 </div>
+
+<!-- Live Tasks Badge Script -->
+<script>
+function liveTasksBadge() {
+    return {
+        count: 0,
+        pollInterval: null,
+
+        async fetchCount() {
+            try {
+                const response = await fetch('/api/fix/sessions/active');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.count = (data.sessions || []).length;
+                }
+            } catch (error) {
+                console.error('Error fetching active sessions count:', error);
+            }
+        },
+
+        startPolling() {
+            // Initial fetch
+            this.fetchCount();
+            // Poll every 5 seconds
+            this.pollInterval = setInterval(() => this.fetchCount(), 5000);
+        },
+
+        stopPolling() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+            }
+        }
+    };
+}
+</script>
+
+<!-- Slow spin animation for Live Tasks icon -->
+<style>
+@keyframes spin-slow {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+.animate-spin-slow {
+    animation: spin-slow 3s linear infinite;
+}
+</style>
