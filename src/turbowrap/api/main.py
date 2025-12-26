@@ -84,11 +84,12 @@ def _ensure_all_repos_exist():
     """
     from ..core.repo_manager import RepoManager
     from ..db.models import Repository
-    from ..db.session import SessionLocal
+    from ..db.session import get_session_local
 
     logger = logging.getLogger(__name__)
     logger.info("[STARTUP] Checking repository local paths...")
 
+    SessionLocal = get_session_local()
     db = SessionLocal()
     try:
         repos = db.query(Repository).filter(Repository.status == "active").all()

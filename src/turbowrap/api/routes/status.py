@@ -773,8 +773,6 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict]:
     Args:
         level: Filter level - 'all', 'warning', 'error'
     """
-    import asyncio
-
     # Create a queue for this subscriber
     queue: asyncio.Queue = asyncio.Queue(maxsize=100)
     _log_subscribers.add(queue)
