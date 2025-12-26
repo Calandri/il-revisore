@@ -546,6 +546,103 @@
                     </div>
                 </div>
             </div>
+            <!-- Docker/Build Processes (clickable dropdown) -->
+            <div class="relative">
+                <button @click="showBuilds = !showBuilds"
+                        class="flex items-center gap-1 hover:bg-gray-200 dark:hover:bg-gray-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                        :title="'Container Builds: ' + buildCount + ' attivi - Clicca per dettagli'">
+                    <svg class="w-4 h-4" :class="buildCount > 0 ? 'text-cyan-500' : ''"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                    </svg>
+                    <span x-text="buildCount" :class="buildCount > 0 ? 'text-cyan-500 font-bold' : ''"></span>
+                    <svg class="w-3 h-3 transition-transform" :class="showBuilds ? 'rotate-180' : ''"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                    </svg>
+                </button>
+                <!-- Build Processes Dropdown -->
+                <div x-show="showBuilds"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="opacity-0 transform scale-95"
+                     x-transition:enter-end="opacity-100 transform scale-100"
+                     x-transition:leave="transition ease-in duration-100"
+                     x-transition:leave-start="opacity-100"
+                     x-transition:leave-end="opacity-0"
+                     @click.away="showBuilds = false"
+                     class="absolute bottom-full right-0 mb-2 w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 z-50 overflow-hidden">
+                    <!-- Header -->
+                    <div class="px-3 py-2 bg-cyan-50 dark:bg-cyan-900/20 border-b dark:border-gray-600">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold text-cyan-700 dark:text-cyan-300">Container Builds</span>
+                            <span class="text-xs px-1.5 py-0.5 bg-cyan-100 dark:bg-cyan-900 text-cyan-700 dark:text-cyan-300 rounded-full"
+                                  x-text="buildCount"></span>
+                        </div>
+                    </div>
+                    <!-- Build list -->
+                    <div class="max-h-64 overflow-y-auto">
+                        <template x-if="buildProcesses.length === 0">
+                            <div class="px-3 py-4 text-center text-xs text-gray-500 dark:text-gray-400">
+                                Nessun build in corso
+                            </div>
+                        </template>
+                        <template x-for="proc in buildProcesses" :key="proc.pid">
+                            <div class="px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b dark:border-gray-700 last:border-0">
+                                <!-- Header: tool + operation -->
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full animate-pulse"
+                                              :class="proc.status === 'running' ? 'bg-cyan-500' : 'bg-yellow-500'"></span>
+                                        <span class="text-xs font-semibold text-cyan-600 dark:text-cyan-400" x-text="proc.tool"></span>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                              :class="{
+                                                  'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400': proc.operation === 'build',
+                                                  'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400': proc.operation === 'push',
+                                                  'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400': proc.operation === 'pull',
+                                                  'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400': proc.operation === 'up',
+                                                  'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300': !['build','push','pull','up'].includes(proc.operation)
+                                              }"
+                                              x-text="proc.operation"></span>
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300"
+                                              x-text="proc.elapsed"></span>
+                                    </div>
+                                </div>
+                                <!-- Image/Project name -->
+                                <div class="flex items-center gap-1 mb-1">
+                                    <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                                    </svg>
+                                    <span class="text-[11px] font-medium text-gray-700 dark:text-gray-300 truncate"
+                                          x-text="proc.image_name || proc.project_name || 'N/A'"></span>
+                                </div>
+                                <!-- Resources: CPU + RAM -->
+                                <div class="flex items-center gap-3 text-[10px] text-gray-500 dark:text-gray-400">
+                                    <span class="flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                                        </svg>
+                                        <span x-text="proc.cpu_percent + '%'"></span>
+                                    </span>
+                                    <span class="flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                        </svg>
+                                        <span x-text="proc.memory_percent + '%'"></span>
+                                    </span>
+                                    <span class="text-gray-400">PID: <span x-text="proc.pid"></span></span>
+                                </div>
+                                <!-- Cmdline -->
+                                <div x-show="proc.cmdline" class="mt-1 text-[9px] font-mono text-gray-400 dark:text-gray-500 truncate" x-text="proc.cmdline"></div>
+                            </div>
+                        </template>
+                    </div>
+                    <!-- Footer -->
+                    <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-t dark:border-gray-600 text-[10px] text-gray-500 dark:text-gray-400">
+                        Docker, Podman, Buildx, Compose
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
