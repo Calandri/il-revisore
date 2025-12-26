@@ -495,56 +495,8 @@ This is a **monorepo** review. You MUST only analyze files within the workspace:
 1. **Read the files** listed above using your file reading capabilities
 2. {explore_instruction}
 3. **Apply your expertise** from the system prompt above
-4. **CRITICAL**: Always save output to the ABSOLUTE path specified below, not a relative path
-
-## Output Format
-
-Output valid JSON with this schema:
-
-{{
-  "summary": {{
-    "files_reviewed": <int>,
-    "critical_issues": <int>,
-    "high_issues": <int>,
-    "medium_issues": <int>,
-    "low_issues": <int>,
-    "score": <float 0-10>
-  }},
-  "issues": [
-    {{
-      "id": "<REVIEWER-SEVERITY-NNN>",
-      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
-      "category": "security|performance|architecture|style|logic|ux|testing|documentation",
-      "file": "<file path>",
-      "line": <line number or null>,
-      "title": "<brief title>",
-      "description": "<detailed description>",
-      "suggested_fix": "<suggested fix>",
-      "estimated_effort": <int 1-5>,
-      "estimated_files_count": <int>
-    }}
-  ],
-  "checklists": {{
-    "security": {{ "passed": <int>, "failed": <int>, "skipped": <int> }},
-    "performance": {{ "passed": <int>, "failed": <int>, "skipped": <int> }},
-    "architecture": {{ "passed": <int>, "failed": <int>, "skipped": <int> }}
-  }}
-}}
-
-## MANDATORY: Effort Estimation for EVERY Issue
-
-For each issue, you MUST provide effort estimation:
-- `estimated_effort` (1-5): Fix complexity
-  - 1 = Trivial (typo, simple rename, one-line fix)
-  - 2 = Simple (small change in one file, < 10 lines)
-  - 3 = Moderate (changes in 1-2 files, needs some thought)
-  - 4 = Complex (multiple files, refactoring, new patterns)
-  - 5 = Major refactor (architectural change, many files)
-- `estimated_files_count`: Number of files that need modification
-
-## IMPORTANT: Save output to file
-
-WRITE the complete JSON to this file: `{output_file}`
+4. **Output Format**: Use the JSON schema defined in your system prompt above
+5. **CRITICAL**: Save output to the ABSOLUTE path: `{output_file}`
 
 After writing, confirm with: "Review saved to {output_file}"
 """)

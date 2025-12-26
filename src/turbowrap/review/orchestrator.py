@@ -585,14 +585,19 @@ class Orchestrator:
         exclude_dirs = {
             ".git", "node_modules", "__pycache__", ".venv", "venv",
             ".mypy_cache", ".pytest_cache", "dist", "build", ".next",
-            "coverage", ".tox", "htmlcov",
+            "coverage", ".tox", "htmlcov", ".reviews",
         }
+        # Exclude previous review output files
+        exclude_patterns = {".turbowrap_review"}
 
         for path in directory.rglob("*"):
             if path.is_file():
                 rel_path = path.relative_to(directory)
                 # Check if any parent is in exclude list (use relative path, not absolute)
                 if any(part in exclude_dirs for part in rel_path.parts):
+                    continue
+                # Skip review output files
+                if any(pattern in path.name for pattern in exclude_patterns):
                     continue
 
                 if FileUtils.is_text_file(path):
