@@ -364,6 +364,51 @@
         </div>
     </div>
 
+    <!-- Go to Definition Popup -->
+    <div x-show="definitionPopup.show"
+         class="definition-popup fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 min-w-64 max-w-md overflow-hidden"
+         :style="`left: ${definitionPopup.x}px; top: ${definitionPopup.y}px;`"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        <!-- Loading -->
+        <div x-show="definitionPopup.loading" class="p-3 flex items-center gap-2 text-sm text-gray-500">
+            <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span>Cercando "<span x-text="definitionPopup.symbol"></span>"...</span>
+        </div>
+        <!-- Results -->
+        <div x-show="!definitionPopup.loading && definitionPopup.definitions.length > 0">
+            <div class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-b dark:border-gray-700 text-xs text-gray-500 font-medium">
+                <span x-text="definitionPopup.definitions.length"></span> definizioni per "<span x-text="definitionPopup.symbol" class="font-semibold text-gray-700 dark:text-gray-300"></span>"
+            </div>
+            <div class="max-h-64 overflow-y-auto">
+                <template x-for="def in definitionPopup.definitions" :key="def.path + ':' + def.line">
+                    <div class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer border-b dark:border-gray-700 last:border-0"
+                         @click="selectDefinition(def)">
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 flex items-center justify-center text-xs font-bold rounded"
+                                  :class="getDefinitionColor(def.type)"
+                                  x-text="getDefinitionIcon(def.type)"></span>
+                            <span class="text-sm font-medium" x-text="def.symbol"></span>
+                            <span class="text-xs text-gray-400" x-text="def.type"></span>
+                        </div>
+                        <div class="mt-1 text-xs text-gray-500 truncate pl-7">
+                            <span x-text="def.path"></span>:<span x-text="def.line"></span>
+                        </div>
+                        <div class="mt-1 text-xs font-mono text-gray-600 dark:text-gray-400 truncate pl-7 bg-gray-50 dark:bg-gray-900 px-2 py-1 rounded"
+                             x-text="def.preview"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast notification -->
     <div x-show="toast.show"
          x-transition:enter="transition ease-out duration-300"
