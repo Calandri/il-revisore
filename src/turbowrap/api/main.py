@@ -217,6 +217,11 @@ def create_app() -> FastAPI:
     # Configure logging on every app creation (works with --reload)
     configure_logging()
 
+    # Setup SSE log handler AFTER configure_logging to ensure it's not removed
+    from .routes.status import setup_sse_logging
+
+    setup_sse_logging()
+
     settings = get_settings()
 
     app = FastAPI(

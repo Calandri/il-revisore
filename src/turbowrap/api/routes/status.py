@@ -762,8 +762,8 @@ def setup_sse_logging():
     root_logger.addHandler(handler)
 
 
-# Setup on module load
-setup_sse_logging()
+# NOTE: setup_sse_logging() is called from main.py AFTER configure_logging()
+# to ensure the SSELogHandler is not removed when logging is reconfigured.
 
 
 async def generate_app_logs(level: str = "all") -> AsyncIterator[dict]:
