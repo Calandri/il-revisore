@@ -51,14 +51,21 @@ function systemMonitor() {
         deployLoading: true,
         deployTriggering: false,
         loading: true,
+        // Staging
+        stagingReady: false,
+        stagingInfo: null,
+        promoting: false,
 
         async init() {
             await this.refresh();
             await this.refreshDeployments();
+            await this.refreshStaging();
             // Poll system status every 5 seconds
             setInterval(() => this.refresh(), 5000);
             // Poll deployments every 30 seconds
             setInterval(() => this.refreshDeployments(), 30000);
+            // Poll staging status every 15 seconds
+            setInterval(() => this.refreshStaging(), 15000);
         },
 
         async refresh() {
@@ -169,6 +176,54 @@ function systemMonitor() {
                 window.dispatchEvent(new CustomEvent('show-toast', {
                     detail: { message: `Errore: ${e.message}`, type: 'error' }
                 }));
+            }
+        },
+
+        async refreshStaging() {
+            try {
+                const res = await fetch('/api/deployments/staging/status');
+                if (!res.ok) throw new Error('Staging API error');
+                const data = await res.json();
+                this.stagingReady = data.running;
+                this.stagingInfo = data.running ? data : null;
+            } catch (e) {
+                console.error('Staging status error:', e);
+                this.stagingReady = false;
+                this.stagingInfo = null;
+            }
+        },
+
+        async promoteToProduction() {
+            if (this.promoting) return;
+            if (!confirm('Vuoi portare lo staging in produzione? Ci sarà un breve downtime (~5-10 sec).')) {
+                return;
+            }
+
+            this.promoting = true;
+            try {
+                const res = await fetch('/api/deployments/promote', { method: 'POST' });
+                const data = await res.json();
+
+                if (res.ok) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: 'Produzione aggiornata!', type: 'success' }
+                    }));
+                    this.stagingReady = false;
+                    this.stagingInfo = null;
+                    // Refresh deployments and staging after a delay
+                    setTimeout(() => {
+                        this.refreshDeployments();
+                        this.refreshStaging();
+                    }, 5000);
+                } else {
+                    throw new Error(data.detail || 'Promote failed');
+                }
+            } catch (e) {
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: `Errore: ${e.message}`, type: 'error' }
+                }));
+            } finally {
+                this.promoting = false;
             }
         },
 
