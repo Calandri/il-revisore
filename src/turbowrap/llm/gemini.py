@@ -285,6 +285,7 @@ class GeminiCLI:
         model: str | GeminiModelType | None = None,
         timeout: int = DEFAULT_GEMINI_TIMEOUT,
         auto_accept: bool = True,
+        summarize_tool_output: bool = True,
         s3_prefix: str = "gemini-cli",
     ):
         """
@@ -295,12 +296,14 @@ class GeminiCLI:
             model: Model name or type ("flash", "pro")
             timeout: Timeout in seconds
             auto_accept: Enable --yolo flag (auto-approve tool calls)
+            summarize_tool_output: Summarize long tool outputs to reduce tokens
             s3_prefix: S3 path prefix for logs
         """
         self.settings = get_settings()
         self.working_dir = working_dir
         self.timeout = timeout
         self.auto_accept = auto_accept
+        self.summarize_tool_output = summarize_tool_output
         self.s3_prefix = s3_prefix
 
         # Resolve model name
@@ -392,6 +395,8 @@ class GeminiCLI:
             args = ["gemini", "--model", self.model]
             if self.auto_accept:
                 args.extend(["--approval-mode", "yolo"])
+            if self.summarize_tool_output:
+                args.append("--summarize-tool-output")
             args.append(prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None

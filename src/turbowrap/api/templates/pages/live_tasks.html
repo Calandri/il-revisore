@@ -338,9 +338,17 @@
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300" x-text="op.user_name || 'System'"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400" x-text="formatDateTime(op.started_at)"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400" x-text="formatDuration(op.duration_seconds)"></td>
-                                <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                                    <template x-if="op.error">
-                                        <span class="text-red-500" x-text="op.error.substring(0, 50) + (op.error.length > 50 ? '...' : '')" :title="op.error"></span>
+                                <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs">
+                                    <template x-if="op.error && op.error.includes('Scope')">
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-red-600 text-white animate-pulse">
+                                                🚫 OUT OF SCOPE
+                                            </span>
+                                            <span class="text-red-500 text-xs truncate" x-text="op.error" :title="op.error"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="op.error && !op.error.includes('Scope')">
+                                        <span class="text-red-500 font-medium" x-text="op.error.substring(0, 50) + (op.error.length > 50 ? '...' : '')" :title="op.error"></span>
                                     </template>
                                     <template x-if="!op.error && op.details?.prompt_preview">
                                         <span x-text="op.details.prompt_preview"></span>
@@ -582,8 +590,24 @@
                         </div>
                     </template>
 
-                    <!-- Error -->
-                    <template x-if="selectedOperation?.error">
+                    <!-- Error - Scope Violation -->
+                    <template x-if="selectedOperation?.error && selectedOperation.error.includes('Scope')">
+                        <div class="bg-red-600 text-white rounded-lg p-4 shadow-lg">
+                            <div class="flex items-center gap-3 mb-2">
+                                <span class="text-2xl">🚫</span>
+                                <span class="text-lg font-bold">ERRORE: MODIFICHE OUT OF SCOPE</span>
+                            </div>
+                            <p class="text-sm opacity-90">
+                                Il fix ha tentato di modificare file fuori dal workspace consentito.
+                                Tutte le modifiche sono state annullate.
+                            </p>
+                            <div class="mt-3 bg-red-700/50 rounded p-2">
+                                <code class="text-xs" x-text="selectedOperation.error"></code>
+                            </div>
+                        </div>
+                    </template>
+                    <!-- Error - Other -->
+                    <template x-if="selectedOperation?.error && !selectedOperation.error.includes('Scope')">
                         <div>
                             <label class="block text-xs font-medium text-red-500 mb-2">Errore</label>
                             <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">

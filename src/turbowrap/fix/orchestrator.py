@@ -679,8 +679,11 @@ class FixOrchestrator:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
                     # Use shared GeminiCLI from orchestration utilities
+                    # NOTE: track_operation=False because fix session handles tracking
                     gemini_result = await self.gemini_cli.run(
-                        review_prompt, on_chunk=on_chunk_gemini
+                        review_prompt,
+                        on_chunk=on_chunk_gemini,
+                        track_operation=False,
                     )
                     gemini_output = gemini_result.output if gemini_result.success else None
                     last_gemini_output = gemini_output
@@ -1415,6 +1418,7 @@ The reviewer found issues with the previous fix. Address this feedback:
                 await on_chunk(f"[stderr] {line}\n")
 
         # Run with the centralized utility
+        # NOTE: track_operation=False because fix session already tracks via OperationTracker
         result = await cli.run(
             prompt,
             context_id=f"fix_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
@@ -1424,6 +1428,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             save_thinking=True,
             on_chunk=on_chunk,
             on_stderr=on_stderr,
+            track_operation=False,  # Fix session handles tracking
         )
 
         if not result.success:
