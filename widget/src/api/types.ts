@@ -14,12 +14,21 @@ export interface WidgetConfig {
   onError?: (error: Error) => void;
 }
 
+export interface ElementInfo {
+  id: string | null;
+  classes: string[];
+  dataTestId: string | null;
+  tagName: string;
+  selector: string;
+}
+
 export interface AnalyzeRequest {
   title: string;
   description: string;
   screenshots: Blob[];
   figmaLink?: string;
   websiteLink?: string;
+  selectedElement?: ElementInfo;
 }
 
 export interface Question {
@@ -42,6 +51,7 @@ export interface FinalizeRequest {
   teamId: string;
   figmaLink?: string;
   websiteLink?: string;
+  selectedElement?: ElementInfo;
 }
 
 export interface IssueCreatedResult {

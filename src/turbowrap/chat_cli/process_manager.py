@@ -327,6 +327,11 @@ class CLIProcessManager:
             env=env,
         )
 
+        # Increase readline buffer limit to 1MB (default is 64KB)
+        # Claude CLI can emit very long lines with large code blocks
+        if process.stdout:
+            process.stdout._limit = 1024 * 1024  # type: ignore[attr-defined]
+
         cli_proc = CLIProcess(
             session_id=session_id,
             cli_type=CLIType.CLAUDE,
@@ -480,6 +485,10 @@ class CLIProcessManager:
             cwd=str(proc.working_dir),
             env=env,
         )
+
+        # Increase readline buffer limit to 1MB (default is 64KB)
+        if new_process.stdout:
+            new_process.stdout._limit = 1024 * 1024  # type: ignore[attr-defined]
 
         # Replace the old process
         proc.process = new_process
@@ -684,6 +693,10 @@ class CLIProcessManager:
             cwd=str(proc.working_dir),
             env=env,
         )
+
+        # Increase readline buffer limit to 1MB (default is 64KB)
+        if process.stdout:
+            process.stdout._limit = 1024 * 1024  # type: ignore[attr-defined]
 
         # Update proc reference
         proc.process = process

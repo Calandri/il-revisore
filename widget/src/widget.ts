@@ -3,9 +3,11 @@ import type {
   AnalyzeResult,
   IssueCreatedResult,
   Question,
+  ElementInfo,
 } from './api/types';
 import { IssueAPIClient } from './api/client';
 import { captureScreen, compressImage, blobToDataUrl } from './capture/screen-capture';
+import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
@@ -18,6 +20,7 @@ interface WidgetState {
   description: string;
   screenshots: Blob[];
   screenshotPreviews: string[];
+  selectedElement: ElementInfo | null;
   questions: Question[];
   answers: Record<number, string>;
   geminiInsights: string;
@@ -53,6 +56,7 @@ export class IssueWidget {
       description: '',
       screenshots: [],
       screenshotPreviews: [],
+      selectedElement: null,
       questions: [],
       answers: {},
       geminiInsights: '',
@@ -180,6 +184,7 @@ export class IssueWidget {
 
   private renderDetailsStep(): string {
     const hasScreenshot = this.state.screenshotPreviews.length > 0;
+    const hasElement = this.state.selectedElement !== null;
 
     return `
       <div class="iw-form-group">
@@ -196,21 +201,71 @@ export class IssueWidget {
       </div>
 
       <div class="iw-form-group">
-        <label class="iw-label">Screenshot</label>
-        <div class="iw-screenshot-area ${hasScreenshot ? 'has-screenshot' : ''}" id="iw-screenshot-area">
-          ${
-            hasScreenshot
-              ? `<img src="${this.state.screenshotPreviews[0]}" class="iw-screenshot-preview" alt="Screenshot">`
-              : `
-            <div class="iw-screenshot-icon">${ICONS.camera}</div>
-            <div class="iw-screenshot-text">Click to capture screen</div>
-            <div class="iw-screenshot-hint">or drag & drop an image</div>
-          `
-          }
+        <label class="iw-label">Attachments</label>
+
+        <div class="iw-attachments-grid">
+          <div class="iw-attachment-btn ${hasScreenshot ? 'active' : ''}" id="iw-screenshot-btn">
+            ${ICONS.camera}
+            <span>Screenshot</span>
+          </div>
+          <div class="iw-attachment-btn" id="iw-upload-btn">
+            ${ICONS.upload}
+            <span>Upload</span>
+          </div>
+          <div class="iw-attachment-btn ${hasElement ? 'active' : ''}" id="iw-element-btn">
+            ${ICONS.crosshair}
+            <span>Seleziona</span>
+          </div>
+        </div>
+
+        <input type="file" accept="image/*" class="iw-file-input" id="iw-file-input">
+
+        <div class="iw-preview-area">
+          ${hasScreenshot ? `
+            <div class="iw-preview-image">
+              <img src="${this.state.screenshotPreviews[0]}" alt="Screenshot">
+              <button class="iw-preview-remove" id="iw-remove-screenshot">&times;</button>
+            </div>
+          ` : ''}
+
+          ${hasElement ? this.renderElementInfo() : ''}
         </div>
       </div>
 
       ${this.state.error ? `<div class="iw-error">${this.state.error}</div>` : ''}
+    `;
+  }
+
+  private renderElementInfo(): string {
+    const el = this.state.selectedElement;
+    if (!el) return '';
+
+    return `
+      <div class="iw-element-info">
+        <div class="iw-element-info-header">
+          <div class="iw-element-info-title">
+            ${ICONS.crosshair}
+            <span>Componente selezionato</span>
+          </div>
+          <button class="iw-element-info-remove" id="iw-remove-element">&times;</button>
+        </div>
+        <div class="iw-element-info-row">
+          <span class="iw-element-info-label">Tag:</span>
+          <span class="iw-element-info-value">${el.tagName}</span>
+        </div>
+        <div class="iw-element-info-row">
+          <span class="iw-element-info-label">ID:</span>
+          <span class="iw-element-info-value ${el.id ? '' : 'empty'}">${el.id || 'nessuno'}</span>
+        </div>
+        <div class="iw-element-info-row">
+          <span class="iw-element-info-label">Classes:</span>
+          <span class="iw-element-info-value ${el.classes.length ? '' : 'empty'}">${el.classes.length ? el.classes.join(' ') : 'nessuna'}</span>
+        </div>
+        <div class="iw-element-info-row">
+          <span class="iw-element-info-label">Test ID:</span>
+          <span class="iw-element-info-value ${el.dataTestId ? '' : 'empty'}">${el.dataTestId || 'nessuno'}</span>
+        </div>
+      </div>
     `;
   }
 
@@ -309,8 +364,23 @@ export class IssueWidget {
       } else if (target.id === 'iw-done') {
         this.close();
         this.reset();
-      } else if (target.id === 'iw-screenshot-area' || target.closest('#iw-screenshot-area')) {
+      } else if (target.id === 'iw-screenshot-btn' || target.closest('#iw-screenshot-btn')) {
         this.handleScreenshotCapture();
+      } else if (target.id === 'iw-upload-btn' || target.closest('#iw-upload-btn')) {
+        this.handleUploadClick();
+      } else if (target.id === 'iw-element-btn' || target.closest('#iw-element-btn')) {
+        this.handleElementPick();
+      } else if (target.id === 'iw-remove-screenshot') {
+        this.handleRemoveScreenshot();
+      } else if (target.id === 'iw-remove-element') {
+        this.handleRemoveElement();
+      }
+    });
+
+    this.shadow.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.id === 'iw-file-input' && target.files?.length) {
+        this.handleFileUpload(target.files[0]);
       }
     });
 
@@ -348,6 +418,7 @@ export class IssueWidget {
       description: '',
       screenshots: [],
       screenshotPreviews: [],
+      selectedElement: null,
       questions: [],
       answers: {},
       geminiInsights: '',
@@ -393,6 +464,52 @@ export class IssueWidget {
     }
   }
 
+  private handleUploadClick(): void {
+    const fileInput = this.shadow.getElementById('iw-file-input') as HTMLInputElement;
+    fileInput?.click();
+  }
+
+  private async handleFileUpload(file: File): Promise<void> {
+    try {
+      const compressed = await compressImage(file);
+      const dataUrl = await blobToDataUrl(compressed);
+
+      this.state.screenshots = [compressed];
+      this.state.screenshotPreviews = [dataUrl];
+      this.update();
+    } catch (error) {
+      console.error('File upload failed:', error);
+    }
+  }
+
+  private async handleElementPick(): Promise<void> {
+    // Close the modal temporarily
+    this.close();
+
+    try {
+      const elementInfo = await startElementPicker();
+      if (elementInfo) {
+        this.state.selectedElement = elementInfo;
+      }
+    } catch (error) {
+      console.error('Element pick failed:', error);
+    }
+
+    // Reopen the modal
+    this.open();
+  }
+
+  private handleRemoveScreenshot(): void {
+    this.state.screenshots = [];
+    this.state.screenshotPreviews = [];
+    this.update();
+  }
+
+  private handleRemoveElement(): void {
+    this.state.selectedElement = null;
+    this.update();
+  }
+
   private async handleNext(): Promise<void> {
     if (this.state.step === 'details') {
       await this.analyzeIssue();
@@ -426,6 +543,7 @@ export class IssueWidget {
           description: this.state.description,
           screenshots: this.state.screenshots,
           websiteLink: window.location.href,
+          selectedElement: this.state.selectedElement || undefined,
         },
         (msg) => {
           this.state.progressMessages.push(msg);
@@ -469,6 +587,7 @@ export class IssueWidget {
           geminiInsights: this.state.geminiInsights,
           teamId: this.config.teamId,
           websiteLink: window.location.href,
+          selectedElement: this.state.selectedElement || undefined,
         },
         (msg) => {
           this.state.progressMessages.push(msg);

@@ -7,6 +7,24 @@
     display: none !important;
 }
 
+/* =============================================================================
+   Active Operations Banner - Push fixed sidebars down
+   ============================================================================= */
+:root {
+    --banner-height: 44px;
+}
+
+/* When banner is active, adjust ALL fixed sidebars (left + right) */
+.has-active-banner aside[class*="fixed"][class*="top-0"] {
+    top: var(--banner-height) !important;
+    height: calc(100% - var(--banner-height)) !important;
+}
+
+/* Mobile header adjustment when banner is active */
+.has-active-banner header[class*="sticky"][class*="top-0"] {
+    top: var(--banner-height) !important;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
     width: 8px;

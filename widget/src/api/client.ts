@@ -34,6 +34,9 @@ export class IssueAPIClient {
 
     if (data.figmaLink) formData.append('figma_link', data.figmaLink);
     if (data.websiteLink) formData.append('website_link', data.websiteLink);
+    if (data.selectedElement) {
+      formData.append('selected_element', JSON.stringify(data.selectedElement));
+    }
 
     try {
       const response = await fetch(`${this.baseUrl}/linear/create/analyze`, {
@@ -83,6 +86,7 @@ export class IssueAPIClient {
           team_id: data.teamId || this.teamId,
           figma_link: data.figmaLink,
           website_link: data.websiteLink,
+          selected_element: data.selectedElement,
         }),
       });
 
