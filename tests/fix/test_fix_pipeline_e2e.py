@@ -499,6 +499,45 @@ class TestWorkspaceScopeValidation:
 
         assert violations == []
 
+    def test_validate_workspace_scope_with_allowed_extra_paths(self, fix_repo):
+        """Files in allowed_extra_paths pass validation."""
+        orchestrator = FixOrchestrator(fix_repo)
+
+        modified_files = [
+            "packages/frontend/src/App.tsx",  # in workspace
+            "packages/shared/types.ts",  # in allowed_extra_paths
+            "packages/common/utils.ts",  # in allowed_extra_paths
+        ]
+        workspace_path = "packages/frontend"
+        allowed_extra_paths = ["packages/shared", "packages/common"]
+
+        violations = orchestrator._validate_workspace_scope(
+            modified_files, workspace_path, allowed_extra_paths
+        )
+
+        assert violations == []
+
+    def test_validate_workspace_scope_allowed_extra_paths_blocks_others(self, fix_repo):
+        """Files outside workspace AND allowed_extra_paths are blocked."""
+        orchestrator = FixOrchestrator(fix_repo)
+
+        modified_files = [
+            "packages/frontend/src/App.tsx",  # valid (workspace)
+            "packages/shared/types.ts",  # valid (allowed_extra)
+            "packages/backend/main.py",  # violation!
+            "root_config.json",  # violation!
+        ]
+        workspace_path = "packages/frontend"
+        allowed_extra_paths = ["packages/shared"]
+
+        violations = orchestrator._validate_workspace_scope(
+            modified_files, workspace_path, allowed_extra_paths
+        )
+
+        assert len(violations) == 2
+        assert "packages/backend/main.py" in violations
+        assert "root_config.json" in violations
+
 
 # =============================================================================
 # Score Parsing Tests

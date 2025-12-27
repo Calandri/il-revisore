@@ -59,6 +59,11 @@ function chatSidebar() {
         // Branch management
         branches: [],           // Available branches in repo
         loadingBranches: false, // Loading state for branches
+        // Repository management
+        repositories: [],       // Available repositories
+        selectedRepoId: null,   // Selected repo for new session
+        showRepoSelector: false, // Show repo selector modal
+        pendingCliType: null,   // CLI type waiting for repo selection
         // SharedWorker support
         useWorker: true,        // Will be set to false if worker not supported
 
