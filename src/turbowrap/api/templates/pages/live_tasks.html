@@ -438,6 +438,7 @@ function liveTasksApp() {
             'sync': 'Sync',
             'promote': 'Promote',
             'deploy': 'Deploy',
+            'cli_task': 'CLI Task',
         },
 
         get operationsByRepo() {
@@ -467,6 +468,7 @@ function liveTasksApp() {
                 'sync': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
                 'promote': 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400',
                 'deploy': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+                'cli_task': 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400',
             };
             return classes[type] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
         },
@@ -508,6 +510,10 @@ function liveTasksApp() {
                 'deploy': `<div class="relative">
                     <div class="w-3 h-3 bg-red-500 rounded-full"></div>
                     <div class="absolute inset-0 w-3 h-3 bg-red-500 rounded-full animate-ping opacity-75"></div>
+                </div>`,
+                'cli_task': `<div class="relative">
+                    <div class="w-3 h-3 bg-slate-500 rounded-full"></div>
+                    <div class="absolute inset-0 w-3 h-3 bg-slate-500 rounded-full animate-ping opacity-75"></div>
                 </div>`,
             };
             return icons[type] || icons['fix'];
@@ -621,6 +627,83 @@ function liveTasksApp() {
             setTimeout(() => {
                 toast.remove();
             }, 3000);
+        },
+
+        // History methods
+        async loadHistory(page = 1) {
+            this.historyLoading = true;
+            this.historyPage = page;
+            try {
+                const params = new URLSearchParams({
+                    page: page.toString(),
+                    page_size: this.historyPageSize.toString(),
+                });
+                if (this.historyStatusFilter) {
+                    params.append('status', this.historyStatusFilter);
+                }
+                if (this.historyTypeFilter) {
+                    params.append('type', this.historyTypeFilter);
+                }
+                const response = await fetch(`/api/operations/history?${params}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    this.historyOperations = data.operations || [];
+                    this.historyTotal = data.total || 0;
+                    this.historyHasMore = data.has_more || false;
+                }
+            } catch (error) {
+                console.error('Error fetching history:', error);
+                this.showToast('Errore nel caricare lo storico', 'error');
+            } finally {
+                this.historyLoading = false;
+            }
+        },
+
+        getStatusBadgeClass(status) {
+            const classes = {
+                'completed': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+                'failed': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+                'cancelled': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+                'in_progress': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+            };
+            return classes[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+        },
+
+        formatDateTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString('it-IT', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        },
+
+        formatDuration(seconds) {
+            if (seconds === null || seconds === undefined) return '-';
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${mins}m`;
+        },
+
+        // Stats methods
+        async loadStats() {
+            this.statsLoading = true;
+            try {
+                const response = await fetch(`/api/operations/stats?days=${this.statsDays}`);
+                if (response.ok) {
+                    this.stats = await response.json();
+                }
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+                this.showToast('Errore nel caricare le statistiche', 'error');
+            } finally {
+                this.statsLoading = false;
+            }
         },
 
         init() {
