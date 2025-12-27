@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from ...config import get_settings
 from ...db.models import Issue, IssueStatus, Repository, Task
 from ...orchestration.cli_runner import GeminiCLI
 from ...utils.aws_secrets import get_anthropic_api_key
@@ -516,126 +515,81 @@ async def run_lint_fix(
                 }
                 return
 
-            # Build environment with extended thinking
-            settings = get_settings()
-            env = os.environ.copy()
-            api_key = get_anthropic_api_key()
-            if api_key:
-                env["ANTHROPIC_API_KEY"] = api_key
-            env["TMPDIR"] = "/tmp"
+            # Notify which lint types are starting in parallel
+            yield {
+                "event": "lint_fix_progress",
+                "data": json.dumps(
+                    {
+                        "message": f"Launching {len(lint_types)} Gemini Flash processes in parallel...",
+                        "lint_types": lint_types,
+                        "phase": "launching",
+                    }
+                ),
+            }
 
-            # Enable extended thinking via env var (NOT --settings which is buggy)
-            if settings.thinking.enabled:
-                env["MAX_THINKING_TOKENS"] = str(settings.thinking.budget_tokens)
-                logger.info(f"Extended thinking enabled: {settings.thinking.budget_tokens} tokens")
-
-            # Find Claude CLI
-            cli_path = "/Users/niccolocalandri/.claude/local/claude"
-            if not Path(cli_path).exists():
-                cli_path = "claude"
-
-            # Get model from settings
-            model = settings.agents.claude_model
-
-            # Process each lint type sequentially
-            for lint_type in lint_types:
-                # Choose CLI based on lint type
-                use_gemini = lint_type in GEMINI_LINT_TYPES
-                cli_name = "Gemini Flash" if use_gemini else "Claude"
-
-                yield {
-                    "event": "lint_fix_progress",
-                    "data": json.dumps(
-                        {
-                            "message": (
-                                f"Running {lint_type} linting and fixing " f"(using {cli_name})..."
-                            ),
-                            "lint_type": lint_type,
-                            "phase": "running",
-                        }
-                    ),
-                }
-
+            async def run_single_lint(lint_type: str) -> tuple[str, LintFixResult]:
+                """Run a single lint type with GeminiCLI Flash."""
                 # Prepare prompt with variables
                 prompt = agent_prompt.replace("{lint_type}", lint_type)
                 if request.workspace_path:
                     prompt = prompt.replace("{workspace_path}", request.workspace_path)
 
-                if use_gemini:
-                    # Use Gemini CLI (faster for mypy)
-                    logger.info(f"[LINT-FIX] Using Gemini Flash for {lint_type}")
-                    gemini_cli = GeminiCLI(
-                        working_dir=repo_path,
-                        model="flash",
-                        timeout=300,  # 5 minutes
-                    )
-                    gemini_result = await gemini_cli.run(prompt)
-                    output = gemini_result.output
-                    error = gemini_result.error or ""
-                    success = gemini_result.success
-                else:
-                    # Use Claude CLI (default)
-                    logger.info(f"[LINT-FIX] Using Claude CLI for {lint_type}")
-                    process = await asyncio.create_subprocess_exec(
-                        cli_path,
-                        "--print",
-                        "--verbose",
-                        "--dangerously-skip-permissions",
-                        "--model",
-                        model,
-                        "--output-format",
-                        "stream-json",
-                        stdin=asyncio.subprocess.PIPE,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        cwd=str(repo_path),
-                        env=env,
-                    )
+                logger.info(f"[LINT-FIX] Starting Gemini Flash for {lint_type}")
 
-                    stdout, stderr = await asyncio.wait_for(
-                        process.communicate(input=prompt.encode()),
-                        timeout=600,  # 10 minutes per lint type
-                    )
+                gemini_cli = GeminiCLI(
+                    working_dir=repo_path,
+                    model="flash",
+                    timeout=300,  # 5 minutes per lint type
+                    s3_prefix=f"lint-fix/{lint_type}",
+                )
 
-                    output = stdout.decode() if stdout else ""
-                    error = stderr.decode() if stderr else ""
-                    success = process.returncode == 0
+                gemini_result = await gemini_cli.run(
+                    prompt,
+                    context_id=f"{task_id}/{lint_type}",
+                    repo_name=repo.name,
+                    operation_type="fix",
+                    operation_details={"lint_type": lint_type, "task_id": task_id},
+                )
 
-                if not success:
-                    logger.error(f"Lint-fix failed for {lint_type}: {error}")
-                    yield {
-                        "event": "lint_fix_progress",
-                        "data": json.dumps(
-                            {
-                                "message": f"{lint_type}: failed - {error[:200]}",
-                                "lint_type": lint_type,
-                                "phase": "error",
-                            }
-                        ),
-                    }
-                    results.append(
-                        LintFixResult(
-                            lint_type=lint_type,
-                            issues_found=0,
-                            issues_fixed=0,
-                            files_modified=[],
-                            status="failed",
-                        )
+                if not gemini_result.success:
+                    logger.error(f"Lint-fix failed for {lint_type}: {gemini_result.error}")
+                    return lint_type, LintFixResult(
+                        lint_type=lint_type,
+                        issues_found=0,
+                        issues_fixed=0,
+                        files_modified=[],
+                        status="failed",
                     )
-                    continue
 
                 # Parse result from output
-                result = _parse_lint_fix_output(output, lint_type)
+                result = _parse_lint_fix_output(gemini_result.output, lint_type)
+                logger.info(f"[LINT-FIX] {lint_type}: fixed {result.issues_fixed} issues")
+                return lint_type, result
+
+            # Run all lint types in parallel with Gemini Flash
+            parallel_results = await asyncio.gather(
+                *[run_single_lint(lt) for lt in lint_types],
+                return_exceptions=True,
+            )
+
+            # Process results
+            for item in parallel_results:
+                if isinstance(item, Exception):
+                    logger.exception(f"Lint-fix parallel task failed: {item}")
+                    continue
+
+                lint_type, result = item
                 results.append(result)
                 total_fixed += result.issues_fixed
 
+                # Emit progress for this lint type
                 yield {
                     "event": "lint_fix_progress",
                     "data": json.dumps(
                         {
                             "message": f"{lint_type}: fixed {result.issues_fixed} issues",
                             "lint_type": lint_type,
-                            "phase": "completed",
+                            "phase": "completed" if result.status != "failed" else "error",
                             "issues_fixed": result.issues_fixed,
                             "commit_sha": result.commit_sha,
                         }
@@ -644,11 +598,9 @@ async def run_lint_fix(
 
                 # Create macro-issue for tracking (marked as RESOLVED)
                 if result.issues_fixed > 0:
-                    # Use first modified file or placeholder for the required 'file' field
                     first_file = (
                         result.files_modified[0] if result.files_modified else "(multiple files)"
                     )
-                    # Get current branch for merge functionality
                     try:
                         current_branch = get_current_branch(repo_path)
                     except Exception:
@@ -716,45 +668,11 @@ async def run_lint_fix(
 
 
 def _parse_lint_fix_output(output: str, lint_type: str) -> LintFixResult:
-    """Parse JSON result from lint-fixer agent output (stream-json format)."""
-    # Stream-json output is NDJSON - parse each line to find the result
-    result_text = ""
-    for line in output.strip().split("\n"):
-        if not line.strip():
-            continue
-        try:
-            event = json.loads(line)
-            # Skip non-dict values (e.g., strings are valid JSON but don't have .get())
-            if not isinstance(event, dict):
-                continue
-            if event.get("type") == "result":
-                # Check for errors
-                if event.get("is_error"):
-                    logger.error(
-                        f"Claude CLI error for {lint_type}: {event.get('result', 'Unknown error')}"
-                    )
-                    return LintFixResult(
-                        lint_type=lint_type,
-                        issues_found=0,
-                        issues_fixed=0,
-                        files_modified=[],
-                        status="error",
-                    )
-                result_text = event.get("result", "")
-                # Log usage
-                total_cost = event.get("total_cost_usd", 0)
-                if total_cost:
-                    logger.info(f"Claude CLI cost for {lint_type}: ${total_cost:.4f}")
-                break
-        except json.JSONDecodeError:
-            continue
+    """Parse JSON result from lint-fixer agent output.
 
-    # If no result event found, use raw output
-    if not result_text:
-        result_text = output
-
-    # Now parse the actual result (JSON from agent)
-    json_text = result_text.strip()
+    Extracts the JSON summary from Gemini CLI output, handling markdown code blocks.
+    """
+    json_text = output.strip()
 
     # Handle markdown code blocks
     if "```" in json_text:

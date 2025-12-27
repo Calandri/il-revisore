@@ -100,7 +100,17 @@
                         <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold"
                               x-text="operations.length + ' active operations'"></span>
                         <span class="opacity-80">across</span>
-                        <span class="font-semibold" x-text="uniqueRepos + ' repo' + (uniqueRepos !== 1 ? 's' : '')"></span>
+                        <!-- Show up to 3 repo names -->
+                        <template x-for="(repo, index) in uniqueRepoNames.slice(0, 3)" :key="repo">
+                            <span class="flex items-center">
+                                <span class="font-semibold" x-text="repo"></span>
+                                <span x-show="index < Math.min(uniqueRepoNames.length, 3) - 1" class="opacity-60 mx-1">,</span>
+                            </span>
+                        </template>
+                        <!-- Show +N more if > 3 repos -->
+                        <template x-if="uniqueRepoNames.length > 3">
+                            <span class="opacity-70 text-xs" x-text="'+' + (uniqueRepoNames.length - 3) + ' more'"></span>
+                        </template>
                     </div>
                 </template>
             </div>
@@ -139,6 +149,16 @@ function activeOperationsBanner() {
         get uniqueRepos() {
             const repos = new Set(this.operations.map(s => s.repository_id).filter(Boolean));
             return repos.size || 1;
+        },
+
+        get uniqueRepoNames() {
+            // Get unique repo names from operations
+            const names = [...new Set(
+                this.operations
+                    .map(s => s.repository_name)
+                    .filter(Boolean)
+            )];
+            return names.length > 0 ? names : ['unknown'];
         },
 
         getOperationVerb(type) {

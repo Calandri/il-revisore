@@ -938,8 +938,8 @@ class Operation(Base):
             "details": self.details or {},
             "result": self.result,
             "error": self.error,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "started_at": (self.started_at.isoformat() + "Z") if self.started_at else None,
+            "completed_at": (self.completed_at.isoformat() + "Z") if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
             "is_stale": self.is_stale,
         }
