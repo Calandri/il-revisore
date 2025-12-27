@@ -71,10 +71,10 @@ async def list_active_operations(
     tracker = get_tracker()
     operations = tracker.get_active(op_type=type, repo_id=repo_id)
 
-    # Debug logging
-    logger.info(f"[OPERATIONS] Active operations: {len(operations)}")
+    # Debug logging (polling happens every 5s, keep at DEBUG to avoid noise)
+    logger.debug(f"[OPERATIONS] Active operations: {len(operations)}")
     for op in operations:
-        logger.info(f"  - {op.operation_id[:8]}: {op.operation_type.value} ({op.status})")
+        logger.debug(f"  - {op.operation_id[:8]}: {op.operation_type.value} ({op.status})")
 
     response_ops = [OperationResponse(**op.to_dict()) for op in operations]
 

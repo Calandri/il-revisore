@@ -199,45 +199,48 @@
         <!-- Tasks History -->
         <a href="/tasks"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'tasks' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
             </svg>
             <span x-show="sidebarOpen">Storico Task</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Storico Task</div>
         </a>
 
         <!-- Users (admin only) -->
         {% if current_user and current_user.is_admin %}
         <a href="/users"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'users' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
             </svg>
             <span x-show="sidebarOpen">Utenti</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Utenti</div>
         </a>
         {% endif %}
 
         <!-- System Status -->
         <a href="/system-status"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'status' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
             </svg>
             <span x-show="sidebarOpen">Status</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Status</div>
         </a>
 
         <!-- Settings -->
         <a href="/settings"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'settings' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -246,16 +249,18 @@
                       d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
             </svg>
             <span x-show="sidebarOpen">Impostazioni</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Impostazioni</div>
         </a>
 
         <!-- API Docs -->
         <a href="/docs" target="_blank"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-700">
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-700">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
             </svg>
             <span x-show="sidebarOpen">API Docs</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">API Docs</div>
         </a>
     </nav>
 
@@ -510,9 +515,10 @@
     </div>
 
     <!-- System Monitor Widget -->
-    <div x-data="systemMonitor()" x-init="init()"
-         class="p-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
-         x-show="sidebarOpen">
+    <div x-data="systemMonitor()" x-init="init()">
+        <!-- Expanded version -->
+        <div class="p-2 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900"
+             x-show="sidebarOpen">
         <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 flex-wrap">
             <!-- CPU -->
             <div class="flex items-center gap-1" :title="'CPU: ' + cpu + '%'">
