@@ -1067,6 +1067,8 @@ class Orchestrator:
             context.agent_prompt = claude_reviewer.load_agent_prompt(self.settings.agents_dir)
 
         # Create streaming callbacks for progress events
+        # NOTE: Use base reviewer_name so content goes to the right card
+        # Content from both LLMs will mix but that's OK for parallel mode
         display_name = get_reviewer_display_name(reviewer_name)
 
         async def on_claude_chunk(chunk: str) -> None:
@@ -1074,8 +1076,8 @@ class Orchestrator:
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name=f"{reviewer_name}_claude",
-                        reviewer_display_name=f"{display_name} (Claude)",
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
                         content=chunk,
                     )
                 )
@@ -1085,8 +1087,8 @@ class Orchestrator:
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name=f"{reviewer_name}_gemini",
-                        reviewer_display_name=f"{display_name} (Gemini)",
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
                         content=chunk,
                     )
                 )
