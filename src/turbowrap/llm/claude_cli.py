@@ -533,6 +533,7 @@ class ClaudeCLI:
             chunks_received = 0
             total_bytes = 0
             line_buffer = ""
+            in_thinking_block = False  # Track if we're streaming a thinking block
 
             assert process.stdout is not None
             try:
@@ -576,8 +577,19 @@ class ClaudeCLI:
                                             event = event.get("event", {})
                                             event_type = event.get("type", "")
 
+                                        # Track thinking block state
+                                        if event_type == "content_block_start":
+                                            block = event.get("content_block", {})
+                                            if block.get("type") == "thinking":
+                                                in_thinking_block = True
+                                                await on_chunk("\n🧠 ")
+                                        elif event_type == "content_block_stop":
+                                            if in_thinking_block:
+                                                in_thinking_block = False
+                                                await on_chunk("\n\n")
+
                                         # Extract text and thinking from content_block_delta
-                                        if event_type == "content_block_delta":
+                                        elif event_type == "content_block_delta":
                                             delta = event.get("delta", {})
                                             delta_type = delta.get("type", "")
                                             if delta_type == "text_delta":
@@ -585,10 +597,10 @@ class ClaudeCLI:
                                                 if text:
                                                     await on_chunk(text)
                                             elif delta_type == "thinking_delta":
-                                                # Stream thinking with prefix
+                                                # Stream thinking (prefix added at block start)
                                                 thinking_chunk = delta.get("thinking", "")
                                                 if thinking_chunk:
-                                                    await on_chunk(f"🧠 {thinking_chunk}")
+                                                    await on_chunk(thinking_chunk)
                                         elif event_type == "assistant":
                                             for block in event.get("message", {}).get(
                                                 "content", []
