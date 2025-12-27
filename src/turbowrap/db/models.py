@@ -121,6 +121,9 @@ class Repository(Base, SoftDeleteMixin):
     workspace_path = Column(
         String(512), nullable=True
     )  # Monorepo: relative path (e.g., "packages/frontend")
+    allowed_extra_paths = Column(
+        JSON, nullable=True
+    )  # Monorepo: additional allowed paths for fix (e.g., ["frontend/", "shared/"])
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -952,6 +952,83 @@
         </div>
     </div>
 
+    <!-- Scope Violation Modal -->
+    <div x-show="fixProgress.scopeViolation.show"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+
+        <div x-show="fixProgress.scopeViolation.show"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
+
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 bg-amber-50 dark:bg-amber-900/20">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg text-amber-900 dark:text-amber-100">Modifiche Fuori Scope</h3>
+                        <p class="text-sm text-amber-700 dark:text-amber-300">L'agente ha modificato file fuori dalla workspace</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-4 space-y-4">
+                <p class="text-gray-700 dark:text-gray-300">
+                    Le seguenti directory sono state modificate al di fuori del workspace scope:
+                </p>
+
+                <div class="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 space-y-1">
+                    <template x-for="dir in fixProgress.scopeViolation.dirs" :key="dir">
+                        <div class="flex items-center gap-2 text-sm font-mono">
+                            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <span x-text="dir" class="text-gray-800 dark:text-gray-200"></span>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Aggiungere all'allowlist?</strong><br>
+                    Se confermi, queste directory saranno aggiunte ai path permessi per questa repo e il fix continuerà.
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="p-4 border-t dark:border-gray-700 flex gap-3 justify-end">
+                <button @click="respondToScopeViolation(false)"
+                        :disabled="fixProgress.scopeViolation.responding"
+                        class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:opacity-50">
+                    <span x-show="!fixProgress.scopeViolation.responding">Annulla Fix</span>
+                    <span x-show="fixProgress.scopeViolation.responding">...</span>
+                </button>
+                <button @click="respondToScopeViolation(true)"
+                        :disabled="fixProgress.scopeViolation.responding"
+                        class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 flex items-center gap-2">
+                    <svg x-show="fixProgress.scopeViolation.responding" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    <span>Aggiungi e Prosegui</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Lint Analysis Modal -->
     <div x-show="showLintModal"
          x-transition:enter="transition ease-out duration-300"
@@ -1260,7 +1337,14 @@ function issuesApp() {
             streamingContent: '',
             showStreamingDetails: false,
             lastScore: null,
-            billingError: null  // Billing error message if any
+            billingError: null,  // Billing error message if any
+            // Scope violation prompt state
+            scopeViolation: {
+                show: false,
+                sessionId: null,
+                dirs: [],
+                responding: false
+            }
         },
         // Throttling state for streaming updates (prevents UI freeze)
         _streamingBuffer: '',
@@ -1770,6 +1854,17 @@ function issuesApp() {
                 });
             }
 
+            // 5c. Handle scope violation prompt - show modal for user decision
+            if (eventType === 'fix_scope_violation_prompt') {
+                this.fixProgress.scopeViolation = {
+                    show: true,
+                    sessionId: event.session_id,
+                    dirs: event.scope_violation_dirs || [],
+                    responding: false
+                };
+                console.log('[FIX] Scope violation prompt:', event.scope_violation_dirs);
+            }
+
             // 6b. LOG EVENTS -> Toast notifications
             if (eventType === 'fix_log' && event.message) {
                 const toastId = Date.now();
@@ -1829,7 +1924,8 @@ function issuesApp() {
                 'fix_issue_committing': '💾',
                 'fix_session_completed': '🎉',
                 'fix_session_error': '❌',
-                'fix_billing_error': '💳'
+                'fix_billing_error': '💳',
+                'fix_scope_violation_prompt': '⚠️'
             };
             return icons[type] || '📝';
         },
@@ -1845,6 +1941,33 @@ function issuesApp() {
         closeFixModal() {
             if (!this.isFixing) {
                 this.showFixModal = false;
+            }
+        },
+
+        async respondToScopeViolation(allow) {
+            const scopeViolation = this.fixProgress.scopeViolation;
+            if (!scopeViolation.sessionId || scopeViolation.responding) return;
+
+            scopeViolation.responding = true;
+
+            try {
+                const response = await fetch(`/api/fix/sessions/${scopeViolation.sessionId}/scope-response`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ allow })
+                });
+
+                if (response.ok) {
+                    console.log(`[FIX] Scope violation response sent: allow=${allow}`);
+                    // Hide modal - the orchestrator will continue or abort
+                    this.fixProgress.scopeViolation.show = false;
+                } else {
+                    console.error('[FIX] Failed to send scope response:', await response.text());
+                }
+            } catch (error) {
+                console.error('[FIX] Error sending scope response:', error);
+            } finally {
+                scopeViolation.responding = false;
             }
         },
 

@@ -832,41 +832,91 @@ class FixOrchestrator:
                 uncommitted_files = await self._get_uncommitted_files()
                 logger.info(f"Uncommitted files: {uncommitted_files}")
 
-                # Check for violations
+                # Check for violations (considering allowed_extra_paths)
                 violations = self._validate_workspace_scope(
-                    uncommitted_files, request.workspace_path
+                    uncommitted_files,
+                    request.workspace_path,
+                    request.allowed_extra_paths,
                 )
 
                 if violations:
-                    # CRITICAL: Files modified outside workspace!
-                    # Revert ALL changes and raise error
-                    logger.error(
+                    # Files modified outside workspace - prompt user for approval
+                    logger.warning(
                         f"Workspace scope violation! Files outside "
                         f"'{request.workspace_path}': {violations}"
                     )
 
+                    # Extract unique root directories from violations
+                    violation_dirs: set[str] = set()
+                    for v in violations:
+                        parts = v.split("/")
+                        if len(parts) > 1:
+                            violation_dirs.add(parts[0] + "/")
+                        else:
+                            violation_dirs.add(v)
+
+                    # Emit prompt event for UI
                     await safe_emit(
                         FixProgressEvent(
-                            type=FixEventType.FIX_SESSION_ERROR,
+                            type=FixEventType.FIX_SCOPE_VIOLATION_PROMPT,
                             session_id=session_id,
-                            error="🚫 BLOCKED: Modified files outside workspace scope",
-                            message=f"Violations: {', '.join(violations[:5])}"
-                            f"{'...' if len(violations) > 5 else ''}",
+                            message=f"⚠️ Modifiche fuori scope: {', '.join(sorted(violation_dirs))}",
+                            scope_violation_dirs=sorted(violation_dirs),
                         )
                     )
 
-                    # Revert all changes
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
-                            session_id=session_id,
-                            message="⏪ Reverting all uncommitted changes...",
-                        )
+                    # Register question and wait for user response
+                    from turbowrap.api.routes.fix import (
+                        register_scope_question,
+                        wait_for_scope_response,
                     )
-                    await self._revert_uncommitted_changes()
 
-                    # Raise exception to abort
-                    raise ScopeValidationError(violations, request.workspace_path)
+                    question_id = f"scope_{session_id}"
+                    register_scope_question(question_id, violation_dirs, request.repository_id)
+
+                    try:
+                        # Wait for user response (5 minute timeout)
+                        response = await asyncio.wait_for(
+                            wait_for_scope_response(question_id),
+                            timeout=300.0,
+                        )
+
+                        if response.allow:
+                            # User approved - add paths to DB and continue
+                            await self._add_allowed_paths(request.repository_id, violation_dirs)
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_LOG,
+                                    session_id=session_id,
+                                    message=f"✅ Path aggiunti all'allowlist: {', '.join(sorted(violation_dirs))}",
+                                    log_level="INFO",
+                                )
+                            )
+                        else:
+                            # User rejected - revert and abort
+                            logger.info("User rejected scope violation - reverting changes")
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_ISSUE_STREAMING,
+                                    session_id=session_id,
+                                    message="⏪ Reverting all uncommitted changes...",
+                                )
+                            )
+                            await self._revert_uncommitted_changes()
+                            raise ScopeValidationError(violations, request.workspace_path)
+
+                    except asyncio.TimeoutError:
+                        # Timeout - revert and abort
+                        logger.warning("Scope violation prompt timed out - reverting changes")
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_SESSION_ERROR,
+                                session_id=session_id,
+                                error="⏰ Timeout: nessuna risposta al prompt scope violation",
+                            )
+                        )
+                        await self._revert_uncommitted_changes()
+                        raise ScopeValidationError(violations, request.workspace_path)
 
                 await safe_emit(
                     FixProgressEvent(
@@ -1627,12 +1677,14 @@ The reviewer found issues with the previous fix. Address this feedback:
         self,
         modified_files: list[str],
         workspace_path: str,
+        allowed_extra_paths: list[str] | None = None,
     ) -> list[str]:
         """Validate that all modified files are within the workspace scope.
 
         Args:
             modified_files: List of modified file paths (relative to repo root)
             workspace_path: Allowed workspace path (e.g., "packages/frontend")
+            allowed_extra_paths: Additional allowed paths (e.g., ["frontend/", "shared/"])
 
         Returns:
             List of files that are OUTSIDE the workspace scope (violations)
@@ -1641,20 +1693,53 @@ The reviewer found issues with the previous fix. Address this feedback:
             # No workspace restriction
             return []
 
-        # Normalize workspace path (remove trailing slash)
-        workspace = workspace_path.rstrip("/")
+        # Build list of allowed paths
+        allowed = [workspace_path.rstrip("/")]
+        if allowed_extra_paths:
+            allowed.extend(p.rstrip("/") for p in allowed_extra_paths)
+
         violations: list[str] = []
 
         for file_path in modified_files:
-            # Check if file is within workspace
-            # File must start with workspace path (e.g., "packages/frontend/src/...")
-            if not file_path.startswith(workspace + "/") and file_path != workspace:
+            # Check if file is within any allowed path
+            is_allowed = any(file_path.startswith(p + "/") or file_path == p for p in allowed)
+            if not is_allowed:
                 violations.append(file_path)
-                logger.warning(
-                    f"File outside workspace scope: {file_path} (workspace: {workspace})"
-                )
+                logger.warning(f"File outside workspace scope: {file_path} (allowed: {allowed})")
 
         return violations
+
+    async def _add_allowed_paths(self, repo_id: str, new_paths: set[str]) -> None:
+        """Add paths to the repository's allowed_extra_paths in the database.
+
+        Called when user approves scope violation during fix.
+
+        Args:
+            repo_id: Repository ID
+            new_paths: Set of paths to add (e.g., {"frontend/", "shared/"})
+        """
+        from turbowrap.db.models import Repository
+        from turbowrap.db.session import get_session_local
+
+        def update_db() -> None:
+            SessionLocal = get_session_local()
+            db = SessionLocal()
+            try:
+                repo = db.query(Repository).filter(Repository.id == repo_id).first()
+                if repo:
+                    current: list[str] = repo.allowed_extra_paths or []  # type: ignore[assignment]
+                    updated = list(set(current) | new_paths)
+                    repo.allowed_extra_paths = updated  # type: ignore[assignment]
+                    db.commit()
+                    logger.info(f"Updated allowed_extra_paths for {repo_id}: {updated}")
+            finally:
+                db.close()
+
+        # Run in thread pool to avoid blocking async loop
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, update_db)
 
     async def _revert_uncommitted_changes(self) -> bool:
         """Revert all uncommitted changes (staged, unstaged, and untracked).

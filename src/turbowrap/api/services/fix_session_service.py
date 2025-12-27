@@ -242,6 +242,9 @@ class FixSessionService:
             use_existing_branch=use_existing_branch,
             existing_branch_name=existing_branch_name,
             workspace_path=cast(str | None, repo.workspace_path),  # Monorepo: restrict fixes
+            allowed_extra_paths=cast(
+                list[str] | None, repo.allowed_extra_paths
+            ),  # Extra allowed paths
             user_notes=user_notes,  # User-provided context/instructions
         )
 

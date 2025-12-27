@@ -51,6 +51,49 @@ def _load_agent(agent_path: Path) -> str:
 _pending_clarifications: dict[str, ClarificationQuestion] = {}
 _clarification_answers: dict[str, asyncio.Future[ClarificationAnswer]] = {}
 
+# Store for pending scope violation prompts (question_id -> {dirs, repo_id})
+_pending_scope_violations: dict[str, dict[str, Any]] = {}
+_scope_violation_responses: dict[str, asyncio.Future["ScopeViolationResponse"]] = {}
+
+
+class ScopeViolationResponse(BaseModel):
+    """Response to a scope violation prompt."""
+
+    allow: bool = Field(..., description="Whether to allow the paths")
+    paths: list[str] = Field(default_factory=list, description="Paths to add")
+
+
+def register_scope_question(question_id: str, dirs: set[str], repo_id: str) -> None:
+    """Register a pending scope violation question.
+
+    Called by the orchestrator when scope violations are detected.
+    Creates a Future that will be resolved when the user responds.
+    """
+    _pending_scope_violations[question_id] = {
+        "dirs": list(dirs),
+        "repo_id": repo_id,
+    }
+    loop = asyncio.get_event_loop()
+    _scope_violation_responses[question_id] = loop.create_future()
+
+
+async def wait_for_scope_response(question_id: str) -> ScopeViolationResponse:
+    """Wait for user response to a scope violation prompt.
+
+    Args:
+        question_id: The question ID (usually "scope_{session_id}")
+
+    Returns:
+        The user's response
+
+    Raises:
+        KeyError: If no pending question with this ID
+    """
+    if question_id not in _scope_violation_responses:
+        raise KeyError(f"No pending scope question: {question_id}")
+    return await _scope_violation_responses[question_id]
+
+
 # Idempotency tracking
 IDEMPOTENCY_TTL_SECONDS = 3600  # 1 hour
 
@@ -441,6 +484,58 @@ async def submit_clarification(data: ClarificationAnswerRequest) -> dict[str, st
         future.set_result(answer)
 
     return {"status": "received", "question_id": question_id}
+
+
+class ScopeResponseRequest(BaseModel):
+    """Request body for scope violation response."""
+
+    allow: bool = Field(..., description="Whether to allow the paths and continue")
+
+
+@router.post("/sessions/{session_id}/scope-response")
+async def respond_to_scope_violation(
+    session_id: str,
+    data: ScopeResponseRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Respond to a scope violation prompt.
+
+    When the fix orchestrator detects files modified outside the workspace scope,
+    it sends a FIX_SCOPE_VIOLATION_PROMPT event via SSE and waits for user response.
+    This endpoint allows the user to:
+    - allow=True: Add the paths to the repository's allowed_extra_paths and continue
+    - allow=False: Cancel the fix and revert all changes
+    """
+    question_id = f"scope_{session_id}"
+
+    if question_id not in _scope_violation_responses:
+        raise HTTPException(
+            status_code=404,
+            detail="No pending scope violation for this session",
+        )
+
+    pending = _pending_scope_violations.get(question_id, {})
+    response = ScopeViolationResponse(
+        allow=data.allow,
+        paths=pending.get("dirs", []),
+    )
+
+    # Resolve the future
+    future = _scope_violation_responses[question_id]
+    if not future.done():
+        future.set_result(response)
+
+    # Cleanup
+    _pending_scope_violations.pop(question_id, None)
+    # Note: don't pop _scope_violation_responses yet - the orchestrator needs to read it
+
+    return {
+        "status": "received",
+        "session_id": session_id,
+        "allow": data.allow,
+        "paths": response.paths,
+    }
 
 
 # Session timeout for stale detection (30 minutes)

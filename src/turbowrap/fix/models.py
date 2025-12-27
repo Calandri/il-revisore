@@ -76,6 +76,9 @@ class FixEventType(str, Enum):
     # Log events (for UI toast notifications)
     FIX_LOG = "fix_log"
 
+    # Scope violation events (interactive prompt for user)
+    FIX_SCOPE_VIOLATION_PROMPT = "fix_scope_violation_prompt"
+
 
 class FixChallengerStatus(str, Enum):
     """Status from fix challenger evaluation."""
@@ -208,6 +211,13 @@ class FixRequest(BaseModel):
         default=None,
         description="Relative path within repo to limit fixes (e.g., 'packages/frontend'). "
         "If set, fixes outside this path will be rejected and reverted.",
+    )
+
+    # Additional allowed paths for monorepo scope exceptions
+    allowed_extra_paths: list[str] | None = Field(
+        default=None,
+        description="Additional paths allowed for modifications beyond workspace_path. "
+        "Used for cross-package changes in monorepos.",
     )
 
     # User notes - additional context/instructions for the fixer
@@ -357,6 +367,11 @@ class FixProgressEvent(BaseModel):
     # Quality scores from Gemini review (for FIX_CHALLENGER_RESULT)
     quality_scores: dict[str, int] | None = Field(
         default=None, description="Quality dimension scores"
+    )
+
+    # Scope violation info (for FIX_SCOPE_VIOLATION_PROMPT)
+    scope_violation_dirs: list[str] | None = Field(
+        default=None, description="Directories modified outside workspace scope"
     )
 
     def to_sse(self) -> dict[str, str]:
