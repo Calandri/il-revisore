@@ -333,6 +333,9 @@ class FixProgressEvent(BaseModel):
     # Progress info
     message: str | None = Field(default=None)
     content: str | None = Field(default=None, description="Streaming content")
+    batch_type: str | None = Field(
+        default=None, description="Batch type: BE, FE, or DB (for streaming events)"
+    )
 
     # Clarification
     clarification: ClarificationQuestion | None = Field(default=None)

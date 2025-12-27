@@ -517,7 +517,8 @@ class FixOrchestrator:
                             FixProgressEvent(
                                 type=FixEventType.FIX_ISSUE_STREAMING,
                                 session_id=session_id,
-                                content=f"[{bt}] {chunk}",
+                                content=chunk,
+                                batch_type=bt,
                             )
                         )
 
