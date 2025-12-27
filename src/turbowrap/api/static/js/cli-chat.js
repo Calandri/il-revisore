@@ -68,6 +68,7 @@ function chatSidebar() {
         useWorker: true,        // Will be set to false if worker not supported
         // UI state
         showHistory: false,     // Show history panel (hamburger)
+        activeTooltip: null,    // Active tooltip in toolbar
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
