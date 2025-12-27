@@ -2,8 +2,10 @@
 
 {% block title %}File Editor - TurboWrap{% endblock %}
 
+{% block content_wrapper_class %}px-6 pt-4{% endblock %}
+
 {% block content %}
-<div class="h-[calc(100vh-9rem)] flex flex-col" x-data="fileEditor()" x-init="init()">
+<div class="h-[calc(100vh-4rem)] flex flex-col" x-data="fileEditor()" x-init="init()">
     <!-- Header -->
     <div class="flex items-center justify-between mb-4 shrink-0">
         <div>

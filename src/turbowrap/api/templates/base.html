@@ -133,7 +133,7 @@
                   'md:mr-[520px]': chatMode === 'full',
                   'md:mr-[340px]': chatMode === 'third'
               }">
-            <div class="p-6">
+            <div class="{% block content_wrapper_class %}p-6{% endblock %}">
                 {% block content %}{% endblock %}
             </div>
         </main>
