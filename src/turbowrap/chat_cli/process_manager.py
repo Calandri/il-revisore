@@ -586,6 +586,13 @@ class CLIProcessManager:
         logger.info(f"[CLAUDE] Process exited with code {process.returncode}")
 
         if process.returncode != 0:
+            # Log stderr for debugging
+            if process.stderr:
+                stderr_content = await process.stderr.read()
+                if stderr_content:
+                    logger.error(
+                        f"[CLAUDE] Stderr: {stderr_content.decode('utf-8', errors='replace')}"
+                    )
             proc.status = SessionStatus.ERROR
         else:
             proc.status = SessionStatus.COMPLETED
