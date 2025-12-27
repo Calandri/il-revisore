@@ -1,4 +1,4 @@
-<!-- Right Chat Sidebar -->
+<!-- Right Chat Sidebar - Minimal Tab Design -->
 <aside x-cloak x-show="chatMode !== 'hidden'"
        x-data="chatSidebar()"
        x-init="init()"
@@ -15,37 +15,153 @@
        x-transition:leave-start="opacity-100"
        x-transition:leave-end="opacity-0 transform translate-x-8">
 
-    <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/20 dark:to-purple-500/20">
-        <!-- Mode Toggle -->
-        <div class="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm">
-            <button @click="chatMode = 'page'"
-                    :class="chatMode === 'page' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                    class="px-2 py-1.5 rounded-md text-xs font-semibold transition-all"
-                    title="2/3 schermo">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM9 4v16"/>
-                </svg>
-            </button>
-            <button @click="chatMode = 'full'"
-                    :class="chatMode === 'full' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                    class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
-                Full
-            </button>
-            <button @click="chatMode = 'third'"
-                    :class="chatMode === 'third' ? 'bg-indigo-500 text-white shadow-md' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                    class="px-3 py-1.5 rounded-md text-xs font-semibold transition-all">
-                Mini
-            </button>
+    <!-- Compact Header with Tabs (h-8) -->
+    <div class="h-8 flex items-center border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 shrink-0">
+        <!-- Hamburger Button -->
+        <button @click="toggleHistory()"
+                class="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 shrink-0"
+                title="Storico sessioni">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+        </button>
+
+        <!-- Session Tabs (scrollable) -->
+        <div class="flex-1 flex items-center overflow-x-auto scrollbar-hide gap-0.5 px-1">
+            <template x-for="session in sessions" :key="session.id">
+                <button @click="selectSession(session)"
+                        :class="activeSession?.id === session.id
+                            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'"
+                        class="h-6 flex items-center gap-1 px-2 rounded text-xs font-medium whitespace-nowrap transition-colors shrink-0">
+                    <!-- CLI Icon -->
+                    <span :class="session.cli_type === 'claude' ? 'text-orange-500' : 'text-blue-500'"
+                          class="font-bold text-[10px]"
+                          x-text="session.cli_type === 'claude' ? 'C' : 'G'"></span>
+                    <!-- Name (truncated) -->
+                    <span class="max-w-[80px] truncate" x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude' : 'Gemini')"></span>
+                </button>
+            </template>
         </div>
 
-        <!-- Close button -->
+        <!-- New Chat Button -->
+        <button @click="showNewChatMenu = !showNewChatMenu"
+                class="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 shrink-0 relative"
+                title="Nuova chat">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <!-- New Chat Dropdown -->
+            <div x-show="showNewChatMenu"
+                 x-cloak
+                 @click.outside="showNewChatMenu = false"
+                 class="absolute top-full right-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 py-1 z-50 w-40">
+                <button @click="startCreateSession('claude'); showNewChatMenu = false"
+                        class="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <span class="text-orange-500 font-bold">C</span>
+                    <span>Claude Chat</span>
+                </button>
+                <button @click="startCreateSession('gemini'); showNewChatMenu = false"
+                        class="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    <span class="text-blue-500 font-bold">G</span>
+                    <span>Gemini Chat</span>
+                </button>
+            </div>
+        </button>
+
+        <!-- Expand Button -->
+        <button @click="expandChat()"
+                class="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 shrink-0"
+                title="Espandi/Riduci">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+        </button>
+
+        <!-- Close Button -->
         <button @click="chatMode = 'hidden'"
-                class="p-2 rounded-lg hover:bg-white/50 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-700">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 shrink-0"
+                title="Chiudi">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
         </button>
+    </div>
+
+    <!-- History Panel (slide-in from left) -->
+    <div x-show="showHistory"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 -translate-x-full"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 -translate-x-full"
+         class="absolute top-8 left-0 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-30 flex flex-col shadow-xl">
+
+        <!-- History Header -->
+        <div class="h-10 flex items-center justify-between px-3 border-b border-gray-200 dark:border-gray-700">
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Storico Chat</span>
+            <button @click="showHistory = false" class="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors">
+                <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- New Chat Buttons -->
+        <div class="p-2 space-y-1 border-b border-gray-200 dark:border-gray-700">
+            <button @click="startCreateSession('claude'); showHistory = false"
+                    :disabled="creating"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-medium transition-all disabled:opacity-50">
+                <span class="font-bold">C</span>
+                <span>Nuova Claude Chat</span>
+            </button>
+            <button @click="startCreateSession('gemini'); showHistory = false"
+                    :disabled="creating"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white text-xs font-medium transition-all disabled:opacity-50">
+                <span class="font-bold">G</span>
+                <span>Nuova Gemini Chat</span>
+            </button>
+        </div>
+
+        <!-- Sessions List -->
+        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+            <template x-for="session in sessions" :key="session.id">
+                <div @click="selectSession(session); showHistory = false"
+                     :class="activeSession?.id === session.id
+                         ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500/50'
+                         : 'hover:bg-gray-50 dark:hover:bg-gray-700 border-transparent'"
+                     class="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all border group">
+                    <!-- CLI Icon -->
+                    <div :class="session.cli_type === 'claude' ? 'from-orange-500 to-amber-500' : 'from-blue-500 to-cyan-500'"
+                         class="w-8 h-8 rounded-lg bg-gradient-to-br flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
+                        <span x-text="session.cli_type === 'claude' ? 'C' : 'G'"></span>
+                    </div>
+                    <!-- Session Info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs font-medium truncate text-gray-900 dark:text-white"
+                             x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude Chat' : 'Gemini Chat')"></div>
+                        <div class="text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                            <span x-text="session.model?.split('-').slice(1, 2).join(' ') || 'default'"></span>
+                            <span x-show="session.total_messages > 0" x-text="'• ' + session.total_messages + ' msg'"></span>
+                        </div>
+                    </div>
+                    <!-- Delete -->
+                    <button @click.stop="deleteSession(session.id)"
+                            class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-all shrink-0">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
+                </div>
+            </template>
+
+            <!-- Empty state -->
+            <div x-show="sessions.length === 0" class="text-center py-8 text-gray-500 text-xs">
+                Nessuna chat
+            </div>
+        </div>
     </div>
 
     <!-- Repository Selection Modal -->
@@ -76,7 +192,7 @@
                     <option :value="null">Nessuna (chat generica)</option>
                     <template x-for="repo in repositories" :key="repo.id">
                         <option :value="repo.id"
-                                x-text="(repo.status !== 'active' ? '⚠️ ' : '') + (repo.name || repo.project_name)"></option>
+                                x-text="(repo.status !== 'active' ? '' : '') + (repo.name || repo.project_name)"></option>
                     </template>
                 </select>
                 <p class="text-xs text-gray-400 mt-2">
@@ -100,133 +216,203 @@
         </div>
     </div>
 
-    <!-- Sessions List -->
-    <div class="flex-1 overflow-y-auto" x-show="!activeSession">
-        <!-- New Chat Buttons -->
-        <div class="p-4 space-y-2">
-            <button @click="startCreateSession('claude')"
-                    :disabled="creating"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white transition-all shadow-lg shadow-orange-500/25 disabled:opacity-50 group">
-                <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <span class="font-bold text-lg">C</span>
-                </div>
-                <div class="text-left">
-                    <div class="font-semibold">Nuova Chat Claude</div>
-                    <div class="text-xs text-white/70">Opus 4.5 / Sonnet 4</div>
-                </div>
-            </button>
-
-            <button @click="startCreateSession('gemini')"
-                    :disabled="creating"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white transition-all shadow-lg shadow-blue-500/25 disabled:opacity-50 group">
-                <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <span class="font-bold text-lg">G</span>
-                </div>
-                <div class="text-left">
-                    <div class="font-semibold">Nuova Chat Gemini</div>
-                    <div class="text-xs text-white/70">Gemini 3 Pro</div>
-                </div>
-            </button>
-        </div>
-
-        <!-- Divider -->
-        <div x-show="sessions.length > 0" class="px-4">
-            <div class="flex items-center gap-3 text-xs text-gray-400 uppercase tracking-wider">
-                <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
-                <span>Chat Recenti</span>
-                <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700"></div>
-            </div>
-        </div>
-
-        <!-- Session list -->
-        <div class="p-2 space-y-1">
-            <template x-for="session in sessions" :key="session.id">
-                <div @click="selectSession(session)"
-                     :class="{
-                         'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-300 dark:border-indigo-500/50': activeSession?.id === session.id,
-                         'hover:bg-gray-50 dark:hover:bg-gray-800 border-transparent': activeSession?.id !== session.id
-                     }"
-                     class="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border-2 group">
-
-                    <!-- CLI Icon -->
-                    <div :class="session.cli_type === 'claude' ? 'from-orange-500 to-amber-500' : 'from-blue-500 to-cyan-500'"
-                         class="w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center text-white font-bold shadow-md shrink-0">
-                        <span x-text="session.cli_type === 'claude' ? 'C' : 'G'"></span>
-                    </div>
-
-                    <!-- Session Info -->
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm truncate text-gray-900 dark:text-white"
-                             x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude Chat' : 'Gemini Chat')"></div>
-                        <div class="flex items-center gap-2 mt-0.5">
-                            <span :class="{
-                                'text-emerald-500': session.status === 'running' || session.status === 'streaming',
-                                'text-amber-500': session.status === 'starting',
-                                'text-red-500': session.status === 'error',
-                                'text-gray-400': session.status === 'idle'
-                            }" class="text-xs flex items-center gap-1">
-                                <span :class="{
-                                    'bg-emerald-500': session.status === 'running' || session.status === 'streaming',
-                                    'bg-amber-500': session.status === 'starting',
-                                    'bg-red-500': session.status === 'error',
-                                    'bg-gray-400': session.status === 'idle'
-                                }" class="w-1.5 h-1.5 rounded-full"></span>
-                                <span x-text="session.status"></span>
-                            </span>
-                            <span x-show="session.agent_name" class="text-xs text-purple-500 bg-purple-100 dark:bg-purple-500/20 px-1.5 py-0.5 rounded-md" x-text="session.agent_name"></span>
-                        </div>
-                    </div>
-
-                    <!-- Delete button (visible on hover) -->
-                    <button @click.stop="deleteSession(session.id)"
-                            class="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-all shrink-0"
-                            title="Elimina chat">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                        </svg>
-                    </button>
-                </div>
-            </template>
-
-            <!-- Empty state -->
-            <div x-show="sessions.length === 0 && !loading" class="text-center py-12 px-4">
+    <!-- Chat Area (always visible when activeSession or empty state) -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900" id="chat-messages">
+            <!-- Welcome state (no active session) -->
+            <div x-show="!activeSession" class="flex flex-col items-center justify-center h-full text-center py-12">
                 <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-500/20 dark:to-purple-500/20 rounded-2xl flex items-center justify-center">
                     <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
                     </svg>
                 </div>
-                <p class="text-gray-900 dark:text-white font-medium mb-1">Nessuna chat attiva</p>
-                <p class="text-sm text-gray-500">Crea una nuova chat per iniziare</p>
+                <p class="text-gray-900 dark:text-white font-medium mb-1">Seleziona una chat</p>
+                <p class="text-sm text-gray-500 mb-4">o crea una nuova conversazione</p>
+                <div class="flex gap-2">
+                    <button @click="startCreateSession('claude')"
+                            class="px-3 py-2 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-medium">
+                        + Claude
+                    </button>
+                    <button @click="startCreateSession('gemini')"
+                            class="px-3 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-xs font-medium">
+                        + Gemini
+                    </button>
+                </div>
             </div>
-        </div>
-    </div>
 
-    <!-- Active Chat Panel -->
-    <div x-show="activeSession" x-transition class="flex-1 flex flex-col overflow-hidden">
-        <!-- Chat Header -->
-        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <div class="flex items-center gap-3">
-                <button @click="activeSession = null; localStorage.removeItem('chatActiveSessionId')" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                </button>
+            <!-- Messages list -->
+            <template x-if="activeSession">
+                <template x-for="msg in messages" :key="msg.id">
+                    <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                        <div :class="msg.role === 'user'
+                                ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md'
+                                : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm'"
+                             class="max-w-[85%] px-4 py-3">
+                            <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content)"></div>
+                            <div :class="msg.role === 'user' ? 'text-white/60' : 'text-gray-400'"
+                                 class="text-xs mt-2"
+                                 x-text="new Date(msg.created_at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})"></div>
+                        </div>
+                    </div>
+                </template>
+            </template>
+
+            <!-- System Info (collapsible) -->
+            <div x-show="activeSession && systemInfo.length > 0" class="flex justify-center">
+                <details class="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-xs max-w-[90%]">
+                    <summary class="cursor-pointer flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 select-none">
+                        <svg class="w-4 h-4 transition-transform" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        <span class="font-medium">Info sistema</span>
+                        <span class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px]" x-text="systemInfo.length + ' eventi'"></span>
+                    </summary>
+                    <div class="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                        <template x-for="(info, idx) in systemInfo" :key="idx">
+                            <div class="bg-gray-200 dark:bg-gray-700 rounded p-2 text-[10px] font-mono overflow-x-auto">
+                                <div class="text-gray-600 dark:text-gray-300 mb-1" x-text="info.subtype || info.type"></div>
+                                <pre class="text-gray-500 dark:text-gray-400 whitespace-pre-wrap" x-text="JSON.stringify(info, null, 2).slice(0, 500) + (JSON.stringify(info).length > 500 ? '...' : '')"></pre>
+                            </div>
+                        </template>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Streaming response -->
+            <div x-show="activeSession && streaming" class="flex justify-start">
+                <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm max-w-[85%] px-4 py-3">
+                    <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent)"></div>
+                    <div class="flex items-center gap-1" :class="streamContent ? 'mt-2' : ''">
+                        <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                        <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                        <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Empty chat state -->
+            <div x-show="activeSession && messages.length === 0 && !streaming" class="flex flex-col items-center justify-center h-full text-center py-12">
                 <div :class="activeSession?.cli_type === 'claude' ? 'from-orange-500 to-amber-500' : 'from-blue-500 to-cyan-500'"
-                     class="w-9 h-9 rounded-lg bg-gradient-to-br flex items-center justify-center text-white font-bold shadow-md">
+                     class="w-16 h-16 rounded-2xl bg-gradient-to-br flex items-center justify-center text-white text-2xl font-bold shadow-lg mb-4">
                     <span x-text="activeSession?.cli_type === 'claude' ? 'C' : 'G'"></span>
                 </div>
-                <div>
-                    <div class="font-semibold text-gray-900 dark:text-white text-sm" x-text="activeSession?.display_name || 'Chat'"></div>
-                    <div class="text-xs text-gray-500" x-text="activeSession?.model?.split('-').slice(1, 3).join(' ') || 'Modello'"></div>
-                </div>
+                <p class="text-gray-900 dark:text-white font-medium mb-1">Inizia la conversazione</p>
+                <p class="text-sm text-gray-500">Scrivi un messaggio per parlare con l'AI</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <!-- Textarea + Send -->
+            <div class="p-3">
+                <form @submit.prevent="sendMessage()" class="flex items-end gap-2">
+                    <div class="flex-1 relative">
+                        <textarea x-model="inputMessage"
+                                  @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim() && !streaming) sendMessage()"
+                                  placeholder="Scrivi un messaggio..."
+                                  rows="1"
+                                  class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
+                                  style="min-height: 44px; max-height: 120px;"
+                                  @input="$el.style.height = '44px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
+                    </div>
+
+                    <!-- Send button (when not streaming) -->
+                    <button x-show="!streaming"
+                            type="submit"
+                            :disabled="!inputMessage.trim()"
+                            :class="inputMessage.trim()
+                                ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25'
+                                : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'"
+                            class="w-11 h-11 rounded-xl text-white flex items-center justify-center transition-all shrink-0">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        </svg>
+                    </button>
+
+                    <!-- Stop button (when streaming) -->
+                    <button x-show="streaming"
+                            type="button"
+                            @click="stopStreaming()"
+                            class="w-11 h-11 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                            title="Interrompi risposta">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="6" y="6" width="12" height="12" rx="1"/>
+                        </svg>
+                    </button>
+
+                    <!-- ACCODA button (queue message to send after stream) -->
+                    <button x-show="streaming && inputMessage.trim()"
+                            type="button"
+                            @click="queueMessage(inputMessage)"
+                            class="w-11 h-11 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                            title="ACCODA - Invia dopo">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+
+                    <!-- DUPLICA button (fork session and send immediately) -->
+                    <button x-show="streaming && inputMessage.trim() && !forkInProgress"
+                            type="button"
+                            @click="forkAndSend(inputMessage)"
+                            class="w-11 h-11 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                            title="DUPLICA - Nuova sessione">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                    </button>
+                </form>
             </div>
 
-            <!-- Settings button -->
+            <!-- Repo/Branch Divider -->
+            <div x-show="activeSession?.repository_id"
+                 x-data="{ showBranches: false }"
+                 class="px-3 pb-2 border-t border-gray-200 dark:border-gray-700 pt-2 relative">
+                <!-- Clickable text -->
+                <button @click="showBranches = !showBranches"
+                        :disabled="loadingBranches"
+                        class="w-full flex items-center justify-between text-xs italic text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50">
+                    <span class="truncate">
+                        Repo: <span x-text="activeSession?.repository?.name || repositories.find(r => r.id === activeSession?.repository_id)?.name || 'Repo'"></span>
+                        - <span x-text="activeSession?.current_branch || 'main'"></span>
+                    </span>
+                    <!-- Loading or chevron -->
+                    <svg x-show="loadingBranches" class="w-3 h-3 text-indigo-500 animate-spin shrink-0 ml-1" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    <svg x-show="!loadingBranches" class="w-3 h-3 shrink-0 ml-1 transition-transform" :class="showBranches ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                    </svg>
+                </button>
+                <!-- Dropdown -->
+                <div x-show="showBranches"
+                     x-cloak
+                     @click.outside="showBranches = false"
+                     x-transition:enter="transition ease-out duration-100"
+                     x-transition:enter-start="opacity-0 -translate-y-1"
+                     x-transition:enter-end="opacity-100 translate-y-0"
+                     class="absolute bottom-full left-0 right-0 mb-1 mx-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto z-10">
+                    <template x-for="branch in branches" :key="branch">
+                        <button @click="changeBranch(branch); showBranches = false"
+                                :class="branch === activeSession?.current_branch ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                class="w-full px-3 py-2 text-left text-xs truncate transition-colors">
+                            <span x-text="branch"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Button (floating, top-right of chat area) -->
+        <div x-show="activeSession" class="absolute top-10 right-2">
             <div class="relative">
                 <button @click="showSettings = !showSettings"
-                        class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        class="p-1.5 rounded-lg bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-700 transition-colors shadow-sm border border-gray-200 dark:border-gray-700">
+                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -309,7 +495,7 @@
                         </div>
 
                         <!-- Delete Session -->
-                        <button @click="deleteSession(activeSession); showSettings = false"
+                        <button @click="deleteSession(activeSession.id); showSettings = false"
                                 class="w-full mt-2 px-4 py-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 text-sm font-medium transition-colors flex items-center justify-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -319,167 +505,6 @@
                     </div>
                 </template>
             </div>
-        </div>
-
-        <!-- Messages -->
-        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900" id="chat-messages">
-            <template x-for="msg in messages" :key="msg.id">
-                <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                    <div :class="msg.role === 'user'
-                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md'
-                            : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm'"
-                         class="max-w-[85%] px-4 py-3">
-                        <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content)"></div>
-                        <div :class="msg.role === 'user' ? 'text-white/60' : 'text-gray-400'"
-                             class="text-xs mt-2"
-                             x-text="new Date(msg.created_at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})"></div>
-                    </div>
-                </div>
-            </template>
-
-            <!-- System Info (collapsible) -->
-            <div x-show="systemInfo.length > 0" class="flex justify-center">
-                <details class="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-xs max-w-[90%]">
-                    <summary class="cursor-pointer flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 select-none">
-                        <svg class="w-4 h-4 transition-transform" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                        <span class="font-medium">Info sistema</span>
-                        <span class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-[10px]" x-text="systemInfo.length + ' eventi'"></span>
-                    </summary>
-                    <div class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                        <template x-for="(info, idx) in systemInfo" :key="idx">
-                            <div class="bg-gray-200 dark:bg-gray-700 rounded p-2 text-[10px] font-mono overflow-x-auto">
-                                <div class="text-gray-600 dark:text-gray-300 mb-1" x-text="info.subtype || info.type"></div>
-                                <pre class="text-gray-500 dark:text-gray-400 whitespace-pre-wrap" x-text="JSON.stringify(info, null, 2).slice(0, 500) + (JSON.stringify(info).length > 500 ? '...' : '')"></pre>
-                            </div>
-                        </template>
-                    </div>
-                </details>
-            </div>
-
-            <!-- Streaming response -->
-            <div x-show="streaming" class="flex justify-start">
-                <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm max-w-[85%] px-4 py-3">
-                    <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent)"></div>
-                    <div class="flex items-center gap-1" :class="streamContent ? 'mt-2' : ''">
-                        <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
-                        <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
-                        <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Empty chat state -->
-            <div x-show="messages.length === 0 && !streaming" class="flex flex-col items-center justify-center h-full text-center py-12">
-                <div :class="activeSession?.cli_type === 'claude' ? 'from-orange-500 to-amber-500' : 'from-blue-500 to-cyan-500'"
-                     class="w-16 h-16 rounded-2xl bg-gradient-to-br flex items-center justify-center text-white text-2xl font-bold shadow-lg mb-4">
-                    <span x-text="activeSession?.cli_type === 'claude' ? 'C' : 'G'"></span>
-                </div>
-                <p class="text-gray-900 dark:text-white font-medium mb-1">Inizia la conversazione</p>
-                <p class="text-sm text-gray-500">Scrivi un messaggio per parlare con l'AI</p>
-            </div>
-        </div>
-
-        <!-- Branch Context Bar (minimale) -->
-        <div x-show="activeSession?.repository_id"
-             x-data="{ showBranches: false }"
-             class="px-3 py-1.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 relative">
-            <!-- Clickable text -->
-            <button @click="showBranches = !showBranches"
-                    :disabled="loadingBranches"
-                    class="w-full flex items-center justify-between text-xs italic text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50">
-                <span class="truncate">
-                    Repo: <span x-text="activeSession?.repository?.name || repositories.find(r => r.id === activeSession?.repository_id)?.name || 'Repo'"></span>
-                    - <span x-text="activeSession?.current_branch || 'main'"></span>
-                </span>
-                <!-- Loading or chevron -->
-                <svg x-show="loadingBranches" class="w-3 h-3 text-indigo-500 animate-spin shrink-0 ml-1" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                </svg>
-                <svg x-show="!loadingBranches" class="w-3 h-3 shrink-0 ml-1 transition-transform" :class="showBranches ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                </svg>
-            </button>
-            <!-- Dropdown -->
-            <div x-show="showBranches"
-                 x-cloak
-                 @click.outside="showBranches = false"
-                 x-transition:enter="transition ease-out duration-100"
-                 x-transition:enter-start="opacity-0 -translate-y-1"
-                 x-transition:enter-end="opacity-100 translate-y-0"
-                 class="absolute bottom-full left-0 right-0 mb-1 mx-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-48 overflow-y-auto z-10">
-                <template x-for="branch in branches" :key="branch">
-                    <button @click="changeBranch(branch); showBranches = false"
-                            :class="branch === activeSession?.current_branch ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'"
-                            class="w-full px-3 py-2 text-left text-xs truncate transition-colors">
-                        <span x-text="branch"></span>
-                    </button>
-                </template>
-            </div>
-        </div>
-
-        <!-- Input Area -->
-        <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-            <form @submit.prevent="sendMessage()" class="flex items-end gap-3">
-                <div class="flex-1 relative">
-                    <textarea x-model="inputMessage"
-                              @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim() && !streaming) sendMessage()"
-                              placeholder="Scrivi un messaggio..."
-                              rows="1"
-                              class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-4 py-3 pr-12 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
-                              style="min-height: 48px; max-height: 120px;"
-                              @input="$el.style.height = '48px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
-                </div>
-
-                <!-- Send button (when not streaming) -->
-                <button x-show="!streaming"
-                        type="submit"
-                        :disabled="!inputMessage.trim()"
-                        :class="inputMessage.trim()
-                            ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25'
-                            : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'"
-                        class="w-12 h-12 rounded-xl text-white flex items-center justify-center transition-all shrink-0">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-                    </svg>
-                </button>
-
-                <!-- Stop button (when streaming) -->
-                <button x-show="streaming"
-                        type="button"
-                        @click="stopStreaming()"
-                        class="w-12 h-12 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 text-white flex items-center justify-center transition-all shrink-0"
-                        title="Interrompi risposta">
-                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <rect x="6" y="6" width="12" height="12" rx="1"/>
-                    </svg>
-                </button>
-
-                <!-- ACCODA button (queue message to send after stream) -->
-                <button x-show="streaming && inputMessage.trim()"
-                        type="button"
-                        @click="queueMessage(inputMessage)"
-                        class="w-12 h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/25 text-white flex items-center justify-center transition-all shrink-0"
-                        title="ACCODA - Invia dopo">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                </button>
-
-                <!-- DUPLICA button (fork session and send immediately) -->
-                <button x-show="streaming && inputMessage.trim() && !forkInProgress"
-                        type="button"
-                        @click="forkAndSend(inputMessage)"
-                        class="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25 text-white flex items-center justify-center transition-all shrink-0"
-                        title="DUPLICA - Nuova sessione">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                    </svg>
-                </button>
-            </form>
         </div>
     </div>
 </aside>

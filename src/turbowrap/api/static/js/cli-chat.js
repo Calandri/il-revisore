@@ -66,6 +66,8 @@ function chatSidebar() {
         pendingCliType: null,   // CLI type waiting for repo selection
         // SharedWorker support
         useWorker: true,        // Will be set to false if worker not supported
+        // UI state
+        showHistory: false,     // Show history panel (hamburger)
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -985,6 +987,22 @@ function chatSidebar() {
             window.dispatchEvent(new CustomEvent('show-toast', {
                 detail: { message, type }
             }));
+        },
+
+        /**
+         * Cycle through chat display modes: third → full → page → third
+         */
+        expandChat() {
+            const modes = ['third', 'full', 'page'];
+            const idx = modes.indexOf(this.chatMode);
+            this.chatMode = modes[(idx + 1) % modes.length];
+        },
+
+        /**
+         * Toggle history panel (hamburger menu)
+         */
+        toggleHistory() {
+            this.showHistory = !this.showHistory;
         }
     };
 }
