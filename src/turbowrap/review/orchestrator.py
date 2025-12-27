@@ -43,9 +43,9 @@ from turbowrap.review.models.review import Issue, ReviewMode, ReviewOutput, Revi
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
 from turbowrap.review.utils.file_utils import FileUtils
-from turbowrap.review.utils.git_utils import GitUtils
 from turbowrap.review.utils.repo_detector import RepoDetector
 from turbowrap.tools.structure_generator import StructureGenerator
+from turbowrap.utils.git_utils import GitUtils
 
 logger = logging.getLogger(__name__)
 

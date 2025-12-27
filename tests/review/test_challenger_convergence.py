@@ -18,7 +18,12 @@ import pytest
 from turbowrap.review.challenger_loop import ChallengerLoop
 from turbowrap.review.models.challenger import ChallengerFeedback, MissedIssue
 from turbowrap.review.models.report import ConvergenceStatus
-from turbowrap.review.models.review import Issue, ReviewOutput
+from turbowrap.review.models.review import (
+    Issue,
+    IssueCategory,
+    IssueSeverity,
+    ReviewOutput,
+)
 from turbowrap.review.reviewers.base import ReviewContext
 
 # =============================================================================
@@ -29,16 +34,27 @@ from turbowrap.review.reviewers.base import ReviewContext
 @pytest.fixture
 def mock_review_context(tmp_path):
     """Create a mock review context."""
+    from turbowrap.review.models.review import (
+        ReviewMode,
+        ReviewOptions,
+        ReviewRequest,
+        ReviewRequestSource,
+    )
+
     repo_path = tmp_path / "test_repo"
     repo_path.mkdir()
     (repo_path / "main.py").write_text("def hello(): pass")
 
+    request = ReviewRequest(
+        type="directory",
+        source=ReviewRequestSource(directory=str(repo_path)),
+        options=ReviewOptions(mode=ReviewMode.INITIAL),
+    )
+
     return ReviewContext(
-        repo_path=str(repo_path),
+        request=request,
+        repo_path=repo_path,
         files=["main.py"],
-        mode="initial",
-        diff_content=None,
-        workspace_path=None,
         agent_prompt=None,
     )
 
@@ -47,39 +63,61 @@ def mock_review_context(tmp_path):
 def mock_review_output():
     """Create a mock review output."""
     return ReviewOutput(
+        reviewer="test_reviewer",
         issues=[
             Issue(
+                id="TEST-MED-001",
                 file="main.py",
                 line=1,
-                severity="medium",
-                category="quality",
-                message="Missing docstring",
-                suggestion="Add docstring",
+                severity=IssueSeverity.MEDIUM,
+                category=IssueCategory.DOCUMENTATION,
+                title="Missing docstring",
+                description="Function lacks docstring documentation",
+                suggested_fix="Add docstring",
             )
         ],
         refinement_notes=[],
-        model_usage=None,
     )
 
 
-def create_challenger_feedback(satisfaction: float, missed_count: int = 0) -> ChallengerFeedback:
+def create_challenger_feedback(
+    satisfaction: float, missed_count: int = 0, iteration: int = 1
+) -> ChallengerFeedback:
     """Helper to create challenger feedback with given satisfaction."""
+    from turbowrap.review.models.challenger import ChallengerStatus, DimensionScores
+
     missed_issues = [
         MissedIssue(
             type="security",
             description=f"Missed issue {i}",
+            why_important=f"Important because of issue {i}",
             suggested_severity="MEDIUM",
-            file_hint="main.py",
+            file="main.py",
         )
         for i in range(missed_count)
     ]
 
+    # Determine status based on satisfaction
+    if satisfaction >= 60:
+        status = ChallengerStatus.APPROVED
+    elif satisfaction >= 30:
+        status = ChallengerStatus.NEEDS_REFINEMENT
+    else:
+        status = ChallengerStatus.MAJOR_ISSUES
+
     return ChallengerFeedback(
+        iteration=iteration,
         satisfaction_score=satisfaction,
+        threshold=50.0,
+        status=status,
+        dimension_scores=DimensionScores(
+            completeness=satisfaction,
+            accuracy=satisfaction,
+            depth=satisfaction,
+            actionability=satisfaction,
+        ),
         missed_issues=missed_issues,
         challenges=[],
-        general_feedback=f"Score: {satisfaction}%",
-        model_usage=None,
     )
 
 
@@ -470,26 +508,34 @@ class TestInsightsCollection:
         mock_reviewer.name = "test_reviewer"
         mock_reviewer.review = AsyncMock(return_value=mock_review_output)
 
+        from turbowrap.review.models.challenger import ChallengerStatus, DimensionScores
+
         # Create feedback with CRITICAL missed issue
         feedback = ChallengerFeedback(
+            iteration=1,
             satisfaction_score=60.0,
+            threshold=50.0,
+            status=ChallengerStatus.APPROVED,
+            dimension_scores=DimensionScores(
+                completeness=60.0, accuracy=60.0, depth=60.0, actionability=60.0
+            ),
             missed_issues=[
                 MissedIssue(
                     type="security",
                     description="SQL Injection vulnerability",
+                    why_important="Critical security vulnerability that can lead to data breach",
                     suggested_severity="CRITICAL",
-                    file_hint="main.py",
+                    file="main.py",
                 ),
                 MissedIssue(
                     type="quality",
                     description="Missing docstring",
+                    why_important="Documentation helps maintainability",
                     suggested_severity="LOW",  # Not high, shouldn't be insight
-                    file_hint="main.py",
+                    file="main.py",
                 ),
             ],
             challenges=[],
-            general_feedback="Review needed",
-            model_usage=None,
         )
 
         mock_challenger = MagicMock()

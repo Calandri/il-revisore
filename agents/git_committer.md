@@ -2,7 +2,7 @@
 name: git-committer
 description: Commits all staged changes with a fix message
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: haiku
 ---
 # Git Committer
 

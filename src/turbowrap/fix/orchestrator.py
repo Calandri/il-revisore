@@ -334,7 +334,38 @@ class FixOrchestrator:
                 # Create new branch from main (using agent)
                 branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
                 branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
-                await self._run_claude_cli(branch_creator_prompt, timeout=60)
+                branch_result = await self._run_claude_cli(
+                    branch_creator_prompt, timeout=60, model="haiku"
+                )
+
+                # Check for errors: None, __ERROR__ prefix, or ERROR: in Claude's output
+                is_error = False
+                specific_error = "Unknown error"
+
+                if branch_result is None:
+                    is_error = True
+                    specific_error = "No response from Claude"
+                elif branch_result.startswith("__ERROR__:"):
+                    is_error = True
+                    specific_error = branch_result.replace("__ERROR__: ", "")
+                elif "ERROR:" in branch_result:
+                    # Claude reported an error in its output
+                    is_error = True
+                    # Extract error message after "ERROR:"
+                    error_start = branch_result.find("ERROR:")
+                    specific_error = branch_result[error_start:].strip()
+
+                if is_error:
+                    error_msg = f"Failed to create branch '{branch_name}': {specific_error}"
+                    logger.error(f"[FIX] {error_msg}")
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message=f"❌ {error_msg}",
+                        )
+                    )
+                    raise Exception(error_msg)
 
             feedback_be = ""
             feedback_fe = ""
@@ -541,9 +572,14 @@ class FixOrchestrator:
                         output = await self._run_claude_cli(
                             prompt, on_chunk=on_chunk_claude, thinking_budget=thinking_budget
                         )
-                        if output is None:
-                            logger.error(f"Claude CLI ({batch_id}) failed: returned None")
-                            await emit_log("ERROR", f"Claude CLI failed for {batch_id}")
+                        if output is None or (output and output.startswith("__ERROR__:")):
+                            error_detail = (
+                                output.replace("__ERROR__: ", "") if output else "returned None"
+                            )
+                            logger.error(f"Claude CLI ({batch_id}) failed: {error_detail}")
+                            await emit_log(
+                                "ERROR", f"Claude CLI failed for {batch_id}: {error_detail}"
+                            )
                             # Mark batch as failed
                             batch_results[batch_id]["passed"] = False
                             batch_results[batch_id]["score"] = 0.0
@@ -820,7 +856,7 @@ class FixOrchestrator:
             commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
             commit_prompt = commit_prompt.replace("{commit_message}", commit_message)
             commit_prompt = commit_prompt.replace("{issue_codes}", issue_codes)
-            await self._run_claude_cli(commit_prompt, timeout=30)
+            await self._run_claude_cli(commit_prompt, timeout=30, model="haiku")
 
             # Step 4: Collect git info and build results
             commit_sha, modified_files, _ = await self._get_git_info()
@@ -1291,11 +1327,11 @@ The reviewer found issues with the previous fix. Address this feedback:
         )
         return 70.0
 
-    def _get_claude_cli(self, timeout: int = CLAUDE_CLI_TIMEOUT) -> ClaudeCLI:
+    def _get_claude_cli(self, timeout: int = CLAUDE_CLI_TIMEOUT, model: str = "opus") -> ClaudeCLI:
         """Create ClaudeCLI instance for fix operations."""
         return ClaudeCLI(
             working_dir=self.repo_path,
-            model="opus",  # Use Opus for comprehensive fixes
+            model=model,
             timeout=timeout,
             s3_prefix="fix",
         )
@@ -1306,6 +1342,7 @@ The reviewer found issues with the previous fix. Address this feedback:
         timeout: int = CLAUDE_CLI_TIMEOUT,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
         thinking_budget: int | None = None,
+        model: str = "opus",
     ) -> str | None:
         """Run Claude CLI with prompt and optional streaming callback.
 
@@ -1317,8 +1354,8 @@ The reviewer found issues with the previous fix. Address this feedback:
             on_chunk: Callback for streaming chunks
             thinking_budget: Override thinking budget (None = use default from config)
         """
-        # Create ClaudeCLI with appropriate timeout
-        cli = self._get_claude_cli(timeout)
+        # Create ClaudeCLI with appropriate timeout and model
+        cli = self._get_claude_cli(timeout, model)
 
         # Wrap on_chunk to add stderr prefix for stderr streaming
         async def on_stderr(line: str) -> None:
@@ -1354,7 +1391,8 @@ The reviewer found issues with the previous fix. Address this feedback:
                     raise BillingError(result.error)
 
             logger.error(f"Claude CLI failed: {result.error}")
-            return None
+            # Return error message instead of None so caller can show specific error
+            return f"__ERROR__: {result.error or 'Unknown error'}"
 
         # Log model usage
         for usage in result.model_usage:

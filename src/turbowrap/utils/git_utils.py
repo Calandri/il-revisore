@@ -1,8 +1,11 @@
 """Git operations utilities."""
 
 import hashlib
+import logging
+import os
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +13,16 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 from ..config import get_settings
 from ..exceptions import CloneError, RepositoryError, SyncError
+
+logger = logging.getLogger(__name__)
+
+
+def _get_git_env() -> dict[str, str]:
+    """Get environment with git terminal prompts disabled."""
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ASKPASS"] = ""
+    return env
 
 
 class GitStatus(BaseModel):
@@ -166,11 +179,17 @@ def clone_repo(
             check=True,
             capture_output=True,
             text=True,
+            env=_get_git_env(),
         )
         return local_path
     except subprocess.CalledProcessError as e:
         # Mask token in error message
         error_msg = e.stderr.replace(token, "***") if token else e.stderr
+        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+            raise CloneError(
+                "Git authentication failed. Configure credentials with: "
+                "git config --global credential.helper osxkeychain"
+            ) from e
         raise CloneError(f"Failed to clone {url}: {error_msg}") from e
 
 
@@ -190,6 +209,7 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
     if not repo_path.exists():
         raise SyncError(f"Repository not found: {repo_path}")
 
+    git_env = _get_git_env()
     try:
         # If token provided, temporarily update remote URL
         if token:
@@ -200,6 +220,7 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
                 check=True,
                 capture_output=True,
                 text=True,
+                env=git_env,
             )
             original_url = result.stdout.strip()
             auth_url = _get_auth_url(original_url, token)
@@ -210,6 +231,7 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
                 cwd=repo_path,
                 check=True,
                 capture_output=True,
+                env=git_env,
             )
 
         try:
@@ -219,6 +241,7 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
                 check=True,
                 capture_output=True,
                 text=True,
+                env=git_env,
             )
         finally:
             # Restore original URL (without token) for security
@@ -228,11 +251,17 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
                     cwd=repo_path,
                     check=True,
                     capture_output=True,
+                    env=git_env,
                 )
 
         return repo_path
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.replace(token, "***") if token else e.stderr
+        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+            raise SyncError(
+                "Git authentication failed. Configure credentials with: "
+                "git config --global credential.helper osxkeychain"
+            ) from e
         raise SyncError(f"Failed to pull: {error_msg}") from e
 
 
@@ -249,6 +278,7 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
     if not repo_path.exists():
         raise SyncError(f"Repository not found: {repo_path}")
 
+    git_env = _get_git_env()
     try:
         # Stage all changes
         subprocess.run(
@@ -256,6 +286,7 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
             cwd=repo_path,
             check=True,
             capture_output=True,
+            env=git_env,
         )
 
         # Commit
@@ -264,6 +295,7 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
             cwd=repo_path,
             check=True,
             capture_output=True,
+            env=git_env,
         )
 
         # Push
@@ -273,9 +305,16 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
             check=True,
             capture_output=True,
             text=True,
+            env=git_env,
         )
     except subprocess.CalledProcessError as e:
-        raise SyncError(f"Failed to push: {e.stderr}") from e
+        error_msg = e.stderr.strip() if e.stderr else "Unknown error"
+        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+            raise SyncError(
+                "Git authentication failed. Configure credentials with: "
+                "git config --global credential.helper osxkeychain"
+            ) from e
+        raise SyncError(f"Failed to push: {error_msg}") from e
 
 
 async def smart_push_with_conflict_resolution(
@@ -313,6 +352,7 @@ async def smart_push_with_conflict_resolution(
     if not repo_path.exists():
         raise SyncError(f"Repository not found: {repo_path}")
 
+    git_env = _get_git_env()
     try:
         # 1. Stage all changes
         subprocess.run(
@@ -320,6 +360,7 @@ async def smart_push_with_conflict_resolution(
             cwd=repo_path,
             check=True,
             capture_output=True,
+            env=git_env,
         )
 
         # 2. Commit (may fail if nothing to commit - that's ok)
@@ -329,6 +370,7 @@ async def smart_push_with_conflict_resolution(
                 cwd=repo_path,
                 check=True,
                 capture_output=True,
+                env=git_env,
             )
         except subprocess.CalledProcessError:
             # Nothing to commit, continue anyway
@@ -340,6 +382,7 @@ async def smart_push_with_conflict_resolution(
             cwd=repo_path,
             capture_output=True,
             text=True,
+            env=git_env,
         )
 
         # 4. Check for conflicts
@@ -352,6 +395,7 @@ async def smart_push_with_conflict_resolution(
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
+                env=git_env,
             )
 
             # UU = unmerged, both modified (conflict)
@@ -406,6 +450,7 @@ Important: Output ONLY the commands you ran and a brief summary. No explanations
             check=True,
             capture_output=True,
             text=True,
+            env=git_env,
         )
 
         result["message"] = "Push successful" + (
@@ -414,7 +459,13 @@ Important: Output ONLY the commands you ran and a brief summary. No explanations
         return result
 
     except subprocess.CalledProcessError as e:
-        raise SyncError(f"Failed to push: {e.stderr}") from e
+        error_msg = e.stderr.strip() if e.stderr else "Unknown error"
+        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+            raise SyncError(
+                "Git authentication failed. Configure credentials with: "
+                "git config --global credential.helper osxkeychain"
+            ) from e
+        raise SyncError(f"Failed to push: {error_msg}") from e
 
 
 def get_current_branch(repo_path: Path) -> str:
@@ -433,6 +484,7 @@ def get_current_branch(repo_path: Path) -> str:
             check=True,
             capture_output=True,
             text=True,
+            env=_get_git_env(),
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError:
@@ -458,6 +510,7 @@ def get_repo_status(repo_path: Path) -> GitStatus:
             check=True,
             capture_output=True,
             text=True,
+            env=_get_git_env(),
         )
         is_clean = len(result.stdout.strip()) == 0
 
@@ -467,7 +520,7 @@ def get_repo_status(repo_path: Path) -> GitStatus:
         for line in result.stdout.strip().split("\n"):
             if line:
                 status = line[:2]
-                filepath = line[3:]
+                filepath = line[2:].lstrip()
                 if status.startswith("?"):
                     # Check if it's a directory - if so, list files inside
                     full_path = repo_path / filepath
@@ -490,3 +543,210 @@ def get_repo_status(repo_path: Path) -> GitStatus:
         )
     except subprocess.CalledProcessError:
         return GitStatus(branch=branch, is_clean=True, modified=[], untracked=[])
+
+
+# =============================================================================
+# Classes merged from review/utils/git_utils.py
+# =============================================================================
+
+
+@dataclass
+class PRInfo:
+    """Information about a Pull Request."""
+
+    owner: str
+    repo: str
+    number: int
+    url: str
+
+
+@dataclass
+class CommitInfo:
+    """Information about a commit."""
+
+    sha: str
+    short_sha: str
+    author: str
+    email: str
+    message: str
+    date: str
+
+
+class RepoGitUtils:
+    """Git utility functions for repository operations.
+
+    This class provides git operations on a specific repository path.
+    Use for diff analysis, commit info, PR parsing, etc.
+    """
+
+    def __init__(self, repo_path: str | Path | None = None):
+        """
+        Initialize RepoGitUtils.
+
+        Args:
+            repo_path: Path to git repository (defaults to cwd)
+        """
+        self.repo_path = Path(repo_path) if repo_path else Path.cwd()
+
+    def _run_git(self, *args: str) -> str:
+        """Run a git command and return output."""
+        result = subprocess.run(
+            ["git", *args],
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            env=_get_git_env(),
+        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
+            # Detect auth errors
+            if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+                raise RuntimeError(
+                    "Git authentication failed. Configure credentials with: "
+                    "git config --global credential.helper osxkeychain"
+                )
+            raise RuntimeError(f"Git command failed: {error_msg}")
+        return result.stdout.strip()
+
+    def get_changed_files(
+        self,
+        base_ref: str | None = None,
+        head_ref: str = "HEAD",
+    ) -> list[str]:
+        """
+        Get list of changed files between refs.
+
+        Args:
+            base_ref: Base reference (branch/commit), defaults to merge-base with main
+            head_ref: Head reference, defaults to HEAD
+
+        Returns:
+            List of changed file paths
+        """
+        if base_ref is None:
+            # Find merge base with main/master
+            try:
+                base_ref = self._run_git("merge-base", "main", head_ref)
+            except RuntimeError:
+                try:
+                    base_ref = self._run_git("merge-base", "master", head_ref)
+                except RuntimeError:
+                    # Fall back to comparing with HEAD~1
+                    base_ref = f"{head_ref}~1"
+
+        output = self._run_git("diff", "--name-only", base_ref, head_ref)
+        return output.split("\n") if output else []
+
+    def get_diff(
+        self,
+        base_ref: str | None = None,
+        head_ref: str = "HEAD",
+        files: list[str] | None = None,
+    ) -> str:
+        """
+        Get diff between refs.
+
+        Args:
+            base_ref: Base reference
+            head_ref: Head reference
+            files: Specific files to diff
+
+        Returns:
+            Diff output
+        """
+        args = ["diff", base_ref or "HEAD~1", head_ref]
+        if files:
+            args.extend(["--", *files])
+        return self._run_git(*args)
+
+    def get_file_content(self, file_path: str, ref: str = "HEAD") -> str:
+        """
+        Get file content at specific ref.
+
+        Args:
+            file_path: Path to file
+            ref: Git reference
+
+        Returns:
+            File content
+        """
+        return self._run_git("show", f"{ref}:{file_path}")
+
+    def get_current_branch(self) -> str:
+        """Get current branch name."""
+        return self._run_git("branch", "--show-current")
+
+    def get_current_commit(self) -> CommitInfo:
+        """Get current commit info."""
+        format_str = "%H|%h|%an|%ae|%s|%ci"
+        output = self._run_git("log", "-1", f"--format={format_str}")
+        parts = output.split("|")
+        return CommitInfo(
+            sha=parts[0],
+            short_sha=parts[1],
+            author=parts[2],
+            email=parts[3],
+            message=parts[4],
+            date=parts[5],
+        )
+
+    def get_repo_name(self) -> str:
+        """Get repository name from remote URL."""
+        try:
+            remote_url = self._run_git("remote", "get-url", "origin")
+            # Handle SSH and HTTPS URLs
+            match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", remote_url)
+            if match:
+                return match.group(1)
+        except RuntimeError:
+            pass
+        return self.repo_path.name
+
+    def is_git_repo(self) -> bool:
+        """Check if current directory is a git repository."""
+        try:
+            self._run_git("rev-parse", "--git-dir")
+            return True
+        except RuntimeError:
+            return False
+
+    @staticmethod
+    def parse_pr_url(url: str) -> PRInfo | None:
+        """
+        Parse a GitHub PR URL.
+
+        Args:
+            url: GitHub PR URL
+
+        Returns:
+            PRInfo or None if invalid URL
+        """
+        # Match patterns like:
+        # https://github.com/owner/repo/pull/123
+        # https://github.com/owner/repo/pull/123/files
+        match = re.match(
+            r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)",
+            url,
+        )
+        if match:
+            return PRInfo(
+                owner=match.group(1),
+                repo=match.group(2),
+                number=int(match.group(3)),
+                url=url,
+            )
+        return None
+
+    def get_staged_files(self) -> list[str]:
+        """Get list of staged files."""
+        output = self._run_git("diff", "--cached", "--name-only")
+        return output.split("\n") if output else []
+
+    def get_untracked_files(self) -> list[str]:
+        """Get list of untracked files."""
+        output = self._run_git("ls-files", "--others", "--exclude-standard")
+        return output.split("\n") if output else []
+
+
+# Backwards compatibility alias
+GitUtils = RepoGitUtils

@@ -227,6 +227,32 @@ class ClaudeCLI:
 
         duration_ms = int((time.time() - start_time) * 1000)
 
+        # Save output and thinking to S3 (ALWAYS, even on error - for debugging)
+        s3_output_url = None
+        s3_thinking_url = None
+
+        if save_output and output:
+            s3_output_url = await self._save_to_s3(
+                output,
+                "output",
+                context_id,
+                {"model": self.model, "duration_ms": duration_ms, "error": bool(error)},
+            )
+
+        if save_thinking and thinking:
+            s3_thinking_url = await self._save_to_s3(
+                thinking, "thinking", context_id, {"model": self.model, "error": bool(error)}
+            )
+
+        # Save error details to S3 if there's an error
+        if error and save_output:
+            await self._save_to_s3(
+                f"# Error\n\n{error}\n\n# Raw Output\n\n{raw_output or 'None'}",
+                "error",
+                context_id,
+                {"model": self.model, "duration_ms": duration_ms},
+            )
+
         if error:
             # For API errors (is_error=true), we still have output with the error message
             # Return success=False but include the output so caller can inspect error details
@@ -240,20 +266,8 @@ class ClaudeCLI:
                 duration_ms=duration_ms,
                 model=self.model,
                 s3_prompt_url=s3_prompt_url,
-            )
-
-        # Save output and thinking to S3
-        s3_output_url = None
-        s3_thinking_url = None
-
-        if save_output and output:
-            s3_output_url = await self._save_to_s3(
-                output, "output", context_id, {"model": self.model, "duration_ms": duration_ms}
-            )
-
-        if save_thinking and thinking:
-            s3_thinking_url = await self._save_to_s3(
-                thinking, "thinking", context_id, {"model": self.model}
+                s3_output_url=s3_output_url,
+                s3_thinking_url=s3_thinking_url,
             )
 
         return ClaudeCLIResult(
@@ -357,6 +371,7 @@ class ClaudeCLI:
                 logger.info(f"[CLAUDE CLI] Extended thinking: {budget} tokens")
 
             # Build CLI arguments
+            # --include-partial-messages is REQUIRED for real-time streaming!
             args = [
                 "claude",
                 "--print",
@@ -364,6 +379,7 @@ class ClaudeCLI:
                 self.model,
                 "--output-format",
                 "stream-json",
+                "--include-partial-messages",  # CRITICAL for streaming!
             ]
 
             if self.verbose:
@@ -372,15 +388,23 @@ class ClaudeCLI:
             if self.skip_permissions:
                 args.append("--dangerously-skip-permissions")
 
+            # Prompt as last argument
+            args.append(prompt)
+
             cwd = str(self.working_dir) if self.working_dir else None
 
-            logger.info(f"[CLAUDE CLI] Starting: {' '.join(args)}")
+            # Log full command for debugging (all args except prompt)
+            args_display = " ".join(args[:-1])  # All args except last (prompt)
+            logger.info(f"[CLAUDE CLI] Command: {args_display} <prompt>")
+            logger.info(
+                f"[CLAUDE CLI] Flags: verbose={self.verbose}, skip_permissions={self.skip_permissions}"
+            )
             logger.info(f"[CLAUDE CLI] Model: {self.model}, CWD: {cwd}")
             logger.info(f"[CLAUDE CLI] Prompt length: {len(prompt)} chars")
 
             process = await asyncio.create_subprocess_exec(
                 *args,
-                stdin=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
@@ -388,29 +412,6 @@ class ClaudeCLI:
             )
 
             logger.info(f"[CLAUDE CLI] Process started with PID: {process.pid}")
-
-            # Write prompt to stdin
-            stdin_error = None
-
-            async def write_stdin() -> None:
-                nonlocal stdin_error
-                try:
-                    prompt_bytes = prompt.encode()
-                    logger.info(f"[CLAUDE CLI] Writing {len(prompt_bytes)} bytes to stdin...")
-                    assert process.stdin is not None
-                    process.stdin.write(prompt_bytes)
-                    await process.stdin.drain()
-                    process.stdin.close()
-                    await process.stdin.wait_closed()
-                    logger.info("[CLAUDE CLI] Stdin closed (EOF sent)")
-                except BrokenPipeError as e:
-                    stdin_error = f"BrokenPipe: {e}"
-                    logger.error(f"[CLAUDE CLI] Stdin BrokenPipe: {e}")
-                except Exception as e:
-                    stdin_error = str(e)
-                    logger.error(f"[CLAUDE CLI] Stdin error: {e}")
-
-            stdin_task = asyncio.create_task(write_stdin())
 
             # Read stderr
             stderr_chunks = []
@@ -432,7 +433,7 @@ class ClaudeCLI:
                         stderr_chunks.append(decoded)
                         for line in decoded.split("\n"):
                             if line.strip():
-                                logger.debug(f"[CLAUDE STDERR] {line}")
+                                logger.info(f"[CLAUDE STDERR] {line}")
                                 if on_stderr:
                                     await on_stderr(line)
 
@@ -471,6 +472,7 @@ class ClaudeCLI:
                             output_chunks.append(decoded)
 
                             # Parse stream-json for streaming callback
+                            # With --include-partial-messages, events are wrapped in stream_event
                             if on_chunk:
                                 line_buffer += decoded
                                 while "\n" in line_buffer:
@@ -479,11 +481,21 @@ class ClaudeCLI:
                                         continue
                                     try:
                                         event = json.loads(line)
-                                        if event.get("type") == "content_block_delta":
-                                            text = event.get("delta", {}).get("text", "")
-                                            if text:
-                                                await on_chunk(text)
-                                        elif event.get("type") == "assistant":
+                                        event_type = event.get("type", "")
+
+                                        # Unwrap stream_event wrapper (from --include-partial-messages)
+                                        if event_type == "stream_event":
+                                            event = event.get("event", {})
+                                            event_type = event.get("type", "")
+
+                                        # Extract text from content_block_delta
+                                        if event_type == "content_block_delta":
+                                            delta = event.get("delta", {})
+                                            if delta.get("type") == "text_delta":
+                                                text = delta.get("text", "")
+                                                if text:
+                                                    await on_chunk(text)
+                                        elif event_type == "assistant":
                                             for block in event.get("message", {}).get(
                                                 "content", []
                                             ):
@@ -494,16 +506,11 @@ class ClaudeCLI:
 
             except asyncio.TimeoutError:
                 logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s!")
-                stdin_task.cancel()
                 stderr_task.cancel()
                 process.kill()
                 return None, [], None, None, f"Timeout after {self.timeout}s"
 
-            await stdin_task
             await stderr_task
-
-            if stdin_error:
-                logger.error(f"[CLAUDE CLI] Stdin failed: {stdin_error}")
 
             logger.info("[CLAUDE CLI] Waiting for process to exit...")
             await process.wait()
@@ -537,6 +544,9 @@ class ClaudeCLI:
     ) -> tuple[str, list[ModelUsage], str | None, str | None]:
         """Parse stream-json NDJSON output.
 
+        Handles both regular events and stream_event wrappers
+        (from --include-partial-messages).
+
         Returns:
             Tuple of (output, model_usage, thinking, api_error)
         """
@@ -551,6 +561,11 @@ class ClaudeCLI:
             try:
                 event = json.loads(line)
                 event_type = event.get("type")
+
+                # Unwrap stream_event wrapper (from --include-partial-messages)
+                if event_type == "stream_event":
+                    event = event.get("event", {})
+                    event_type = event.get("type")
 
                 # Capture thinking from assistant messages
                 if event_type == "assistant":

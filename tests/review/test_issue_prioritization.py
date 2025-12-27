@@ -34,43 +34,73 @@ from turbowrap.review.models.review import Issue, IssueCategory, IssueSeverity
 # =============================================================================
 
 
+def _make_issue(
+    file: str,
+    line: int,
+    severity: IssueSeverity,
+    category: IssueCategory,
+    title: str,
+    description: str | None = None,
+    suggestion: str | None = None,
+    flagged_by: list[str] | None = None,
+    issue_id: str | None = None,
+) -> Issue:
+    """Factory function to create Issue with required fields."""
+    # Auto-generate ID if not provided
+    if issue_id is None:
+        severity_code = severity.value[:4].upper()
+        issue_id = f"TEST-{severity_code}-{file.replace('/', '-')}-L{line}"
+
+    return Issue(
+        id=issue_id,
+        file=file,
+        line=line,
+        severity=severity,
+        category=category,
+        title=title,
+        description=description or title,
+        suggested_fix=suggestion,
+        flagged_by=flagged_by or [],
+    )
+
+
 @pytest.fixture
 def sample_issues():
     """Create a set of sample issues for testing."""
     return [
-        Issue(
+        _make_issue(
             file="src/main.py",
             line=10,
             severity=IssueSeverity.CRITICAL,
             category=IssueCategory.SECURITY,
-            message="SQL injection vulnerability",
+            title="SQL injection vulnerability",
             suggestion="Use parameterized queries",
             flagged_by=["reviewer_be_quality"],
         ),
-        Issue(
+        _make_issue(
             file="src/main.py",
             line=25,
             severity=IssueSeverity.HIGH,
             category=IssueCategory.ARCHITECTURE,
-            message="Function too long",
+            title="Function too long",
             suggestion="Extract into smaller functions",
             flagged_by=["reviewer_be_architecture"],
         ),
-        Issue(
+        _make_issue(
             file="src/utils.py",
             line=5,
             severity=IssueSeverity.MEDIUM,
-            category=IssueCategory.QUALITY,
-            message="Missing docstring",
+            category=IssueCategory.DOCUMENTATION,
+            title="Missing docstring",
             suggestion="Add docstring",
             flagged_by=["reviewer_be_quality"],
         ),
-        Issue(
+        _make_issue(
             file="src/utils.py",
             line=15,
             severity=IssueSeverity.LOW,
             category=IssueCategory.STYLE,
-            message="Line too long",
+            title="Line too long",
             suggestion="Break into multiple lines",
             flagged_by=["reviewer_be_quality"],
         ),
@@ -81,32 +111,35 @@ def sample_issues():
 def duplicate_issues():
     """Create issues that should be deduplicated."""
     return [
-        Issue(
+        _make_issue(
             file="src/main.py",
             line=10,
             severity=IssueSeverity.MEDIUM,
             category=IssueCategory.SECURITY,
-            message="Missing null check",
+            title="Missing null check",
             suggestion="Add null check",
             flagged_by=["reviewer_be_quality"],
+            issue_id="TEST-SEC-001",
         ),
-        Issue(
+        _make_issue(
             file="src/main.py",
             line=10,
             severity=IssueSeverity.HIGH,  # Higher severity, should win
             category=IssueCategory.SECURITY,
-            message="Potential null pointer",
+            title="Potential null pointer",
             suggestion="Validate input",
             flagged_by=["reviewer_be_architecture"],
+            issue_id="TEST-SEC-002",
         ),
-        Issue(
+        _make_issue(
             file="src/main.py",
             line=10,
             severity=IssueSeverity.LOW,
             category=IssueCategory.SECURITY,
-            message="Check for null",
+            title="Check for null",
             suggestion="Add validation",
             flagged_by=["analyst_func"],
+            issue_id="TEST-SEC-003",
         ),
     ]
 
@@ -153,19 +186,19 @@ class TestIssueDuplication:
     def test_different_lines_not_duplicates(self):
         """Issues on different lines are not duplicates."""
         issues = [
-            Issue(
+            _make_issue(
                 file="src/main.py",
                 line=10,
                 severity=IssueSeverity.HIGH,
                 category=IssueCategory.SECURITY,
-                message="Issue 1",
+                title="Issue 1",
             ),
-            Issue(
+            _make_issue(
                 file="src/main.py",
                 line=20,  # Different line
                 severity=IssueSeverity.HIGH,
                 category=IssueCategory.SECURITY,
-                message="Issue 2",
+                title="Issue 2",
             ),
         ]
 
@@ -176,19 +209,19 @@ class TestIssueDuplication:
     def test_different_categories_not_duplicates(self):
         """Issues with different categories are not duplicates."""
         issues = [
-            Issue(
+            _make_issue(
                 file="src/main.py",
                 line=10,
                 severity=IssueSeverity.HIGH,
                 category=IssueCategory.SECURITY,
-                message="Security issue",
+                title="Security issue",
             ),
-            Issue(
+            _make_issue(
                 file="src/main.py",
                 line=10,
                 severity=IssueSeverity.HIGH,
                 category=IssueCategory.PERFORMANCE,  # Different category
-                message="Performance issue",
+                title="Performance issue",
             ),
         ]
 
@@ -215,26 +248,26 @@ class TestSeverityOrdering:
     def test_prioritize_by_severity(self):
         """Issues are prioritized by severity (highest first)."""
         issues = [
-            Issue(
+            _make_issue(
                 file="a.py",
                 line=1,
                 severity=IssueSeverity.LOW,
-                category=IssueCategory.QUALITY,
-                message="Low",
+                category=IssueCategory.DOCUMENTATION,
+                title="Low",
             ),
-            Issue(
+            _make_issue(
                 file="b.py",
                 line=1,
                 severity=IssueSeverity.CRITICAL,
-                category=IssueCategory.QUALITY,
-                message="Critical",
+                category=IssueCategory.DOCUMENTATION,
+                title="Critical",
             ),
-            Issue(
+            _make_issue(
                 file="c.py",
                 line=1,
                 severity=IssueSeverity.MEDIUM,
-                category=IssueCategory.QUALITY,
-                message="Medium",
+                category=IssueCategory.DOCUMENTATION,
+                title="Medium",
             ),
         ]
 
@@ -256,58 +289,58 @@ class TestPriorityScoreCalculation:
 
     def test_critical_has_highest_base_score(self):
         """Critical issues have highest base score."""
-        critical = Issue(
+        critical = _make_issue(
             file="a.py",
             line=1,
             severity=IssueSeverity.CRITICAL,
-            category=IssueCategory.QUALITY,
-            message="Critical",
+            category=IssueCategory.DOCUMENTATION,
+            title="Critical",
         )
-        high = Issue(
+        high = _make_issue(
             file="b.py",
             line=1,
             severity=IssueSeverity.HIGH,
-            category=IssueCategory.QUALITY,
-            message="High",
+            category=IssueCategory.DOCUMENTATION,
+            title="High",
         )
 
         assert calculate_priority_score(critical) > calculate_priority_score(high)
 
     def test_security_category_multiplier(self):
         """Security issues get higher priority than same-severity quality issues."""
-        security = Issue(
+        security = _make_issue(
             file="a.py",
             line=1,
             severity=IssueSeverity.HIGH,
             category=IssueCategory.SECURITY,
-            message="Security",
+            title="Security",
         )
-        quality = Issue(
+        quality = _make_issue(
             file="b.py",
             line=1,
             severity=IssueSeverity.HIGH,
-            category=IssueCategory.QUALITY,
-            message="Quality",
+            category=IssueCategory.DOCUMENTATION,
+            title="Quality",
         )
 
         assert calculate_priority_score(security) > calculate_priority_score(quality)
 
     def test_multiple_reviewers_bonus(self):
         """Issues flagged by multiple reviewers get bonus score."""
-        single_reviewer = Issue(
+        single_reviewer = _make_issue(
             file="a.py",
             line=1,
             severity=IssueSeverity.HIGH,
-            category=IssueCategory.QUALITY,
-            message="Single",
+            category=IssueCategory.DOCUMENTATION,
+            title="Single",
             flagged_by=["reviewer1"],
         )
-        multiple_reviewers = Issue(
+        multiple_reviewers = _make_issue(
             file="b.py",
             line=1,
             severity=IssueSeverity.HIGH,
-            category=IssueCategory.QUALITY,
-            message="Multiple",
+            category=IssueCategory.DOCUMENTATION,
+            title="Multiple",
             flagged_by=["reviewer1", "reviewer2", "reviewer3"],
         )
 
@@ -320,12 +353,12 @@ class TestPriorityScoreCalculation:
 
     def test_score_capped_at_100(self):
         """Priority score is capped at 100."""
-        maxed = Issue(
+        maxed = _make_issue(
             file="a.py",
             line=1,
             severity=IssueSeverity.CRITICAL,
             category=IssueCategory.SECURITY,
-            message="Max",
+            title="Max",
             flagged_by=["r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10"],
         )
 
@@ -352,12 +385,12 @@ class TestOverallScoreCalculation:
     def test_critical_issue_deduction(self):
         """Critical issue deducts heavily from score."""
         issues = [
-            Issue(
+            _make_issue(
                 file="a.py",
                 line=1,
                 severity=IssueSeverity.CRITICAL,
                 category=IssueCategory.SECURITY,
-                message="Critical",
+                title="Critical",
             )
         ]
 
@@ -369,19 +402,19 @@ class TestOverallScoreCalculation:
     def test_multiple_issues_accumulate(self):
         """Multiple issues accumulate deductions."""
         issues = [
-            Issue(
+            _make_issue(
                 file="a.py",
                 line=1,
                 severity=IssueSeverity.HIGH,
-                category=IssueCategory.QUALITY,
-                message="High 1",
+                category=IssueCategory.DOCUMENTATION,
+                title="High 1",
             ),
-            Issue(
+            _make_issue(
                 file="b.py",
                 line=1,
                 severity=IssueSeverity.HIGH,
-                category=IssueCategory.QUALITY,
-                message="High 2",
+                category=IssueCategory.DOCUMENTATION,
+                title="High 2",
             ),
         ]
 
@@ -393,12 +426,12 @@ class TestOverallScoreCalculation:
     def test_score_minimum_zero(self):
         """Score cannot go below 0."""
         issues = [
-            Issue(
+            _make_issue(
                 file=f"{i}.py",
                 line=1,
                 severity=IssueSeverity.CRITICAL,
                 category=IssueCategory.SECURITY,
-                message=f"Critical {i}",
+                title=f"Critical {i}",
             )
             for i in range(10)
         ]

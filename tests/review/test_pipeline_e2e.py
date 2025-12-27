@@ -244,23 +244,28 @@ def mock_challenger_loop_result():
     """Create a mock ChallengerLoopResult."""
     return ChallengerLoopResult(
         final_review=ReviewOutput(
+            reviewer="reviewer_be_quality",
             issues=[
                 Issue(
+                    id="TEST-HIGH-001",
                     file="src/main.py",
                     line=10,
                     severity=IssueSeverity.HIGH,
                     category=IssueCategory.SECURITY,
-                    message="Potential SQL injection",
-                    suggestion="Use parameterized queries",
+                    title="Potential SQL injection",
+                    description="SQL injection vulnerability detected in query construction",
+                    suggested_fix="Use parameterized queries",
                     flagged_by=["reviewer_be_quality"],
                 ),
                 Issue(
+                    id="TEST-MED-001",
                     file="src/main.py",
                     line=25,
                     severity=IssueSeverity.MEDIUM,
-                    category=IssueCategory.QUALITY,
-                    message="Missing error handling",
-                    suggestion="Add try-except block",
+                    category=IssueCategory.ARCHITECTURE,
+                    title="Missing error handling",
+                    description="Function lacks proper error handling for edge cases",
+                    suggested_fix="Add try-except block",
                     flagged_by=["reviewer_be_quality"],
                 ),
             ],
@@ -293,7 +298,9 @@ class TestBackendRepoReview:
         # Mock the challenger loop to avoid actual LLM calls
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -302,6 +309,7 @@ class TestBackendRepoReview:
             # Also mock the evaluator
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -324,7 +332,9 @@ class TestBackendRepoReview:
         async def mock_loop(context, reviewer_name, emit):
             reviewers_called.append(reviewer_name)
             return ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -335,6 +345,7 @@ class TestBackendRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -365,6 +376,7 @@ class TestBackendRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -398,7 +410,9 @@ class TestFrontendRepoReview:
 
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -406,6 +420,7 @@ class TestFrontendRepoReview:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(frontend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -428,7 +443,9 @@ class TestFrontendRepoReview:
         async def mock_loop(context, reviewer_name, emit):
             reviewers_called.append(reviewer_name)
             return ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -439,6 +456,7 @@ class TestFrontendRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(frontend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -475,7 +493,9 @@ class TestFullstackRepoReview:
         async def mock_loop(context, reviewer_name, emit):
             reviewers_called.append(reviewer_name)
             return ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -486,6 +506,7 @@ class TestFullstackRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -517,7 +538,9 @@ class TestFullstackRepoReview:
             # Simulate some work
             await asyncio.sleep(0.1)
             return ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -528,6 +551,7 @@ class TestFullstackRepoReview:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -565,7 +589,9 @@ class TestProgressCallbacks:
 
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -573,6 +599,7 @@ class TestProgressCallbacks:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -589,12 +616,21 @@ class TestProgressCallbacks:
                 # Must start with REVIEW_STARTED
                 assert event_types[0] == ProgressEventType.REVIEW_STARTED
 
-                # Must end with REVIEW_COMPLETED
-                assert event_types[-1] == ProgressEventType.REVIEW_COMPLETED
+                # Must have REVIEW_COMPLETED (may have log events after)
+                assert ProgressEventType.REVIEW_COMPLETED in event_types
 
                 # Must have reviewer events
                 assert ProgressEventType.REVIEWER_STARTED in event_types
                 assert ProgressEventType.REVIEWER_COMPLETED in event_types
+
+                # REVIEW_COMPLETED should come after all reviewer events
+                completed_idx = event_types.index(ProgressEventType.REVIEW_COMPLETED)
+                last_reviewer_completed_idx = max(
+                    i
+                    for i, t in enumerate(event_types)
+                    if t == ProgressEventType.REVIEWER_COMPLETED
+                )
+                assert completed_idx > last_reviewer_completed_idx
 
     @pytest.mark.asyncio
     async def test_all_reviewers_emit_started_completed(self, backend_repo):
@@ -608,7 +644,9 @@ class TestProgressCallbacks:
 
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -616,6 +654,7 @@ class TestProgressCallbacks:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -675,13 +714,16 @@ class TestCheckpointResume:
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(
+                    reviewer="test_reviewer",
                     issues=[
                         Issue(
+                            id="TEST-LOW-001",
                             file="test.py",
                             line=1,
                             severity=IssueSeverity.LOW,
-                            category=IssueCategory.QUALITY,
-                            message="Test issue",
+                            category=IssueCategory.DOCUMENTATION,
+                            title="Test issue",
+                            description="Test issue description",
                         )
                     ],
                     duration_seconds=1.0,
@@ -694,6 +736,7 @@ class TestCheckpointResume:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -723,7 +766,9 @@ class TestCheckpointResume:
         async def mock_loop(context, reviewer_name, emit):
             reviewers_called.append(reviewer_name)
             return ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -734,11 +779,13 @@ class TestCheckpointResume:
             "reviewer_be_architecture": {
                 "issues_data": [
                     {
+                        "id": "TEST-LOW-RESTORED",
                         "file": "test.py",
                         "line": 1,
                         "severity": "LOW",
-                        "category": "quality",
-                        "message": "Restored issue",
+                        "category": "documentation",
+                        "title": "Restored issue",
+                        "description": "Restored issue description",
                     }
                 ],
                 "final_satisfaction": 90.0,
@@ -751,6 +798,7 @@ class TestCheckpointResume:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -791,15 +839,18 @@ class TestIssueHandling:
             call_count[0] += 1
             # Each reviewer returns different issues
             issue = Issue(
+                id=f"TEST-MED-{call_count[0]:03d}",
                 file=f"file_{reviewer_name}.py",
                 line=call_count[0] * 10,
                 severity=IssueSeverity.MEDIUM,
-                category=IssueCategory.QUALITY,
-                message=f"Issue from {reviewer_name}",
+                category=IssueCategory.DOCUMENTATION,
+                title=f"Issue from {reviewer_name}",
+                description=f"Issue description from {reviewer_name}",
                 flagged_by=[reviewer_name],
             )
             return ChallengerLoopResult(
                 final_review=ReviewOutput(
+                    reviewer=reviewer_name,
                     issues=[issue],
                     duration_seconds=1.0,
                     model_usage=[],
@@ -814,6 +865,7 @@ class TestIssueHandling:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -834,11 +886,13 @@ class TestIssueHandling:
 
         # Both reviewers return the same issue (same file/line/category)
         duplicate_issue = Issue(
+            id="TEST-HIGH-DUP",
             file="src/main.py",
             line=10,
             severity=IssueSeverity.HIGH,
             category=IssueCategory.SECURITY,
-            message="SQL injection vulnerability",
+            title="SQL injection vulnerability",
+            description="SQL injection vulnerability detected",
         )
 
         async def mock_loop(context, reviewer_name, emit):
@@ -846,6 +900,7 @@ class TestIssueHandling:
             issue_copy.flagged_by = [reviewer_name]
             return ChallengerLoopResult(
                 final_review=ReviewOutput(
+                    reviewer=reviewer_name,
                     issues=[issue_copy],
                     duration_seconds=1.0,
                     model_usage=[],
@@ -860,6 +915,7 @@ class TestIssueHandling:
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -893,7 +949,9 @@ class TestScoreAndRecommendation:
 
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -901,6 +959,7 @@ class TestScoreAndRecommendation:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -920,16 +979,19 @@ class TestScoreAndRecommendation:
         orchestrator = Orchestrator()
 
         critical_issue = Issue(
+            id="TEST-CRIT-001",
             file="src/main.py",
             line=10,
             severity=IssueSeverity.CRITICAL,
             category=IssueCategory.SECURITY,
-            message="Critical vulnerability",
+            title="Critical vulnerability",
+            description="Critical security vulnerability detected",
         )
 
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
                 final_review=ReviewOutput(
+                    reviewer="test_reviewer",
                     issues=[critical_issue],
                     duration_seconds=1.0,
                     model_usage=[],
@@ -941,6 +1003,7 @@ class TestScoreAndRecommendation:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
@@ -970,7 +1033,9 @@ class TestReportSaving:
 
         with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
             mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(issues=[], duration_seconds=1.0, model_usage=[]),
+                final_review=ReviewOutput(
+                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
+                ),
                 iterations=1,
                 final_satisfaction=100.0,
                 convergence=ConvergenceStatus.THRESHOLD_MET,
@@ -978,6 +1043,7 @@ class TestReportSaving:
 
             with patch.object(orchestrator, "_run_evaluator", return_value=None):
                 request = ReviewRequest(
+                    type="directory",
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,

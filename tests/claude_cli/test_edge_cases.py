@@ -696,16 +696,14 @@ class TestRealWorldStreamJson:
         """Parse actual Claude CLI success response format."""
         cli = ClaudeCLI(model="opus")
 
+        # NDJSON requires each JSON object on a single line
         raw_output = """\
 {"type":"content_block_start","content_block":{"type":"text","text":""}}
 {"type":"content_block_delta","delta":{"type":"text_delta","text":"Here is"}}
 {"type":"content_block_delta","delta":{"type":"text_delta","text":" my analysis"}}
 {"type":"content_block_stop"}
 {"type":"message_stop"}
-{"type":"result","result":"Here is my analysis","modelUsage":{
-"claude-opus-4-5-20251101":{"inputTokens":1234,"outputTokens":567,
-"cacheReadInputTokens":100,"cacheCreationInputTokens":50,"costUSD":0.0523}},
-"is_error":false}"""
+{"type":"result","result":"Here is my analysis","modelUsage":{"claude-opus-4-5-20251101":{"inputTokens":1234,"outputTokens":567,"cacheReadInputTokens":100,"cacheCreationInputTokens":50,"costUSD":0.0523}},"is_error":false}"""
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
 

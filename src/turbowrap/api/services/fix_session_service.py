@@ -56,6 +56,7 @@ from ...fix import (  # noqa: E402
     FixOrchestrator,
     FixProgressEvent,
     FixRequest,
+    FixStatus,
     IssueFixResult,
     ScopeValidationError,
 )
@@ -454,6 +455,19 @@ class FixSessionService:
                     issues=session_info.issues,
                     emit=progress_callback,
                 )
+
+                # CRITICAL: If orchestrator failed with empty results, reset issues!
+                # This happens when there's an internal error before any issue was processed
+                if result.status == FixStatus.FAILED and not result.results:
+                    logger.error(f"Orchestrator failed with no results: {result.error}")
+                    await self.reset_issues_on_error(
+                        fix_db,
+                        session_info.issues,
+                        f"Fix failed: {result.error or 'Unknown error'}",
+                    )
+                    self.idempotency.update_status(idempotency_key, "failed")
+                    tracker.fail(session_info.session_id, error=result.error or "Unknown error")
+                    return  # Exit early, finally block will close DB and signal completion
 
                 # Update issue statuses in database
                 completed_count, failed_count = await self.update_issue_statuses(

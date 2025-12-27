@@ -1,6 +1,7 @@
 """Git operations routes for repository activity tracking."""
 
 import logging
+import os
 import subprocess
 import uuid
 from pathlib import Path
@@ -107,12 +108,13 @@ class GitOperationResult(BaseModel):
     output: str | None = None
 
 
-def run_git_command(repo_path: Path, command: list[str]) -> str:
+def run_git_command(repo_path: Path, command: list[str], timeout: int = 30) -> str:
     """Run a git command in the repository directory.
 
     Args:
         repo_path: Path to the repository
         command: Git command as list (e.g., ['branch', '--show-current'])
+        timeout: Command timeout in seconds (default 30)
 
     Returns:
         Command output as string
@@ -121,14 +123,35 @@ def run_git_command(repo_path: Path, command: list[str]) -> str:
         HTTPException: If command fails
     """
     try:
+        # Disable interactive prompts - fail fast with clear error instead of hanging
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"  # Disable credential prompts
+        env["GIT_ASKPASS"] = ""  # Disable askpass helper
+
         result = subprocess.run(
-            ["git"] + command, cwd=repo_path, capture_output=True, text=True, check=True, timeout=10
+            ["git"] + command,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+            env=env,
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Git command failed: {e.stderr}")
+        error_msg = e.stderr.strip() if e.stderr else "Unknown error"
+        # Detect common authentication errors
+        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+            logger.error(f"[GIT] Authentication error: {error_msg}")
+            raise HTTPException(
+                status_code=401,
+                detail="Git authentication failed. Configure credentials with: git config --global credential.helper osxkeychain",
+            )
+        logger.error(f"[GIT] Command failed: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Git command failed: {error_msg}")
     except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=500, detail="Git command timed out")
+        logger.error(f"[GIT] Command timed out after {timeout}s: git {' '.join(command)}")
+        raise HTTPException(status_code=500, detail=f"Git command timed out after {timeout}s")
 
 
 @router.get("/repositories")

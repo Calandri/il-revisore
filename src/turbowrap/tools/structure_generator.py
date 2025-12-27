@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from turbowrap.llm.base import BaseAgent
 
-import tiktoken
+from turbowrap.utils.file_utils import calculate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +36,6 @@ class RepoType(str, Enum):
     FULLSTACK = "fullstack"
     UNKNOWN = "unknown"
 
-
-# Token encoder (cached)
-_encoder = tiktoken.get_encoding("cl100k_base")
 
 # File extensions by type
 BE_EXTENSIONS = {".py"}
@@ -141,7 +138,7 @@ class DirectoryStructure:
 
 def count_tokens(content: str) -> int:
     """Count tokens using tiktoken cl100k_base encoding."""
-    return len(_encoder.encode(content))
+    return calculate_tokens(content)["tokens"]
 
 
 def should_ignore(path: Path) -> bool:
