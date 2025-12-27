@@ -466,6 +466,7 @@ async def send_message(
     session_reasoning_enabled = cast(bool, session.reasoning_enabled)
     session_display_name = cast(str | None, session.display_name)
     session_repository = session.repository
+    session_claude_session_id = cast(str | None, session.claude_session_id)
 
     async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         """Generate SSE events for streaming response."""
@@ -499,6 +500,13 @@ async def send_message(
                     if session_agent_name:
                         agent_path = loader.get_agent_path(session_agent_name)
 
+                    # If we have a saved claude_session_id, use it for --resume
+                    if session_claude_session_id:
+                        manager.set_shared_resume_id(session_id, session_claude_session_id)
+                        logger.info(
+                            f"[RESUME] Using saved claude_session_id: {session_claude_session_id}"
+                        )
+
                     proc = await manager.spawn_claude(
                         session_id=session_id,
                         working_dir=Path(
@@ -513,6 +521,17 @@ async def send_message(
                         ),
                         context=context,
                     )
+
+                    # Save claude_session_id to DB for persistence across restarts
+                    if (
+                        proc.claude_session_id
+                        and proc.claude_session_id != session_claude_session_id
+                    ):
+                        session.claude_session_id = proc.claude_session_id  # type: ignore[assignment]
+                        db.commit()
+                        logger.info(
+                            f"[PERSIST] Saved claude_session_id to DB: {proc.claude_session_id}"
+                        )
                 else:
                     proc = await manager.spawn_gemini(
                         session_id=session_id,

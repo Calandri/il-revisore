@@ -538,6 +538,19 @@ class CLIProcessManager:
             process.stdin.close()
             await process.stdin.wait_closed()
             logger.info("[CLAUDE] Stdin closed (EOF sent)")
+        except ConnectionResetError:
+            # Stdin corrupted (user left during streaming), respawn and retry
+            logger.warning("[CLAUDE] ConnectionResetError, respawning with --resume")
+            await self._respawn_claude_with_resume(proc)
+            process = proc.process
+            if process is None or process.stdin is None:
+                raise RuntimeError("Failed to respawn Claude process")
+            # Retry write to new process
+            process.stdin.write(prompt_bytes)
+            await process.stdin.drain()
+            process.stdin.close()
+            await process.stdin.wait_closed()
+            logger.info("[CLAUDE] Stdin closed (EOF sent) after respawn")
         except Exception as e:
             logger.error(f"[CLAUDE] Stdin error: {e}")
             raise

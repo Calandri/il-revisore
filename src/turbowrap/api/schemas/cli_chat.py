@@ -95,6 +95,7 @@ class CLISessionResponse(BaseModel):
     id: str = Field(..., description="Session UUID")
     cli_type: CLITypeEnum = Field(..., description="CLI type")
     repository_id: str | None = Field(default=None, description="Associated repository")
+    current_branch: str | None = Field(default=None, description="Current branch in repository")
     status: SessionStatusEnum = Field(..., description="Session status")
 
     # Configuration
@@ -137,6 +138,17 @@ class CLISessionUpdate(BaseModel):
     thinking_budget: int | None = Field(default=None, ge=1000, le=50000)
     reasoning_enabled: bool | None = None
     mcp_servers: list[str] | None = None
+
+
+class CLIBranchChange(BaseModel):
+    """Request to change branch in chat session."""
+
+    branch: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Branch name to checkout",
+    )
 
 
 # ============================================================================

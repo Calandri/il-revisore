@@ -598,6 +598,9 @@ class CLIChatSession(Base, SoftDeleteMixin):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     repository_id = Column(String(36), ForeignKey("repositories.id"), nullable=True)
 
+    # Branch context (for repo-linked sessions)
+    current_branch = Column(String(100), nullable=True)  # Active branch in chat
+
     # CLI Configuration
     cli_type = Column(String(20), nullable=False)  # "claude" or "gemini"
     model = Column(String(100), nullable=True)  # e.g., "claude-opus-4-5-20251101"
@@ -618,6 +621,8 @@ class CLIChatSession(Base, SoftDeleteMixin):
     status = Column(
         String(20), default="idle"
     )  # idle, starting, running, streaming, stopping, error
+    # Claude CLI session ID for --resume (persists across server restarts)
+    claude_session_id = Column(String(36), nullable=True)
 
     # UI Configuration
     icon = Column(String(50), default="chat")  # Icon identifier
