@@ -484,7 +484,8 @@ class ClaudeCLI:
             args_display = " ".join(args[:-1])  # All args except last (prompt)
             logger.info(f"[CLAUDE CLI] Command: {args_display} <prompt>")
             logger.info(
-                f"[CLAUDE CLI] Flags: verbose={self.verbose}, skip_permissions={self.skip_permissions}"
+                f"[CLAUDE CLI] Flags: verbose={self.verbose}, "
+                f"skip_permissions={self.skip_permissions}"
             )
             logger.info(f"[CLAUDE CLI] Model: {self.model}, CWD: {cwd}")
             logger.info(f"[CLAUDE CLI] Prompt length: {len(prompt)} chars")
@@ -570,24 +571,35 @@ class ClaudeCLI:
                                         event = json.loads(line)
                                         event_type = event.get("type", "")
 
-                                        # Unwrap stream_event wrapper (from --include-partial-messages)
+                                        # Unwrap stream_event wrapper
                                         if event_type == "stream_event":
                                             event = event.get("event", {})
                                             event_type = event.get("type", "")
 
-                                        # Extract text from content_block_delta
+                                        # Extract text and thinking from content_block_delta
                                         if event_type == "content_block_delta":
                                             delta = event.get("delta", {})
-                                            if delta.get("type") == "text_delta":
+                                            delta_type = delta.get("type", "")
+                                            if delta_type == "text_delta":
                                                 text = delta.get("text", "")
                                                 if text:
                                                     await on_chunk(text)
+                                            elif delta_type == "thinking_delta":
+                                                # Stream thinking with prefix
+                                                thinking_chunk = delta.get("thinking", "")
+                                                if thinking_chunk:
+                                                    await on_chunk(f"🧠 {thinking_chunk}")
                                         elif event_type == "assistant":
                                             for block in event.get("message", {}).get(
                                                 "content", []
                                             ):
                                                 if block.get("type") == "text":
                                                     await on_chunk(block.get("text", ""))
+                                                elif block.get("type") == "thinking":
+                                                    # Stream complete thinking block
+                                                    thinking_block = block.get("thinking", "")
+                                                    if thinking_block:
+                                                        await on_chunk(f"\n🧠 {thinking_block}\n")
                                     except json.JSONDecodeError:
                                         pass
 
@@ -619,7 +631,8 @@ class ClaudeCLI:
                 if raw_output:
                     output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
                     logger.info(
-                        f"[CLAUDE CLI] Exit code {process.returncode} but got output: {len(raw_output)} bytes"
+                        f"[CLAUDE CLI] Exit {process.returncode} "
+                        f"got output: {len(raw_output)} bytes"
                     )
 
                 error_msg = f"Exit code {process.returncode}: {stderr_text[:500]}"

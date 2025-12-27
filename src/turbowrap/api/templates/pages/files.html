@@ -276,7 +276,7 @@
                                     <div x-show="!loadingCommitFiles && commitFiles.length > 0">
                                         <template x-for="file in commitFiles" :key="file.filename">
                                             <div class="px-4 py-1.5 text-xs flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
-                                                 @click="loadFile(file.filename); if(window.innerWidth < 1024) activeTab = 'editor'">
+                                                 @click="loadCommitFileDiff(expandedCommit, file.filename); if(window.innerWidth < 1024) activeTab = 'editor'">
                                                 <!-- Status badge -->
                                                 <span class="w-4 text-center font-mono font-bold"
                                                       :class="getFileStatusColor(file.status)"
@@ -313,8 +313,10 @@
                 <div class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-r dark:border-gray-700">
                     <span class="text-sm font-medium" x-text="currentFilePath.split('/').pop()"></span>
                     <span x-show="isDirty" class="w-2 h-2 bg-orange-500 rounded-full" title="Modificato"></span>
-                    <span x-show="isFileModified(currentFilePath)" class="text-xs text-orange-500">M</span>
-                    <span x-show="isFileUntracked(currentFilePath)" class="text-xs text-green-500">U</span>
+                    <span x-show="isFileModified(currentFilePath) && !viewingCommitSha" class="text-xs text-orange-500">M</span>
+                    <span x-show="isFileUntracked(currentFilePath) && !viewingCommitSha" class="text-xs text-green-500">U</span>
+                    <!-- Commit SHA badge when viewing commit diff -->
+                    <span x-show="viewingCommitSha" class="px-1.5 py-0.5 text-xs font-mono bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded" x-text="viewingCommitSha?.substring(0, 7)"></span>
                 </div>
                 <div class="flex-1 px-2 text-xs text-gray-500 truncate" x-text="currentFilePath"></div>
             </div>
@@ -335,8 +337,8 @@
                         </svg>
                     </button>
 
-                    <!-- Diff Toggle -->
-                    <button x-show="isFileModified(currentFilePath) || isFileUntracked(currentFilePath)"
+                    <!-- Diff Toggle (for working directory changes) -->
+                    <button x-show="(isFileModified(currentFilePath) || isFileUntracked(currentFilePath)) && !viewingCommitSha"
                             @click="toggleDiffView()"
                             class="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 transition-colors"
                             :class="viewMode === 'diff' ? 'bg-orange-500 text-white' : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'">
@@ -346,8 +348,19 @@
                         <span x-text="viewMode === 'diff' ? 'Modifica' : 'Diff'"></span>
                     </button>
 
-                    <!-- Save -->
-                    <button @click="saveFile()"
+                    <!-- Edit button (when viewing commit diff) -->
+                    <button x-show="viewingCommitSha"
+                            @click="loadFile(currentFilePath)"
+                            class="px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        </svg>
+                        Modifica attuale
+                    </button>
+
+                    <!-- Save (hide when viewing commit diff) -->
+                    <button x-show="!viewingCommitSha"
+                            @click="saveFile()"
                             :disabled="!isDirty || saving"
                             class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2">
                         <svg x-show="saving" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -754,6 +767,7 @@ function fileEditor() {
         diffContent: '',
         diffLines: [],
         loadingDiff: false,
+        viewingCommitSha: null, // When viewing a commit-specific diff
 
         // Cursor position
         cursorLine: 1,
@@ -1005,6 +1019,7 @@ function fileEditor() {
             this.loading = true;
             this.currentFilePath = path;
             this.viewMode = 'edit';
+            this.viewingCommitSha = null;  // Reset commit diff view
             this.diffContent = '';
             this.diffLines = [];
 
@@ -1105,6 +1120,48 @@ function fileEditor() {
                     lineNum: displayLineNum
                 });
             }
+        },
+
+        // Load commit-specific file diff
+        async loadCommitFileDiff(sha, filename) {
+            if (!sha || !filename) return;
+
+            // Reset dirty state check
+            if (this.isDirty && !confirm('Hai modifiche non salvate. Vuoi continuare?')) {
+                return;
+            }
+
+            this.loading = true;
+            this.currentFilePath = filename;
+            this.viewMode = 'diff';  // Switch to diff view automatically
+            this.viewingCommitSha = sha;
+            this.content = '';
+            this.isDirty = false;
+
+            try {
+                // Fetch the commit-specific diff for this file
+                const response = await fetch(
+                    `/api/git/repositories/${this.selectedRepoId}/commits/${sha}/files/diff?path=${encodeURIComponent(filename)}`
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.diffContent = data.diff;
+                    this.parseDiffLines(data.diff);
+
+                    if (!data.diff) {
+                        this.showToast('Nessuna modifica in questo commit', 'error');
+                    }
+                } else {
+                    const error = await response.json();
+                    this.showToast(error.detail || 'Errore caricamento diff', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading commit file diff:', error);
+                this.showToast('Errore connessione', 'error');
+            }
+
+            this.loading = false;
         },
 
         // Save operations

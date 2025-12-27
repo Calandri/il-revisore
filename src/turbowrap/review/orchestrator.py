@@ -575,10 +575,6 @@ class Orchestrator:
             ),
         )
 
-        # Save report to output directory
-        if context.repo_path is not None:
-            await self._save_report(report, context.repo_path)
-
         return report
 
     async def _prepare_context(
@@ -1412,81 +1408,3 @@ class Orchestrator:
                         error=f"Structure refresh failed: {str(e)}",
                     )
                 )
-
-    async def _save_report(self, report: FinalReport, repo_path: Path) -> None:
-        """
-        Save the final report to the output directory with atomic writes.
-
-        Uses a two-phase commit pattern:
-        1. Write all files to temp locations
-        2. Move all temp files to final locations atomically
-        3. Rollback on any failure
-
-        This ensures no partial writes if the process fails mid-save.
-        """
-        import shutil
-        import tempfile
-
-        output_dir = repo_path / ".reviews"
-        temp_files: list[tuple[Path, Path]] = []  # (temp_path, final_path)
-
-        try:
-            # Phase 1: Create output directory
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Generate timestamp for filename
-            timestamp = report.timestamp.strftime("%Y%m%d_%H%M%S")
-            base_name = f"review_{timestamp}_{report.id}"
-
-            # Prepare content once (avoid regenerating)
-            json_content = report.model_dump_json(indent=2)
-            md_content = report.to_markdown()
-
-            # Define all target files
-            targets = [
-                (output_dir / f"{base_name}.json", json_content),
-                (output_dir / f"{base_name}.md", md_content),
-                (output_dir / "latest.json", json_content),
-                (output_dir / "latest.md", md_content),
-            ]
-
-            # Phase 2: Write to temp files first
-            for final_path, content in targets:
-                # Create temp file in same directory (for atomic rename)
-                fd, temp_path_str = tempfile.mkstemp(
-                    dir=output_dir,
-                    prefix=f".tmp_{final_path.stem}_",
-                    suffix=final_path.suffix,
-                )
-                temp_path = Path(temp_path_str)
-                temp_files.append((temp_path, final_path))
-
-                try:
-                    # Write content
-                    with open(fd, "w", encoding="utf-8") as f:
-                        f.write(content)
-                except Exception:
-                    # Close fd if write fails
-                    import os
-
-                    os.close(fd)
-                    raise
-
-            # Phase 3: Atomic move all temp files to final locations
-            for temp_path, final_path in temp_files:
-                # Remove existing file first (for latest files)
-                final_path.unlink(missing_ok=True)
-                # Atomic rename (same filesystem)
-                shutil.move(str(temp_path), str(final_path))
-
-            logger.info(f"Reports saved atomically to {output_dir}")
-
-        except Exception as e:
-            # Rollback: clean up any temp files
-            for temp_path, _ in temp_files:
-                try:
-                    temp_path.unlink(missing_ok=True)
-                except Exception:
-                    pass  # Best effort cleanup
-            logger.error(f"Failed to save report (rolled back): {e}")
-            raise  # Re-raise to signal failure to caller

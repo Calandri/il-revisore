@@ -385,6 +385,40 @@ def get_commit_diff(repo_id: str, sha: str, db: Session = Depends(get_db)) -> Co
     return CommitDiff(diff=full_diff)
 
 
+@router.get("/repositories/{repo_id}/commits/{sha}/files/diff", response_model=CommitDiff)
+def get_commit_file_diff(
+    repo_id: str,
+    sha: str,
+    path: str = Query(..., description="File path within the repository"),
+    db: Session = Depends(get_db),
+) -> CommitDiff:
+    """Get the diff for a specific file in a specific commit.
+
+    Args:
+        repo_id: Repository ID
+        sha: Commit SHA (can be short or full)
+        path: File path to get diff for
+    """
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    repo_path = Path(repo.local_path)
+    if not repo_path.exists():
+        raise HTTPException(status_code=404, detail="Repository path not found")
+
+    # Get the diff for this specific file in this commit
+    # Using git show <sha> -- <filepath> to get only the diff for that file
+    try:
+        file_diff = run_git_command(repo_path, ["show", "--format=", sha, "--", path])
+        return CommitDiff(diff=file_diff)
+    except HTTPException as e:
+        # If the file doesn't exist in the commit, return empty diff
+        if "does not exist" in str(e.detail).lower() or "pathspec" in str(e.detail).lower():
+            return CommitDiff(diff="")
+        raise
+
+
 # ============================================================================
 # Git Operations (write operations)
 # ============================================================================
