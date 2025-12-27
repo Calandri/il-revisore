@@ -94,7 +94,8 @@ class S3ArtifactSaver:
                 Body=md_content.encode("utf-8"),
                 ContentType="text/markdown",
             )
-            s3_url = f"s3://{self.bucket}/{s3_key}"
+            # Use HTTPS URL for browser access
+            s3_url = f"https://{self.bucket}.s3.{self.region}.amazonaws.com/{s3_key}"
             logger.info(f"[S3] Saved {artifact_type} to {s3_key}")
             return s3_url
         except ClientError as e:
