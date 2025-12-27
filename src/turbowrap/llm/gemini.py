@@ -295,7 +295,7 @@ class GeminiCLI:
             working_dir: Working directory for CLI process
             model: Model name or type ("flash", "pro")
             timeout: Timeout in seconds
-            auto_accept: Enable --auto-accept flag (auto-approve tool calls)
+            auto_accept: Enable --yolo flag (auto-approve tool calls)
             s3_prefix: S3 path prefix for logs
         """
         self.settings = get_settings()
@@ -428,7 +428,7 @@ class GeminiCLI:
             # Build command
             args = ["gemini", "--model", self.model]
             if self.auto_accept:
-                args.append("--auto-accept")
+                args.extend(["--approval-mode", "yolo"])
             args.append(prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None
