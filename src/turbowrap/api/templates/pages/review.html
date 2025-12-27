@@ -4,18 +4,155 @@
 
 {% block head %}
 <style>
+/* === ANIMATIONS === */
 @keyframes slide-in {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
-.animate-slide-in {
-    animation: slide-in 0.3s ease-out;
+.animate-slide-in { animation: slide-in 0.3s ease-out; }
+
+@keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 5px currentColor, 0 0 10px currentColor; }
+    50% { box-shadow: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 30px currentColor; }
+}
+@keyframes scan-line {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+}
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* === STATUS GLOW INDICATORS === */
+.status-glow-running {
+    animation: glow-pulse 2s ease-in-out infinite;
+    color: #3b82f6;
+}
+.status-glow-success { box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); }
+.status-glow-error { box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+
+/* === AGENT CARD ENHANCEMENTS === */
+.agent-card {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+}
+.agent-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, currentColor, transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.agent-card.running::before {
+    opacity: 1;
+    background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+    animation: shimmer 2s linear infinite;
+    background-size: 200% 100%;
+}
+.agent-card.completed::before {
+    opacity: 1;
+    background: linear-gradient(90deg, #22c55e, #10b981, #22c55e);
+}
+.agent-card.error::before {
+    opacity: 1;
+    background: linear-gradient(90deg, #ef4444, #dc2626, #ef4444);
+}
+.agent-card:hover {
+    transform: translateY(-2px);
+}
+.dark .agent-card:hover {
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* === MODE TOGGLE BUTTONS === */
+.mode-toggle-btn {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+.mode-toggle-btn.active {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+}
+.dark .mode-toggle-btn.active {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%);
+}
+.mode-toggle-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.1) 50%, transparent 60%);
+    transform: translateX(-100%);
+    transition: transform 0.5s;
+}
+.mode-toggle-btn:hover::after {
+    transform: translateX(100%);
+}
+
+/* === EVALUATION SCORE RING === */
+.score-ring {
+    position: relative;
+    width: 80px;
+    height: 80px;
+}
+.score-ring svg {
+    transform: rotate(-90deg);
+}
+.score-ring-bg {
+    stroke: #e5e7eb;
+}
+.dark .score-ring-bg {
+    stroke: #374151;
+}
+.score-ring-progress {
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s ease-out;
+}
+
+/* === PROGRESS BAR GLOW === */
+.progress-bar-glow {
+    position: relative;
+}
+.progress-bar-glow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: inherit;
+    filter: blur(4px);
+    opacity: 0.5;
+    z-index: -1;
+}
+
+/* === STATS BADGE === */
+.stats-badge {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+}
+
+/* === SCAN LINE EFFECT FOR RUNNING === */
+.scan-overlay {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+.scan-overlay::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 30%;
+    background: linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.1), transparent);
+    animation: scan-line 2s linear infinite;
 }
 
 /* Markdown rendering styles */
@@ -276,32 +413,46 @@
             <!-- Review Mode: Dual LLM vs Challenger Loop -->
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Modalità Review</label>
-                <div class="flex gap-2">
+                <div class="flex gap-3">
+                    <!-- Dual LLM Button -->
                     <button type="button" @click="challengerEnabled = false" :disabled="isRunning"
-                            class="flex-1 px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all disabled:opacity-50"
+                            class="mode-toggle-btn flex-1 px-4 py-3 text-sm font-medium rounded-xl border-2 transition-all disabled:opacity-50"
                             :class="!challengerEnabled
-                                ? 'border-primary bg-primary/10 text-primary dark:bg-primary/20'
-                                : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300'">
-                        <div class="flex items-center justify-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                                ? 'active border-indigo-500 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400 shadow-lg shadow-indigo-500/20'
+                                : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'">
+                        <div class="flex items-center justify-center gap-2 mb-1">
+                            <!-- Parallel arrows icon -->
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                             </svg>
-                            <span>Dual LLM</span>
+                            <span class="font-semibold">Dual LLM</span>
                         </div>
-                        <p class="text-xs mt-1 opacity-70">Claude + Gemini in parallelo</p>
+                        <div class="flex items-center justify-center gap-1.5 text-xs opacity-80">
+                            <span class="stats-badge px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">Claude</span>
+                            <span>+</span>
+                            <span class="stats-badge px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">Gemini</span>
+                        </div>
                     </button>
+                    <!-- Challenger Loop Button -->
                     <button type="button" @click="challengerEnabled = true" :disabled="isRunning"
-                            class="flex-1 px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all disabled:opacity-50"
+                            class="mode-toggle-btn flex-1 px-4 py-3 text-sm font-medium rounded-xl border-2 transition-all disabled:opacity-50"
                             :class="challengerEnabled
-                                ? 'border-primary bg-primary/10 text-primary dark:bg-primary/20'
-                                : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300'">
-                        <div class="flex items-center justify-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                ? 'active border-purple-500 dark:border-purple-400 text-purple-600 dark:text-purple-400 shadow-lg shadow-purple-500/20'
+                                : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'">
+                        <div class="flex items-center justify-center gap-2 mb-1">
+                            <!-- Loop icon -->
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                             </svg>
-                            <span>Challenger Loop</span>
+                            <span class="font-semibold">Challenger</span>
                         </div>
-                        <p class="text-xs mt-1 opacity-70">Claude → Gemini valida → loop</p>
+                        <div class="flex items-center justify-center gap-1 text-xs opacity-80">
+                            <span class="stats-badge px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">C</span>
+                            <span>→</span>
+                            <span class="stats-badge px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">G</span>
+                            <span>→</span>
+                            <span class="text-purple-500">⟳</span>
+                        </div>
                     </button>
                 </div>
             </div>
@@ -365,9 +516,19 @@
                         <p class="text-sm text-gray-500 dark:text-gray-400">Valutazione complessiva della qualita del codice</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-3xl font-bold" :class="getScoreTextColor(evaluation.overall_score)" x-text="evaluation.overall_score"></span>
-                    <span class="text-gray-400">/100</span>
+                <!-- Score Ring -->
+                <div class="score-ring">
+                    <svg viewBox="0 0 80 80" class="w-20 h-20">
+                        <circle class="score-ring-bg" cx="40" cy="40" r="32" fill="none" stroke-width="6"/>
+                        <circle class="score-ring-progress" cx="40" cy="40" r="32" fill="none" stroke-width="6"
+                                :stroke="getScoreRingColor(evaluation.overall_score)"
+                                :stroke-dasharray="201"
+                                :stroke-dashoffset="201 - (201 * evaluation.overall_score / 100)"/>
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                        <span class="text-xl font-bold" :class="getScoreTextColor(evaluation.overall_score)" x-text="evaluation.overall_score"></span>
+                        <span class="text-[10px] text-gray-400 uppercase tracking-wide">Score</span>
+                    </div>
                 </div>
             </div>
 
@@ -375,57 +536,57 @@
             <div class="p-6">
                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
                     <!-- Architecture Quality -->
-                    <div class="text-center">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Architettura</div>
-                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
-                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.architecture_quality)" :style="`width: ${evaluation.architecture_quality}%`"></div>
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Architettura</div>
+                        <div class="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full mb-2 overflow-hidden">
+                            <div class="absolute h-1.5 rounded-full transition-all progress-bar-glow" :class="getScoreColor(evaluation.architecture_quality)" :style="`width: ${evaluation.architecture_quality}%`"></div>
                         </div>
-                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.architecture_quality)" x-text="evaluation.architecture_quality"></div>
+                        <div class="text-xl font-bold" :class="getScoreTextColor(evaluation.architecture_quality)" x-text="evaluation.architecture_quality"></div>
                     </div>
 
                     <!-- Code Quality -->
-                    <div class="text-center">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Qualita Codice</div>
-                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
-                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.code_quality)" :style="`width: ${evaluation.code_quality}%`"></div>
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Qualità</div>
+                        <div class="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full mb-2 overflow-hidden">
+                            <div class="absolute h-1.5 rounded-full transition-all progress-bar-glow" :class="getScoreColor(evaluation.code_quality)" :style="`width: ${evaluation.code_quality}%`"></div>
                         </div>
-                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.code_quality)" x-text="evaluation.code_quality"></div>
+                        <div class="text-xl font-bold" :class="getScoreTextColor(evaluation.code_quality)" x-text="evaluation.code_quality"></div>
                     </div>
 
                     <!-- Functionality -->
-                    <div class="text-center">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Funzionalita</div>
-                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
-                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.functionality)" :style="`width: ${evaluation.functionality}%`"></div>
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Funzionalità</div>
+                        <div class="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full mb-2 overflow-hidden">
+                            <div class="absolute h-1.5 rounded-full transition-all progress-bar-glow" :class="getScoreColor(evaluation.functionality)" :style="`width: ${evaluation.functionality}%`"></div>
                         </div>
-                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.functionality)" x-text="evaluation.functionality"></div>
+                        <div class="text-xl font-bold" :class="getScoreTextColor(evaluation.functionality)" x-text="evaluation.functionality"></div>
                     </div>
 
                     <!-- Effectiveness -->
-                    <div class="text-center">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Efficacia</div>
-                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
-                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.effectiveness)" :style="`width: ${evaluation.effectiveness}%`"></div>
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Efficacia</div>
+                        <div class="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full mb-2 overflow-hidden">
+                            <div class="absolute h-1.5 rounded-full transition-all progress-bar-glow" :class="getScoreColor(evaluation.effectiveness)" :style="`width: ${evaluation.effectiveness}%`"></div>
                         </div>
-                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.effectiveness)" x-text="evaluation.effectiveness"></div>
+                        <div class="text-xl font-bold" :class="getScoreTextColor(evaluation.effectiveness)" x-text="evaluation.effectiveness"></div>
                     </div>
 
                     <!-- Comment Quality -->
-                    <div class="text-center">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">Commenti</div>
-                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
-                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.comment_quality)" :style="`width: ${evaluation.comment_quality}%`"></div>
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">Commenti</div>
+                        <div class="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full mb-2 overflow-hidden">
+                            <div class="absolute h-1.5 rounded-full transition-all progress-bar-glow" :class="getScoreColor(evaluation.comment_quality)" :style="`width: ${evaluation.comment_quality}%`"></div>
                         </div>
-                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.comment_quality)" x-text="evaluation.comment_quality"></div>
+                        <div class="text-xl font-bold" :class="getScoreTextColor(evaluation.comment_quality)" x-text="evaluation.comment_quality"></div>
                     </div>
 
                     <!-- Code Duplication -->
-                    <div class="text-center">
-                        <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">DRY</div>
-                        <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-1">
-                            <div class="absolute h-2 rounded-full transition-all" :class="getScoreColor(evaluation.code_duplication)" :style="`width: ${evaluation.code_duplication}%`"></div>
+                    <div class="text-center p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">DRY</div>
+                        <div class="relative h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full mb-2 overflow-hidden">
+                            <div class="absolute h-1.5 rounded-full transition-all progress-bar-glow" :class="getScoreColor(evaluation.code_duplication)" :style="`width: ${evaluation.code_duplication}%`"></div>
                         </div>
-                        <div class="text-lg font-semibold" :class="getScoreTextColor(evaluation.code_duplication)" x-text="evaluation.code_duplication"></div>
+                        <div class="text-xl font-bold" :class="getScoreTextColor(evaluation.code_duplication)" x-text="evaluation.code_duplication"></div>
                     </div>
                 </div>
 
@@ -480,7 +641,14 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
         <template x-for="(agent, name) in agents" :key="name">
-            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div class="agent-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700"
+                 :class="{
+                     'running': agent.status === 'running',
+                     'completed': agent.status === 'completed',
+                     'error': agent.status === 'error'
+                 }">
+                <!-- Scan overlay for running agents -->
+                <div x-show="agent.status === 'running'" class="scan-overlay"></div>
 
                 <!-- Agent Header -->
                 <div class="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between"
@@ -491,15 +659,15 @@
                          'bg-red-50 dark:bg-red-900/20': agent.status === 'error'
                      }">
                     <div class="flex items-center gap-2">
-                        <!-- Status indicator -->
-                        <span class="w-2 h-2 rounded-full"
+                        <!-- Status indicator with glow -->
+                        <span class="w-2.5 h-2.5 rounded-full transition-all"
                               :class="{
                                   'bg-gray-400': agent.status === 'pending',
-                                  'bg-blue-500 animate-pulse': agent.status === 'running',
-                                  'bg-green-500': agent.status === 'completed',
-                                  'bg-red-500': agent.status === 'error'
+                                  'bg-blue-500 status-glow-running': agent.status === 'running',
+                                  'bg-green-500 status-glow-success': agent.status === 'completed',
+                                  'bg-red-500 status-glow-error': agent.status === 'error'
                               }"></span>
-                        <h3 class="font-semibold" x-text="agent.displayName"></h3>
+                        <h3 class="font-semibold text-gray-900 dark:text-white" x-text="agent.displayName"></h3>
 
                         <!-- Thinking button (only for Claude reviewers) -->
                         <button x-show="isClaudeReviewer(name) && agent.status === 'completed'"
@@ -544,16 +712,21 @@
                 </div>
 
                 <!-- Agent Content -->
-                <div class="p-4">
+                <div class="p-4 relative z-10">
                     <!-- Stats row -->
-                    <div class="flex items-center gap-4 mb-3 text-sm">
-                        <div class="flex items-center gap-1">
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="stats-badge inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                             :class="{
+                                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300': agent.issuesFound === 0,
+                                 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400': agent.issuesFound > 0 && agent.issuesFound <= 5,
+                                 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400': agent.issuesFound > 5
+                             }">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            <span x-text="agent.issuesFound"></span>
-                            <span class="text-gray-500">issues</span>
+                            <span class="font-semibold" x-text="agent.issuesFound"></span>
+                            <span class="opacity-75">issues</span>
                         </div>
                     </div>
 
@@ -1765,6 +1938,12 @@ function reviewApp() {
             if (score < 50) return 'text-red-600 dark:text-red-400';
             if (score < 75) return 'text-yellow-600 dark:text-yellow-400';
             return 'text-green-600 dark:text-green-400';
+        },
+
+        getScoreRingColor(score) {
+            if (score < 50) return '#ef4444';
+            if (score < 75) return '#eab308';
+            return '#22c55e';
         },
 
         selectAllCritical() {
