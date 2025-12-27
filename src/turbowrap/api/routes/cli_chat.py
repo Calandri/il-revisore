@@ -617,13 +617,17 @@ async def send_message(
     session_repository_id = cast(str | None, session.repository_id)
     session_current_branch = cast(str | None, session.current_branch)
     session_agent_name = cast(str | None, session.agent_name)
-    session_model = cast(str | None, session.model)
+    # Use model_override if provided (e.g., for slash commands)
+    session_model = data.model_override or cast(str | None, session.model)
     session_thinking_enabled = cast(bool, session.thinking_enabled)
     session_thinking_budget = cast(int | None, session.thinking_budget)
     session_reasoning_enabled = cast(bool, session.reasoning_enabled)
     session_display_name = cast(str | None, session.display_name)
     session_repository = session.repository
     session_claude_session_id = cast(str | None, session.claude_session_id)
+
+    if data.model_override:
+        logger.info(f"[MESSAGE] Using model override: {data.model_override}")
 
     async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         """Generate SSE events for streaming response."""

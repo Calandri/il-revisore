@@ -29,12 +29,12 @@ self.onconnect = (e) => {
     log('Page connected, total ports:', ports.length);
 
     port.onmessage = async (event) => {
-        const { type, sessionId, content, userMessage } = event.data;
+        const { type, sessionId, content, modelOverride, userMessage } = event.data;
         log('Message received:', type, sessionId);
 
         switch (type) {
             case 'SEND_MESSAGE':
-                await startStream(sessionId, content, userMessage);
+                await startStream(sessionId, content, userMessage, modelOverride);
                 break;
 
             case 'STOP_STREAM':
@@ -112,9 +112,13 @@ function getSessionState(sessionId) {
 
 /**
  * Start streaming response from backend
+ * @param {string} sessionId - Session ID
+ * @param {string} content - Message content
+ * @param {object} userMessage - User message object
+ * @param {string|null} modelOverride - Optional model override for this message
  */
-async function startStream(sessionId, content, userMessage) {
-    log('Starting stream for session:', sessionId);
+async function startStream(sessionId, content, userMessage, modelOverride = null) {
+    log('Starting stream for session:', sessionId, modelOverride ? `(model: ${modelOverride})` : '');
 
     // Stop any existing stream for this session
     if (activeStreams.has(sessionId)) {
@@ -138,10 +142,17 @@ async function startStream(sessionId, content, userMessage) {
 
     try {
         const url = `/api/cli-chat/sessions/${sessionId}/message`;
+
+        // Build request body
+        const body = { content };
+        if (modelOverride) {
+            body.model_override = modelOverride;
+        }
+
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content }),
+            body: JSON.stringify(body),
             signal: controller.signal
         });
 

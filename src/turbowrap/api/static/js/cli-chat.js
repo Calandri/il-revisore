@@ -642,13 +642,25 @@ function chatSidebar() {
 
             // Check for slash commands
             const { isCommand, expandedContent } = await this.expandSlashCommand(content);
+            let modelOverride = null;
+
             if (isCommand) {
                 if (!expandedContent) {
                     // Command not found, abort
                     return;
                 }
                 content = expandedContent;
+
+                // Use lightweight models for slash commands
+                const cliType = this.activeSession.cli_type;
+                if (cliType === 'claude') {
+                    modelOverride = 'claude-haiku-4-5-20251001';
+                } else if (cliType === 'gemini') {
+                    modelOverride = 'gemini-2.0-flash';
+                }
+                console.log(`[chatSidebar] Slash command detected, using model: ${modelOverride}`);
             }
+
             this.streaming = true;
             this.streamContent = '';
             this.systemInfo = [];  // Reset system info for new message
@@ -670,6 +682,7 @@ function chatSidebar() {
                     type: 'SEND_MESSAGE',
                     sessionId: this.activeSession.id,
                     content: content,
+                    modelOverride: modelOverride,
                     userMessage: userMsg
                 });
                 // Response will come via handleWorkerMessage
@@ -678,13 +691,15 @@ function chatSidebar() {
 
             // Fallback: direct fetch (legacy behavior)
             console.log('[chatSidebar] Sending via direct fetch (worker not available)');
-            await this.sendMessageDirect(content);
+            await this.sendMessageDirect(content, modelOverride);
         },
 
         /**
          * Direct fetch implementation (fallback when worker not available)
+         * @param {string} content - Message content
+         * @param {string|null} modelOverride - Optional model override for this message
          */
-        async sendMessageDirect(content) {
+        async sendMessageDirect(content, modelOverride = null) {
             // Create AbortController for cancellation
             this.abortController = new AbortController();
 
@@ -697,11 +712,17 @@ function chatSidebar() {
                 // Create new EventSource for SSE
                 const url = `/api/cli-chat/sessions/${this.activeSession.id}/message`;
 
+                // Build request body
+                const body = { content };
+                if (modelOverride) {
+                    body.model_override = modelOverride;
+                }
+
                 // Use fetch with POST for SSE (EventSource only supports GET)
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content }),
+                    body: JSON.stringify(body),
                     signal: this.abortController.signal
                 });
 

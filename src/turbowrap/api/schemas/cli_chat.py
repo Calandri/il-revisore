@@ -165,6 +165,10 @@ class CLIMessageCreate(BaseModel):
         max_length=100000,  # 100k chars for large prompts
         description="Message content",
     )
+    model_override: str | None = Field(
+        default=None,
+        description="Override model for this message (e.g., for slash commands)",
+    )
 
     @field_validator("content")
     @classmethod
