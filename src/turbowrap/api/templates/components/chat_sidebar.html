@@ -336,16 +336,16 @@
                     </button>
                     <div x-show="activeTooltip === 'backend'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Backend Dev Server</div>
                 </div>
-                <!-- Run Tests -->
+                <!-- Run Tests (/test) -->
                 <div class="relative">
                     <button @mouseenter="activeTooltip = 'tests'" @mouseleave="activeTooltip = null"
-                            @click="showToast('Run Tests - Coming soon', 'info')"
+                            @click="sendSlashCommand('test')"
                             class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-green-500 transition-all">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
                     </button>
-                    <div x-show="activeTooltip === 'tests'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Run Tests</div>
+                    <div x-show="activeTooltip === 'tests'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Run Tests (/test)</div>
                 </div>
             </div>
 

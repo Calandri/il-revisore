@@ -296,14 +296,14 @@ class GeminiCLI:
             model: Model name or type ("flash", "pro")
             timeout: Timeout in seconds
             auto_accept: Enable --yolo flag (auto-approve tool calls)
-            summarize_tool_output: Summarize long tool outputs to reduce tokens
+            summarize_tool_output: IGNORED - Gemini CLI doesn't support this flag
             s3_prefix: S3 path prefix for logs
         """
         self.settings = get_settings()
         self.working_dir = working_dir
         self.timeout = timeout
         self.auto_accept = auto_accept
-        self.summarize_tool_output = summarize_tool_output
+        # summarize_tool_output is ignored - Gemini CLI doesn't support it
         self.s3_prefix = s3_prefix
 
         # Resolve model name
@@ -395,8 +395,8 @@ class GeminiCLI:
             args = ["gemini", "--model", self.model]
             if self.auto_accept:
                 args.extend(["--approval-mode", "yolo"])
-            if self.summarize_tool_output:
-                args.append("--summarize-tool-output")
+            # Note: --summarize-tool-output doesn't exist in Gemini CLI
+            # The parameter is kept for API compatibility but ignored
             args.append(prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None

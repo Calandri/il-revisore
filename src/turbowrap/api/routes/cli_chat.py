@@ -1220,3 +1220,79 @@ def get_default_mcp_servers() -> dict[str, list[str]]:
     defaults = manager.get_available_defaults()
 
     return {"defaults": defaults}
+
+
+# ============================================================================
+# Slash Commands
+# ============================================================================
+
+# Directory containing slash command MD files
+COMMANDS_DIR = Path(__file__).parent.parent.parent.parent.parent / "commands"
+
+
+@router.get("/commands")
+def list_slash_commands() -> dict[str, Any]:
+    """List all available slash commands.
+
+    Returns list of commands with their names and descriptions.
+    """
+    commands = []
+
+    if COMMANDS_DIR.exists():
+        for md_file in COMMANDS_DIR.glob("*.md"):
+            command_name = md_file.stem
+            # Read first line as description (title)
+            try:
+                content = md_file.read_text()
+                first_line = content.split("\n")[0].strip()
+                # Remove markdown header prefix
+                description = first_line.lstrip("# ").strip()
+            except Exception:
+                description = command_name
+
+            commands.append(
+                {
+                    "name": command_name,
+                    "description": description,
+                    "path": str(md_file),
+                }
+            )
+
+    return {"commands": commands, "total": len(commands)}
+
+
+@router.get("/commands/{command_name}")
+def get_slash_command(command_name: str) -> dict[str, str]:
+    """Get a slash command prompt by name.
+
+    Args:
+        command_name: Command name without slash (e.g., 'test')
+
+    Returns:
+        Command prompt content from the MD file
+    """
+    # Sanitize command name (prevent path traversal)
+    safe_name = "".join(c for c in command_name if c.isalnum() or c in "-_")
+    md_file = COMMANDS_DIR / f"{safe_name}.md"
+
+    if not md_file.exists():
+        raise HTTPException(status_code=404, detail=f"Slash command '/{command_name}' not found")
+
+    try:
+        content = md_file.read_text()
+
+        # Skip the header line (# /command - Description)
+        lines = content.split("\n")
+        if lines and lines[0].startswith("#"):
+            prompt = "\n".join(lines[1:]).strip()
+        else:
+            prompt = content.strip()
+
+        return {
+            "name": command_name,
+            "prompt": prompt,
+            "path": str(md_file),
+        }
+    except Exception as e:
+        logger.error(f"Error reading slash command '{command_name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading slash command: {e}") from e

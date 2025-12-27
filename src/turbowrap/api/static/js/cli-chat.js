@@ -635,8 +635,18 @@ function chatSidebar() {
         async sendMessage() {
             if (!this.inputMessage.trim() || !this.activeSession || this.streaming) return;
 
-            const content = this.inputMessage.trim();
+            let content = this.inputMessage.trim();
             this.inputMessage = '';
+
+            // Check for slash commands
+            const { isCommand, expandedContent } = await this.expandSlashCommand(content);
+            if (isCommand) {
+                if (!expandedContent) {
+                    // Command not found, abort
+                    return;
+                }
+                content = expandedContent;
+            }
             this.streaming = true;
             this.streamContent = '';
             this.systemInfo = [];  // Reset system info for new message
@@ -1015,6 +1025,121 @@ function chatSidebar() {
          */
         toggleHistory() {
             this.showHistory = !this.showHistory;
+        },
+
+        // ============================================================
+        // SLASH COMMANDS
+        // ============================================================
+
+        /**
+         * Available slash commands (loaded from backend)
+         */
+        slashCommands: {},
+
+        /**
+         * Load slash command prompt from backend
+         * @param {string} commandName - Command name without slash (e.g., 'test')
+         * @returns {Promise<string|null>} - Command prompt or null if not found
+         */
+        async loadSlashCommand(commandName) {
+            // Check cache first
+            if (this.slashCommands[commandName]) {
+                return this.slashCommands[commandName];
+            }
+
+            try {
+                const res = await fetch(`/api/cli-chat/commands/${commandName}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.slashCommands[commandName] = data.prompt;
+                    return data.prompt;
+                } else {
+                    console.warn(`[chatSidebar] Slash command /${commandName} not found`);
+                    return null;
+                }
+            } catch (error) {
+                console.error(`[chatSidebar] Error loading slash command /${commandName}:`, error);
+                return null;
+            }
+        },
+
+        /**
+         * Check if message is a slash command and expand it
+         * @param {string} content - Message content
+         * @returns {Promise<{isCommand: boolean, expandedContent: string}>}
+         */
+        async expandSlashCommand(content) {
+            const trimmed = content.trim();
+
+            // Check if starts with /
+            if (!trimmed.startsWith('/')) {
+                return { isCommand: false, expandedContent: content };
+            }
+
+            // Extract command name (first word after /)
+            const match = trimmed.match(/^\/(\w+)(?:\s+(.*))?$/);
+            if (!match) {
+                return { isCommand: false, expandedContent: content };
+            }
+
+            const commandName = match[1].toLowerCase();
+            const additionalArgs = match[2] || '';
+
+            // Load command prompt
+            const prompt = await this.loadSlashCommand(commandName);
+            if (!prompt) {
+                this.showToast(`Comando /${commandName} non trovato`, 'error');
+                return { isCommand: true, expandedContent: null };
+            }
+
+            // Build context-aware prompt
+            let expandedContent = prompt;
+
+            // Add repository context if available
+            if (this.activeSession?.repository_id) {
+                const repo = this.repositories.find(r => r.id === this.activeSession.repository_id);
+                const repoName = repo?.name || 'repository';
+                const branch = this.activeSession.current_branch || 'main';
+
+                expandedContent = `[Contesto: Repository "${repoName}", Branch "${branch}"]\n\n${expandedContent}`;
+            }
+
+            // Append any additional arguments from user
+            if (additionalArgs) {
+                expandedContent += `\n\nNote aggiuntive: ${additionalArgs}`;
+            }
+
+            console.log(`[chatSidebar] Expanded /${commandName} command`);
+            return { isCommand: true, expandedContent };
+        },
+
+        /**
+         * Insert a slash command into the input field
+         * @param {string} commandName - Command name without slash
+         */
+        insertSlashCommand(commandName) {
+            this.inputMessage = `/${commandName}`;
+            // Focus the input
+            this.$nextTick(() => {
+                const input = document.querySelector('#chat-input');
+                if (input) {
+                    input.focus();
+                }
+            });
+        },
+
+        /**
+         * Send slash command directly (from toolbar button)
+         * @param {string} commandName - Command name without slash
+         */
+        async sendSlashCommand(commandName) {
+            if (!this.activeSession || this.streaming) {
+                this.showToast('Seleziona una chat prima', 'error');
+                return;
+            }
+
+            this.inputMessage = `/${commandName}`;
+            await this.sendMessage();
         }
     };
 }
