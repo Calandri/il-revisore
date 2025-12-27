@@ -279,7 +279,7 @@
                     </thead>
                     <tbody class="divide-y dark:divide-gray-700">
                         <template x-for="op in historyOperations" :key="op.operation_id">
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer" @click="showOperationDetail(op)">
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="px-2 py-1 rounded-full text-xs font-medium" :class="getOperationBadgeClass(op.type)" x-text="getOperationLabel(op.type)"></span>
                                 </td>
@@ -399,6 +399,164 @@
             </div>
         </template>
     </div> <!-- End Stats Tab -->
+
+    <!-- Operation Detail Modal -->
+    <div x-show="selectedOperation" x-cloak
+         class="fixed inset-0 z-50 overflow-y-auto"
+         @keydown.escape.window="selectedOperation = null">
+        <!-- Backdrop -->
+        <div class="fixed inset-0 bg-black/50 transition-opacity" @click="selectedOperation = null"></div>
+
+        <!-- Modal -->
+        <div class="flex min-h-full items-center justify-center p-4">
+            <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden"
+                 @click.stop>
+                <!-- Header -->
+                <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
+                    <div class="flex items-center gap-3">
+                        <span class="px-2 py-1 rounded-full text-xs font-medium"
+                              :class="getOperationBadgeClass(selectedOperation?.type)"
+                              x-text="getOperationLabel(selectedOperation?.type)"></span>
+                        <span class="px-2 py-1 rounded-full text-xs font-medium"
+                              :class="getStatusBadgeClass(selectedOperation?.status)"
+                              x-text="selectedOperation?.status"></span>
+                    </div>
+                    <button @click="selectedOperation = null"
+                            class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Body -->
+                <div class="px-6 py-4 overflow-y-auto max-h-[calc(90vh-120px)] space-y-6">
+                    <!-- Basic Info -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">ID Operazione</label>
+                            <code class="text-sm font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded" x-text="selectedOperation?.operation_id"></code>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Repository</label>
+                            <span class="text-sm" x-text="selectedOperation?.repository_name || '-'"></span>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Utente</label>
+                            <span class="text-sm" x-text="selectedOperation?.user_name || 'System'"></span>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Branch</label>
+                            <span class="text-sm font-mono" x-text="selectedOperation?.branch_name || '-'"></span>
+                        </div>
+                    </div>
+
+                    <!-- Timing -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Inizio</label>
+                            <span class="text-sm" x-text="formatDateTime(selectedOperation?.started_at)"></span>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Fine</label>
+                            <span class="text-sm" x-text="formatDateTime(selectedOperation?.completed_at)"></span>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Durata</label>
+                            <span class="text-sm font-semibold" x-text="formatDuration(selectedOperation?.duration_seconds)"></span>
+                        </div>
+                    </div>
+
+                    <!-- Details -->
+                    <template x-if="selectedOperation?.details && Object.keys(selectedOperation.details).length > 0">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Dettagli</label>
+                            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-3">
+                                <!-- Model -->
+                                <template x-if="selectedOperation?.details?.model">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 w-24">Model:</span>
+                                        <span class="text-sm font-mono" x-text="selectedOperation.details.model"></span>
+                                    </div>
+                                </template>
+                                <!-- CLI -->
+                                <template x-if="selectedOperation?.details?.cli">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 w-24">CLI:</span>
+                                        <span class="text-sm font-mono" x-text="selectedOperation.details.cli"></span>
+                                    </div>
+                                </template>
+                                <!-- Agent -->
+                                <template x-if="selectedOperation?.details?.agent">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 w-24">Agent:</span>
+                                        <span class="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400 rounded text-xs font-mono" x-text="selectedOperation.details.agent"></span>
+                                    </div>
+                                </template>
+                                <!-- Working Dir -->
+                                <template x-if="selectedOperation?.details?.working_dir">
+                                    <div class="flex items-start gap-2">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 w-24 shrink-0">Working Dir:</span>
+                                        <code class="text-xs font-mono bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded break-all" x-text="selectedOperation.details.working_dir"></code>
+                                    </div>
+                                </template>
+                                <!-- Prompt Length -->
+                                <template x-if="selectedOperation?.details?.prompt_length">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 w-24">Prompt Size:</span>
+                                        <span class="text-sm" x-text="selectedOperation.details.prompt_length.toLocaleString() + ' chars'"></span>
+                                    </div>
+                                </template>
+                                <!-- S3 Prompt URL -->
+                                <template x-if="selectedOperation?.details?.s3_prompt_url">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 w-24">Prompt:</span>
+                                        <a :href="selectedOperation.details.s3_prompt_url" target="_blank"
+                                           class="text-sm text-primary hover:underline flex items-center gap-1">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                            </svg>
+                                            Visualizza su S3
+                                        </a>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Prompt Preview -->
+                    <template x-if="selectedOperation?.details?.prompt_preview">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Prompt Preview</label>
+                            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap" x-text="selectedOperation.details.prompt_preview"></p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Error -->
+                    <template x-if="selectedOperation?.error">
+                        <div>
+                            <label class="block text-xs font-medium text-red-500 mb-2">Errore</label>
+                            <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                                <p class="text-sm text-red-700 dark:text-red-400 whitespace-pre-wrap" x-text="selectedOperation.error"></p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Result -->
+                    <template x-if="selectedOperation?.result && Object.keys(selectedOperation.result).length > 0">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Risultato</label>
+                            <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                                <pre class="text-xs font-mono text-gray-700 dark:text-gray-300 overflow-x-auto" x-text="JSON.stringify(selectedOperation.result, null, 2)"></pre>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -426,6 +584,9 @@ function liveTasksApp() {
         stats: null,
         statsLoading: false,
         statsDays: 7,
+
+        // Modal
+        selectedOperation: null,
 
         // Operation labels
         operationLabels: {
@@ -704,6 +865,11 @@ function liveTasksApp() {
             } finally {
                 this.statsLoading = false;
             }
+        },
+
+        // Modal methods
+        showOperationDetail(op) {
+            this.selectedOperation = op;
         },
 
         init() {
