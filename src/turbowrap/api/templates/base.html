@@ -154,6 +154,14 @@
                     if (triggers.showToast) {
                         window.dispatchEvent(new CustomEvent('show-toast', { detail: triggers.showToast }));
                     }
+                    if (triggers.showSyncError) {
+                        const error = triggers.showSyncError.error;
+                        if (error === 'token_expired') {
+                            alert('TOKEN GITHUB SCADUTO!\n\nIl token GitHub non è più valido.\n\nPer risolvere:\n1. Vai su GitHub > Settings > Developer settings > Personal access tokens\n2. Genera un nuovo token\n3. Aggiorna il token nelle impostazioni del repository');
+                        } else {
+                            alert('Errore sincronizzazione:\n\n' + error);
+                        }
+                    }
                 } catch(e) {}
             }
         });

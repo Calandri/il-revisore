@@ -430,21 +430,33 @@ async def htmx_sync_repo(request: Request, repo_id: str, db: Session = Depends(g
     from ...core.repo_manager import RepoManager
 
     manager = RepoManager(db)
+    sync_error = None
     try:
         manager.sync(repo_id)
     except Exception as e:
-        # Log error but continue to return updated list
-        print(f"Sync error: {e}")
+        # Capture error for UI display
+        error_str = str(e)
+        print(f"Sync error: {error_str}")
+        # Check for token expiration
+        if "TOKEN_EXPIRED" in error_str:
+            sync_error = "token_expired"
+        else:
+            sync_error = error_str
 
-    # Return updated list
+    # Return updated list with optional error
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return cast(
-        Response,
-        templates.TemplateResponse(
-            "components/repo_list.html", {"request": request, "repos": repos}
-        ),
+    response = templates.TemplateResponse(
+        "components/repo_list.html",
+        {"request": request, "repos": repos, "sync_error": sync_error},
     )
+    # Add HX-Trigger header for toast notification
+    if sync_error:
+        import json
+
+        trigger_data = {"showSyncError": {"error": sync_error}}
+        response.headers["HX-Trigger"] = json.dumps(trigger_data)
+    return cast(Response, response)
 
 
 @router.post("/htmx/repos/{repo_id}/reclone", response_class=HTMLResponse)
@@ -461,6 +473,7 @@ async def htmx_reclone_repo(
     logger = logging.getLogger(__name__)
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
 
+    sync_error = None
     if repo:
         try:
             local_path = Path(str(repo.local_path))
@@ -475,21 +488,31 @@ async def htmx_reclone_repo(
             manager.sync(repo_id)
             logger.info(f"[RECLONE] Successfully recloned: {repo.name}")
         except Exception as e:
-            logger.error(f"[RECLONE] Failed for {repo.name}: {e}")
+            error_str = str(e)
+            logger.error(f"[RECLONE] Failed for {repo.name}: {error_str}")
             # Mark as error
             repo.status = "error"  # type: ignore[assignment]
             db.commit()
+            # Check for token expiration
+            if "TOKEN_EXPIRED" in error_str:
+                sync_error = "token_expired"
+            else:
+                sync_error = error_str
 
-    # Return updated list (redirect to GET which loads evaluations properly)
+    # Return updated list with optional error
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return cast(
-        Response,
-        templates.TemplateResponse(
-            "components/repo_list.html",
-            {"request": request, "repos": repos, "evaluations": {}},
-        ),
+    response = templates.TemplateResponse(
+        "components/repo_list.html",
+        {"request": request, "repos": repos, "evaluations": {}, "sync_error": sync_error},
     )
+    # Add HX-Trigger header for toast notification
+    if sync_error:
+        import json
+
+        trigger_data = {"showSyncError": {"error": sync_error}}
+        response.headers["HX-Trigger"] = json.dumps(trigger_data)
+    return cast(Response, response)
 
 
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)

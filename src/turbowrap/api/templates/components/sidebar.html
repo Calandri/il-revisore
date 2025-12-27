@@ -51,116 +51,125 @@
         <!-- Dashboard -->
         <a href="/"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'dashboard' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
             </svg>
             <span x-show="sidebarOpen">Dashboard</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Dashboard</div>
         </a>
 
         <!-- Repository -->
         <a href="/repos"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'repos' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
             </svg>
             <span x-show="sidebarOpen">Repository</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Repository</div>
         </a>
 
         <!-- Code Review -->
         <a href="/review"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'review' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
             </svg>
             <span x-show="sidebarOpen">Code Review</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Code Review</div>
         </a>
 
         <!-- Issues -->
         <a href="/issues"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'issues' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
             </svg>
             <span x-show="sidebarOpen">Issues</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Issues</div>
         </a>
 
         <!-- Linear -->
         <a href="/linear"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'linear' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
             </svg>
             <span x-show="sidebarOpen">Linear</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Linear</div>
         </a>
 
         <!-- File Editor -->
         <a href="/files"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'files' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
             </svg>
             <span x-show="sidebarOpen">File Editor</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">File Editor</div>
         </a>
 
         <!-- Databases -->
         <a href="/databases"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'databases' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
             </svg>
             <span x-show="sidebarOpen">Database</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Database</div>
         </a>
 
         <!-- Endpoints -->
         <a href="/endpoints"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'endpoints' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M13 10V3L4 14h7v7l9-11h-7z"/>
             </svg>
             <span x-show="sidebarOpen">Endpoints</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Endpoints</div>
         </a>
 
         <!-- Chat -->
         <a href="/chat"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+           class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   {% if active_page == 'chat' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
             </svg>
             <span x-show="sidebarOpen">Chat AI</span>
+            <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Chat AI</div>
         </a>
 
         <!-- Live Tasks -->
         <div x-data="liveTasksBadge()" x-init="startPolling()">
             <a href="/live-tasks"
                @click="if(window.innerWidth < 768) sidebarOpen = false"
-               class="flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative
+               class="group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                       {% if active_page == 'live_tasks' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
                 <!-- Gear icon with animation when active -->
                 <div class="relative">
@@ -171,6 +180,10 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                     </svg>
+                    <!-- Badge for collapsed sidebar -->
+                    <span x-show="!sidebarOpen && count > 0"
+                          x-text="count"
+                          class="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full bg-green-500 text-white flex items-center justify-center animate-pulse"></span>
                 </div>
                 <span x-show="sidebarOpen" class="flex items-center gap-2">
                     Live Tasks
@@ -179,10 +192,7 @@
                           x-text="count"
                           class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-green-500 text-white animate-pulse"></span>
                 </span>
-                <!-- Badge for collapsed sidebar -->
-                <span x-show="!sidebarOpen && count > 0"
-                      x-text="count"
-                      class="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-bold rounded-full bg-green-500 text-white flex items-center justify-center animate-pulse"></span>
+                <div x-show="!sidebarOpen" class="sidebar-tooltip hidden md:block">Live Tasks</div>
             </a>
         </div>
 

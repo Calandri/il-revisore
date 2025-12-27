@@ -265,10 +265,19 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
         return repo_path
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.replace(token, "***") if token else e.stderr
-        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+        # Detect token/auth related errors
+        auth_errors = [
+            "Authentication failed",
+            "could not read Username",
+            "could not read Password",
+            "terminal prompts disabled",
+            "Invalid username or password",
+            "Bad credentials",
+        ]
+        if any(err in error_msg for err in auth_errors):
             raise SyncError(
-                "Git authentication failed. Configure credentials with: "
-                "git config --global credential.helper osxkeychain"
+                "TOKEN_EXPIRED: GitHub token scaduto o non valido. "
+                "Rigenerare il token in Settings > Developer settings > Personal access tokens"
             ) from e
         raise SyncError(f"Failed to pull: {error_msg}") from e
 
