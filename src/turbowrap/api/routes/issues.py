@@ -57,6 +57,10 @@ class IssueResponse(BaseModel):
     fixed_at: datetime | None = None
     fixed_by: str | None = None
 
+    # Effort estimation (populated by reviewer agent)
+    estimated_effort: int | None = None  # 1-5 scale (1=trivial, 5=major)
+    estimated_files_count: int | None = None
+
     class Config:
         from_attributes = True
 
