@@ -24,3 +24,10 @@ ENV/
 Thumbs.db
 .env
 .coverage
+
+# Node.js
+node_modules/
+dist/
+*.tsbuildinfo
+.npm/
+.yarn/
