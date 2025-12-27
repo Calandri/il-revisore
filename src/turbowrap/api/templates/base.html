@@ -14,6 +14,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}TurboWrap{% endblock %}</title>
 
+    <!-- Critical: Hide x-cloak elements immediately (before any CSS/JS loads) -->
+    <style>[x-cloak] { display: none !important; }</style>
+
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
