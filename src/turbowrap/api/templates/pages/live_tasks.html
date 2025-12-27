@@ -318,6 +318,7 @@
                         <tr>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tipo</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stato</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Issues</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Repository</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Utente</th>
                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Inizio</th>
@@ -333,6 +334,19 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="px-2 py-1 rounded-full text-xs font-medium" :class="getStatusBadgeClass(op.status)" x-text="op.status"></span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <template x-if="op.details?.issue_codes">
+                                        <div class="flex flex-wrap gap-1">
+                                            <template x-for="code in op.details.issue_codes" :key="code">
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                                      x-text="code"></span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template x-if="!op.details?.issue_codes">
+                                        <span class="text-gray-400">-</span>
+                                    </template>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300" x-text="op.repository_name || '-'"></td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300" x-text="op.user_name || 'System'"></td>

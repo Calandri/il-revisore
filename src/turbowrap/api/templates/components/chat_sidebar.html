@@ -155,7 +155,7 @@
         <!-- Chat Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
             <div class="flex items-center gap-3">
-                <button @click="activeSession = null" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <button @click="activeSession = null; localStorage.removeItem('chatActiveSessionId')" class="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                     <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
@@ -335,7 +335,6 @@
                 <div class="flex-1 relative">
                     <textarea x-model="inputMessage"
                               @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim() && !streaming) sendMessage()"
-                              :disabled="streaming"
                               placeholder="Scrivi un messaggio..."
                               rows="1"
                               class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-4 py-3 pr-12 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"

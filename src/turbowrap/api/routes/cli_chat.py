@@ -564,15 +564,11 @@ async def send_message(
                     # Extract content from different event types
                     content: str | None = None
 
-                    if event_type == "assistant":
-                        # Assistant message with content blocks
-                        if "message" in event and "content" in event["message"]:
-                            for block in event["message"]["content"]:
-                                if block.get("type") == "text":
-                                    content = block.get("text", "")
-                                    break
+                    # NOTE: Skip "assistant" events - they contain the FULL accumulated
+                    # message at the end, which would duplicate all content we already
+                    # streamed via content_block_delta events.
 
-                    elif event_type == "content_block_delta":
+                    if event_type == "content_block_delta":
                         # Streaming delta - this is the main streaming event!
                         delta = event.get("delta", {})
                         if delta.get("type") == "text_delta":

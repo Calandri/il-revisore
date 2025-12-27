@@ -47,6 +47,16 @@ function chatSidebar() {
                 console.log('[chatSidebar] Sessions loaded:', this.sessions.length);
                 await this.loadAgents();
                 console.log('[chatSidebar] Agents loaded:', this.agents.length);
+
+                // Restore active session from localStorage
+                const savedSessionId = localStorage.getItem('chatActiveSessionId');
+                if (savedSessionId && this.sessions.length > 0) {
+                    const session = this.sessions.find(s => s.id === savedSessionId);
+                    if (session) {
+                        console.log('[chatSidebar] Restoring active session:', savedSessionId);
+                        await this.selectSession(session);
+                    }
+                }
             } catch (error) {
                 console.error('[chatSidebar] Init error:', error);
             }
@@ -127,6 +137,9 @@ function chatSidebar() {
             this.messages = [];
             this.showSettings = false;
 
+            // Persist active session ID for cross-page navigation
+            localStorage.setItem('chatActiveSessionId', session.id);
+
             try {
                 const url = `/api/cli-chat/sessions/${session.id}/messages`;
                 console.log('[selectSession] Fetching:', url);
@@ -196,6 +209,7 @@ function chatSidebar() {
                     this.sessions = this.sessions.filter(s => s.id !== sessionId);
                     if (this.activeSession?.id === sessionId) {
                         this.activeSession = null;
+                        localStorage.removeItem('chatActiveSessionId');
                     }
                     this.showToast('Chat eliminata', 'success');
                 }
