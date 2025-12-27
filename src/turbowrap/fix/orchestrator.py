@@ -115,6 +115,34 @@ class FixOrchestrator:
             timeout=GEMINI_CLI_TIMEOUT,
         )
 
+        # Cache for GitHub token
+        self._github_token_cache: str | None = None
+
+    def _get_github_token(self) -> str | None:
+        """Get GitHub token from database settings.
+
+        Used to authenticate git operations in Claude CLI subprocess.
+        Token is passed via environment variable, not in prompts (for security).
+        """
+        if self._github_token_cache is not None:
+            return self._github_token_cache
+
+        from turbowrap.db.models import Setting
+        from turbowrap.db.session import SessionLocal
+
+        try:
+            db = SessionLocal()
+            setting = db.query(Setting).filter(Setting.key == "github_token").first()
+            if setting and setting.value:
+                self._github_token_cache = str(setting.value)
+                return self._github_token_cache
+        except Exception as e:
+            logger.warning(f"Failed to get GitHub token from DB: {e}")
+        finally:
+            db.close()
+
+        return None
+
     def _load_agent(self, agent_path: Path) -> str:
         """Load agent prompt from MD file, stripping frontmatter."""
         cache_key = str(agent_path)
@@ -1349,6 +1377,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             model=model,
             timeout=timeout,
             s3_prefix="fix",
+            github_token=self._get_github_token(),
         )
 
     async def _run_claude_cli(

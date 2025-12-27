@@ -49,6 +49,10 @@ COPY agents/ ./agents/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
+# Configure git credential helper to use GITHUB_TOKEN env var
+# When git needs authentication, this helper provides the token from environment
+RUN git config --global credential.helper '!f() { echo "password=${GITHUB_TOKEN}"; }; f'
+
 # Setup Claude Code agents and settings for appuser
 RUN mkdir -p /home/appuser/.claude/agents
 COPY agents/ /home/appuser/.claude/agents/

@@ -119,6 +119,7 @@ class ClaudeCLI:
         s3_prefix: str = "claude-cli",
         verbose: bool = True,
         skip_permissions: bool = True,
+        github_token: str | None = None,
     ):
         """Initialize Claude CLI runner.
 
@@ -130,6 +131,7 @@ class ClaudeCLI:
             s3_prefix: S3 path prefix for logs
             verbose: Enable --verbose flag (required for stream-json)
             skip_permissions: Enable --dangerously-skip-permissions flag
+            github_token: GitHub token for git operations (passed to subprocess env)
         """
         self.settings = get_settings()
         self.agent_md_path = agent_md_path
@@ -138,6 +140,7 @@ class ClaudeCLI:
         self.s3_prefix = s3_prefix
         self.verbose = verbose
         self.skip_permissions = skip_permissions
+        self.github_token = github_token
 
         # Resolve model name
         if model is None:
@@ -428,6 +431,10 @@ class ClaudeCLI:
         try:
             # Build environment
             env = os.environ.copy()
+
+            # GitHub token for git operations (credential helper reads from this)
+            if self.github_token:
+                env["GITHUB_TOKEN"] = self.github_token
 
             # Get API key from AWS Secrets Manager or environment
             api_key = get_anthropic_api_key() or os.environ.get("ANTHROPIC_API_KEY")
