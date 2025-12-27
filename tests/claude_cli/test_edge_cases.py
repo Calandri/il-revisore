@@ -210,7 +210,7 @@ class TestLargeOutputs:
             '"costUSD":0.05},'
             '"claude-sonnet-4-20250514":{"inputTokens":200,"outputTokens":100,'
             '"costUSD":0.001},'
-            '"claude-haiku-3-5-20241022":{"inputTokens":50,"outputTokens":25,'
+            '"claude-haiku-4-5-20251001":{"inputTokens":50,"outputTokens":25,'
             '"costUSD":0.0001}'
         )
         raw_output = f'{{"type":"result","result":"Done","modelUsage":{{{model_usage_json}}}}}'
