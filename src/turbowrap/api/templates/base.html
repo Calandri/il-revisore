@@ -53,11 +53,14 @@
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
 
+    <!-- Flex column layout: banner on top, rest takes remaining space -->
+    <div class="flex flex-col h-screen">
+
     <!-- Active Fix Sessions Banner -->
     {% include "components/active_fix_banner.html" %}
 
     <!-- Mobile Header - visible only on mobile -->
-    <header class="fixed top-0 left-0 right-0 h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 z-30 flex items-center justify-between px-4 md:hidden">
+    <header class="sticky top-0 left-0 right-0 h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 z-30 flex items-center justify-between px-4 md:hidden">
         <button @click="sidebarOpen = !sidebarOpen"
                 class="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,13 +113,13 @@
         </template>
     </div>
 
-    <!-- Layout -->
-    <div class="flex h-screen overflow-hidden">
+    <!-- Layout (takes remaining space after banner) -->
+    <div class="flex flex-1 overflow-hidden">
         <!-- Left Sidebar -->
         {% include "components/sidebar.html" %}
 
         <!-- Main content -->
-        <main class="flex-1 overflow-auto transition-all duration-300 pt-14 md:pt-0"
+        <main class="flex-1 overflow-auto transition-all duration-300"
               :class="{
                   'md:ml-64': sidebarOpen,
                   'md:ml-16': !sidebarOpen,
@@ -132,6 +135,8 @@
         <!-- Right Chat Sidebar -->
         {% include "components/chat_sidebar.html" %}
     </div>
+
+    </div> <!-- End flex column layout -->
 
     <!-- Custom JS -->
     <script src="/static/js/app.js"></script>

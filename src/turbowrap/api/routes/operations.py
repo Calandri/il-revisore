@@ -15,7 +15,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..services.operation_tracker import OperationType, get_tracker
@@ -340,17 +340,30 @@ async def cancel_operation(operation_id: str) -> dict[str, str]:
     For operations that support true cancellation (like fix sessions),
     use the dedicated cancel endpoint.
     """
-    tracker = get_tracker()
-    op = tracker.cancel(operation_id)
+    logger.info(f"[OPERATIONS] Cancel request for operation: {operation_id}")
 
-    if not op:
-        return {"status": "not_found", "message": f"Operation {operation_id} not found"}
+    try:
+        tracker = get_tracker()
+        op = tracker.cancel(operation_id)
 
-    return {
-        "status": "cancelled",
-        "message": f"Operation {operation_id} marked as cancelled",
-        "type": op.operation_type.value,
-    }
+        if not op:
+            logger.warning(f"[OPERATIONS] Operation not found: {operation_id}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Operation {operation_id} not found in tracker",
+            )
+
+        logger.info(f"[OPERATIONS] Cancelled operation: {operation_id}")
+        return {
+            "status": "cancelled",
+            "message": f"Operation {operation_id} marked as cancelled",
+            "type": op.operation_type.value,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[OPERATIONS] Error cancelling operation {operation_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/issues/reset-stuck")
