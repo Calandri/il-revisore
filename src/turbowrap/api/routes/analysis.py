@@ -23,9 +23,6 @@ from ...utils.aws_secrets import get_anthropic_api_key
 from ...utils.git_utils import get_current_branch
 from ..deps import get_db
 
-# Lint types that should use Gemini CLI (faster) instead of Claude CLI
-GEMINI_LINT_TYPES = {"mypy"}  # mypy is slow with Claude, use Gemini Flash
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -40,6 +37,9 @@ LINT_TYPES = {
     "FE": ["typescript", "eslint"],  # Frontend linting
     "BE": ["ruff", "mypy"],  # Backend linting
 }
+
+# Lint types that use Gemini CLI (faster for complex analysis)
+GEMINI_LINT_TYPES = {"mypy"}
 
 
 def _load_agent(agent_path: Path) -> str:
@@ -724,6 +724,9 @@ def _parse_lint_fix_output(output: str, lint_type: str) -> LintFixResult:
             continue
         try:
             event = json.loads(line)
+            # Skip non-dict values (e.g., strings are valid JSON but don't have .get())
+            if not isinstance(event, dict):
+                continue
             if event.get("type") == "result":
                 # Check for errors
                 if event.get("is_error"):
