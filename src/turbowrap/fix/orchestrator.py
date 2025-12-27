@@ -128,9 +128,11 @@ class FixOrchestrator:
             return self._github_token_cache
 
         from turbowrap.db.models import Setting
-        from turbowrap.db.session import SessionLocal
+        from turbowrap.db.session import get_session_local
 
+        db = None
         try:
+            SessionLocal = get_session_local()
             db = SessionLocal()
             setting = db.query(Setting).filter(Setting.key == "github_token").first()
             if setting and setting.value:
@@ -139,7 +141,8 @@ class FixOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to get GitHub token from DB: {e}")
         finally:
-            db.close()
+            if db is not None:
+                db.close()
 
         return None
 
