@@ -9,9 +9,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ...db.models import Endpoint as EndpointModel
 from ...db.models import Repository
 from ..deps import get_db
-from ..services.endpoint_detector import detect_endpoints, result_to_dict
+from ..services.endpoint_detector import (
+    detect_endpoints,
+    result_to_dict,
+    save_endpoints_to_db,
+)
 
 router = APIRouter(prefix="/endpoints", tags=["endpoints"])
 logger = logging.getLogger(__name__)
@@ -41,6 +46,8 @@ class EndpointInfo(BaseModel):
     parameters: list[EndpointParameter] = []
     response_type: str = ""
     auth_required: bool = False
+    visibility: str = "private"  # public, private, internal
+    auth_type: str = ""  # Bearer, Basic, API-Key, OAuth2, etc.
     tags: list[str] = []
 
 
@@ -220,8 +227,12 @@ def trigger_endpoint_detection(
     # Run detection synchronously for now (could be async with background_tasks)
     try:
         result = detect_endpoints(str(repo.local_path), use_ai=use_ai)
-        result_dict = result_to_dict(result)
 
+        # Save to new Endpoint table (upsert - no duplicates)
+        saved_count = save_endpoints_to_db(db, str(repo.id), result)
+
+        # Also save summary to metadata for backwards compatibility
+        result_dict = result_to_dict(result)
         _save_endpoints_to_metadata(repo, result_dict, db)
 
         if result.error:
@@ -233,7 +244,7 @@ def trigger_endpoint_detection(
 
         return DetectionResponse(
             status="success",
-            message=f"Detected {len(result.routes)} endpoints using {result.framework} framework",
+            message=f"Detected {len(result.routes)} endpoints ({saved_count} saved) using {result.framework} framework",
             endpoint_count=len(result.routes),
         )
 
@@ -246,9 +257,39 @@ def trigger_endpoint_detection(
         )
 
 
-@router.delete("/{repo_id}")
-def clear_repo_endpoints(repo_id: str, db: Session = Depends(get_db)) -> dict[str, str]:
-    """Clear detected endpoints for a repository."""
+class EndpointDB(BaseModel):
+    """Endpoint from database table."""
+
+    id: str
+    method: str
+    path: str
+    file: str | None = None
+    line: int | None = None
+    description: str | None = None
+    parameters: list[EndpointParameter] = []
+    response_type: str | None = None
+    requires_auth: bool = False
+    visibility: str = "private"
+    auth_type: str | None = None
+    tags: list[str] = []
+    framework: str | None = None
+    detected_at: str | None = None
+
+
+@router.get("/{repo_id}/db", response_model=list[EndpointDB])
+def get_repo_endpoints_from_db(
+    repo_id: str,
+    requires_auth: bool | None = None,
+    visibility: str | None = None,
+    db: Session = Depends(get_db),
+) -> list[EndpointDB]:
+    """Get endpoints from database table with optional filters.
+
+    Args:
+        repo_id: Repository ID.
+        requires_auth: Filter by auth requirement (True/False).
+        visibility: Filter by visibility (public/private/internal).
+    """
     repo = (
         db.query(Repository)
         .filter(Repository.id == repo_id, Repository.status != "deleted")
@@ -257,14 +298,60 @@ def clear_repo_endpoints(repo_id: str, db: Session = Depends(get_db)) -> dict[st
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
+    query = db.query(EndpointModel).filter(EndpointModel.repository_id == repo_id)
+
+    if requires_auth is not None:
+        query = query.filter(EndpointModel.requires_auth == requires_auth)
+    if visibility:
+        query = query.filter(EndpointModel.visibility == visibility)
+
+    endpoints = query.order_by(EndpointModel.path).all()
+
+    return [
+        EndpointDB(
+            id=str(ep.id),
+            method=ep.method,
+            path=ep.path,
+            file=ep.file,
+            line=ep.line,
+            description=ep.description,
+            parameters=[EndpointParameter(**p) for p in (ep.parameters or [])],
+            response_type=ep.response_type,
+            requires_auth=ep.requires_auth or False,
+            visibility=ep.visibility or "private",
+            auth_type=ep.auth_type,
+            tags=ep.tags or [],
+            framework=ep.framework,
+            detected_at=ep.detected_at.isoformat() if ep.detected_at else None,
+        )
+        for ep in endpoints
+    ]
+
+
+@router.delete("/{repo_id}")
+def clear_repo_endpoints(repo_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Clear detected endpoints for a repository (both DB table and metadata)."""
+    repo = (
+        db.query(Repository)
+        .filter(Repository.id == repo_id, Repository.status != "deleted")
+        .first()
+    )
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Delete from Endpoint table
+    deleted_count = db.query(EndpointModel).filter(EndpointModel.repository_id == repo_id).delete()
+
+    # Also clear metadata for backwards compatibility
     if repo.metadata_ and "endpoints" in repo.metadata_:
         new_metadata = dict(repo.metadata_)
         del new_metadata["endpoints"]
         repo.metadata_ = new_metadata  # type: ignore[assignment]
         repo.updated_at = datetime.utcnow()  # type: ignore[assignment]
-        db.commit()
 
-    return {"status": "cleared", "repo_id": repo_id}
+    db.commit()
+
+    return {"status": "cleared", "repo_id": repo_id, "deleted_count": deleted_count}
 
 
 @router.post("/ai-instructions", response_model=AIInstructionsResponse)

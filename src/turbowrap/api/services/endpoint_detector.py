@@ -43,6 +43,8 @@ class EndpointInfo:
     parameters: list[EndpointParameter] = field(default_factory=list)
     response_type: str = ""
     auth_required: bool = False
+    visibility: str = "private"  # public, private, internal
+    auth_type: str = ""  # Bearer, Basic, API-Key, OAuth2, etc.
     tags: list[str] = field(default_factory=list)
 
 
@@ -269,14 +271,31 @@ INSTRUCTIONS:
 4. Read docstrings and function bodies to understand what each endpoint does
 5. Check for authentication requirements (Depends, decorators, middleware)
 6. Extract parameter details from function signatures
+7. Determine VISIBILITY and AUTH TYPE for each endpoint
 
 Key files to analyze:
 {files_list}
 
 Also look for:
 - Main app file that registers routers (to find prefixes)
-- Any OpenAPI/Swagger configuration
+- Any OpenAPI/Swagger configuration (note the swagger/docs URL if found!)
 - Authentication middleware or decorators
+- Security dependencies (OAuth2, JWT, API keys)
+- Swagger UI endpoint (usually /docs, /swagger, /api-docs, /openapi.json)
+
+AUTHENTICATION & VISIBILITY DETECTION:
+- auth_required: True if endpoint has auth dependency (Depends(get_current_user), @login_required, etc.)
+- visibility:
+  - "public" = No auth required, accessible by anyone (login, register, health, public APIs)
+  - "private" = Auth required, accessible by authenticated users
+  - "internal" = Auth required + admin-only or internal service endpoints
+- auth_type: The type of authentication used:
+  - "Bearer" = JWT/OAuth2 bearer tokens
+  - "Basic" = HTTP Basic Auth
+  - "API-Key" = API key in header/query
+  - "Cookie" = Session-based auth
+  - "OAuth2" = OAuth2 flows
+  - "" = No auth (for public endpoints)
 
 OUTPUT FORMAT - Return ONLY a valid JSON array (no markdown, no explanation):
 [
@@ -292,6 +311,8 @@ OUTPUT FORMAT - Return ONLY a valid JSON array (no markdown, no explanation):
     ],
     "response_type": "List[User]",
     "auth_required": true,
+    "visibility": "private",
+    "auth_type": "Bearer",
     "tags": ["users"]
   }}
 ]
@@ -300,6 +321,7 @@ CRITICAL:
 - Each method+path combination must appear exactly ONCE
 - Include the FULL path with all prefixes
 - Do not invent endpoints that don't exist in the code
+- Carefully analyze each endpoint for auth requirements
 
 Return ONLY the JSON array, nothing else."""
 
@@ -392,6 +414,8 @@ Return ONLY the JSON array, nothing else."""
                     parameters=params,
                     response_type=ep.get("response_type", ""),
                     auth_required=ep.get("auth_required", False),
+                    visibility=ep.get("visibility", "private"),
+                    auth_type=ep.get("auth_type", ""),
                     tags=ep.get("tags", []),
                 )
             )
@@ -429,6 +453,8 @@ For each endpoint, identify:
 - Parameters (path params, query params, body params)
 - Response type
 - Whether authentication is required (look for auth decorators, middleware, etc.)
+- Visibility level (public/private/internal)
+- Authentication type (Bearer, Basic, API-Key, Cookie, OAuth2)
 
 IMPORTANT: Do not duplicate endpoints. Each method+path should appear only once.
 
@@ -438,6 +464,13 @@ blocks or extra text, ONLY the JSON array."""
     user_prompt = f"""Analyze these {framework} route files and extract all API endpoints:
 
 {files_text}
+
+VISIBILITY RULES:
+- "public" = No auth required (login, register, health, public APIs)
+- "private" = Auth required for authenticated users
+- "internal" = Auth required + admin-only or internal service endpoints
+
+AUTH TYPE OPTIONS: Bearer, Basic, API-Key, Cookie, OAuth2, or "" for public
 
 Return a JSON array with this structure for each endpoint:
 [
@@ -453,6 +486,8 @@ Return a JSON array with this structure for each endpoint:
     ],
     "response_type": "List[User]",
     "auth_required": true,
+    "visibility": "private",
+    "auth_type": "Bearer",
     "tags": ["users", "admin"]
   }}
 ]
@@ -504,6 +539,8 @@ Return ONLY the JSON array, no other text."""
                     parameters=params,
                     response_type=ep.get("response_type", ""),
                     auth_required=ep.get("auth_required", False),
+                    visibility=ep.get("visibility", "private"),
+                    auth_type=ep.get("auth_type", ""),
                     tags=ep.get("tags", []),
                 )
             )
@@ -608,6 +645,97 @@ def detect_endpoints(
     return result
 
 
+def save_endpoints_to_db(
+    db_session: Any,
+    repository_id: str,
+    result: DetectionResult,
+) -> int:
+    """Save detected endpoints to database with upsert logic.
+
+    Uses INSERT ON DUPLICATE KEY UPDATE to avoid duplicates.
+    Endpoints are identified uniquely by (repository_id, method, path).
+
+    Args:
+        db_session: SQLAlchemy session.
+        repository_id: Repository UUID.
+        result: DetectionResult with endpoints.
+
+    Returns:
+        Number of endpoints saved/updated.
+    """
+    from datetime import datetime
+
+    from turbowrap.db.models import Endpoint
+
+    if not result.routes:
+        return 0
+
+    count = 0
+    for ep in result.routes:
+        # Check if endpoint exists
+        existing = (
+            db_session.query(Endpoint)
+            .filter(
+                Endpoint.repository_id == repository_id,
+                Endpoint.method == ep.method.upper(),
+                Endpoint.path == ep.path,
+            )
+            .first()
+        )
+
+        # Prepare parameters as list of dicts
+        params_list = [
+            {
+                "name": p.name,
+                "param_type": p.param_type,
+                "data_type": p.data_type,
+                "required": p.required,
+                "description": p.description,
+            }
+            for p in ep.parameters
+        ]
+
+        if existing:
+            # Update existing endpoint
+            existing.file = ep.file
+            existing.line = ep.line
+            existing.description = ep.description
+            existing.parameters = params_list
+            existing.response_type = ep.response_type
+            existing.requires_auth = ep.auth_required
+            existing.visibility = ep.visibility
+            existing.auth_type = ep.auth_type
+            existing.tags = ep.tags
+            existing.detected_at = datetime.utcnow()
+            existing.framework = result.framework
+            existing.updated_at = datetime.utcnow()
+        else:
+            # Create new endpoint
+            new_endpoint = Endpoint(
+                repository_id=repository_id,
+                method=ep.method.upper(),
+                path=ep.path,
+                file=ep.file,
+                line=ep.line,
+                description=ep.description,
+                parameters=params_list,
+                response_type=ep.response_type,
+                requires_auth=ep.auth_required,
+                visibility=ep.visibility,
+                auth_type=ep.auth_type,
+                tags=ep.tags,
+                detected_at=datetime.utcnow(),
+                framework=result.framework,
+            )
+            db_session.add(new_endpoint)
+
+        count += 1
+
+    db_session.commit()
+    logger.info(f"Saved {count} endpoints to database for repository {repository_id}")
+    return count
+
+
 def result_to_dict(result: DetectionResult) -> dict[str, Any]:
     """Convert DetectionResult to a JSON-serializable dict."""
     return {
@@ -635,6 +763,8 @@ def result_to_dict(result: DetectionResult) -> dict[str, Any]:
                 ],
                 "response_type": ep.response_type,
                 "auth_required": ep.auth_required,
+                "visibility": ep.visibility,
+                "auth_type": ep.auth_type,
                 "tags": ep.tags,
             }
             for ep in result.routes
