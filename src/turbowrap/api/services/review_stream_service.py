@@ -165,6 +165,24 @@ class ReviewStreamService:
         if not resume_task_id:
             task = self.create_task_record(repository_id, mode, challenger_enabled)
             task_id = cast(str, task.id)
+
+            # Delete all "open" (TO DO) issues for this repository - fresh start
+            from ...db.models import IssueStatus
+
+            deleted_count = (
+                self.db.query(Issue)
+                .filter(
+                    Issue.repository_id == repository_id,
+                    Issue.status == IssueStatus.OPEN.value,
+                )
+                .delete()
+            )
+            if deleted_count > 0:
+                self.db.commit()
+                logger.info(
+                    f"[REVIEW INIT] Deleted {deleted_count} open issues for repository "
+                    f"{repository_id} (fresh start)"
+                )
         else:
             task_id = resume_task_id
 
