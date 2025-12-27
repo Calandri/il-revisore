@@ -1197,7 +1197,7 @@ function reviewApp() {
         // Repository evaluation
         evaluation: null,
 
-        init() {
+        async init() {
             // Check URL for existing task_id (to restore after refresh)
             const urlParams = new URLSearchParams(window.location.search);
             const savedTaskId = urlParams.get('task_id');
@@ -1208,10 +1208,19 @@ function reviewApp() {
                 if (savedRepoId) {
                     this.selectedRepo = savedRepoId;
                 }
-                this.reviewStatus = 'completed';
-                this.statusMessage = 'Review caricata';
-                this.loadIssues();
-                this.loadEvaluation();
+
+                // Check if this review is still running
+                const isRunning = await this.checkActiveReview(savedRepoId);
+                if (isRunning) {
+                    // Reconnect to the stream
+                    this.reconnectToReview();
+                } else {
+                    // Review completed, load results
+                    this.reviewStatus = 'completed';
+                    this.statusMessage = 'Review caricata';
+                    this.loadIssues();
+                    this.loadEvaluation();
+                }
             }
 
             // Watch for repository changes to load latest review
@@ -1233,6 +1242,87 @@ function reviewApp() {
                     await this.checkResumable(repoId);
                 }
             });
+        },
+
+        async checkActiveReview(repoId) {
+            // Check if there's an active review running for this repo
+            try {
+                const response = await fetch('/api/status/reviews');
+                if (!response.ok) return false;
+
+                const data = await response.json();
+                // Check if any active review matches this repo
+                const activeReview = data.reviews?.find(r =>
+                    r.repository_id === repoId && r.status === 'running'
+                );
+
+                if (activeReview) {
+                    console.log('Found active review:', activeReview);
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                console.error('Failed to check active review:', e);
+                return false;
+            }
+        },
+
+        async reconnectToReview() {
+            // Reconnect to an active review stream
+            if (!this.selectedRepo) return;
+
+            this.isRunning = true;
+            this.reviewStatus = 'running';
+            this.statusMessage = '🔄 Riconnessione alla review in corso...';
+            this.agents = {};
+            this.abortController = new AbortController();
+
+            try {
+                // Connect to stream - start_or_reconnect will detect existing session
+                const response = await fetch(`/api/tasks/${this.selectedRepo}/review/stream`, {
+                    signal: this.abortController.signal,
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mode: this.reviewMode,
+                        challenger_enabled: this.challengerEnabled,
+                        include_functional: this.includeFunctional,
+                    }),
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            this.currentEvent = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            try {
+                                const data = JSON.parse(line.slice(5));
+                                this.handleEvent(this.currentEvent, data);
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Reconnect error:', error);
+                    this.reviewStatus = 'error';
+                    this.statusMessage = `Errore riconnessione: ${error.message}`;
+                }
+            } finally {
+                this.isRunning = false;
+            }
         },
 
         async checkResumable(repoId) {
