@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 GeminiModelType = Literal["flash", "pro", "ultra"]
 GEMINI_MODEL_MAP = {
     "flash": "gemini-3-flash-preview",
-    "pro": "gemini-1.5-pro-002",
+    "pro": "gemini-3-pro-preview",
     "ultra": "gemini-ultra",
 }
 
