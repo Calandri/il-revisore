@@ -15,7 +15,7 @@ These tests cover edge cases that could break production:
 
 import pytest
 
-from turbowrap.utils.claude_cli import ClaudeCLI
+from turbowrap.llm.claude_cli import ClaudeCLI
 
 # =============================================================================
 # Unicode and Special Characters
@@ -65,8 +65,7 @@ class TestUnicodeAndSpecialCharacters:
         """Handle JSON special characters that need escaping."""
         cli = ClaudeCLI(model="opus")
         raw_output = (
-            '{"type":"result","result":'
-            '"Code: `def foo():\\n    return \\"bar\\"`","modelUsage":{}}'
+            '{"type":"result","result":"Code: `def foo():\\n    return \\"bar\\"`","modelUsage":{}}'
         )
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
@@ -415,8 +414,7 @@ class TestExtremeEdgeCases:
         """Handle JSON with trailing comma (common user mistake)."""
         cli = ClaudeCLI(model="opus")
         raw_output = (
-            '{"type":"result","result":"oops",}\n'
-            '{"type":"result","result":"valid","modelUsage":{}}'
+            '{"type":"result","result":"oops",}\n{"type":"result","result":"valid","modelUsage":{}}'
         )
 
         output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)

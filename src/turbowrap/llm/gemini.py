@@ -10,6 +10,7 @@ import asyncio
 import codecs
 import logging
 import os
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -324,6 +325,12 @@ class GeminiCLI:
         save_prompt: bool = True,
         save_output: bool = True,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
+        # Operation tracking parameters
+        track_operation: bool = True,
+        operation_type: str | None = None,
+        repo_name: str | None = None,
+        user_name: str | None = None,
+        operation_details: dict | None = None,
     ) -> GeminiCLIResult:
         """
         Execute Gemini CLI and return result.
@@ -334,6 +341,11 @@ class GeminiCLI:
             save_prompt: Save prompt to S3
             save_output: Save output to S3
             on_chunk: Optional callback for streaming output
+            track_operation: Enable automatic operation tracking (default: True)
+            operation_type: Explicit operation type ("fix", "review", etc.)
+            repo_name: Repository name for display in banner
+            user_name: User who initiated the operation
+            operation_details: Additional metadata for the operation
 
         Returns:
             GeminiCLIResult with output and S3 URLs
@@ -346,12 +358,28 @@ class GeminiCLI:
         if context_id is None:
             context_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
+        # Auto-register operation if tracking enabled
+        operation = None
+        if track_operation:
+            operation = self._register_operation(
+                context_id=context_id,
+                prompt=prompt,
+                operation_type=operation_type,
+                repo_name=repo_name,
+                user_name=user_name,
+                operation_details=operation_details,
+            )
+
         # Save prompt to S3 before running
         s3_prompt_url = None
         if save_prompt:
             s3_prompt_url = await self._s3_saver.save_markdown(
                 prompt, "prompt", context_id, {"model": self.model}, "Gemini CLI"
             )
+
+            # Update operation with S3 URL for live visibility
+            if operation and s3_prompt_url:
+                self._update_operation(operation.operation_id, {"s3_prompt_url": s3_prompt_url})
 
         try:
             # Build environment with API key
@@ -428,6 +456,10 @@ class GeminiCLI:
                         "Gemini CLI",
                     )
 
+                # Auto-fail operation on timeout
+                if operation:
+                    self._fail_operation(operation.operation_id, f"Timeout after {self.timeout}s")
+
                 return GeminiCLIResult(
                     success=False,
                     output=partial_output,
@@ -470,6 +502,10 @@ class GeminiCLI:
                         "Gemini CLI",
                     )
 
+                # Auto-fail operation
+                if operation:
+                    self._fail_operation(operation.operation_id, error_msg)
+
                 return GeminiCLIResult(
                     success=False,
                     output=output,
@@ -480,6 +516,10 @@ class GeminiCLI:
                     s3_prompt_url=s3_prompt_url,
                     s3_output_url=s3_output_url,
                 )
+
+            # Auto-complete operation
+            if operation:
+                self._complete_operation(operation.operation_id, duration_ms=duration_ms)
 
             logger.info(f"[GEMINI CLI] Completed in {duration_ms}ms")
             return GeminiCLIResult(
@@ -503,6 +543,10 @@ class GeminiCLI:
                     {"model": self.model, "duration_ms": duration_ms},
                     "Gemini CLI",
                 )
+            # Auto-fail operation
+            if operation:
+                self._fail_operation(operation.operation_id, error_msg)
+
             return GeminiCLIResult(
                 success=False,
                 output="",
@@ -522,6 +566,10 @@ class GeminiCLI:
                     {"model": self.model, "duration_ms": duration_ms},
                     "Gemini CLI",
                 )
+            # Auto-fail operation
+            if operation:
+                self._fail_operation(operation.operation_id, str(e)[:200])
+
             return GeminiCLIResult(
                 success=False,
                 output="",
@@ -530,3 +578,122 @@ class GeminiCLI:
                 duration_ms=duration_ms,
                 s3_prompt_url=s3_prompt_url,
             )
+
+    def _infer_operation_type(self, explicit_type: str | None, prompt: str) -> str:
+        """Infer operation type from context."""
+        if explicit_type:
+            return explicit_type
+
+        # Infer from prompt keywords
+        prompt_lower = prompt.lower()[:500]
+        if "fix" in prompt_lower or "correggi" in prompt_lower:
+            return "fix"
+        if "review" in prompt_lower or "analizza" in prompt_lower:
+            return "review"
+        if "lint" in prompt_lower or "mypy" in prompt_lower or "ruff" in prompt_lower:
+            return "review"
+        if "commit" in prompt_lower:
+            return "git_commit"
+        if "merge" in prompt_lower:
+            return "git_merge"
+
+        # Default: generic CLI task
+        return "cli_task"
+
+    def _extract_repo_name(self) -> str | None:
+        """Extract repository name from working_dir."""
+        if self.working_dir:
+            return self.working_dir.name
+        return None
+
+    def _register_operation(
+        self,
+        context_id: str | None,
+        prompt: str,
+        operation_type: str | None,
+        repo_name: str | None,
+        user_name: str | None,
+        operation_details: dict | None,
+    ):
+        """Register operation in tracker."""
+        try:
+            from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+            tracker = get_tracker()
+            op_type_str = self._infer_operation_type(operation_type, prompt)
+
+            try:
+                op_type = OperationType(op_type_str)
+            except ValueError:
+                op_type = OperationType.CLI_TASK
+
+            # Extract prompt preview (first 150 chars, cleaned)
+            prompt_preview = prompt[:150].replace("\n", " ").strip()
+            if len(prompt) > 150:
+                prompt_preview += "..."
+
+            operation = tracker.register(
+                op_type=op_type,
+                operation_id=context_id or str(uuid.uuid4()),
+                repo_name=repo_name or self._extract_repo_name(),
+                user=user_name,
+                details={
+                    "model": self.model,
+                    "cli": "gemini",
+                    "working_dir": str(self.working_dir) if self.working_dir else None,
+                    "prompt_preview": prompt_preview,
+                    "prompt_length": len(prompt),
+                    **(operation_details or {}),
+                },
+            )
+
+            logger.info(
+                f"[GEMINI CLI] Operation registered: {operation.operation_id[:8]} "
+                f"({op_type.value})"
+            )
+            return operation
+
+        except Exception as e:
+            logger.warning(f"[GEMINI CLI] Failed to register operation: {e}")
+            return None
+
+    def _complete_operation(self, operation_id: str, duration_ms: int) -> None:
+        """Complete operation in tracker."""
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+            tracker.complete(
+                operation_id,
+                result={
+                    "duration_ms": duration_ms,
+                    "model": self.model,
+                },
+            )
+            logger.info(f"[GEMINI CLI] Operation completed: {operation_id[:8]}")
+
+        except Exception as e:
+            logger.warning(f"[GEMINI CLI] Failed to complete operation: {e}")
+
+    def _fail_operation(self, operation_id: str, error: str) -> None:
+        """Fail operation in tracker."""
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+            tracker.fail(operation_id, error=error[:200])
+            logger.info(f"[GEMINI CLI] Operation failed: {operation_id[:8]}")
+
+        except Exception as e:
+            logger.warning(f"[GEMINI CLI] Failed to mark operation as failed: {e}")
+
+    def _update_operation(self, operation_id: str, details: dict) -> None:
+        """Update operation details in tracker (e.g., add S3 URLs)."""
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+            tracker.update(operation_id, details=details)
+
+        except Exception as e:
+            logger.warning(f"[GEMINI CLI] Failed to update operation: {e}")

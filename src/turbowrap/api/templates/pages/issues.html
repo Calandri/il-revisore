@@ -1511,6 +1511,18 @@ function issuesApp() {
                     throw new Error(`API error: ${response.status} - ${error}`);
                 }
 
+                // Fix started successfully - notify banner and refresh issue status
+                console.log('[FIX] Fix started, dispatching operation-started event');
+                window.dispatchEvent(new CustomEvent('operation-started'));
+
+                // Update local issue statuses to IN_PROGRESS immediately (without full refresh)
+                this.selectedIssues.forEach(id => {
+                    const issue = this.issues.find(i => i.id === id);
+                    if (issue) {
+                        issue.status = 'in_progress';
+                    }
+                });
+
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 

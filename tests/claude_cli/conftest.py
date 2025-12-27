@@ -37,7 +37,7 @@ def sample_stream_json_with_thinking():
         '{"type":"assistant","message":{"content":[{"type":"thinking",'
         '"thinking":"Let me analyze this problem step by step..."}]}}\n'
     )
-    content_block = '{"type":"content_block_delta",' '"delta":{"text":"Based on my analysis"}}\n'
+    content_block = '{"type":"content_block_delta","delta":{"text":"Based on my analysis"}}\n'
     result_block = (
         '{"type":"result","result":"Based on my analysis, the answer is 42.",'
         '"modelUsage":{"claude-opus-4-5-20251101":{'
@@ -116,7 +116,7 @@ def billing_error_messages():
             "50 requests per minute. Please wait before making another request."
         ),
         "The API is temporarily overloaded. Please try again in a few moments.",
-        ("Invalid API key. Please check your ANTHROPIC_API_KEY " "environment variable."),
+        ("Invalid API key. Please check your ANTHROPIC_API_KEY environment variable."),
         (
             "This request would exceed the model's maximum context length of "
             "200000 tokens. Your request used 250000 tokens."

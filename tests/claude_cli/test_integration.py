@@ -13,11 +13,12 @@ These tests verify component interactions:
 """
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from turbowrap.utils.claude_cli import ClaudeCLI, ModelUsage
+from turbowrap.llm.claude_cli import ClaudeCLI, ModelUsage
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 # =============================================================================
 # Full Execution Pipeline
@@ -39,7 +40,8 @@ class TestResultStructure:
                 '{"type":"result"}',
                 None,  # No error
             )
-            with patch.object(ClaudeCLI, "_save_to_s3", return_value="s3://bucket/key"):
+            with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
+                mock_s3.return_value = "s3://bucket/key"
                 cli = ClaudeCLI(model="opus")
                 result = await cli.run("Test prompt")
 
@@ -61,7 +63,8 @@ class TestResultStructure:
                 None,
                 "API Error: Billing issue",
             )
-            with patch.object(ClaudeCLI, "_save_to_s3", return_value=None):
+            with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
+                mock_s3.return_value = None
                 cli = ClaudeCLI(model="opus")
                 result = await cli.run("Test prompt")
 
@@ -80,7 +83,8 @@ class TestResultStructure:
                 None,
                 "Timeout after 180s",
             )
-            with patch.object(ClaudeCLI, "_save_to_s3", return_value=None):
+            with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
+                mock_s3.return_value = None
                 cli = ClaudeCLI(model="opus", timeout=180)
                 result = await cli.run("Test prompt")
 
@@ -106,12 +110,8 @@ class TestSyncWrapper:
                 return ("Sync output", [], None, None, None)
 
             mock_execute.side_effect = mock_execute_cli
-            with patch.object(ClaudeCLI, "_save_to_s3") as mock_s3:
-
-                async def mock_save(*args, **kwargs):
-                    return "s3://bucket/key"
-
-                mock_s3.side_effect = mock_save
+            with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
+                mock_s3.return_value = "s3://bucket/key"
 
                 cli = ClaudeCLI(model="opus")
                 result = cli.run_sync("Test prompt")
@@ -152,15 +152,16 @@ class TestS3SaveEdgeCases:
 
     @pytest.mark.asyncio
     async def test_s3_bucket_not_configured(self):
-        """Handle S3 bucket not configured."""
-        with patch("turbowrap.utils.claude_cli.get_settings") as mock_settings:
+        """Handle S3 bucket not configured - saver returns None."""
+        with patch("turbowrap.llm.claude_cli.get_settings") as mock_settings:
             mock_settings.return_value.agents.claude_model = "opus"
             mock_settings.return_value.thinking.enabled = False
             mock_settings.return_value.thinking.s3_bucket = None
-            mock_settings.return_value.thinking.s3_region = None
+            mock_settings.return_value.thinking.s3_region = "us-east-1"
 
             cli = ClaudeCLI(model="opus")
-            result = await cli._save_to_s3("content", "output", "test-123")
+            # With no bucket configured, save_markdown returns None
+            result = await cli._s3_saver.save_markdown("content", "output", "test-123")
 
             assert result is None
 
@@ -171,31 +172,33 @@ class TestS3SaveEdgeCases:
 
         context_id = "review/2024/test:file.py"
 
+        # Mock the saver's client
         mock_s3 = MagicMock()
-        cli._s3_client = mock_s3
-        cli.s3_bucket = "test-bucket"
+        cli._s3_saver._client = mock_s3
+        cli._s3_saver.bucket = "test-bucket"
 
-        await cli._save_to_s3("content", "output", context_id)
+        await cli._s3_saver.save_markdown("content", "output", context_id)
 
         mock_s3.put_object.assert_called_once()
 
 
 @pytest.mark.integration
 class TestS3ClientLazyLoading:
-    """Integration tests for S3 client lazy loading behavior."""
+    """Integration tests for S3 client lazy loading behavior via S3ArtifactSaver."""
 
     def test_s3_client_not_created_on_init(self):
         """S3 client should not be created during __init__."""
         cli = ClaudeCLI(model="opus")
-        assert cli._s3_client is None
+        # _s3_saver is created, but its internal _client should be None
+        assert cli._s3_saver._client is None
 
     def test_s3_client_created_on_access(self):
         """S3 client should be created when accessed."""
         cli = ClaudeCLI(model="opus")
 
-        with patch("turbowrap.utils.claude_cli.boto3") as mock_boto:
+        with patch("turbowrap.utils.s3_artifact_saver.boto3") as mock_boto:
             mock_boto.client.return_value = MagicMock()
-            _ = cli.s3_client
+            _ = cli._s3_saver.client
 
             mock_boto.client.assert_called_once()
 
@@ -203,12 +206,12 @@ class TestS3ClientLazyLoading:
         """S3 client should be cached after first access."""
         cli = ClaudeCLI(model="opus")
 
-        with patch("turbowrap.utils.claude_cli.boto3") as mock_boto:
+        with patch("turbowrap.utils.s3_artifact_saver.boto3") as mock_boto:
             mock_client = MagicMock()
             mock_boto.client.return_value = mock_client
 
-            client1 = cli.s3_client
-            client2 = cli.s3_client
+            client1 = cli._s3_saver.client
+            client2 = cli._s3_saver.client
 
             assert client1 is client2
             mock_boto.client.assert_called_once()
@@ -238,7 +241,10 @@ class TestConcurrencyScenarios:
 
                 mock_execute.side_effect = mock_exec
 
-                with patch.object(ClaudeCLI, "_save_to_s3", return_value=None):
+                with patch.object(
+                    S3ArtifactSaver, "save_markdown", new_callable=AsyncMock
+                ) as mock_s3:
+                    mock_s3.return_value = None
                     cli = ClaudeCLI(model="opus")
                     result = await cli.run(f"Prompt {index}")
                     return (index, result.output)
@@ -278,7 +284,8 @@ class TestTimeoutScenarios:
         with patch.object(ClaudeCLI, "_execute_cli") as mock_execute:
             mock_execute.return_value = (None, [], None, None, "Timeout after 5s")
 
-            with patch.object(ClaudeCLI, "_save_to_s3", return_value=None):
+            with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
+                mock_s3.return_value = None
                 cli = ClaudeCLI(model="opus", timeout=5)
                 result = await cli.run("Test")
 

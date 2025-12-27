@@ -18,9 +18,13 @@ from sse_starlette.sse import EventSourceResponse
 
 from ...config import get_settings
 from ...db.models import Issue, IssueStatus, Repository, Task
+from ...orchestration.cli_runner import GeminiCLI
 from ...utils.aws_secrets import get_anthropic_api_key
 from ...utils.git_utils import get_current_branch
 from ..deps import get_db
+
+# Lint types that should use Gemini CLI (faster) instead of Claude CLI
+GEMINI_LINT_TYPES = {"mypy"}  # mypy is slow with Claude, use Gemini Flash
 
 logger = logging.getLogger(__name__)
 
@@ -535,13 +539,17 @@ async def run_lint_fix(
 
             # Process each lint type sequentially
             for lint_type in lint_types:
+                # Choose CLI based on lint type
+                use_gemini = lint_type in GEMINI_LINT_TYPES
+                cli_name = "Gemini Flash" if use_gemini else "Claude"
+
                 yield {
                     "event": "lint_fix_progress",
                     "data": json.dumps(
                         {
                             "message": (
                                 f"Running {lint_type} linting and fixing "
-                                f"(with extended thinking)..."
+                                f"(using {cli_name})..."
                             ),
                             "lint_type": lint_type,
                             "phase": "running",
@@ -554,32 +562,47 @@ async def run_lint_fix(
                 if request.workspace_path:
                     prompt = prompt.replace("{workspace_path}", request.workspace_path)
 
-                # Run Claude CLI with extended thinking and stream-json
-                process = await asyncio.create_subprocess_exec(
-                    cli_path,
-                    "--print",
-                    "--verbose",
-                    "--dangerously-skip-permissions",
-                    "--model",
-                    model,
-                    "--output-format",
-                    "stream-json",
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(repo_path),
-                    env=env,
-                )
+                if use_gemini:
+                    # Use Gemini CLI (faster for mypy)
+                    logger.info(f"[LINT-FIX] Using Gemini Flash for {lint_type}")
+                    gemini_cli = GeminiCLI(
+                        working_dir=repo_path,
+                        model="flash",
+                        timeout=300,  # 5 minutes
+                    )
+                    result = await gemini_cli.run(prompt)
+                    output = result.output
+                    error = result.error or ""
+                    success = result.success
+                else:
+                    # Use Claude CLI (default)
+                    logger.info(f"[LINT-FIX] Using Claude CLI for {lint_type}")
+                    process = await asyncio.create_subprocess_exec(
+                        cli_path,
+                        "--print",
+                        "--verbose",
+                        "--dangerously-skip-permissions",
+                        "--model",
+                        model,
+                        "--output-format",
+                        "stream-json",
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=str(repo_path),
+                        env=env,
+                    )
 
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(input=prompt.encode()),
-                    timeout=600,  # 10 minutes per lint type
-                )
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(input=prompt.encode()),
+                        timeout=600,  # 10 minutes per lint type
+                    )
 
-                output = stdout.decode() if stdout else ""
-                error = stderr.decode() if stderr else ""
+                    output = stdout.decode() if stdout else ""
+                    error = stderr.decode() if stderr else ""
+                    success = process.returncode == 0
 
-                if process.returncode != 0:
+                if not success:
                     logger.error(f"Lint-fix failed for {lint_type}: {error}")
                     yield {
                         "event": "lint_fix_progress",

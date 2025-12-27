@@ -66,6 +66,9 @@ from .operation_tracker import OperationType, get_tracker  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+# Track background fix tasks to prevent garbage collection
+_background_tasks: set[asyncio.Task[None]] = set()
+
 
 @dataclass
 class FixSessionInfo:
@@ -256,6 +259,11 @@ class FixSessionService:
                 "issue_count": len(issues),
                 "issue_codes": [cast(str, i.issue_code) for i in issues],
             },
+        )
+
+        logger.info(
+            f"[FIX] Operation registered in tracker: session_id={session_id}, "
+            f"repo={repo_name}, issues={len(issues)}"
         )
 
         return (
@@ -536,6 +544,16 @@ class FixSessionService:
                     )
                 )
 
+            except asyncio.CancelledError:
+                # Task was cancelled (shouldn't happen anymore, but handle gracefully)
+                logger.warning(f"Fix task cancelled for session {session_info.session_id}")
+                await self.reset_issues_on_error(
+                    fix_db, session_info.issues, "Fix cancelled"
+                )
+                self.idempotency.update_status(idempotency_key, "cancelled")
+                tracker.fail(session_info.session_id, error="Task cancelled")
+                raise  # Re-raise to properly signal cancellation
+
             except Exception as e:
                 logger.exception("Fix session error")
                 await self.reset_issues_on_error(fix_db, session_info.issues)
@@ -555,8 +573,10 @@ class FixSessionService:
                 await event_queue.put(None)
                 fix_db.close()
 
-        # Start fix task
+        # Start fix task and keep reference to prevent garbage collection
         fix_task = asyncio.create_task(run_fix())
+        _background_tasks.add(fix_task)
+        fix_task.add_done_callback(_background_tasks.discard)
 
         try:
             # Stream events
@@ -567,7 +587,14 @@ class FixSessionService:
                 yield event.to_sse()
 
         except asyncio.CancelledError:
-            fix_task.cancel()
+            # SSE connection closed by client - let the fix continue in background
+            # The fix_task will complete on its own and update the tracker
+            logger.info(
+                f"[FIX] SSE connection closed for session {session_info.session_id}, "
+                "fix continues in background"
+            )
+            # DON'T cancel the task - let it finish!
+            # The subprocess (Claude CLI) is already running and will complete
             raise
 
 

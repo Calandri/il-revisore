@@ -35,23 +35,62 @@
 
                 <!-- Single operation info -->
                 <template x-if="operations.length === 1">
-                    <div class="flex items-center gap-2 text-sm">
-                        <span class="font-medium" x-text="operations[0].user_name || 'System'"></span>
-                        <span class="opacity-80" x-text="getOperationVerb(operations[0].type)"></span>
-                        <!-- Extra info for fix operations -->
-                        <template x-if="operations[0].type === 'fix' && operations[0].details?.issue_count">
-                            <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold"
-                                  x-text="operations[0].details.issue_count + ' issue' + (operations[0].details.issue_count !== 1 ? 's' : '')"></span>
+                    <div class="flex flex-col gap-1">
+                        <!-- Main info line -->
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="font-medium" x-text="operations[0].user_name || 'System'"></span>
+                            <span class="opacity-80" x-text="getOperationVerb(operations[0].type)"></span>
+                            <!-- Agent badge -->
+                            <template x-if="operations[0].details?.agent">
+                                <span class="bg-purple-500/30 px-2 py-0.5 rounded text-xs font-mono"
+                                      x-text="operations[0].details.agent"></span>
+                            </template>
+                            <!-- Extra info for fix operations -->
+                            <template x-if="operations[0].type === 'fix' && operations[0].details?.issue_count">
+                                <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs font-bold"
+                                      x-text="operations[0].details.issue_count + ' issue' + (operations[0].details.issue_count !== 1 ? 's' : '')"></span>
+                            </template>
+                            <template x-if="operations[0].branch_name">
+                                <span class="flex items-center gap-1">
+                                    <span class="opacity-80">on</span>
+                                    <code class="bg-black/20 px-2 py-0.5 rounded text-xs font-mono"
+                                          x-text="operations[0].branch_name"></code>
+                                </span>
+                            </template>
+                            <template x-if="operations[0].repository_name">
+                                <span class="flex items-center gap-1">
+                                    <span class="opacity-80">in</span>
+                                    <span class="font-semibold" x-text="operations[0].repository_name"></span>
+                                </span>
+                            </template>
+                            <!-- Model badge -->
+                            <template x-if="operations[0].details?.model">
+                                <span class="bg-blue-500/30 px-2 py-0.5 rounded text-xs"
+                                      x-text="getModelShortName(operations[0].details.model)"></span>
+                            </template>
+                        </div>
+                        <!-- Details line (prompt preview, S3 link) -->
+                        <template x-if="operations[0].details?.prompt_preview || operations[0].details?.s3_prompt_url">
+                            <div class="flex items-center gap-2 text-xs opacity-70">
+                                <template x-if="operations[0].details?.prompt_preview">
+                                    <span class="truncate max-w-md" x-text="operations[0].details.prompt_preview"></span>
+                                </template>
+                                <template x-if="operations[0].details?.s3_prompt_url">
+                                    <a :href="operations[0].details.s3_prompt_url"
+                                       target="_blank"
+                                       @click.stop
+                                       class="text-white/90 hover:text-white underline flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                        </svg>
+                                        prompt
+                                    </a>
+                                </template>
+                                <template x-if="operations[0].details?.prompt_length">
+                                    <span class="text-white/50" x-text="'(' + operations[0].details.prompt_length.toLocaleString() + ' chars)'"></span>
+                                </template>
+                            </div>
                         </template>
-                        <template x-if="operations[0].branch_name">
-                            <span class="flex items-center gap-1">
-                                <span class="opacity-80">on</span>
-                                <code class="bg-black/20 px-2 py-0.5 rounded text-xs font-mono"
-                                      x-text="operations[0].branch_name"></code>
-                            </span>
-                        </template>
-                        <span class="opacity-80">in</span>
-                        <span class="font-semibold" x-text="operations[0].repository_name"></span>
                     </div>
                 </template>
 
@@ -94,6 +133,7 @@ function activeOperationsBanner() {
             'sync': 'syncing',
             'promote': 'promoting to production',
             'deploy': 'deploying',
+            'cli_task': 'running task',
         },
 
         get uniqueRepos() {
@@ -103,6 +143,19 @@ function activeOperationsBanner() {
 
         getOperationVerb(type) {
             return this.operationLabels[type] || type;
+        },
+
+        getModelShortName(model) {
+            // Convert long model names to short display names
+            if (!model) return '';
+            if (model.includes('opus')) return 'opus';
+            if (model.includes('sonnet')) return 'sonnet';
+            if (model.includes('haiku')) return 'haiku';
+            if (model.includes('flash')) return 'flash';
+            if (model.includes('pro')) return 'pro';
+            // Return last part after dash or full name if short
+            const parts = model.split('-');
+            return parts.length > 2 ? parts.slice(0, 2).join('-') : model;
         },
 
         getOperationIcon(type) {
@@ -133,27 +186,44 @@ function activeOperationsBanner() {
                 'promote': `<svg class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
                 </svg>`,
+                'cli_task': `<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>`,
             };
             return icons[type] || icons['fix'];
         },
 
         async fetchOperations() {
             try {
+                console.log('[BANNER] Fetching operations...');
                 const response = await fetch('/api/operations/active');
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('[BANNER] Response:', data);
                     this.operations = data.operations || [];
+                } else {
+                    console.error('[BANNER] Response not ok:', response.status);
                 }
             } catch (error) {
-                console.error('Error fetching active operations:', error);
+                console.error('[BANNER] Fetch error:', error);
             }
         },
 
         startPolling() {
+            console.log('[BANNER] Starting polling...');
             // Initial fetch
             this.fetchOperations();
             // Poll every 5 seconds
-            this.pollInterval = setInterval(() => this.fetchOperations(), 5000);
+            this.pollInterval = setInterval(() => {
+                console.log('[BANNER] Polling tick');
+                this.fetchOperations();
+            }, 5000);
+
+            // Listen for operation-started events to refresh immediately
+            window.addEventListener('operation-started', () => {
+                console.log('[BANNER] Received operation-started event, refreshing...');
+                this.fetchOperations();
+            });
         },
 
         stopPolling() {

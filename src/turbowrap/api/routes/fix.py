@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import logging
-import os
 import re
 import threading
 from dataclasses import dataclass, field
@@ -19,7 +18,6 @@ from sse_starlette.sse import EventSourceResponse
 from turbowrap.api.deps import get_current_user, get_db
 from turbowrap.db.models import Issue, IssueStatus, Repository
 from turbowrap.fix import ClarificationAnswer, ClarificationQuestion
-from turbowrap.utils.aws_secrets import get_anthropic_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +25,7 @@ router = APIRouter(prefix="/fix", tags=["fix"])
 
 # Agent file path
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "agents"
-GIT_MERGER_AGENT = AGENTS_DIR / "git_merger.md"
+GIT_MERGER_AGENT = AGENTS_DIR / "git_merger_gemini.md"
 
 
 def _load_agent(agent_path: Path) -> str:
@@ -660,12 +658,12 @@ async def merge_and_push(
     """
     Merge fix branch to main and push to GitHub.
 
-    Uses Claude CLI to execute git commands:
-    1. git checkout main
-    2. git pull origin main
-    3. git merge <branch>
-    4. git push origin main
+    Uses Gemini CLI Flash to:
+    1. Checkout main, pull, merge, push
+    2. Automatically resolve conflicts if any
     """
+    from ...llm.gemini import GeminiCLI
+
     # Verify repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
     if not repo:
@@ -675,95 +673,62 @@ async def merge_and_push(
     if not repo_path.exists():
         raise HTTPException(status_code=400, detail="Repository path not found")
 
-    # Build prompt from agent file
+    # Load agent prompt
     merge_prompt = _load_agent(GIT_MERGER_AGENT)
     merge_prompt = merge_prompt.replace("{branch_name}", request.branch_name)
 
-    try:
-        # Build environment with API key
-        env = os.environ.copy()
-        api_key = get_anthropic_api_key()
-        if api_key:
-            env["ANTHROPIC_API_KEY"] = api_key
-        # Workaround: Bun file watcher bug on macOS /var/folders
-        env["TMPDIR"] = "/tmp"
+    # Run Gemini CLI Flash
+    gemini = GeminiCLI(
+        working_dir=repo_path,
+        model="flash",
+        timeout=300,
+        s3_prefix="git-merge",
+    )
 
-        # Find Claude CLI
-        cli_path = "/Users/niccolocalandri/.claude/local/claude"
-        if not Path(cli_path).exists():
-            cli_path = "claude"  # Fallback to PATH
+    result = await gemini.run(
+        prompt=merge_prompt,
+        context_id=f"merge-{request.branch_name}",
+    )
 
-        # Run Claude CLI
-        process = await asyncio.create_subprocess_exec(
-            cli_path,
-            "--print",
-            "--verbose",
-            "--dangerously-skip-permissions",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(repo_path),
-            env=env,
-        )
+    if not result.success:
+        logger.error(f"Merge failed: {result.error}")
+        raise HTTPException(status_code=500, detail=result.error or "Merge failed")
 
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(input=merge_prompt.encode()),
-            timeout=120,
-        )
+    # Extract commit SHA from output
+    merge_commit = None
+    for line in result.output.split("\n"):
+        if "commit" in line.lower():
+            sha_match = re.search(r"[a-f0-9]{7,40}", line)
+            if sha_match:
+                merge_commit = sha_match.group()
+                break
 
-        output = stdout.decode() if stdout else ""
-        error = stderr.decode() if stderr else ""
+    logger.info(f"Merged {request.branch_name} to main: {merge_commit}")
 
-        if process.returncode != 0:
-            logger.error(f"Merge failed: {error}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Merge failed: {error[:500]}",
+    # Update issues to MERGED status
+    merged_count = 0
+    if request.task_id:
+        issues_to_merge = (
+            db.query(Issue)
+            .filter(
+                Issue.task_id == request.task_id,
+                Issue.status == IssueStatus.RESOLVED.value,
             )
+            .all()
+        )
+        for issue in issues_to_merge:
+            issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
+            merged_count += 1
+        db.commit()
 
-        # Extract commit SHA from output (Claude should report it)
-        merge_commit = None
-        for line in output.split("\n"):
-            if "commit" in line.lower() and len(line) > 10:
-                # Try to find a SHA-like string
-                sha_match = re.search(r"[a-f0-9]{7,40}", line)
-                if sha_match:
-                    merge_commit = sha_match.group()
-                    break
-
-        logger.info(f"Merged {request.branch_name} to main: {merge_commit}")
-
-        # Update all RESOLVED issues for this task to MERGED
-        merged_count = 0
-        if request.task_id:
-            issues_to_merge = (
-                db.query(Issue)
-                .filter(
-                    Issue.task_id == request.task_id,
-                    Issue.status == IssueStatus.RESOLVED.value,
-                )
-                .all()
-            )
-            for issue in issues_to_merge:
-                issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
-                merged_count += 1
-            db.commit()
-            logger.info(f"Updated {merged_count} issues to MERGED status")
-
-        return {
-            "success": True,
-            "status": "merged",
-            "branch_name": request.branch_name,
-            "merge_commit": merge_commit,
-            "merged_issues_count": merged_count,
-            "message": f"Branch {request.branch_name} merged to main successfully!",
-        }
-
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Merge operation timed out")
-    except Exception as e:
-        logger.exception("Merge failed")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "success": True,
+        "status": "merged",
+        "branch_name": request.branch_name,
+        "merge_commit": merge_commit,
+        "merged_issues_count": merged_count,
+        "message": f"Branch {request.branch_name} merged to main!",
+    }
 
 
 class OpenPRRequest(BaseModel):

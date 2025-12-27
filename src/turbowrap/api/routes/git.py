@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...db.models import Repository
+from ...llm.gemini import GeminiCLI
 from ..deps import get_db
 from ..services.operation_tracker import OperationType, get_tracker
 
@@ -68,6 +69,7 @@ class MergeRequest(BaseModel):
     """Merge request."""
 
     branch: str  # Branch to merge into current
+    use_ai: bool = True  # Use Gemini CLI Flash to resolve conflicts
 
 
 class StashRequest(BaseModel):
@@ -561,10 +563,14 @@ def push_remote(repo_id: str, db: Session = Depends(get_db)) -> GitOperationResu
 
 
 @router.post("/repositories/{repo_id}/merge", response_model=GitOperationResult)
-def merge_branch(
+async def merge_branch(
     repo_id: str, request: MergeRequest, db: Session = Depends(get_db)
 ) -> GitOperationResult:
-    """Merge a branch into current."""
+    """Merge a branch into current.
+
+    If use_ai=True (default) and conflicts occur, uses Gemini CLI Flash
+    to automatically resolve them.
+    """
     repo, repo_path = _get_repo_and_path(repo_id, db)
     repo_name = _extract_repo_name(repo)
 
@@ -583,16 +589,169 @@ def merge_branch(
         repo_id=repo_id,
         repo_name=repo_name,
         branch=current_branch,
-        details={"source_branch": request.branch, "target_branch": current_branch},
+        details={
+            "source_branch": request.branch,
+            "target_branch": current_branch,
+            "use_ai": request.use_ai,
+        },
     )
 
     try:
         output = run_git_command(repo_path, ["merge", request.branch])
         tracker.complete(op_id, result={"output": output[:200] if output else None})
-        return GitOperationResult(success=True, message=f"Merged '{request.branch}'", output=output)
+        return GitOperationResult(
+            success=True, message=f"Merged '{request.branch}'", output=output
+        )
     except HTTPException as e:
-        tracker.fail(op_id, error=e.detail)
-        return GitOperationResult(success=False, message=e.detail)
+        # Check if this is a merge conflict
+        is_conflict = "CONFLICT" in str(e.detail) or "conflict" in str(e.detail).lower()
+
+        if is_conflict and request.use_ai:
+            # Try to resolve conflicts with Gemini CLI Flash
+            logger.info("[GIT] Merge conflict detected, using Gemini CLI Flash to resolve")
+            try:
+                result = await _resolve_conflicts_with_ai(repo_path, request.branch, op_id)
+                if result.success:
+                    tracker.complete(
+                        op_id,
+                        result={"output": result.output[:200] if result.output else None},
+                    )
+                    return result
+                # AI couldn't resolve, abort merge
+                _abort_merge(repo_path)
+                tracker.fail(op_id, error=result.message)
+                return result
+            except Exception as ai_error:
+                logger.error(f"[GIT] AI conflict resolution failed: {ai_error}")
+                _abort_merge(repo_path)
+                tracker.fail(op_id, error=str(ai_error))
+                return GitOperationResult(
+                    success=False,
+                    message=f"AI conflict resolution failed: {ai_error}",
+                )
+        else:
+            tracker.fail(op_id, error=e.detail)
+            return GitOperationResult(success=False, message=e.detail)
+
+
+def _abort_merge(repo_path: Path) -> None:
+    """Abort a merge in progress."""
+    try:
+        run_git_command(repo_path, ["merge", "--abort"])
+    except Exception:
+        pass  # May fail if merge already completed or aborted
+
+
+async def _resolve_conflicts_with_ai(
+    repo_path: Path, source_branch: str, op_id: str
+) -> GitOperationResult:
+    """Use Gemini CLI Flash to resolve merge conflicts.
+
+    Args:
+        repo_path: Path to the repository
+        source_branch: Branch being merged
+        op_id: Operation ID for tracking
+
+    Returns:
+        GitOperationResult with success status
+    """
+    # Get list of conflicting files
+    try:
+        status_output = run_git_command(repo_path, ["status", "--porcelain"])
+        conflicting_files = [
+            line[3:].strip()
+            for line in status_output.split("\n")
+            if line.startswith("UU ") or line.startswith("AA ")
+        ]
+
+        if not conflicting_files:
+            return GitOperationResult(
+                success=False,
+                message="No conflicting files found",
+            )
+
+        logger.info(f"[GIT] Conflicting files: {conflicting_files}")
+
+    except HTTPException as e:
+        return GitOperationResult(
+            success=False,
+            message=f"Failed to get conflict status: {e.detail}",
+        )
+
+    # Build prompt for Gemini CLI
+    prompt = f"""You are resolving merge conflicts in a git repository.
+
+The merge from branch '{source_branch}' has conflicts in these files:
+{chr(10).join(f'- {f}' for f in conflicting_files)}
+
+For each conflicting file:
+1. Read the file to see the conflict markers (<<<<<<<, =======, >>>>>>>)
+2. Analyze both versions and determine the best resolution
+3. Edit the file to resolve the conflict (remove markers, keep the correct code)
+4. Stage the resolved file with `git add <filename>`
+
+After resolving ALL conflicts:
+- Run `git commit -m "Merge {source_branch}: AI-resolved conflicts"`
+
+Important:
+- Keep functionality from BOTH branches where possible
+- If unclear, prefer the incoming changes (from {source_branch})
+- Make sure the resulting code compiles/runs correctly
+- Do NOT leave any conflict markers in the files
+
+Start by reading each conflicting file to understand the conflicts."""
+
+    # Run Gemini CLI Flash
+    gemini = GeminiCLI(
+        working_dir=repo_path,
+        model="flash",  # Use Flash for speed
+        timeout=300,  # 5 minutes max
+        s3_prefix="git-merge-ai",
+    )
+
+    result = await gemini.run(
+        prompt=prompt,
+        context_id=op_id,
+        track_operation=False,  # Already tracked by merge operation
+    )
+
+    if not result.success:
+        return GitOperationResult(
+            success=False,
+            message=f"Gemini CLI failed: {result.error or 'Unknown error'}",
+            output=result.output,
+        )
+
+    # Verify merge was successful
+    try:
+        # Check if there are still conflicts
+        status_output = run_git_command(repo_path, ["status", "--porcelain"])
+        still_conflicting = [
+            line for line in status_output.split("\n") if line.startswith("UU ")
+        ]
+
+        if still_conflicting:
+            return GitOperationResult(
+                success=False,
+                message=f"AI did not resolve all conflicts: {len(still_conflicting)} remaining",
+                output=result.output,
+            )
+
+        # Check if merge commit was created
+        log_output = run_git_command(repo_path, ["log", "-1", "--oneline"])
+
+        return GitOperationResult(
+            success=True,
+            message=f"Merge completed with AI conflict resolution. Latest commit: {log_output}",
+            output=result.output,
+        )
+
+    except HTTPException as e:
+        return GitOperationResult(
+            success=False,
+            message=f"Failed to verify merge: {e.detail}",
+            output=result.output,
+        )
 
 
 @router.get("/repositories/{repo_id}/stash", response_model=list[StashEntry])

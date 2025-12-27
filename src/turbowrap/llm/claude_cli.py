@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -181,6 +182,12 @@ class ClaudeCLI:
         save_thinking: bool = True,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
         on_stderr: Callable[[str], Awaitable[None]] | None = None,
+        # Operation tracking parameters
+        track_operation: bool = True,
+        operation_type: str | None = None,
+        repo_name: str | None = None,
+        user_name: str | None = None,
+        operation_details: dict | None = None,
     ) -> ClaudeCLIResult:
         """Execute Claude CLI and return structured result.
 
@@ -193,12 +200,65 @@ class ClaudeCLI:
             save_thinking: Save thinking to S3
             on_chunk: Callback for streaming output chunks
             on_stderr: Callback for streaming stderr (--verbose output)
+            track_operation: Enable automatic operation tracking (default: True)
+            operation_type: Explicit operation type ("fix", "review", etc.)
+            repo_name: Repository name for display in banner
+            user_name: User who initiated the operation
+            operation_details: Additional metadata for the operation
 
         Returns:
             ClaudeCLIResult with output, thinking, usage info, and S3 URLs
         """
         start_time = time.time()
 
+        # Auto-register operation if tracking enabled
+        operation = None
+        if track_operation:
+            operation = self._register_operation(
+                context_id=context_id,
+                prompt=prompt,
+                operation_type=operation_type,
+                repo_name=repo_name,
+                user_name=user_name,
+                operation_details=operation_details,
+            )
+
+        try:
+            return await self._run_with_tracking(
+                prompt=prompt,
+                context_id=context_id,
+                thinking_budget=thinking_budget,
+                save_prompt=save_prompt,
+                save_output=save_output,
+                save_thinking=save_thinking,
+                on_chunk=on_chunk,
+                on_stderr=on_stderr,
+                operation=operation,
+                start_time=start_time,
+            )
+        except Exception as e:
+            # Ensure operation is always closed on unexpected exceptions
+            if operation:
+                self._fail_operation(operation.operation_id, f"Unexpected error: {e!s}"[:200])
+            raise
+
+    async def _run_with_tracking(
+        self,
+        prompt: str,
+        context_id: str | None,
+        thinking_budget: int | None,
+        save_prompt: bool,
+        save_output: bool,
+        save_thinking: bool,
+        on_chunk: Callable[[str], Awaitable[None]] | None,
+        on_stderr: Callable[[str], Awaitable[None]] | None,
+        operation,
+        start_time: float,
+    ) -> ClaudeCLIResult:
+        """Internal method that runs CLI with operation tracking.
+
+        Separated to allow try/except wrapper in run() for guaranteed operation closure.
+        """
         # Build full prompt with agent instructions
         full_prompt = self._build_full_prompt(prompt)
 
@@ -212,6 +272,10 @@ class ClaudeCLI:
             s3_prompt_url = await self._s3_saver.save_markdown(
                 full_prompt, "prompt", context_id, {"model": self.model}, "Claude CLI"
             )
+
+            # Update operation with S3 URL for live visibility
+            if operation and s3_prompt_url:
+                self._update_operation(operation.operation_id, {"s3_prompt_url": s3_prompt_url})
 
         # Run CLI
         output, model_usage, thinking, raw_output, error = await self._execute_cli(
@@ -253,6 +317,10 @@ class ClaudeCLI:
             )
 
         if error:
+            # Auto-fail operation
+            if operation:
+                self._fail_operation(operation.operation_id, error)
+
             # For API errors (is_error=true), we still have output with the error message
             # Return success=False but include the output so caller can inspect error details
             return ClaudeCLIResult(
@@ -267,6 +335,14 @@ class ClaudeCLI:
                 s3_prompt_url=s3_prompt_url,
                 s3_output_url=s3_output_url,
                 s3_thinking_url=s3_thinking_url,
+            )
+
+        # Auto-complete operation
+        if operation:
+            self._complete_operation(
+                operation.operation_id,
+                duration_ms=duration_ms,
+                model_usage=model_usage,
             )
 
         return ClaudeCLIResult(
@@ -630,3 +706,165 @@ class ClaudeCLI:
             output = raw_output
 
         return output, model_usage_list, thinking, api_error
+
+    def _infer_operation_type(self, explicit_type: str | None, prompt: str) -> str:
+        """Infer operation type from context.
+
+        Args:
+            explicit_type: Explicitly provided type
+            prompt: The prompt being executed
+
+        Returns:
+            OperationType value string
+        """
+        if explicit_type:
+            return explicit_type
+
+        # Infer from agent_md_path
+        if self.agent_md_path:
+            agent_name = self.agent_md_path.stem.lower()
+            if "fix" in agent_name:
+                return "fix"
+            if "review" in agent_name:
+                return "review"
+            if "commit" in agent_name:
+                return "git_commit"
+            if "merge" in agent_name:
+                return "git_merge"
+            if "push" in agent_name:
+                return "git_push"
+            if "pull" in agent_name:
+                return "git_pull"
+            if "lint" in agent_name or "analyzer" in agent_name:
+                return "review"
+
+        # Infer from prompt keywords
+        prompt_lower = prompt.lower()[:500]
+        if "fix" in prompt_lower or "correggi" in prompt_lower:
+            return "fix"
+        if "review" in prompt_lower or "analizza" in prompt_lower:
+            return "review"
+        if "commit" in prompt_lower:
+            return "git_commit"
+        if "merge" in prompt_lower:
+            return "git_merge"
+        if "push" in prompt_lower:
+            return "git_push"
+
+        # Default: generic CLI task
+        return "cli_task"
+
+    def _extract_repo_name(self) -> str | None:
+        """Extract repository name from working_dir."""
+        if self.working_dir:
+            return self.working_dir.name
+        return None
+
+    def _register_operation(
+        self,
+        context_id: str | None,
+        prompt: str,
+        operation_type: str | None,
+        repo_name: str | None,
+        user_name: str | None,
+        operation_details: dict | None,
+    ):
+        """Register operation in tracker.
+
+        Returns:
+            Operation instance or None if registration fails
+        """
+        try:
+            from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+            tracker = get_tracker()
+            op_type_str = self._infer_operation_type(operation_type, prompt)
+
+            # Convert string to OperationType enum
+            try:
+                op_type = OperationType(op_type_str)
+            except ValueError:
+                op_type = OperationType.CLI_TASK
+
+            # Extract prompt preview (first 150 chars, cleaned)
+            prompt_preview = prompt[:150].replace("\n", " ").strip()
+            if len(prompt) > 150:
+                prompt_preview += "..."
+
+            operation = tracker.register(
+                op_type=op_type,
+                operation_id=context_id or str(uuid.uuid4()),
+                repo_name=repo_name or self._extract_repo_name(),
+                user=user_name,
+                details={
+                    "model": self.model,
+                    "cli": "claude",
+                    "agent": self.agent_md_path.stem if self.agent_md_path else None,
+                    "working_dir": str(self.working_dir) if self.working_dir else None,
+                    "prompt_preview": prompt_preview,
+                    "prompt_length": len(prompt),
+                    **(operation_details or {}),
+                },
+            )
+
+            logger.info(
+                f"[CLAUDE CLI] Operation registered: {operation.operation_id[:8]} "
+                f"({op_type.value})"
+            )
+            return operation
+
+        except Exception as e:
+            # Don't fail the CLI execution if tracking fails
+            logger.warning(f"[CLAUDE CLI] Failed to register operation: {e}")
+            return None
+
+    def _complete_operation(
+        self,
+        operation_id: str,
+        duration_ms: int,
+        model_usage: list[ModelUsage],
+    ) -> None:
+        """Complete operation in tracker."""
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+            total_tokens = sum(u.input_tokens + u.output_tokens for u in model_usage)
+            total_cost = sum(u.cost_usd for u in model_usage)
+
+            tracker.complete(
+                operation_id,
+                result={
+                    "duration_ms": duration_ms,
+                    "model": self.model,
+                    "tokens": total_tokens,
+                    "cost_usd": total_cost,
+                },
+            )
+            logger.info(f"[CLAUDE CLI] Operation completed: {operation_id[:8]}")
+
+        except Exception as e:
+            logger.warning(f"[CLAUDE CLI] Failed to complete operation: {e}")
+
+    def _fail_operation(self, operation_id: str, error: str) -> None:
+        """Fail operation in tracker."""
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+            tracker.fail(operation_id, error=error[:200])
+            logger.info(f"[CLAUDE CLI] Operation failed: {operation_id[:8]}")
+
+        except Exception as e:
+            logger.warning(f"[CLAUDE CLI] Failed to mark operation as failed: {e}")
+
+    def _update_operation(self, operation_id: str, details: dict) -> None:
+        """Update operation details in tracker (e.g., add S3 URLs)."""
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+            tracker.update(operation_id, details=details)
+
+        except Exception as e:
+            logger.warning(f"[CLAUDE CLI] Failed to update operation: {e}")

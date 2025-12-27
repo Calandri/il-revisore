@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from turbowrap.utils.claude_cli import (
+from turbowrap.llm.claude_cli import (
     DEFAULT_TIMEOUT,
     MODEL_MAP,
     ClaudeCLI,
@@ -78,7 +78,7 @@ class TestModelResolution:
 
     def test_default_model_from_settings(self):
         """When no model specified, use settings default."""
-        with patch("turbowrap.utils.claude_cli.get_settings") as mock_settings:
+        with patch("turbowrap.llm.claude_cli.get_settings") as mock_settings:
             mock_settings.return_value.agents.claude_model = "test-model"
             mock_settings.return_value.thinking.enabled = False
             mock_settings.return_value.thinking.s3_bucket = None
