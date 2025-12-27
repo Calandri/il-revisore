@@ -46,9 +46,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cli-chat", tags=["cli-chat"])
 
+# ============================================================================
+# Title Generation Settings
+# ============================================================================
+
+# Refresh title every N messages if still default
+TITLE_REFRESH_INTERVAL = 10
+DEFAULT_TITLES = {"Claude Chat", "Gemini Chat", "", None}
+
+# Prompt suffix to request title generation inline
+TITLE_REQUEST_PROMPT = """
+
+[SYSTEM: This chat needs a title. At the very end of your response, on a new line, output ONLY this JSON (nothing else after it):
+{"chat_title": "Your 3-4 Word Title"}
+The title should describe the main topic of this conversation. Keep it short and descriptive.]"""
+
+
+def extract_title_from_response(content: str) -> tuple[str | None, str]:
+    """Extract title JSON from response and return (title, cleaned_content).
+
+    Looks for {"chat_title": "..."} at the end of the response.
+    Returns the title and the content with the JSON removed.
+    """
+    import re
+
+    # Look for the JSON pattern at the end of the response
+    pattern = r'\s*\{"chat_title":\s*"([^"]+)"\}\s*$'
+    match = re.search(pattern, content)
+
+    if match:
+        title = match.group(1).strip()
+        # Remove the JSON from the content
+        cleaned = content[: match.start()].rstrip()
+        return title, cleaned
+
+    return None, content
+
 
 # ============================================================================
-# Title Generation
+# Title Generation (Legacy - for first message)
 # ============================================================================
 
 
@@ -667,11 +703,25 @@ async def send_message(
                         context=context,
                     )
 
+            # Check if we should request a title refresh
+            # (every N messages if title is still default)
+            should_request_title = (
+                actual_message_count > 0
+                and actual_message_count % TITLE_REFRESH_INTERVAL == 0
+                and session_display_name in DEFAULT_TITLES
+            )
+
+            # Build message with optional title request
+            message_to_send = data.content
+            if should_request_title:
+                message_to_send = data.content + TITLE_REQUEST_PROMPT
+                logger.info(f"[TITLE] Requesting title refresh at message #{actual_message_count}")
+
             # Stream response - parse stream-json line by line
             full_content: list[str] = []
             system_events: list[dict[str, Any]] = []
 
-            async for line in manager.send_message(session_id, data.content):
+            async for line in manager.send_message(session_id, message_to_send):
                 line = line.strip()
                 if not line:
                     continue
@@ -749,10 +799,20 @@ async def send_message(
 
             # Save assistant message
             response_content = "".join(full_content)
+
+            # Extract title if we requested one (inline in the response)
+            extracted_title: str | None = None
+            if should_request_title:
+                extracted_title, response_content = extract_title_from_response(response_content)
+                if extracted_title:
+                    logger.info(f"[TITLE] Extracted inline title: {extracted_title}")
+                else:
+                    logger.warning("[TITLE] Title request was added but no title found in response")
+
             assistant_message = CLIChatMessage(
                 session_id=session_id,
                 role="assistant",
-                content=response_content,
+                content=response_content,  # Use cleaned content (without JSON)
                 model_used=session_model,
                 agent_used=session_agent_name,
             )
@@ -762,6 +822,11 @@ async def send_message(
             session.total_messages = cast(int, session.total_messages) + 2  # type: ignore[assignment]
             session.last_message_at = datetime.utcnow()  # type: ignore[assignment]
             session.updated_at = datetime.utcnow()  # type: ignore[assignment]
+
+            # Save extracted title if found
+            if extracted_title:
+                session.display_name = extracted_title  # type: ignore[assignment]
+
             db.commit()
 
             # Done event
@@ -775,8 +840,16 @@ async def send_message(
                 ),
             }
 
-            # Generate title for first message
-            if is_first_message and not session_display_name:
+            # Handle title generation/update
+            if extracted_title:
+                # Title was extracted inline - already saved above, just emit event
+                logger.info(f"[TITLE] Session {session_id} title updated to: {extracted_title}")
+                yield {
+                    "event": "title_updated",
+                    "data": json.dumps({"title": extracted_title}),
+                }
+            elif is_first_message and not session_display_name:
+                # Generate title for first message using separate process
                 logger.info(f"[TITLE] Generating title for session {session_id}")
                 title = await generate_chat_title(
                     cli_type=session_cli_type,

@@ -161,7 +161,11 @@ class ClaudeCLI:
         self._agent_prompt: str | None = None
 
     def load_agent_prompt(self) -> str | None:
-        """Load agent prompt from MD file if configured."""
+        """Load agent prompt from MD file if configured.
+
+        Strips YAML front matter (---...---) if present, as it's metadata
+        for Claude Code and would cause CLI argument parsing issues.
+        """
         if self._agent_prompt is not None:
             return self._agent_prompt
 
@@ -172,7 +176,21 @@ class ClaudeCLI:
             logger.warning(f"Agent MD file not found: {self.agent_md_path}")
             return None
 
-        self._agent_prompt = self.agent_md_path.read_text()
+        content = self.agent_md_path.read_text()
+
+        # Strip YAML front matter if present (starts with ---)
+        # This is metadata for Claude Code, not part of the prompt
+        if content.startswith("---"):
+            # Find closing ---
+            end_idx = content.find("---", 3)
+            if end_idx != -1:
+                # Skip past the closing --- and any following newlines
+                content = content[end_idx + 3 :].lstrip("\n")
+                logger.info(
+                    f"[CLAUDE CLI] Stripped YAML front matter from {self.agent_md_path.name}"
+                )
+
+        self._agent_prompt = content
         return self._agent_prompt
 
     async def run(
