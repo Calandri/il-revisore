@@ -548,8 +548,7 @@ async def run_lint_fix(
                     "data": json.dumps(
                         {
                             "message": (
-                                f"Running {lint_type} linting and fixing "
-                                f"(using {cli_name})..."
+                                f"Running {lint_type} linting and fixing " f"(using {cli_name})..."
                             ),
                             "lint_type": lint_type,
                             "phase": "running",
@@ -570,10 +569,10 @@ async def run_lint_fix(
                         model="flash",
                         timeout=300,  # 5 minutes
                     )
-                    result = await gemini_cli.run(prompt)
-                    output = result.output
-                    error = result.error or ""
-                    success = result.success
+                    gemini_result = await gemini_cli.run(prompt)
+                    output = gemini_result.output
+                    error = gemini_result.error or ""
+                    success = gemini_result.success
                 else:
                     # Use Claude CLI (default)
                     logger.info(f"[LINT-FIX] Using Claude CLI for {lint_type}")

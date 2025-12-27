@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -911,7 +912,7 @@ class Operation(Base):
         elapsed = (datetime.utcnow() - self.started_at).total_seconds()
         return elapsed > 1800
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to API response format."""
         from turbowrap.api.services.operation_tracker import OPERATION_COLORS, OPERATION_LABELS
         from turbowrap.api.services.operation_tracker import OperationType as TrackerOpType

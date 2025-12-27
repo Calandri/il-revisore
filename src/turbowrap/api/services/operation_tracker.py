@@ -559,7 +559,9 @@ class OperationTracker:
             SessionLocal = get_session_local()
             db = SessionLocal()
             try:
-                db_op = db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
+                db_op = (
+                    db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
+                )
                 if db_op:
                     db_op.status = "completed"  # type: ignore[assignment]
                     db_op.completed_at = operation.completed_at  # type: ignore[assignment]
@@ -581,7 +583,9 @@ class OperationTracker:
             SessionLocal = get_session_local()
             db = SessionLocal()
             try:
-                db_op = db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
+                db_op = (
+                    db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
+                )
                 if db_op:
                     db_op.status = "failed"  # type: ignore[assignment]
                     db_op.completed_at = operation.completed_at  # type: ignore[assignment]
@@ -603,7 +607,9 @@ class OperationTracker:
             SessionLocal = get_session_local()
             db = SessionLocal()
             try:
-                db_op = db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
+                db_op = (
+                    db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
+                )
                 if db_op:
                     db_op.status = "cancelled"  # type: ignore[assignment]
                     db_op.completed_at = operation.completed_at  # type: ignore[assignment]

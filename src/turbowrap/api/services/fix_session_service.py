@@ -547,9 +547,7 @@ class FixSessionService:
             except asyncio.CancelledError:
                 # Task was cancelled (shouldn't happen anymore, but handle gracefully)
                 logger.warning(f"Fix task cancelled for session {session_info.session_id}")
-                await self.reset_issues_on_error(
-                    fix_db, session_info.issues, "Fix cancelled"
-                )
+                await self.reset_issues_on_error(fix_db, session_info.issues, "Fix cancelled")
                 self.idempotency.update_status(idempotency_key, "cancelled")
                 tracker.fail(session_info.session_id, error="Task cancelled")
                 raise  # Re-raise to properly signal cancellation

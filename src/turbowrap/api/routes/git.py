@@ -599,9 +599,7 @@ async def merge_branch(
     try:
         output = run_git_command(repo_path, ["merge", request.branch])
         tracker.complete(op_id, result={"output": output[:200] if output else None})
-        return GitOperationResult(
-            success=True, message=f"Merged '{request.branch}'", output=output
-        )
+        return GitOperationResult(success=True, message=f"Merged '{request.branch}'", output=output)
     except HTTPException as e:
         # Check if this is a merge conflict
         is_conflict = "CONFLICT" in str(e.detail) or "conflict" in str(e.detail).lower()
@@ -726,9 +724,7 @@ Start by reading each conflicting file to understand the conflicts."""
     try:
         # Check if there are still conflicts
         status_output = run_git_command(repo_path, ["status", "--porcelain"])
-        still_conflicting = [
-            line for line in status_output.split("\n") if line.startswith("UU ")
-        ]
+        still_conflicting = [line for line in status_output.split("\n") if line.startswith("UU ")]
 
         if still_conflicting:
             return GitOperationResult(

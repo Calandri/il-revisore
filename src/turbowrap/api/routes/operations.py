@@ -244,14 +244,18 @@ async def get_operation_stats(
         )
 
         # Total operations
-        total = db.query(func.count(DBOperation.id)).filter(DBOperation.started_at >= since).scalar()
+        total = (
+            db.query(func.count(DBOperation.id)).filter(DBOperation.started_at >= since).scalar()
+        )
 
         return {
             "period_days": days,
             "total_operations": total or 0,
             "by_status": status_counts,
             "by_type": type_counts,
-            "avg_duration_seconds": {k: round(v, 2) if v else None for k, v in avg_durations.items()},
+            "avg_duration_seconds": {
+                k: round(v, 2) if v else None for k, v in avg_durations.items()
+            },
         }
 
     finally:
@@ -363,9 +367,7 @@ async def reset_stuck_issues() -> dict[str, Any]:
     db = SessionLocal()
 
     try:
-        stuck_issues = (
-            db.query(Issue).filter(Issue.status == IssueStatus.IN_PROGRESS.value).all()
-        )
+        stuck_issues = db.query(Issue).filter(Issue.status == IssueStatus.IN_PROGRESS.value).all()
 
         reset_count = 0
         for issue in stuck_issues:

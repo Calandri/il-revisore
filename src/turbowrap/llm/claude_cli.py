@@ -41,7 +41,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from turbowrap.config import get_settings
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
@@ -187,7 +187,7 @@ class ClaudeCLI:
         operation_type: str | None = None,
         repo_name: str | None = None,
         user_name: str | None = None,
-        operation_details: dict | None = None,
+        operation_details: dict[str, Any] | None = None,
     ) -> ClaudeCLIResult:
         """Execute Claude CLI and return structured result.
 
@@ -252,7 +252,7 @@ class ClaudeCLI:
         save_thinking: bool,
         on_chunk: Callable[[str], Awaitable[None]] | None,
         on_stderr: Callable[[str], Awaitable[None]] | None,
-        operation,
+        operation: Any,
         start_time: float,
     ) -> ClaudeCLIResult:
         """Internal method that runs CLI with operation tracking.
@@ -767,8 +767,8 @@ class ClaudeCLI:
         operation_type: str | None,
         repo_name: str | None,
         user_name: str | None,
-        operation_details: dict | None,
-    ):
+        operation_details: dict[str, Any] | None,
+    ) -> Any:
         """Register operation in tracker.
 
         Returns:
@@ -858,7 +858,7 @@ class ClaudeCLI:
         except Exception as e:
             logger.warning(f"[CLAUDE CLI] Failed to mark operation as failed: {e}")
 
-    def _update_operation(self, operation_id: str, details: dict) -> None:
+    def _update_operation(self, operation_id: str, details: dict[str, Any]) -> None:
         """Update operation details in tracker (e.g., add S3 URLs)."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker

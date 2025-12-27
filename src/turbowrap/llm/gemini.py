@@ -330,7 +330,7 @@ class GeminiCLI:
         operation_type: str | None = None,
         repo_name: str | None = None,
         user_name: str | None = None,
-        operation_details: dict | None = None,
+        operation_details: dict[str, Any] | None = None,
     ) -> GeminiCLIResult:
         """
         Execute Gemini CLI and return result.
@@ -613,8 +613,8 @@ class GeminiCLI:
         operation_type: str | None,
         repo_name: str | None,
         user_name: str | None,
-        operation_details: dict | None,
-    ):
+        operation_details: dict[str, Any] | None,
+    ) -> Any:
         """Register operation in tracker."""
         try:
             from turbowrap.api.services.operation_tracker import OperationType, get_tracker
@@ -687,7 +687,7 @@ class GeminiCLI:
         except Exception as e:
             logger.warning(f"[GEMINI CLI] Failed to mark operation as failed: {e}")
 
-    def _update_operation(self, operation_id: str, details: dict) -> None:
+    def _update_operation(self, operation_id: str, details: dict[str, Any]) -> None:
         """Update operation details in tracker (e.g., add S3 URLs)."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker
