@@ -158,24 +158,23 @@ def run_git_command(repo_path: Path, command: list[str], timeout: int = 30) -> s
 
 @router.get("/repositories")
 def list_repositories(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
-    """List all active repositories with basic info."""
-    repos = (
-        db.query(Repository)
-        .filter(Repository.deleted_at.is_(None), Repository.status == "active")
-        .all()
-    )
+    """List all repositories with basic info (including those in error state)."""
+    repos = db.query(Repository).filter(Repository.deleted_at.is_(None)).all()
 
     result: list[dict[str, Any]] = []
     for repo in repos:
         path = repo.local_path
         path_exists = Path(path).exists() if path else False
-        logger.debug(f"[git/repos] {repo.name}: path={path}, exists={path_exists}")
+        logger.debug(
+            f"[git/repos] {repo.name}: path={path}, exists={path_exists}, status={repo.status}"
+        )
         result.append(
             {
                 "id": str(repo.id),
                 "name": str(repo.name) if repo.name else None,
                 "path": str(path) if path else None,
                 "path_exists": path_exists,
+                "status": str(repo.status) if repo.status else "unknown",
             }
         )
 
