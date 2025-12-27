@@ -119,6 +119,23 @@ class AuthSettings(BaseSettings):
     )
 
 
+class LogsSettings(BaseSettings):
+    """CloudWatch logs configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_LOGS_")
+
+    enabled: bool = Field(default=True, description="Enable CloudWatch logs fetching")
+    region: str = Field(default="eu-west-1", description="AWS region for CloudWatch")
+    log_group: str = Field(
+        default="/aws/lambda/oasi-api",
+        description="CloudWatch log group name",
+    )
+    default_minutes: int = Field(
+        default=30, ge=1, le=1440, description="Default time range in minutes"
+    )
+    max_events: int = Field(default=500, ge=10, le=5000, description="Maximum log events to fetch")
+
+
 class ChallengerSettings(BaseSettings):
     """Challenger loop configuration."""
 
@@ -208,6 +225,7 @@ class Settings(BaseSettings):
     fix_challenger: FixChallengerSettings = Field(default_factory=FixChallengerSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     thinking: ThinkingSettings = Field(default_factory=ThinkingSettings)
+    logs: LogsSettings = Field(default_factory=LogsSettings)
 
     # Paths
     repos_dir: Path = Field(

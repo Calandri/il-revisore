@@ -1296,3 +1296,46 @@ def get_slash_command(command_name: str) -> dict[str, str]:
     except Exception as e:
         logger.error(f"Error reading slash command '{command_name}': {e}")
         raise HTTPException(status_code=500, detail=f"Error reading slash command: {e}") from e
+
+
+# ============================================================================
+# Server Logs Fetching
+# ============================================================================
+
+
+@router.get("/server-logs")
+async def fetch_server_logs(
+    minutes: int = 30,
+    log_group: str | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch server logs from CloudWatch.
+
+    Returns logs organized by level (ERROR, WARNING, INFO).
+    The markdown output can be inserted directly into chat for analysis.
+    """
+    from ...utils.cloudwatch_logs import get_logs_fetcher
+
+    fetcher = get_logs_fetcher()
+
+    if not fetcher.enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="CloudWatch logs fetching is not configured",
+        )
+
+    result = await fetcher.fetch_logs(minutes=minutes, log_group=log_group)
+
+    return {
+        "log_group": result.log_group,
+        "time_range_minutes": result.time_range_minutes,
+        "fetched_at": result.fetched_at.isoformat(),
+        "summary": {
+            "total": len(result.entries),
+            "errors": result.error_count,
+            "warnings": result.warning_count,
+            "info": result.info_count,
+            "debug": result.debug_count,
+        },
+        "markdown": result.to_markdown(),
+    }

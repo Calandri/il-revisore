@@ -59,6 +59,8 @@ function chatSidebar() {
         // Branch management
         branches: [],           // Available branches in repo
         loadingBranches: false, // Loading state for branches
+        // Server logs
+        isLoadingLogs: false,   // Loading state for server logs fetch
         // Repository management
         repositories: [],       // Available repositories
         selectedRepoId: null,   // Selected repo for new session
@@ -1140,6 +1142,51 @@ function chatSidebar() {
 
             this.inputMessage = `/${commandName}`;
             await this.sendMessage();
+        },
+
+        /**
+         * Fetch server logs from CloudWatch and send to chat for analysis
+         */
+        async fetchServerLogs() {
+            if (!this.activeSession) {
+                this.showToast('Seleziona una chat prima', 'error');
+                return;
+            }
+
+            if (this.streaming) {
+                this.showToast('Attendi il completamento della risposta', 'warning');
+                return;
+            }
+
+            this.isLoadingLogs = true;
+
+            try {
+                const response = await fetch('/api/cli-chat/server-logs?minutes=30');
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Errore nel recupero dei log');
+                }
+
+                const data = await response.json();
+
+                // Show summary toast
+                const summary = data.summary;
+                this.showToast(
+                    `Log recuperati: ${summary.errors} errori, ${summary.warnings} warning, ${summary.info} info`,
+                    summary.errors > 0 ? 'error' : summary.warnings > 0 ? 'warning' : 'success'
+                );
+
+                // Set the markdown as input and send to agent for analysis
+                this.inputMessage = data.markdown + '\n\nAnalizza questi log e identifica eventuali problemi o pattern.';
+                await this.sendMessage();
+
+            } catch (error) {
+                console.error('[LOGS] Error fetching server logs:', error);
+                this.showToast(error.message || 'Errore nel recupero dei log', 'error');
+            } finally {
+                this.isLoadingLogs = false;
+            }
         }
     };
 }
