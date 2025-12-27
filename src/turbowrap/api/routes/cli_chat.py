@@ -25,11 +25,13 @@ from ...chat_cli import (
     get_process_manager,
 )
 from ...config import get_settings
-from ...db.models import CLIChatMessage, CLIChatSession
+from ...db.models import CLIChatMessage, CLIChatSession, Repository
+from ...utils.git_utils import checkout_branch, list_branches
 from ..deps import get_db
 from ..schemas.cli_chat import (
     AgentListResponse,
     AgentResponse,
+    CLIBranchChange,
     CLIMessageCreate,
     CLIMessageResponse,
     CLISessionCreate,
@@ -175,9 +177,17 @@ def create_session(
         "claude-opus-4-5-20251101" if data.cli_type == "claude" else "gemini-3-pro-preview"
     )
 
+    # Get default branch from repository if linked
+    current_branch = None
+    if data.repository_id:
+        repo = db.query(Repository).filter(Repository.id == data.repository_id).first()
+        if repo:
+            current_branch = repo.default_branch or "main"
+
     session = CLIChatSession(
         cli_type=data.cli_type,
         repository_id=data.repository_id,
+        current_branch=current_branch,
         display_name=data.display_name,
         icon=data.icon,
         color=data.color,
@@ -314,6 +324,7 @@ def fork_session(
         reasoning_enabled=original.reasoning_enabled,
         mcp_servers=original.mcp_servers,
         repository_id=original.repository_id,
+        current_branch=original.current_branch,
         icon=original.icon,
         color=original.color,
         status="idle",
@@ -370,6 +381,115 @@ def fork_session(
     logger.info(f"[FORK] Created fork {forked.id} from {session_id} with {message_count} messages")
 
     return forked
+
+
+# ============================================================================
+# Branch Management
+# ============================================================================
+
+
+@router.get("/sessions/{session_id}/branches")
+def get_session_branches(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> list[str]:
+    """List available branches for the session's repository.
+
+    Returns a list of branch names from the associated repository.
+    """
+    session = (
+        db.query(CLIChatSession)
+        .filter(
+            CLIChatSession.id == session_id,
+            CLIChatSession.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if not session.repository_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Session is not linked to a repository",
+        )
+
+    repo = db.query(Repository).filter(Repository.id == session.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    try:
+        return list_branches(Path(repo.local_path))
+    except Exception as e:
+        logger.error(f"Failed to list branches: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list branches: {e}") from e
+
+
+@router.post("/sessions/{session_id}/branch", response_model=CLISessionResponse)
+async def change_session_branch(
+    session_id: str,
+    data: CLIBranchChange,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> CLIChatSession:
+    """Change the active branch for a chat session.
+
+    Performs git checkout to the specified branch, updates the session's
+    current_branch field, and terminates any running CLI process so it
+    can be restarted with the new branch context.
+    """
+    session = (
+        db.query(CLIChatSession)
+        .filter(
+            CLIChatSession.id == session_id,
+            CLIChatSession.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if not session.repository_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Session is not linked to a repository",
+        )
+
+    repo = db.query(Repository).filter(Repository.id == session.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Git checkout
+    try:
+        checkout_branch(Path(repo.local_path), data.branch)
+        logger.info(f"[BRANCH] Checked out branch '{data.branch}' in {repo.local_path}")
+    except Exception as e:
+        logger.error(f"Failed to checkout branch: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to checkout branch '{data.branch}': {e}",
+        ) from e
+
+    # Update session
+    session.current_branch = data.branch  # type: ignore[assignment]
+    session.updated_at = datetime.utcnow()  # type: ignore[assignment]
+    db.commit()
+    db.refresh(session)
+
+    # Terminate running CLI process (will be restarted with new context on next message)
+    manager = get_process_manager()
+    proc = manager.get_process(session_id)
+    if proc:
+        logger.info(
+            f"[BRANCH] Terminating CLI process for session {session_id} to apply new branch"
+        )
+        background_tasks.add_task(manager.terminate, session_id)
+
+    logger.info(f"[BRANCH] Session {session_id} switched to branch '{data.branch}'")
+
+    return session
 
 
 # ============================================================================
@@ -459,6 +579,7 @@ async def send_message(
     # Extract session attributes as proper Python types for use in async generator
     session_cli_type = cast(str, session.cli_type)
     session_repository_id = cast(str | None, session.repository_id)
+    session_current_branch = cast(str | None, session.current_branch)
     session_agent_name = cast(str | None, session.agent_name)
     session_model = cast(str | None, session.model)
     session_thinking_enabled = cast(bool, session.thinking_enabled)
@@ -492,6 +613,7 @@ async def send_message(
                     db,
                     repo_id=session_repository_id,
                     linear_issue_id=None,  # TODO: support linear issue context
+                    branch=session_current_branch,
                 )
                 logger.info(f"Generated context: {len(context)} chars")
 
@@ -730,6 +852,7 @@ async def start_cli(
             db,
             repo_id=cast(str | None, session.repository_id),
             linear_issue_id=None,
+            branch=cast(str | None, session.current_branch),
         )
         logger.info(f"[START] Generated context: {len(context)} chars")
 

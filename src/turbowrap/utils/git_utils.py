@@ -508,6 +508,114 @@ def get_current_branch(repo_path: Path) -> str:
         return "unknown"
 
 
+def list_branches(repo_path: Path, include_remote: bool = True) -> list[str]:
+    """List all branches in the repository.
+
+    Args:
+        repo_path: Path to repository.
+        include_remote: Include remote-tracking branches.
+
+    Returns:
+        List of branch names.
+    """
+    if not repo_path.exists():
+        raise RepositoryError(f"Repository not found: {repo_path}")
+
+    try:
+        # First fetch to get latest remote branches
+        subprocess.run(
+            ["git", "fetch", "--prune"],
+            cwd=repo_path,
+            capture_output=True,
+            env=_get_git_env(),
+        )
+
+        # Get all branches
+        args = ["git", "branch", "-a"] if include_remote else ["git", "branch"]
+        result = subprocess.run(
+            args,
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=_get_git_env(),
+        )
+
+        branches = set()
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Remove leading * for current branch
+            if line.startswith("* "):
+                line = line[2:]
+            # Handle remote branches (remotes/origin/branch-name)
+            if line.startswith("remotes/origin/"):
+                branch_name = line[15:]  # Strip "remotes/origin/"
+                # Skip HEAD pointer
+                if branch_name.startswith("HEAD"):
+                    continue
+                branches.add(branch_name)
+            else:
+                branches.add(line)
+
+        return sorted(branches)
+    except subprocess.CalledProcessError as e:
+        raise RepositoryError(f"Failed to list branches: {e.stderr}") from e
+
+
+def checkout_branch(repo_path: Path, branch: str) -> str:
+    """Checkout a branch in the repository.
+
+    Args:
+        repo_path: Path to repository.
+        branch: Branch name to checkout.
+
+    Returns:
+        The branch name that was checked out.
+
+    Raises:
+        RepositoryError: If checkout fails.
+    """
+    if not repo_path.exists():
+        raise RepositoryError(f"Repository not found: {repo_path}")
+
+    try:
+        # First try to checkout local branch
+        result = subprocess.run(
+            ["git", "checkout", branch],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            env=_get_git_env(),
+        )
+
+        if result.returncode != 0:
+            # Maybe it's a remote branch, try to create tracking branch
+            result = subprocess.run(
+                ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                env=_get_git_env(),
+            )
+
+            if result.returncode != 0:
+                raise RepositoryError(f"Failed to checkout branch '{branch}': {result.stderr}")
+
+        # Pull latest changes
+        subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=repo_path,
+            capture_output=True,
+            env=_get_git_env(),
+        )
+
+        return branch
+    except subprocess.CalledProcessError as e:
+        raise RepositoryError(f"Failed to checkout branch '{branch}': {e.stderr}") from e
+
+
 def get_repo_status(repo_path: Path) -> GitStatus:
     """Get repository status.
 

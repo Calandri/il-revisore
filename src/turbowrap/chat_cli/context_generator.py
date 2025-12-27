@@ -321,6 +321,7 @@ def get_context_for_session(
     db: Session,
     repo_id: str | None = None,
     linear_issue_id: str | None = None,
+    branch: str | None = None,
 ) -> str:
     """Genera context specifico per una sessione.
 
@@ -331,6 +332,7 @@ def get_context_for_session(
         db: Database session
         repo_id: ID del repository (opzionale)
         linear_issue_id: ID della issue Linear (opzionale)
+        branch: Branch attivo nella sessione (opzionale)
 
     Returns:
         Context string
@@ -346,12 +348,15 @@ def get_context_for_session(
     if repo_id:
         repo = db.query(Repository).filter(Repository.id == repo_id).first()
         if repo:
+            # Use session branch or repo default branch
+            current_branch = branch or repo.default_branch or "main"
             extras.append(
                 f"""
 ## Repository Corrente
 
 Stai lavorando su **{repo.name}** ({repo.repo_type or "generic"}).
 
+- **Branch attivo**: `{current_branch}`
 - **Path locale**: `{repo.local_path}`
 - **Progetto**: {repo.project_name or "N/A"}
 - **URL**: {repo.url}

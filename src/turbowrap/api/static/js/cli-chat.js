@@ -33,6 +33,9 @@ function chatSidebar() {
         // Queue and Fork functionality
         pendingMessage: null,   // Message queued to send after current stream
         forkInProgress: false,  // Prevents double-fork
+        // Branch management
+        branches: [],           // Available branches in repo
+        loadingBranches: false, // Loading state for branches
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -99,6 +102,77 @@ function chatSidebar() {
         },
 
         /**
+         * Load branches for the active session's repository
+         */
+        async loadBranches() {
+            if (!this.activeSession?.repository_id) {
+                this.branches = [];
+                return;
+            }
+
+            this.loadingBranches = true;
+            try {
+                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/branches`);
+                if (res.ok) {
+                    this.branches = await res.json();
+                    console.log('[chatSidebar] Loaded branches:', this.branches.length);
+                } else {
+                    console.error('[chatSidebar] Failed to load branches:', res.status);
+                    this.branches = [];
+                }
+            } catch (error) {
+                console.error('[chatSidebar] Error loading branches:', error);
+                this.branches = [];
+            } finally {
+                this.loadingBranches = false;
+            }
+        },
+
+        /**
+         * Change branch for the active session (with confirmation)
+         */
+        async changeBranch(newBranch) {
+            if (!this.activeSession || !newBranch) return;
+
+            // Skip if same branch
+            if (newBranch === this.activeSession.current_branch) return;
+
+            // Confirmation dialog
+            if (!confirm(`Sei sicuro di voler cambiare branch e lavorare su "${newBranch}"?`)) {
+                // Reset select to current value
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/branch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ branch: newBranch })
+                });
+
+                if (res.ok) {
+                    const updated = await res.json();
+                    this.activeSession = updated;
+
+                    // Update in sessions list
+                    const idx = this.sessions.findIndex(s => s.id === updated.id);
+                    if (idx >= 0) {
+                        this.sessions[idx] = updated;
+                    }
+
+                    this.showToast(`Branch cambiato a ${newBranch}`, 'success');
+                } else {
+                    const error = await res.text();
+                    console.error('[chatSidebar] Failed to change branch:', error);
+                    this.showToast('Errore cambio branch', 'error');
+                }
+            } catch (error) {
+                console.error('[chatSidebar] Error changing branch:', error);
+                this.showToast('Errore cambio branch', 'error');
+            }
+        },
+
+        /**
          * Create a new chat session
          */
         async createSession(cliType) {
@@ -136,6 +210,7 @@ function chatSidebar() {
             this.activeSession = session;
             this.messages = [];
             this.showSettings = false;
+            this.branches = [];
 
             // Persist active session ID for cross-page navigation
             localStorage.setItem('chatActiveSessionId', session.id);
@@ -154,6 +229,11 @@ function chatSidebar() {
                     const errorText = await res.text();
                     console.error('[selectSession] Failed to load messages:', res.status, errorText);
                     this.showToast('Errore caricamento messaggi', 'error');
+                }
+
+                // Load branches if session is linked to a repository
+                if (session.repository_id) {
+                    await this.loadBranches();
                 }
             } catch (error) {
                 console.error('[selectSession] Error:', error);
