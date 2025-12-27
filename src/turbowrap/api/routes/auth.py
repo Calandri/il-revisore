@@ -176,8 +176,9 @@ async def forgot_password(
 
     if success:
         # Redirect to reset-password page with email pre-filled
+        # Use 'info' param so the form is still visible (success hides the form)
         return RedirectResponse(
-            url=f"/reset-password?email={quote(email)}&success={quote(message)}",
+            url=f"/reset-password?email={quote(email)}&info={quote(message)}",
             status_code=302,
         )
 
@@ -192,6 +193,7 @@ async def reset_password_page(
     request: Request,
     error: str | None = None,
     success: str | None = None,
+    info: str | None = None,
     email: str | None = None,
 ) -> Response:
     """Render reset password page."""
@@ -204,6 +206,7 @@ async def reset_password_page(
                 "request": request,
                 "error": error,
                 "success": success,
+                "info": info,
                 "email": email,
             },
         ),
