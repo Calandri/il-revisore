@@ -305,10 +305,13 @@ async def endpoints_page(request: Request) -> Response:
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)) -> Response:
-    """HTMX partial: repository list with last evaluation."""
+    """HTMX partial: repository list with last evaluation and git sync status."""
     import json
+    from pathlib import Path
 
     from sqlalchemy import func
+
+    from ...utils.git_utils import get_repo_status
 
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
 
@@ -352,12 +355,34 @@ async def htmx_repo_list(request: Request, db: Session = Depends(get_db)) -> Res
             except (json.JSONDecodeError, TypeError):
                 pass
 
+    # Get git sync status for each repo
+    git_statuses: dict[str, dict[str, Any]] = {}
+    for repo in repos:
+        if repo.local_path and repo.status == "active":
+            local_path = Path(repo.local_path)
+            if local_path.exists():
+                try:
+                    status = get_repo_status(local_path)
+                    git_statuses[str(repo.id)] = {
+                        "ahead": status.ahead,
+                        "behind": status.behind,
+                        "is_clean": status.is_clean,
+                    }
+                except Exception:
+                    # If git status fails, skip this repo
+                    pass
+
     templates = request.app.state.templates
     return cast(
         Response,
         templates.TemplateResponse(
             "components/repo_list.html",
-            {"request": request, "repos": repos, "evaluations": evaluations},
+            {
+                "request": request,
+                "repos": repos,
+                "evaluations": evaluations,
+                "git_statuses": git_statuses,
+            },
         ),
     )
 

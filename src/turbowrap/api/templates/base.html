@@ -174,5 +174,24 @@
     </script>
 
     {% block scripts %}{% endblock %}
+
+    <!-- Issue Widget -->
+    <script>
+        window.IssueWidgetConfig = {
+            apiUrl: window.location.origin,
+            apiKey: 'test_widget_key',
+            teamId: 'b2e30da5-e378-4e60-bb58-9d53ff0d30f0',
+            position: 'bottom-right',
+            buttonText: 'Report Bug',
+            theme: 'auto',
+            onIssueCreated: (issue) => {
+                console.log('Issue created:', issue);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: `Issue ${issue.identifier} created!`, type: 'success' }
+                }));
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/turbowrap-issue-widget@latest/dist/issue-widget.min.js" async></script>
 </body>
 </html>

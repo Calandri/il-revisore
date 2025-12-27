@@ -660,9 +660,49 @@ def get_repo_status(repo_path: Path) -> GitStatus:
                 else:
                     modified.append(filepath)
 
+        # Get ahead/behind counts from remote
+        ahead = 0
+        behind = 0
+        try:
+            # Check if upstream tracking branch exists
+            subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=_get_git_env(),
+            )
+            # Get ahead count (local commits not in remote)
+            ahead_result = subprocess.run(
+                ["git", "rev-list", "--count", "@{upstream}..HEAD"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=_get_git_env(),
+            )
+            ahead = int(ahead_result.stdout.strip() or "0")
+
+            # Get behind count (remote commits not in local)
+            behind_result = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD..@{upstream}"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=_get_git_env(),
+            )
+            behind = int(behind_result.stdout.strip() or "0")
+        except (subprocess.CalledProcessError, ValueError):
+            # No upstream tracking branch or other error - leave as 0
+            pass
+
         return GitStatus(
             branch=branch,
             is_clean=is_clean,
+            ahead=ahead,
+            behind=behind,
             modified=modified,
             untracked=untracked,
         )
