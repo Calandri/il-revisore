@@ -182,46 +182,27 @@ class GeminiProClient(GeminiClient):
     def name(self) -> str:
         return "gemini_pro"
 
-    def analyze_screenshots(
+    def analyze_images(
         self,
+        prompt: str,
         image_paths: list[str],
-        context: dict[str, str],
     ) -> str:
-        """Analyze screenshots with Gemini Vision API.
+        """Analyze images with Gemini Vision API.
+
+        Generic method for multimodal analysis. Business logic and prompt
+        formatting should be handled by the caller.
 
         Args:
-            image_paths: List of paths to screenshot images.
-            context: Context dict with keys: title, description, figma_link, website_link.
+            prompt: The formatted prompt to send with images.
+            image_paths: List of paths to image files.
 
         Returns:
-            Analysis insights as text.
+            Analysis text from Gemini.
 
         Raises:
             GeminiError: If analysis fails.
         """
         from google.genai import types
-
-        # Build analysis prompt
-        prompt = f"""Analizza questi screenshot per una issue di sviluppo.
-
-**Contesto:**
-- **Titolo**: {context.get("title", "N/A")}
-- **Descrizione**: {context.get("description", "N/A")}
-- **Link Figma**: {context.get("figma_link", "N/A")}
-- **Link Sito**: {context.get("website_link", "N/A")}
-
-**Analisi richiesta:**
-
-Identifica e descrivi in dettaglio:
-
-1. **Componenti UI visibili**: Elenca tutti i componenti UI presenti (bottoni, form, input,
-   dropdown, etc.)
-2. **Layout e design**: Struttura della pagina, grid system, spacing, allineamenti
-3. **User flow**: Sequenza di azioni dell'utente visibile negli screenshot
-4. **Requisiti tecnici**: Tecnologie necessarie, pattern UI da implementare
-5. **Potenziali problemi**: Edge case, accessibilità, responsive design, stati error/loading
-
-Fornisci un'analisi tecnica dettagliata e specifica, non generica."""
 
         # Build parts list starting with the prompt
         parts: list[Any] = [{"text": prompt}]
@@ -246,9 +227,9 @@ Fornisci un'analisi tecnica dettagliata e specifica, non generica."""
                 parts.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
 
             except FileNotFoundError:
-                raise GeminiError(f"Screenshot not found: {img_path}")
+                raise GeminiError(f"Image not found: {img_path}")
             except Exception as e:
-                raise GeminiError(f"Error loading screenshot {img_path}: {e}") from e
+                raise GeminiError(f"Error loading image {img_path}: {e}") from e
 
         # Make API call with multimodal content
         try:

@@ -91,18 +91,23 @@ def test_gemini_vision():
             temp_path = f.name
 
         try:
+            from turbowrap.config import get_settings
+
             client = GeminiProClient()
             print_info(f"Using model: {client._model}")
 
-            result = client.analyze_screenshots(
-                [temp_path],
-                {
-                    "title": TEST_ISSUE["title"],
-                    "description": TEST_ISSUE["description"],
-                    "figma_link": TEST_ISSUE["figma_link"],
-                    "website_link": TEST_ISSUE["website_link"],
-                },
+            # Load and format prompt template
+            settings = get_settings()
+            prompt_path = settings.agents_dir / "prompts" / "screenshot_analysis.md"
+            prompt_template = prompt_path.read_text(encoding="utf-8")
+            formatted_prompt = prompt_template.format(
+                title=TEST_ISSUE["title"],
+                description=TEST_ISSUE["description"],
+                figma_link=TEST_ISSUE["figma_link"],
+                website_link=TEST_ISSUE["website_link"],
             )
+
+            result = client.analyze_images(formatted_prompt, [temp_path])
 
             print_success("Gemini Vision analysis completed")
             print(f"\nAnalysis output ({len(result)} chars):")

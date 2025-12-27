@@ -32,8 +32,8 @@ class TestGeminiVisionClient:
         """GeminiProClient should initialize correctly."""
         pass
 
-    def test_analyze_screenshots_returns_string(self):
-        """analyze_screenshots should return analysis string."""
+    def test_analyze_images_returns_string(self):
+        """analyze_images should return analysis string."""
         pass
 
 
@@ -47,7 +47,7 @@ class TestGeminiVisionClient:
 class TestGeminiVisionE2E:
     """E2E tests that hit the real Gemini API."""
 
-    def test_real_screenshot_analysis(self, tmp_path):
+    def test_real_image_analysis(self, tmp_path):
         """Test with real API (requires GOOGLE_API_KEY)."""
         from turbowrap.llm.gemini import GeminiProClient
 
@@ -62,9 +62,8 @@ class TestGeminiVisionE2E:
         )
 
         client = GeminiProClient()
-        result = client.analyze_screenshots(
-            [str(test_image)], {"title": "Test", "description": "Test analysis"}
-        )
+        prompt = "Describe this image in detail."
+        result = client.analyze_images(prompt, [str(test_image)])
 
         assert isinstance(result, str)
         assert len(result) > 10

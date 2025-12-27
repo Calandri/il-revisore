@@ -782,18 +782,22 @@ async def analyze_for_creation(
                 }
 
                 try:
+                    from ...config import get_settings
                     from ...llm import GeminiProClient
 
-                    gemini = GeminiProClient()
-                    gemini_insights = gemini.analyze_screenshots(
-                        screenshot_paths,
-                        {
-                            "title": title,
-                            "description": description,
-                            "figma_link": figma_link or "",
-                            "website_link": website_link or "",
-                        },
+                    # Load and format prompt template
+                    settings = get_settings()
+                    prompt_path = settings.agents_dir / "prompts" / "screenshot_analysis.md"
+                    prompt_template = prompt_path.read_text(encoding="utf-8")
+                    formatted_prompt = prompt_template.format(
+                        title=title,
+                        description=description,
+                        figma_link=figma_link or "N/A",
+                        website_link=website_link or "N/A",
                     )
+
+                    gemini = GeminiProClient()
+                    gemini_insights = gemini.analyze_images(formatted_prompt, screenshot_paths)
 
                     yield {
                         "event": "log",
