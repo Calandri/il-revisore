@@ -488,3 +488,72 @@ curl http://localhost:8000/api/cli-chat/sessions
 2. **Gemini Reasoning:** `gemini config set reasoning true` (pre-configurato)
 3. **Enum Serialization:** `str, Enum` per compatibilità JSON
 4. **Process Lifecycle:** Claude usa stdin, Gemini usa argomento posizionale
+
+---
+
+## Fix: Streaming Real-Time (2024-12-27) ✅
+
+### Problema
+Lo streaming della chat non funzionava in tempo reale. I chunk arrivavano tutti insieme alla fine invece che carattere per carattere.
+
+### Causa Root
+Claude CLI con `--output-format stream-json` da solo **NON** fa streaming token-by-token. Serve il flag `--include-partial-messages`.
+
+### Soluzione
+
+**1. Flag Claude CLI** (`process_manager.py`):
+```python
+args = [
+    "claude",
+    "--print",
+    "--verbose",
+    "--dangerously-skip-permissions",
+    "--model", model,
+    "--output-format", "stream-json",
+    "--include-partial-messages",  # ← QUESTO È IL FLAG CHIAVE!
+]
+```
+
+**2. Parsing stream_event** (`cli_chat.py`):
+
+Con `--include-partial-messages`, l'output è wrappato in `stream_event`:
+```json
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"C"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"i"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"o"}}}
+```
+
+Bisogna unwrappare l'evento:
+```python
+event = json.loads(line)
+event_type = event.get("type", "unknown")
+
+# Unwrap stream_event
+if event_type == "stream_event":
+    event = event.get("event", {})
+    event_type = event.get("type", "unknown")
+
+# Poi parsare content_block_delta
+if event_type == "content_block_delta":
+    delta = event.get("delta", {})
+    if delta.get("type") == "text_delta":
+        content = delta.get("text", "")
+```
+
+**3. Headers SSE anti-buffering** (`cli_chat.py`):
+```python
+headers = {
+    "X-Accel-Buffering": "no",  # Disable Nginx buffering
+    "Cache-Control": "no-cache, no-transform",
+}
+return EventSourceResponse(event_generator(), headers=headers, ping=15)
+```
+
+### Riferimenti
+- [GitHub Issue #733 - Streaming output](https://github.com/anthropics/claude-code/issues/733)
+- [Claude Code CLI Reference](https://code.claude.com/docs/en/cli-reference)
+
+### Lezione Appresa
+> **Sempre controllare la documentazione aggiornata della CLI!**
+> I flag cambiano spesso. Il comando `claude --help` è la fonte di verità.

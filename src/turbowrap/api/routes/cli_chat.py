@@ -542,8 +542,18 @@ async def send_message(
                     event = json.loads(line)
                     event_type = event.get("type", "unknown")
 
+                    # Unwrap stream_event (from --include-partial-messages)
+                    if event_type == "stream_event":
+                        inner_event = event.get("event", {})
+                        event = inner_event
+                        event_type = event.get("type", "unknown")
+
                     # Collect system events separately
                     if event_type == "system":
+                        # Skip INIT events after the first message (respawn artifact)
+                        if event.get("subtype") == "init" and not is_first_message:
+                            logger.debug("[STREAM] Skipping duplicate INIT event")
+                            continue
                         system_events.append(event)
                         yield {
                             "event": "system",
@@ -663,7 +673,12 @@ async def send_message(
                 "data": json.dumps({"error": str(e)}),
             }
 
-    return EventSourceResponse(event_generator())
+    # Add headers to prevent buffering in browsers and proxies
+    headers = {
+        "X-Accel-Buffering": "no",  # Disable Nginx buffering
+        "Cache-Control": "no-cache, no-transform",
+    }
+    return EventSourceResponse(event_generator(), headers=headers, ping=15)
 
 
 # ============================================================================

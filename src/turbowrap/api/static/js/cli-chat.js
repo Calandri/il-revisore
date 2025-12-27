@@ -460,6 +460,8 @@ function chatSidebar() {
         formatMessage(content) {
             if (!content) return '';
 
+            try {
+
             // Check if content is JSON (system message)
             const trimmed = content.trim();
             if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
@@ -602,6 +604,15 @@ function chatSidebar() {
             html = html.replace(/<br><(h[1-6]|blockquote|pre|ul|ol|hr|div|table|thead|tbody|tr|th|td)/g, '<$1');
 
             return html;
+            } catch (e) {
+                console.error('[chatSidebar] formatMessage error:', e);
+                // Return escaped plain text as fallback
+                return content
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\n/g, '<br>');
+            }
         },
 
         /**

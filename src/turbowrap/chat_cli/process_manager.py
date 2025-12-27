@@ -280,6 +280,7 @@ class CLIProcessManager:
                 model,
                 "--output-format",
                 "stream-json",
+                "--include-partial-messages",  # Enable real-time streaming of chunks
             ]
         )
 
@@ -450,6 +451,7 @@ class CLIProcessManager:
             proc.model,
             "--output-format",
             "stream-json",
+            "--include-partial-messages",  # Enable real-time streaming of chunks
         ]
 
         # Add MCP config if available
