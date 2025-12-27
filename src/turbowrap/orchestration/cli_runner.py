@@ -29,11 +29,10 @@ from turbowrap.utils.claude_cli import ClaudeCLI, ClaudeCLIResult, ModelUsage
 logger = logging.getLogger(__name__)
 
 # Gemini model aliases
-GeminiModelType = Literal["flash", "pro", "ultra"]
+GeminiModelType = Literal["flash", "pro"]
 GEMINI_MODEL_MAP = {
     "flash": "gemini-3-flash-preview",
     "pro": "gemini-3-pro-preview",
-    "ultra": "gemini-ultra",
 }
 
 # Default timeouts
