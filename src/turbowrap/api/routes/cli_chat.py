@@ -852,7 +852,7 @@ async def send_message(
                     "event": "title_updated",
                     "data": json.dumps({"title": extracted_title}),
                 }
-            elif is_first_message and not session_display_name:
+            elif is_first_message and session_display_name in DEFAULT_TITLES:
                 # Generate title for first message using separate process
                 logger.info(f"[TITLE] Generating title for session {session_id}")
                 title = await generate_chat_title(
