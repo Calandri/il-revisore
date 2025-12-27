@@ -3,23 +3,22 @@ CLI runner utilities for TurboWrap orchestrators.
 
 Provides:
 - CLIRunner: Unified facade for Claude and Gemini CLI
-- Re-exports ClaudeCLI from utils for convenience
-- Re-exports GeminiCLI from llm.gemini for convenience
+- Re-exports ClaudeCLI and GeminiCLI from llm package
 """
 
 from datetime import datetime
 from pathlib import Path
 
-# Re-export GeminiCLI for convenience (now in llm.gemini)
+# Re-export ClaudeCLI from llm package
+from turbowrap.llm.claude_cli import ClaudeCLI, ClaudeCLIResult, ModelUsage
+
+# Re-export GeminiCLI from llm package
 from turbowrap.llm.gemini import (
     GEMINI_MODEL_MAP,
     GeminiCLI,
     GeminiCLIResult,
     GeminiModelType,
 )
-
-# Re-export ClaudeCLI for convenience
-from turbowrap.utils.claude_cli import ClaudeCLI, ClaudeCLIResult, ModelUsage
 
 
 class CLIRunner:

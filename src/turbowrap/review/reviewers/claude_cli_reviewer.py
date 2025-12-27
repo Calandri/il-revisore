@@ -15,11 +15,11 @@ from datetime import datetime
 from pathlib import Path
 
 from turbowrap.config import get_settings
+from turbowrap.llm.claude_cli import ClaudeCLI, ModelUsage
 from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.models.review import ModelUsageInfo, ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
 from turbowrap.review.reviewers.utils import parse_review_output
-from turbowrap.utils.claude_cli import ClaudeCLI, ModelUsage
 
 logger = logging.getLogger(__name__)
 

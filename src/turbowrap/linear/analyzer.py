@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from turbowrap.db.models import LinearIssue
+from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.integrations.linear import LinearClient
-from turbowrap.utils.claude_cli import ClaudeCLI
 
 logger = logging.getLogger(__name__)
 

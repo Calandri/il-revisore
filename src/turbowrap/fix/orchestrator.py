@@ -32,10 +32,10 @@ from turbowrap.fix.models import (
     IssueFixResult,
     ScopeValidationError,
 )
+from turbowrap.llm.claude_cli import ClaudeCLI
 
 # Import GeminiCLI from shared orchestration utilities
 from turbowrap.orchestration.cli_runner import GeminiCLI
-from turbowrap.utils.claude_cli import ClaudeCLI
 
 # S3 bucket for fix logs (same as thinking logs)
 S3_BUCKET = "turbowrap-thinking"
