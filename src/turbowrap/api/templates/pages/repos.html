@@ -2,6 +2,67 @@
 
 {% block title %}Repository - TurboWrap{% endblock %}
 
+{% block head %}
+<style>
+/* === SECTION HEADER === */
+.section-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+}
+.dark .section-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+}
+
+/* === REPO CARD === */
+.repo-card {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+}
+.repo-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
+}
+.dark .repo-card:hover {
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.4);
+}
+.repo-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(to bottom, #6366f1, #8b5cf6);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.repo-card:hover::before { opacity: 1; }
+
+/* === ACTION BTN === */
+.action-btn {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s;
+}
+.action-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.2) 50%, transparent 60%);
+    transform: translateX(-100%);
+    transition: transform 0.4s;
+}
+.action-btn:hover::after { transform: translateX(100%); }
+
+/* === ADD BTN GLOW === */
+@keyframes btn-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.3); }
+    50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.5); }
+}
+.btn-add:hover { animation: btn-glow 2s ease-in-out infinite; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6" x-data="{
     showAddModal: false,
@@ -157,13 +218,21 @@
 }" @show-structure.window="loadStructure($event.detail.repoId, $event.detail.repoName)"
    @show-evaluation.window="loadEvaluation($event.detail.repoId, $event.detail.repoName, $event.detail.taskId)">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold">Repository</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">Gestisci le tue repository</p>
+    <div class="section-header rounded-xl p-6 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-3xl font-bold">Repository</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Gestisci le tue repository</p>
+            </div>
         </div>
         <button @click="showAddModal = true"
-                class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2">
+                class="btn-add bg-primary text-white px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-all flex items-center gap-2 font-medium">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>

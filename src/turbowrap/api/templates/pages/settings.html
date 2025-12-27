@@ -2,19 +2,80 @@
 
 {% block title %}Impostazioni - TurboWrap{% endblock %}
 
+{% block head %}
+<style>
+/* === SECTION HEADER === */
+.section-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+}
+.dark .section-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+}
+
+/* === CONFIG CARD === */
+.config-card {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+}
+.config-card:hover {
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
+}
+.dark .config-card:hover {
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.4);
+}
+.config-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(to bottom, var(--card-color, #6366f1), var(--card-color-end, #8b5cf6));
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.config-card:hover::before { opacity: 1; }
+
+/* === ICON FLOAT === */
+@keyframes icon-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+.icon-float:hover { animation: icon-float 1s ease-in-out infinite; }
+
+/* === MODEL ROW === */
+.model-row {
+    transition: all 0.2s ease;
+}
+.model-row:hover {
+    transform: translateX(4px);
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6" x-data="settingsApp()">
     <!-- Header -->
-    <div>
-        <h1 class="text-3xl font-bold">Impostazioni</h1>
-        <p class="text-gray-500 dark:text-gray-400 mt-1">Configura TurboWrap</p>
+    <div class="section-header rounded-xl p-6 flex items-center gap-4">
+        <div class="w-14 h-14 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-gray-200 dark:to-gray-400 rounded-xl flex items-center justify-center shadow-lg icon-float">
+            <svg class="w-7 h-7 text-white dark:text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+        </div>
+        <div>
+            <h1 class="text-3xl font-bold">Impostazioni</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Configura TurboWrap</p>
+        </div>
     </div>
 
     <!-- GitHub Token Section -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div class="config-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden" style="--card-color: #1f2937; --card-color-end: #374151">
         <div class="p-6 border-b dark:border-gray-700">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gray-900 dark:bg-white rounded-lg flex items-center justify-center">
+                <div class="w-10 h-10 bg-gray-900 dark:bg-white rounded-lg flex items-center justify-center icon-float">
                     <svg class="w-6 h-6 text-white dark:text-gray-900" fill="currentColor" viewBox="0 0 24 24">
                         <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/>
                     </svg>
@@ -110,10 +171,10 @@
     </div>
 
     <!-- Linear Integration Section -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div class="config-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden" style="--card-color: #4f46e5; --card-color-end: #6366f1">
         <div class="p-6 border-b dark:border-gray-700">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+                <div class="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center icon-float">
                     <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                     </svg>
@@ -266,10 +327,10 @@
     </div>
 
     <!-- AI Models Section -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div class="config-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden" style="--card-color: #a855f7; --card-color-end: #ec4899">
         <div class="p-6 border-b dark:border-gray-700">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center icon-float">
                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                     </svg>
@@ -283,7 +344,7 @@
 
         <div class="p-6 space-y-6">
             <!-- Claude Model -->
-            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <div class="model-row flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
                         <span class="text-orange-600 dark:text-orange-400 font-bold text-sm">C</span>
@@ -308,7 +369,7 @@
             </div>
 
             <!-- Gemini Flash Model -->
-            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <div class="model-row flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
                         <span class="text-blue-600 dark:text-blue-400 font-bold text-sm">G</span>
@@ -333,7 +394,7 @@
             </div>
 
             <!-- Gemini Pro Model -->
-            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <div class="model-row flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
                         <span class="text-green-600 dark:text-green-400 font-bold text-sm">GP</span>
@@ -367,10 +428,17 @@
     </div>
 
     <!-- Environment Variables Info -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div class="p-6 border-b dark:border-gray-700">
-            <h2 class="text-xl font-semibold">Variabili d'Ambiente</h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Configurazione alternativa via environment</p>
+    <div class="config-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden" style="--card-color: #0ea5e9; --card-color-end: #06b6d4">
+        <div class="p-6 border-b dark:border-gray-700 flex items-center gap-3">
+            <div class="w-10 h-10 bg-gradient-to-br from-sky-500 to-cyan-500 rounded-lg flex items-center justify-center icon-float">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-xl font-semibold">Variabili d'Ambiente</h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Configurazione alternativa via environment</p>
+            </div>
         </div>
 
         <div class="p-6">

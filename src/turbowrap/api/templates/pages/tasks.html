@@ -2,50 +2,138 @@
 
 {% block title %}Task History - TurboWrap{% endblock %}
 
+{% block head %}
+<style>
+/* === STAT CARD === */
+.stat-card {
+    position: relative;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+}
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
+}
+.dark .stat-card:hover {
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.4);
+}
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--stat-color, #6366f1), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.stat-card:hover::before { opacity: 1; }
+
+/* === SECTION HEADER === */
+.section-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+}
+.dark .section-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+}
+
+/* === TASK ROW === */
+.task-row {
+    position: relative;
+    transition: all 0.2s ease;
+}
+.task-row::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.task-row:hover::before { opacity: 1; }
+.task-row.status-completed::before { background: linear-gradient(to bottom, #22c55e, #16a34a); }
+.task-row.status-running::before { background: linear-gradient(to bottom, #eab308, #ca8a04); }
+.task-row.status-failed::before { background: linear-gradient(to bottom, #ef4444, #dc2626); }
+.task-row.status-pending::before { background: linear-gradient(to bottom, #6b7280, #4b5563); }
+
+/* === STATUS GLOW === */
+@keyframes status-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(234, 179, 8, 0); }
+}
+.status-running-glow { animation: status-glow 2s ease-in-out infinite; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6" x-data="tasksApp()">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold">Storico Task</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">Review e analisi eseguite</p>
-        </div>
-        <div class="flex items-center gap-2">
-            <button @click="refresh()"
-                    :disabled="loading"
-                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
-                <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="section-header rounded-xl p-6 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <div class="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                 </svg>
-                Aggiorna
-            </button>
+            </div>
+            <div>
+                <h1 class="text-3xl font-bold">Storico Task</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Review e analisi eseguite</p>
+            </div>
         </div>
+        <button @click="refresh()"
+                :disabled="loading"
+                class="px-4 py-2 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 shadow-sm border border-gray-200 dark:border-gray-600">
+            <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Aggiorna
+        </button>
     </div>
 
     <!-- Queue Status -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <div class="text-sm text-gray-500">In Coda</div>
-            <div class="text-2xl font-bold" x-text="queue.pending || 0"></div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700" style="--stat-color: #6b7280">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">In Coda</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-gray-600 dark:text-gray-300" x-text="queue.pending || 0"></div>
         </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <div class="text-sm text-gray-500">In Esecuzione</div>
-            <div class="text-2xl font-bold text-yellow-500" x-text="queue.running || 0"></div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-yellow-200 dark:border-yellow-800" style="--stat-color: #eab308">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-yellow-500" :class="(queue.running || 0) > 0 && 'status-running-glow'"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">In Esecuzione</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-yellow-600 dark:text-yellow-400" x-text="queue.running || 0"></div>
         </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <div class="text-sm text-gray-500">Completati</div>
-            <div class="text-2xl font-bold text-green-500" x-text="queue.completed || 0"></div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-green-200 dark:border-green-800" style="--stat-color: #22c55e">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Completati</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-green-600 dark:text-green-400" x-text="queue.completed || 0"></div>
         </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <div class="text-sm text-gray-500">Falliti</div>
-            <div class="text-2xl font-bold text-red-500" x-text="queue.failed || 0"></div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-red-200 dark:border-red-800" style="--stat-color: #ef4444">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Falliti</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-red-600 dark:text-red-400" x-text="queue.failed || 0"></div>
         </div>
     </div>
 
     <!-- Task List -->
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div class="p-4 border-b dark:border-gray-700">
+        <div class="section-header p-4 border-b dark:border-gray-700 flex items-center gap-3">
+            <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
             <h2 class="font-semibold">Task Recenti</h2>
         </div>
 
@@ -66,7 +154,8 @@
 
         <div x-show="!loading && tasks.length > 0" class="divide-y dark:divide-gray-700">
             <template x-for="task in tasks" :key="task.id">
-                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <div class="task-row p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                     :class="'status-' + task.status">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-4">
                             <!-- Type icon -->
