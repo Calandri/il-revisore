@@ -1,0 +1,79 @@
+# Traefik Static Configuration
+# https://doc.traefik.io/traefik/
+
+api:
+  dashboard: true
+  insecure: true  # Only for development - disable in production
+
+# Entry Points - where Traefik listens
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+  # Backend development ports (8001-8005)
+  backend-8001:
+    address: ":8001"
+  backend-8002:
+    address: ":8002"
+  backend-8003:
+    address: ":8003"
+  backend-8004:
+    address: ":8004"
+  backend-8005:
+    address: ":8005"
+
+  # Frontend development ports (3001-3005)
+  frontend-3001:
+    address: ":3001"
+  frontend-3002:
+    address: ":3002"
+  frontend-3003:
+    address: ":3003"
+  frontend-3004:
+    address: ":3004"
+  frontend-3005:
+    address: ":3005"
+
+  # Additional service ports (6000-6006)
+  service-6000:
+    address: ":6000"
+  service-6001:
+    address: ":6001"
+  service-6002:
+    address: ":6002"
+  service-6003:
+    address: ":6003"
+  service-6004:
+    address: ":6004"
+  service-6005:
+    address: ":6005"
+  service-6006:
+    address: ":6006"
+
+# Providers - where Traefik gets routing rules
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: turbowrap-network
+
+  # Dynamic configuration from files
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
+# Logging
+log:
+  level: INFO
+  format: common
+
+# Access logs (optional - can be verbose)
+accessLog:
+  filePath: "/dev/stdout"
+  format: common
+  filters:
+    statusCodes:
+      - "400-499"
+      - "500-599"

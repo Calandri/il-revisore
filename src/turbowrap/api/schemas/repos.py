@@ -262,3 +262,140 @@ class LinkedRepoSummary(BaseModel):
     direction: Literal["outgoing", "incoming"] = Field(
         ..., description="Link direction relative to queried repo"
     )
+
+
+# --- External Link Schemas ---
+
+
+class ExternalLinkTypeEnum(str, Enum):
+    """External link types for repositories."""
+
+    STAGING = "staging"
+    PRODUCTION = "production"
+    DOCS = "docs"
+    API = "api"
+    ADMIN = "admin"
+    SWAGGER = "swagger"
+    GRAPHQL = "graphql"
+    MONITORING = "monitoring"
+    LOGS = "logs"
+    CI_CD = "ci_cd"
+    OTHER = "other"
+
+
+class ExternalLinkCreate(BaseModel):
+    """Request to create an external link."""
+
+    link_type: ExternalLinkTypeEnum = Field(
+        ...,
+        description="Type of external link (staging, production, docs, etc.)",
+    )
+    url: str = Field(
+        ...,
+        min_length=5,
+        max_length=1024,
+        description="External URL",
+    )
+    label: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Optional custom label for the link",
+    )
+    is_primary: bool = Field(
+        default=False,
+        description="Mark this link as primary for its type",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional additional metadata",
+    )
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        """Validate URL format."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
+
+class ExternalLinkUpdate(BaseModel):
+    """Request to update an external link."""
+
+    link_type: ExternalLinkTypeEnum | None = Field(
+        default=None,
+        description="Type of external link",
+    )
+    url: str | None = Field(
+        default=None,
+        min_length=5,
+        max_length=1024,
+        description="External URL",
+    )
+    label: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Optional custom label",
+    )
+    is_primary: bool | None = Field(
+        default=None,
+        description="Mark as primary for its type",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional additional metadata",
+    )
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        """Validate URL format if provided."""
+        if v is not None and not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
+
+class ExternalLinkResponse(BaseModel):
+    """External link response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str = Field(..., description="Link UUID")
+    repository_id: str = Field(..., description="Repository UUID")
+    link_type: ExternalLinkTypeEnum = Field(..., description="Type of link")
+    url: str = Field(..., description="External URL")
+    label: str | None = Field(default=None, description="Custom label")
+    is_primary: bool = Field(default=False, description="Primary link for type")
+    metadata: dict[str, Any] | None = Field(default=None, description="Additional metadata")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, v: Any) -> dict[str, Any] | None:
+        """Handle SQLAlchemy metadata_ attribute."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            return v
+        if hasattr(v, "metadata_"):
+            return getattr(v, "metadata_", None)
+        return None
+
+    @classmethod
+    def model_validate(cls, obj: Any, **kwargs: Any) -> "ExternalLinkResponse":
+        """Override to handle SQLAlchemy metadata_ attribute."""
+        if hasattr(obj, "metadata_") and not hasattr(obj, "metadata"):
+            data = {
+                "id": obj.id,
+                "repository_id": obj.repository_id,
+                "link_type": obj.link_type,
+                "url": obj.url,
+                "label": obj.label,
+                "is_primary": obj.is_primary,
+                "metadata": obj.metadata_,
+                "created_at": obj.created_at,
+                "updated_at": obj.updated_at,
+            }
+            return super().model_validate(data, **kwargs)
+        return super().model_validate(obj, **kwargs)

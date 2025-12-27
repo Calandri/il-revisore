@@ -135,9 +135,13 @@ def _get_auth_url(url: str, token: str | None = None) -> str:
     if not token:
         return url
 
+    # Strip any existing token from URL first
+    # Handles: https://ghp_xxx@github.com/... or https://github.com/...
+    clean_url = re.sub(r"https://[^@]+@github\.com/", "https://github.com/", url)
+
     # Convert https://github.com/owner/repo.git to https://token@github.com/owner/repo.git
-    if url.startswith("https://github.com/"):
-        return url.replace("https://github.com/", f"https://{token}@github.com/")
+    if clean_url.startswith("https://github.com/"):
+        return clean_url.replace("https://github.com/", f"https://{token}@github.com/")
     return url
 
 
@@ -244,10 +248,14 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
                 env=git_env,
             )
         finally:
-            # Restore original URL (without token) for security
+            # Restore clean URL (strip any token for security)
             if token:
+                # Strip any token from URL before restoring
+                clean_url = re.sub(
+                    r"https://[^@]+@github\.com/", "https://github.com/", original_url
+                )
                 subprocess.run(
-                    ["git", "remote", "set-url", "origin", original_url],
+                    ["git", "remote", "set-url", "origin", clean_url],
                     cwd=repo_path,
                     check=True,
                     capture_output=True,

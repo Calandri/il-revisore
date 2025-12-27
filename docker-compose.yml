@@ -1,31 +1,128 @@
-# TurboWrap Docker Compose - Additional Services
+# TurboWrap Docker Compose - Full Stack
 # Start with: docker-compose up -d
 
 version: "3.8"
 
 services:
+  # Traefik Reverse Proxy
+  traefik:
+    image: traefik:v3.2
+    container_name: turbowrap-traefik
+    ports:
+      # Web entrypoints
+      - "80:80"
+      - "443:443"
+      # Dashboard
+      - "8080:8080"
+      # Backend dev ports (exposed through Traefik)
+      - "8001:8001"
+      - "8002:8002"
+      - "8003:8003"
+      - "8004:8004"
+      - "8005:8005"
+      # Frontend dev ports
+      - "3001:3001"
+      - "3002:3002"
+      - "3003:3003"
+      - "3004:3004"
+      - "3005:3005"
+      # Additional service ports
+      - "6000:6000"
+      - "6001:6001"
+      - "6002:6002"
+      - "6003:6003"
+      - "6004:6004"
+      - "6005:6005"
+      - "6006:6006"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - turbowrap-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+
+  # Main TurboWrap Application
+  turbowrap:
+    build: .
+    container_name: turbowrap-app
+    ports:
+      # Main API port (direct access, bypassing Traefik)
+      - "8000:8000"
+    expose:
+      # Expose internal ports for Traefik routing
+      - "8001"
+      - "8002"
+      - "8003"
+      - "8004"
+      - "8005"
+      - "3000"
+      - "3001"
+      - "3002"
+      - "3003"
+      - "3004"
+      - "3005"
+      - "6000"
+      - "6001"
+      - "6002"
+      - "6003"
+      - "6004"
+      - "6005"
+      - "6006"
+    volumes:
+      - turbowrap_data:/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - turbowrap-network
+    labels:
+      - "traefik.enable=true"
+      # Main application router
+      - "traefik.http.routers.turbowrap.rule=Host(`turbowrap.localhost`)"
+      - "traefik.http.routers.turbowrap.entrypoints=web"
+      - "traefik.http.services.turbowrap.loadbalancer.server.port=8000"
+      # Development backend routers (using subdomain routing)
+      - "traefik.http.routers.dev-be-1.rule=Host(`dev1.turbowrap.localhost`)"
+      - "traefik.http.routers.dev-be-1.entrypoints=web"
+      - "traefik.http.services.dev-be-1.loadbalancer.server.port=8001"
+      - "traefik.http.routers.dev-be-2.rule=Host(`dev2.turbowrap.localhost`)"
+      - "traefik.http.routers.dev-be-2.entrypoints=web"
+      - "traefik.http.services.dev-be-2.loadbalancer.server.port=8002"
+
   # DbGate - Database Management Web UI
-  # Access at http://localhost:3000
+  # Access at http://localhost:3100 (moved from 3000 to avoid conflicts)
   dbgate:
     image: dbgate/dbgate:latest
     container_name: turbowrap-dbgate
     ports:
-      - "3000:3000"
+      - "3100:3000"
     volumes:
       - dbgate_data:/root/.dbgate
     environment:
       # Allow embedding in iframe
       - EMBEDDING=true
-      # Optional: pre-configure connections via environment
-      # - CONNECTIONS=/connections
     restart: unless-stopped
     networks:
       - turbowrap-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dbgate.rule=Host(`dbgate.localhost`)"
+      - "traefik.http.services.dbgate.loadbalancer.server.port=3000"
 
 networks:
   turbowrap-network:
     driver: bridge
 
 volumes:
+  turbowrap_data:
+    driver: local
   dbgate_data:
+    driver: local
+  traefik_certs:
     driver: local

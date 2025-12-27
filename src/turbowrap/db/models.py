@@ -145,6 +145,13 @@ class Repository(Base, SoftDeleteMixin):
         cascade="all, delete-orphan",
     )
 
+    # External links (staging, production, docs, etc.)
+    external_links = relationship(
+        "RepositoryExternalLink",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return f"<Repository {self.name}>"
 
@@ -184,6 +191,49 @@ class RepositoryLink(Base):
         src = self.source_repo_id[:8]
         tgt = self.target_repo_id[:8]
         return f"<RepositoryLink {src}--{self.link_type}-->{tgt}>"
+
+
+class ExternalLinkType(str, Enum):
+    """Types of external links for repositories."""
+
+    STAGING = "staging"
+    PRODUCTION = "production"
+    DOCS = "docs"
+    API = "api"
+    ADMIN = "admin"
+    SWAGGER = "swagger"
+    GRAPHQL = "graphql"
+    MONITORING = "monitoring"
+    LOGS = "logs"
+    CI_CD = "ci_cd"
+    OTHER = "other"
+
+
+class RepositoryExternalLink(Base):
+    """External URL links for a repository (staging, production, docs, etc.)."""
+
+    __tablename__ = "repository_external_links"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    repository_id = Column(String(36), ForeignKey("repositories.id"), nullable=False)
+    link_type = Column(String(50), nullable=False)  # Uses ExternalLinkType enum values
+    url = Column(String(1024), nullable=False)
+    label = Column(String(100), nullable=True)  # Optional custom label
+    is_primary = Column(Boolean, default=False)  # Mark one link as primary per type
+    metadata_ = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    repository = relationship("Repository", back_populates="external_links")
+
+    __table_args__ = (
+        Index("idx_external_links_repo", "repository_id"),
+        Index("idx_external_links_type", "link_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<RepositoryExternalLink {self.link_type}: {self.url[:30]}>"
 
 
 class Task(Base, SoftDeleteMixin):

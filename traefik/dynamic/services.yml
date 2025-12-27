@@ -1,0 +1,200 @@
+# Traefik Dynamic Configuration - Services
+# This file defines routers and services for internal development ports
+# https://doc.traefik.io/traefik/routing/routers/
+
+http:
+  routers:
+    # Backend development services (port-based routing)
+    # Access via: http://localhost:8001, http://localhost:8002, etc.
+    dev-backend-8001:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - backend-8001
+      service: dev-backend-8001
+
+    dev-backend-8002:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - backend-8002
+      service: dev-backend-8002
+
+    dev-backend-8003:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - backend-8003
+      service: dev-backend-8003
+
+    dev-backend-8004:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - backend-8004
+      service: dev-backend-8004
+
+    dev-backend-8005:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - backend-8005
+      service: dev-backend-8005
+
+    # Frontend development services
+    dev-frontend-3001:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - frontend-3001
+      service: dev-frontend-3001
+
+    dev-frontend-3002:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - frontend-3002
+      service: dev-frontend-3002
+
+    dev-frontend-3003:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - frontend-3003
+      service: dev-frontend-3003
+
+    dev-frontend-3004:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - frontend-3004
+      service: dev-frontend-3004
+
+    dev-frontend-3005:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - frontend-3005
+      service: dev-frontend-3005
+
+    # Additional services (6000-6006)
+    dev-service-6000:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6000
+      service: dev-service-6000
+
+    dev-service-6001:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6001
+      service: dev-service-6001
+
+    dev-service-6002:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6002
+      service: dev-service-6002
+
+    dev-service-6003:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6003
+      service: dev-service-6003
+
+    dev-service-6004:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6004
+      service: dev-service-6004
+
+    dev-service-6005:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6005
+      service: dev-service-6005
+
+    dev-service-6006:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - service-6006
+      service: dev-service-6006
+
+  services:
+    # Backend services - route to turbowrap container
+    dev-backend-8001:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:8001"
+
+    dev-backend-8002:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:8002"
+
+    dev-backend-8003:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:8003"
+
+    dev-backend-8004:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:8004"
+
+    dev-backend-8005:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:8005"
+
+    # Frontend services
+    dev-frontend-3001:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:3001"
+
+    dev-frontend-3002:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:3002"
+
+    dev-frontend-3003:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:3003"
+
+    dev-frontend-3004:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:3004"
+
+    dev-frontend-3005:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:3005"
+
+    # Additional services
+    dev-service-6000:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6000"
+
+    dev-service-6001:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6001"
+
+    dev-service-6002:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6002"
+
+    dev-service-6003:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6003"
+
+    dev-service-6004:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6004"
+
+    dev-service-6005:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6005"
+
+    dev-service-6006:
+      loadBalancer:
+        servers:
+          - url: "http://turbowrap:6006"

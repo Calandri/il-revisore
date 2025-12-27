@@ -68,7 +68,13 @@ ENV TURBOWRAP_DB_URL=sqlite:////data/turbowrap.db
 ENV TURBOWRAP_REPOS_DIR=/data/repos
 ENV PYTHONPATH=/app/src
 
-EXPOSE 8000
+# Expose main application port and development ports
+# 8000-8005: Backend services (main app + 5 dev instances)
+# 3000-3005: Frontend services (6 dev instances)
+# 6000-6006: Additional services (7 instances)
+EXPOSE 8000 8001 8002 8003 8004 8005
+EXPOSE 3000 3001 3002 3003 3004 3005
+EXPOSE 6000 6001 6002 6003 6004 6005 6006
 
 # Switch to non-root user
 USER appuser

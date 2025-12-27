@@ -81,7 +81,15 @@ if [ "$EC2_SG_ID" == "None" ] || [ -z "$EC2_SG_ID" ]; then
   aws ec2 authorize-security-group-ingress --region $REGION \
     --group-id $EC2_SG_ID \
     --protocol tcp --port 8000 --source-group $ALB_SG_ID
-  echo "   Created EC2 SG: $EC2_SG_ID"
+
+  # Allow additional development ports from ALB
+  # Backend ports: 8001-8005, Frontend ports: 3001-3005, Service ports: 6000-6006
+  for PORT in 8001 8002 8003 8004 8005 3001 3002 3003 3004 3005 6000 6001 6002 6003 6004 6005 6006; do
+    aws ec2 authorize-security-group-ingress --region $REGION \
+      --group-id $EC2_SG_ID \
+      --protocol tcp --port $PORT --source-group $ALB_SG_ID 2>/dev/null || true
+  done
+  echo "   Created EC2 SG: $EC2_SG_ID (with dev ports 8001-8005, 3001-3005, 6000-6006)"
 else
   echo "   EC2 SG exists: $EC2_SG_ID"
 fi

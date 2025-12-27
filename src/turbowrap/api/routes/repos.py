@@ -17,6 +17,9 @@ from ...utils.git_utils import get_repo_status as get_git_status
 from ...utils.github_browse import FolderListResponse, list_repo_folders
 from ..deps import get_db
 from ..schemas.repos import (
+    ExternalLinkCreate,
+    ExternalLinkResponse,
+    ExternalLinkUpdate,
     FileStats,
     GitStatus,
     LinkCreate,
@@ -536,6 +539,158 @@ def delete_link(
         return {"status": "deleted", "link_id": link_id}
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- External Link Endpoints ---
+
+
+@router.post("/{repo_id}/external-links", response_model=ExternalLinkResponse)
+def create_external_link(
+    repo_id: str,
+    data: ExternalLinkCreate,
+    db: Session = Depends(get_db),
+) -> ExternalLinkResponse:
+    """Add an external link to a repository.
+
+    External link types:
+    - `staging`: Staging environment URL
+    - `production`: Production environment URL
+    - `docs`: Documentation URL
+    - `api`: API documentation (OpenAPI, etc.)
+    - `admin`: Admin panel URL
+    - `swagger`: Swagger UI URL
+    - `graphql`: GraphQL playground URL
+    - `monitoring`: Monitoring dashboard URL
+    - `logs`: Log viewer URL
+    - `ci_cd`: CI/CD pipeline URL
+    - `other`: Other custom URL
+    """
+    from ...db.models import RepositoryExternalLink, generate_uuid
+
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Create external link
+    external_link = RepositoryExternalLink(
+        id=generate_uuid(),
+        repository_id=repo_id,
+        link_type=data.link_type.value,
+        url=data.url,
+        label=data.label,
+        is_primary=data.is_primary,
+        metadata_=data.metadata,
+    )
+    db.add(external_link)
+    db.commit()
+    db.refresh(external_link)
+
+    return ExternalLinkResponse.model_validate(external_link)
+
+
+@router.get("/{repo_id}/external-links", response_model=list[ExternalLinkResponse])
+def list_external_links(
+    repo_id: str,
+    link_type: str | None = Query(default=None, description="Filter by link type"),
+    db: Session = Depends(get_db),
+) -> list[ExternalLinkResponse]:
+    """List all external links for a repository.
+
+    Args:
+        repo_id: Repository UUID
+        link_type: Optional filter by link type (staging, production, docs, etc.)
+    """
+    from ...db.models import RepositoryExternalLink
+
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    query = db.query(RepositoryExternalLink).filter(RepositoryExternalLink.repository_id == repo_id)
+    if link_type:
+        query = query.filter(RepositoryExternalLink.link_type == link_type)
+
+    links = query.order_by(RepositoryExternalLink.created_at.desc()).all()
+    return [ExternalLinkResponse.model_validate(link) for link in links]
+
+
+@router.patch("/{repo_id}/external-links/{link_id}", response_model=ExternalLinkResponse)
+def update_external_link(
+    repo_id: str,
+    link_id: str,
+    data: ExternalLinkUpdate,
+    db: Session = Depends(get_db),
+) -> ExternalLinkResponse:
+    """Update an external link."""
+    from ...db.models import RepositoryExternalLink
+
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    link = (
+        db.query(RepositoryExternalLink)
+        .filter(
+            RepositoryExternalLink.id == link_id,
+            RepositoryExternalLink.repository_id == repo_id,
+        )
+        .first()
+    )
+
+    if not link:
+        raise HTTPException(status_code=404, detail="External link not found")
+
+    # Update fields that were provided
+    if data.link_type is not None:
+        link.link_type = data.link_type.value
+    if data.url is not None:
+        link.url = data.url
+    if data.label is not None:
+        link.label = data.label
+    if data.is_primary is not None:
+        link.is_primary = data.is_primary
+    if data.metadata is not None:
+        link.metadata_ = data.metadata
+
+    db.commit()
+    db.refresh(link)
+
+    return ExternalLinkResponse.model_validate(link)
+
+
+@router.delete("/{repo_id}/external-links/{link_id}")
+def delete_external_link(
+    repo_id: str,
+    link_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Delete an external link."""
+    from ...db.models import RepositoryExternalLink
+
+    manager = RepoManager(db)
+    repo = manager.get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    link = (
+        db.query(RepositoryExternalLink)
+        .filter(
+            RepositoryExternalLink.id == link_id,
+            RepositoryExternalLink.repository_id == repo_id,
+        )
+        .first()
+    )
+
+    if not link:
+        raise HTTPException(status_code=404, detail="External link not found")
+
+    db.delete(link)
+    db.commit()
+
+    return {"status": "deleted", "link_id": link_id}
 
 
 # --- File Management Endpoints ---
