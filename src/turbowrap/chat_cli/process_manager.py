@@ -417,7 +417,9 @@ class CLIProcessManager:
         logger.info(f"[GEMINI] Session {session_id} created (process spawns per message)")
         return cli_proc
 
-    async def _respawn_claude_with_resume(self, proc: CLIProcess) -> None:
+    async def _respawn_claude_with_resume(
+        self, proc: CLIProcess, force_new_session: bool = False
+    ) -> None:
         """Respawn Claude process with --resume to continue conversation.
 
         When a Claude process ends (after processing a message), this method
@@ -426,10 +428,8 @@ class CLIProcessManager:
 
         Args:
             proc: The CLIProcess to respawn
+            force_new_session: If True, create a new session instead of resuming
         """
-        if not proc.claude_session_id:
-            raise RuntimeError("Cannot respawn: no claude_session_id")
-
         # Build environment
         env = os.environ.copy()
         env["TMPDIR"] = "/tmp"
@@ -439,20 +439,33 @@ class CLIProcessManager:
         if proc.thinking_budget:
             env["MAX_THINKING_TOKENS"] = str(proc.thinking_budget)
 
-        # Build args with --resume instead of --session-id
+        # Build args - use --resume or --session-id depending on force_new_session
         args = [
             "claude",
             "--print",
-            "--resume",
-            proc.claude_session_id,  # Continue existing conversation
-            "--verbose",
-            "--dangerously-skip-permissions",
-            "--model",
-            proc.model,
-            "--output-format",
-            "stream-json",
-            "--include-partial-messages",  # Enable real-time streaming of chunks
         ]
+
+        if force_new_session or not proc.claude_session_id:
+            # Create a fresh session
+            new_session_id = str(uuid.uuid4())
+            args.extend(["--session-id", new_session_id])
+            proc.claude_session_id = new_session_id
+            logger.info(f"[CLAUDE] Creating fresh session: {new_session_id}")
+        else:
+            # Resume existing conversation
+            args.extend(["--resume", proc.claude_session_id])
+
+        args.extend(
+            [
+                "--verbose",
+                "--dangerously-skip-permissions",
+                "--model",
+                proc.model,
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",  # Enable real-time streaming of chunks
+            ]
+        )
 
         # Add MCP config if available
         if proc.mcp_config and proc.mcp_config.exists():
@@ -473,8 +486,8 @@ class CLIProcessManager:
         proc.status = SessionStatus.RUNNING
 
         logger.info(
-            f"[CLAUDE] Respawned process PID={new_process.pid} with --resume "
-            f"(claude_session={proc.claude_session_id})"
+            f"[CLAUDE] Respawned process PID={new_process.pid} "
+            f"(claude_session={proc.claude_session_id}, force_new={force_new_session})"
         )
 
     async def send_message(
@@ -513,15 +526,27 @@ class CLIProcessManager:
         proc: CLIProcess,
         message: str,
         timeout: int | None = None,
+        _retry_with_new_session: bool = False,
     ) -> AsyncIterator[str]:
-        """Send message to Claude CLI process."""
+        """Send message to Claude CLI process.
+
+        Args:
+            proc: CLIProcess instance
+            message: Message to send
+            timeout: Optional timeout override
+            _retry_with_new_session: Internal flag for retry logic
+        """
         timeout_value = timeout or CLAUDE_TIMEOUT
         process = proc.process
 
         if not process or process.returncode is not None:
             # Process ended, respawn with --resume to continue conversation
-            logger.info("[CLAUDE] Process ended, respawning with --resume")
-            await self._respawn_claude_with_resume(proc)
+            # If retrying, force a new session instead of resuming
+            logger.info(
+                f"[CLAUDE] Process ended, respawning "
+                f"(force_new_session={_retry_with_new_session})"
+            )
+            await self._respawn_claude_with_resume(proc, force_new_session=_retry_with_new_session)
             process = proc.process  # Get the new process
 
         if process is None or process.stdin is None:
@@ -560,6 +585,7 @@ class CLIProcessManager:
 
         # Read stdout LINE BY LINE for proper streaming
         # stream-json outputs one JSON object per line
+        chunks_yielded = False
         try:
             async with asyncio_timeout(timeout_value):
                 while True:
@@ -573,6 +599,7 @@ class CLIProcessManager:
 
                     # Yield each line immediately
                     if line:
+                        chunks_yielded = True
                         yield line
 
         except asyncio.TimeoutError:
@@ -587,12 +614,29 @@ class CLIProcessManager:
 
         if process.returncode != 0:
             # Log stderr for debugging
+            stderr_text = ""
             if process.stderr:
                 stderr_content = await process.stderr.read()
                 if stderr_content:
-                    logger.error(
-                        f"[CLAUDE] Stderr: {stderr_content.decode('utf-8', errors='replace')}"
-                    )
+                    stderr_text = stderr_content.decode("utf-8", errors="replace")
+                    logger.error(f"[CLAUDE] Stderr: {stderr_text}")
+
+            # Check if this is a "session not found" error and we haven't retried yet
+            if (
+                "No conversation found with session ID" in stderr_text
+                and not _retry_with_new_session
+                and not chunks_yielded
+            ):
+                logger.warning(
+                    "[CLAUDE] Session not found in Claude CLI, retrying with fresh session"
+                )
+                # Retry with a fresh session
+                async for chunk in self._send_claude_message(
+                    proc, message, timeout, _retry_with_new_session=True
+                ):
+                    yield chunk
+                return  # Don't set error status, we recovered
+
             proc.status = SessionStatus.ERROR
         else:
             proc.status = SessionStatus.COMPLETED
