@@ -16,13 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-import boto3
-from botocore.exceptions import ClientError
-
 from turbowrap.config import get_settings
 from turbowrap.exceptions import GeminiError
 from turbowrap.llm.base import AgentResponse, BaseAgent
 from turbowrap.utils.aws_secrets import get_google_api_key
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -312,75 +310,12 @@ class GeminiCLI:
         else:
             self.model = model
 
-        # S3 config
-        self.s3_bucket = self.settings.thinking.s3_bucket
-        self.s3_region = self.settings.thinking.s3_region
-        self._s3_client: Any = None
-
-    @property
-    def s3_client(self) -> Any:
-        """Lazy-load S3 client."""
-        if self._s3_client is None:
-            self._s3_client = boto3.client("s3", region_name=self.s3_region)
-        return self._s3_client
-
-    async def _save_to_s3(
-        self,
-        content: str,
-        artifact_type: str,
-        context_id: str,
-        metadata: dict[str, Any] | None = None,
-    ) -> str | None:
-        """Save artifact to S3.
-
-        Args:
-            content: Content to save
-            artifact_type: "prompt", "output", or "error"
-            context_id: Identifier for grouping artifacts
-            metadata: Additional metadata to include
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not self.s3_bucket:
-            return None
-
-        try:
-            timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"{self.s3_prefix}/{timestamp}/{context_id}_{artifact_type}.md"
-
-            # Build markdown content
-            md_content = f"""# Gemini CLI {artifact_type.title()}
-
-**Context ID**: {context_id}
-**Timestamp**: {datetime.now(timezone.utc).isoformat()}
-**Artifact Type**: {artifact_type}
-**Model**: {metadata.get("model", self.model) if metadata else self.model}
-
----
-
-## Content
-
-```
-{content}
-```
-"""
-
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=md_content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[GEMINI CLI] Saved {artifact_type} to S3: {s3_key}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"[GEMINI CLI] Failed to save to S3: {e}")
-            return None
+        # S3 saver (unified artifact saving)
+        self._s3_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix=self.s3_prefix,
+        )
 
     async def run(
         self,
@@ -414,8 +349,8 @@ class GeminiCLI:
         # Save prompt to S3 before running
         s3_prompt_url = None
         if save_prompt:
-            s3_prompt_url = await self._save_to_s3(
-                prompt, "prompt", context_id, {"model": self.model}
+            s3_prompt_url = await self._s3_saver.save_markdown(
+                prompt, "prompt", context_id, {"model": self.model}, "Gemini CLI"
             )
 
         try:
@@ -485,11 +420,12 @@ class GeminiCLI:
                         f"# Partial Output ({len(partial_output)} chars)\n\n"
                         f"{partial_output}"
                     )
-                    await self._save_to_s3(
+                    await self._s3_saver.save_markdown(
                         error_content,
                         "error",
                         context_id,
                         {"model": self.model, "duration_ms": duration_ms},
+                        "Gemini CLI",
                     )
 
                 return GeminiCLIResult(
@@ -511,11 +447,12 @@ class GeminiCLI:
             # Save output to S3
             s3_output_url = None
             if save_output and output:
-                s3_output_url = await self._save_to_s3(
+                s3_output_url = await self._s3_saver.save_markdown(
                     output,
                     "output",
                     context_id,
                     {"model": self.model, "duration_ms": duration_ms},
+                    "Gemini CLI",
                 )
 
             if process.returncode != 0:
@@ -525,11 +462,12 @@ class GeminiCLI:
 
                 # Save error to S3
                 if save_output:
-                    await self._save_to_s3(
+                    await self._s3_saver.save_markdown(
                         f"# Error\n\n{error_msg}\n\n# Output\n\n{output}",
                         "error",
                         context_id,
                         {"model": self.model, "duration_ms": duration_ms},
+                        "Gemini CLI",
                     )
 
                 return GeminiCLIResult(
@@ -558,11 +496,12 @@ class GeminiCLI:
             duration_ms = int((time.time() - start_time) * 1000)
             error_msg = "Gemini CLI not found"
             if save_output:
-                await self._save_to_s3(
+                await self._s3_saver.save_markdown(
                     f"# Error\n\n{error_msg}",
                     "error",
                     context_id,
                     {"model": self.model, "duration_ms": duration_ms},
+                    "Gemini CLI",
                 )
             return GeminiCLIResult(
                 success=False,
@@ -576,11 +515,12 @@ class GeminiCLI:
             logger.exception(f"[GEMINI CLI] Error: {e}")
             duration_ms = int((time.time() - start_time) * 1000)
             if save_output:
-                await self._save_to_s3(
+                await self._s3_saver.save_markdown(
                     f"# Exception\n\n{e!s}",
                     "error",
                     context_id,
                     {"model": self.model, "duration_ms": duration_ms},
+                    "Gemini CLI",
                 )
             return GeminiCLIResult(
                 success=False,

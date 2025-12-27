@@ -40,13 +40,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
-
-import boto3
-from botocore.exceptions import ClientError
+from typing import Literal
 
 from turbowrap.config import get_settings
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -148,20 +146,15 @@ class ClaudeCLI:
         else:
             self.model = model
 
-        # S3 config
-        self.s3_bucket = self.settings.thinking.s3_bucket
-        self.s3_region = self.settings.thinking.s3_region
-        self._s3_client = None
+        # S3 saver (unified artifact saving)
+        self._s3_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix=self.s3_prefix,
+        )
 
         # Agent prompt cache
         self._agent_prompt: str | None = None
-
-    @property
-    def s3_client(self) -> Any:
-        """Lazy-load S3 client."""
-        if self._s3_client is None:
-            self._s3_client = boto3.client("s3", region_name=self.s3_region)
-        return self._s3_client
 
     def load_agent_prompt(self) -> str | None:
         """Load agent prompt from MD file if configured."""
@@ -216,8 +209,8 @@ class ClaudeCLI:
         # Save prompt to S3 before running
         s3_prompt_url = None
         if save_prompt:
-            s3_prompt_url = await self._save_to_s3(
-                full_prompt, "prompt", context_id, {"model": self.model}
+            s3_prompt_url = await self._s3_saver.save_markdown(
+                full_prompt, "prompt", context_id, {"model": self.model}, "Claude CLI"
             )
 
         # Run CLI
@@ -232,25 +225,31 @@ class ClaudeCLI:
         s3_thinking_url = None
 
         if save_output and output:
-            s3_output_url = await self._save_to_s3(
+            s3_output_url = await self._s3_saver.save_markdown(
                 output,
                 "output",
                 context_id,
                 {"model": self.model, "duration_ms": duration_ms, "error": bool(error)},
+                "Claude CLI",
             )
 
         if save_thinking and thinking:
-            s3_thinking_url = await self._save_to_s3(
-                thinking, "thinking", context_id, {"model": self.model, "error": bool(error)}
+            s3_thinking_url = await self._s3_saver.save_markdown(
+                thinking,
+                "thinking",
+                context_id,
+                {"model": self.model, "error": bool(error)},
+                "Claude CLI",
             )
 
         # Save error details to S3 if there's an error
         if error and save_output:
-            await self._save_to_s3(
+            await self._s3_saver.save_markdown(
                 f"# Error\n\n{error}\n\n# Raw Output\n\n{raw_output or 'None'}",
                 "error",
                 context_id,
                 {"model": self.model, "duration_ms": duration_ms},
+                "Claude CLI",
             )
 
         if error:
@@ -631,61 +630,3 @@ class ClaudeCLI:
             output = raw_output
 
         return output, model_usage_list, thinking, api_error
-
-    async def _save_to_s3(
-        self,
-        content: str,
-        artifact_type: str,
-        context_id: str,
-        metadata: dict[str, Any] | None = None,
-    ) -> str | None:
-        """Save artifact to S3.
-
-        Args:
-            content: Content to save
-            artifact_type: "prompt", "output", or "thinking"
-            context_id: Identifier for grouping artifacts
-            metadata: Additional metadata to include
-
-        Returns:
-            S3 URL if successful, None otherwise
-        """
-        if not self.s3_bucket:
-            return None
-
-        try:
-            timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
-            s3_key = f"{self.s3_prefix}/{timestamp}/{context_id}_{artifact_type}.md"
-
-            # Build markdown content
-            md_content = f"""# Claude CLI {artifact_type.title()}
-
-**Context ID**: {context_id}
-**Timestamp**: {datetime.now(timezone.utc).isoformat()}
-**Artifact Type**: {artifact_type}
-**Model**: {metadata.get("model", self.model) if metadata else self.model}
-
----
-
-## Content
-
-```
-{content}
-```
-"""
-
-            await asyncio.to_thread(
-                self.s3_client.put_object,
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=md_content.encode("utf-8"),
-                ContentType="text/markdown",
-            )
-
-            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
-            logger.info(f"[CLAUDE CLI] Saved {artifact_type} to S3: {s3_key}")
-            return s3_url
-
-        except ClientError as e:
-            logger.warning(f"[CLAUDE CLI] Failed to save to S3: {e}")
-            return None
