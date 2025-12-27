@@ -955,21 +955,21 @@
                                   x-text="issue.category"></span>
 
                             <!-- Actions -->
-                            <div class="flex items-center gap-2 shrink-0">
+                            <div class="flex items-center gap-1.5 shrink-0">
                                 <!-- Toggle fix details (only for resolved) -->
                                 <button x-show="issue.status === 'resolved' && (issue.fix_explanation || issue.fix_code || issue.fix_commit_sha)"
                                         @click="issue.showFixDetails = !issue.showFixDetails"
-                                        class="px-3 py-1.5 text-green-600 hover:text-green-700 dark:text-green-400 text-sm flex items-center gap-1">
+                                        class="px-3 py-1.5 text-green-600 hover:text-green-700 dark:text-green-400 text-sm flex items-center gap-1 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
                                     <svg class="w-4 h-4 transition-transform" :class="{'rotate-180': issue.showFixDetails}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                                     </svg>
-                                    Dettagli
+                                    <span class="hidden sm:inline">Dettagli</span>
                                 </button>
                                 <!-- Merge to Main button (visible directly for resolved issues) -->
                                 <button x-show="issue.status === 'resolved' && issue.fix_commit_sha"
                                         @click="mergeAndPush(issue)"
                                         :disabled="isMerging"
-                                        class="px-3 py-1.5 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                        class="btn-fix px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors">
                                     <svg x-show="!isMerging" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
                                     </svg>
@@ -977,21 +977,23 @@
                                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                                     </svg>
-                                    <span x-text="isMerging ? 'Merging...' : 'Merge'"></span>
+                                    <span class="hidden sm:inline" x-text="isMerging ? 'Merging...' : 'Merge'"></span>
                                 </button>
                                 <button @click="fixSingle(issue)"
                                         :disabled="issue.status === 'resolved' || isFixing"
-                                        class="px-3 py-1.5 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                        class="btn-fix px-3 py-1.5 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                     </svg>
-                                    Sistema
+                                    <span class="hidden sm:inline">Sistema</span>
                                 </button>
                                 <button @click="ignoreIssue(issue)"
                                         :disabled="issue.status === 'resolved'"
-                                        class="px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm">
-                                    Ignora
+                                        class="px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                    <span class="hidden sm:inline">Ignora</span>
+                                    <svg class="w-4 h-4 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
                                 </button>
                             </div>
                         </div>
