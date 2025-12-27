@@ -228,13 +228,20 @@ def get_commits(
             # Get current branch
             current_branch = run_git_command(repo_path, ["branch", "--show-current"])
             if current_branch:
-                # Get commits that are ahead of origin (local-only)
-                # This shows commits in HEAD that are not in origin/branch
-                local_commits = run_git_command(
-                    repo_path,
-                    ["log", f"origin/{current_branch}..HEAD", "--pretty=format:%H"],
+                # Check if remote tracking branch exists by listing remote branches
+                remote_branches = run_git_command(
+                    repo_path, ["branch", "-r", "--list", f"origin/{current_branch}"]
                 )
-                local_only_shas = {sha.strip() for sha in local_commits.split("\n") if sha.strip()}
+                if remote_branches.strip():
+                    # Remote branch exists, get commits ahead of origin
+                    local_commits = run_git_command(
+                        repo_path,
+                        ["log", f"origin/{current_branch}..HEAD", "--pretty=format:%H"],
+                    )
+                    local_only_shas = {
+                        sha.strip() for sha in local_commits.split("\n") if sha.strip()
+                    }
+                # else: Remote branch doesn't exist - all local commits are unpushed
         except HTTPException:
             # No remote tracking branch or fetch not done - assume all are pushed
             pass
