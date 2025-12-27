@@ -50,8 +50,9 @@ COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
 # Configure git credential helper to use GITHUB_TOKEN env var
-# When git needs authentication, this helper provides the token from environment
-RUN git config --global credential.helper '!f() { echo "password=${GITHUB_TOKEN}"; }; f'
+# When git needs authentication, this helper provides username and token from environment
+# GitHub accepts 'x-access-token' as username when using PAT/tokens
+RUN git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${GITHUB_TOKEN}"; }; f'
 
 # Setup Claude Code agents and settings for appuser
 RUN mkdir -p /home/appuser/.claude/agents
