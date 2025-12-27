@@ -1,6 +1,6 @@
 """TurboWrap - AI-Powered Repository Orchestrator."""
 
-__version__ = "0.9.76"
+__version__ = "0.9.77"
 __author__ = "3Bee"
 
 # LLM clients

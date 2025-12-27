@@ -36,7 +36,7 @@ class DeploymentRun(BaseModel):
     commit_short: str
     commit_message: str | None  # First line of commit message
     commit_url: str  # Link to GitHub commit page
-    status: Literal["queued", "in_progress", "completed"]
+    status: Literal["queued", "pending", "in_progress", "completed"]
     conclusion: Literal["success", "failure", "cancelled", "skipped", "timed_out"] | None
     started_at: str | None
     completed_at: str | None
