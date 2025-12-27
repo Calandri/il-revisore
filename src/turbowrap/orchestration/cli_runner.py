@@ -13,9 +13,12 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+import boto3
+from botocore.exceptions import ClientError
 
 from turbowrap.config import get_settings
 from turbowrap.utils.aws_secrets import get_google_api_key
@@ -28,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Gemini model aliases
 GeminiModelType = Literal["flash", "pro", "ultra"]
 GEMINI_MODEL_MAP = {
-    "flash": "gemini-2.0-flash-exp",
+    "flash": "gemini-3-flash-preview",
     "pro": "gemini-1.5-pro-002",
     "ultra": "gemini-ultra",
 }
@@ -47,6 +50,8 @@ class GeminiCLIResult:
     duration_ms: int = 0
     model: str = ""
     error: str | None = None
+    s3_prompt_url: str | None = None
+    s3_output_url: str | None = None
 
 
 class GeminiCLI:
@@ -68,7 +73,8 @@ class GeminiCLI:
         working_dir: Path | None = None,
         model: str | GeminiModelType | None = None,
         timeout: int = DEFAULT_GEMINI_TIMEOUT,
-        yolo_mode: bool = True,
+        auto_accept: bool = True,
+        s3_prefix: str = "gemini-cli",
     ):
         """
         Initialize Gemini CLI runner.
@@ -77,12 +83,14 @@ class GeminiCLI:
             working_dir: Working directory for CLI process
             model: Model name or type ("flash", "pro")
             timeout: Timeout in seconds
-            yolo_mode: Enable --yolo flag (auto-approve tool calls)
+            auto_accept: Enable --auto-accept flag (auto-approve tool calls)
+            s3_prefix: S3 path prefix for logs
         """
         self.settings = get_settings()
         self.working_dir = working_dir
         self.timeout = timeout
-        self.yolo_mode = yolo_mode
+        self.auto_accept = auto_accept
+        self.s3_prefix = s3_prefix
 
         # Resolve model name
         if model is None:
@@ -92,9 +100,82 @@ class GeminiCLI:
         else:
             self.model = model
 
+        # S3 config
+        self.s3_bucket = self.settings.thinking.s3_bucket
+        self.s3_region = self.settings.thinking.s3_region
+        self._s3_client: Any = None
+
+    @property
+    def s3_client(self) -> Any:
+        """Lazy-load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3", region_name=self.s3_region)
+        return self._s3_client
+
+    async def _save_to_s3(
+        self,
+        content: str,
+        artifact_type: str,
+        context_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
+        """Save artifact to S3.
+
+        Args:
+            content: Content to save
+            artifact_type: "prompt", "output", or "error"
+            context_id: Identifier for grouping artifacts
+            metadata: Additional metadata to include
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.s3_bucket:
+            return None
+
+        try:
+            timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+            s3_key = f"{self.s3_prefix}/{timestamp}/{context_id}_{artifact_type}.md"
+
+            # Build markdown content
+            md_content = f"""# Gemini CLI {artifact_type.title()}
+
+**Context ID**: {context_id}
+**Timestamp**: {datetime.now(timezone.utc).isoformat()}
+**Artifact Type**: {artifact_type}
+**Model**: {metadata.get("model", self.model) if metadata else self.model}
+
+---
+
+## Content
+
+```
+{content}
+```
+"""
+
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=md_content.encode("utf-8"),
+                ContentType="text/markdown",
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[GEMINI CLI] Saved {artifact_type} to S3: {s3_key}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"[GEMINI CLI] Failed to save to S3: {e}")
+            return None
+
     async def run(
         self,
         prompt: str,
+        context_id: str | None = None,
+        save_prompt: bool = True,
+        save_output: bool = True,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> GeminiCLIResult:
         """
@@ -102,14 +183,28 @@ class GeminiCLI:
 
         Args:
             prompt: The prompt to send
+            context_id: Optional ID for S3 logging
+            save_prompt: Save prompt to S3
+            save_output: Save output to S3
             on_chunk: Optional callback for streaming output
 
         Returns:
-            GeminiCLIResult with output
+            GeminiCLIResult with output and S3 URLs
         """
         import time
 
         start_time = time.time()
+
+        # Generate context ID if not provided
+        if context_id is None:
+            context_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+        # Save prompt to S3 before running
+        s3_prompt_url = None
+        if save_prompt:
+            s3_prompt_url = await self._save_to_s3(
+                prompt, "prompt", context_id, {"model": self.model}
+            )
 
         try:
             # Build environment with API key
@@ -119,9 +214,9 @@ class GeminiCLI:
                 env["GEMINI_API_KEY"] = api_key
 
             # Build command
-            args = ["gemini", "-m", self.model]
-            if self.yolo_mode:
-                args.append("--yolo")
+            args = ["gemini", "--model", self.model]
+            if self.auto_accept:
+                args.append("--auto-accept")
             args.append(prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None
@@ -165,12 +260,31 @@ class GeminiCLI:
             except asyncio.TimeoutError:
                 logger.error(f"[GEMINI CLI] Timeout after {self.timeout}s")
                 process.kill()
+
+                # Preserve partial output on timeout
+                duration_ms = int((time.time() - start_time) * 1000)
+                partial_output = "".join(output_chunks) if output_chunks else ""
+
+                # Save error to S3
+                s3_output_url = None
+                if save_output:
+                    await self._save_to_s3(
+                        f"# Timeout Error\n\nTimeout after {self.timeout}s\n\n"
+                        f"# Partial Output ({len(partial_output)} chars)\n\n{partial_output}",
+                        "error",
+                        context_id,
+                        {"model": self.model, "duration_ms": duration_ms},
+                    )
+
                 return GeminiCLIResult(
                     success=False,
-                    output="",
+                    output=partial_output,
+                    raw_output=partial_output if partial_output else None,
                     error=f"Timeout after {self.timeout}s",
                     model=self.model,
-                    duration_ms=int((time.time() - start_time) * 1000),
+                    duration_ms=duration_ms,
+                    s3_prompt_url=s3_prompt_url,
+                    s3_output_url=s3_output_url,
                 )
 
             await process.wait()
@@ -178,10 +292,30 @@ class GeminiCLI:
             duration_ms = int((time.time() - start_time) * 1000)
             output = "".join(output_chunks)
 
+            # Save output to S3
+            s3_output_url = None
+            if save_output and output:
+                s3_output_url = await self._save_to_s3(
+                    output,
+                    "output",
+                    context_id,
+                    {"model": self.model, "duration_ms": duration_ms},
+                )
+
             if process.returncode != 0:
                 stderr = await process.stderr.read() if process.stderr else b""
                 error_msg = f"Exit code {process.returncode}: {stderr.decode()[:500]}"
                 logger.error(f"[GEMINI CLI] Failed: {error_msg}")
+
+                # Save error to S3
+                if save_output:
+                    await self._save_to_s3(
+                        f"# Error\n\n{error_msg}\n\n# Output\n\n{output}",
+                        "error",
+                        context_id,
+                        {"model": self.model, "duration_ms": duration_ms},
+                    )
+
                 return GeminiCLIResult(
                     success=False,
                     output=output,
@@ -189,6 +323,8 @@ class GeminiCLI:
                     error=error_msg,
                     duration_ms=duration_ms,
                     model=self.model,
+                    s3_prompt_url=s3_prompt_url,
+                    s3_output_url=s3_output_url,
                 )
 
             logger.info(f"[GEMINI CLI] Completed in {duration_ms}ms")
@@ -198,22 +334,45 @@ class GeminiCLI:
                 raw_output=output,
                 duration_ms=duration_ms,
                 model=self.model,
+                s3_prompt_url=s3_prompt_url,
+                s3_output_url=s3_output_url,
             )
 
         except FileNotFoundError:
+            duration_ms = int((time.time() - start_time) * 1000)
+            error_msg = "Gemini CLI not found"
+            if save_output:
+                await self._save_to_s3(
+                    f"# Error\n\n{error_msg}",
+                    "error",
+                    context_id,
+                    {"model": self.model, "duration_ms": duration_ms},
+                )
             return GeminiCLIResult(
                 success=False,
                 output="",
-                error="Gemini CLI not found",
+                error=error_msg,
                 model=self.model,
+                duration_ms=duration_ms,
+                s3_prompt_url=s3_prompt_url,
             )
         except Exception as e:
             logger.exception(f"[GEMINI CLI] Error: {e}")
+            duration_ms = int((time.time() - start_time) * 1000)
+            if save_output:
+                await self._save_to_s3(
+                    f"# Exception\n\n{e!s}",
+                    "error",
+                    context_id,
+                    {"model": self.model, "duration_ms": duration_ms},
+                )
             return GeminiCLIResult(
                 success=False,
                 output="",
                 error=str(e),
                 model=self.model,
+                duration_ms=duration_ms,
+                s3_prompt_url=s3_prompt_url,
             )
 
 

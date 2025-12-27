@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from turbowrap.utils.claude_cli import ClaudeCLI
+from turbowrap.orchestration.cli_runner import GeminiCLI
 
 logger = logging.getLogger(__name__)
 
@@ -243,17 +243,19 @@ def _extract_routes_with_regex(file_path: str, framework: str) -> list[dict[str,
     return routes
 
 
-def _analyze_with_claude_cli(
+def _analyze_with_gemini_cli(
     repo_path: str,
     framework: str,
     route_files: list[str],
 ) -> list[EndpointInfo]:
-    """Use Claude CLI to analyze route files and extract endpoint details.
+    """Use Gemini CLI to analyze route files and extract endpoint details.
 
-    Claude CLI can explore the repository autonomously, reading files as needed.
-    Uses the centralized ClaudeCLI utility.
+    Gemini CLI can explore the repository autonomously, reading files as needed.
+    Uses Gemini Flash for fast endpoint detection.
     """
-    # Build the prompt for Claude CLI
+    import asyncio
+
+    # Build the prompt for Gemini CLI
     files_list = "\n".join([f"- {f}" for f in route_files[:20]])  # Limit to 20 files
 
     prompt = f"""You are analyzing a {framework} backend repository to extract ALL API endpoints.
@@ -303,30 +305,47 @@ Return ONLY the JSON array, nothing else."""
 
     response_text = ""
     try:
-        # Use centralized ClaudeCLI utility
-        cli = ClaudeCLI(
+        # Use GeminiCLI with flash model for fast detection
+        cli = GeminiCLI(
             working_dir=Path(repo_path),
-            model="opus",  # Use Opus for better accuracy
-            timeout=180,
+            model="flash",  # Use Flash for fast analysis
+            timeout=120,
             s3_prefix="endpoint-detection",
         )
 
-        logger.info(f"Running Claude CLI for endpoint detection in {repo_path}")
+        logger.info(f"Running Gemini CLI (flash) for endpoint detection in {repo_path}")
 
-        # Run synchronously since this is called from non-async context
-        result = cli.run_sync(
-            prompt,
-            context_id=f"endpoints_{Path(repo_path).name}",
-            save_prompt=True,
-            save_output=True,
-            save_thinking=False,  # Not needed for this task
-        )
+        # Run async - need to handle from sync context
+        async def run_cli() -> tuple[bool, str, str | None]:
+            result = await cli.run(
+                prompt,
+                context_id=f"endpoints_{Path(repo_path).name}",
+                save_prompt=True,
+                save_output=True,
+            )
+            return result.success, result.output, result.error
 
-        if not result.success:
-            logger.error(f"Claude CLI failed: {result.error}")
+        # Run in event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            # Already in async context - create new event loop in thread
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, run_cli())
+                success, output, error = future.result()
+        else:
+            success, output, error = asyncio.run(run_cli())
+
+        if not success:
+            logger.error(f"Gemini CLI failed: {error}")
             return []
 
-        response_text = result.output.strip()
+        response_text = output.strip()
 
         # Clean up response - remove markdown code blocks if present
         cleaned = response_text
@@ -377,15 +396,15 @@ Return ONLY the JSON array, nothing else."""
                 )
             )
 
-        logger.info(f"Claude CLI detected {len(endpoints)} unique endpoints")
+        logger.info(f"Gemini CLI detected {len(endpoints)} unique endpoints")
         return endpoints
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Claude CLI response as JSON: {e}")
+        logger.error(f"Failed to parse Gemini CLI response as JSON: {e}")
         logger.debug(f"Response was: {response_text[:1000] if response_text else 'N/A'}")
         return []
     except Exception as e:
-        logger.error(f"Claude CLI analysis failed: {e}")
+        logger.error(f"Gemini CLI analysis failed: {e}")
         return []
 
 
@@ -543,9 +562,9 @@ def detect_endpoints(
     # 4. Extract routes using AI
     if use_ai:
         if use_claude:
-            # Primary: Use Claude CLI for autonomous exploration
-            logger.info("Using Claude CLI for endpoint detection (autonomous exploration)")
-            endpoints = _analyze_with_claude_cli(repo_path, framework, route_files)
+            # Primary: Use Gemini CLI (flash) for fast autonomous exploration
+            logger.info("Using Gemini CLI (flash) for endpoint detection (autonomous exploration)")
+            endpoints = _analyze_with_gemini_cli(repo_path, framework, route_files)
             result.routes = endpoints
         else:
             # Fallback: Use Gemini Flash (requires passing file contents)
