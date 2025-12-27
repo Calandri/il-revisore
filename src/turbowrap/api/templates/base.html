@@ -44,7 +44,7 @@
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
 
     <!-- Custom JS (MUST load before Alpine.js) -->
-    <script src="/static/js/cli-chat.js?v=0.9.60"></script>
+    <script src="/static/js/cli-chat.js?v=0.9.61"></script>
 
     <!-- Preload SharedWorker for faster chat initialization -->
     <link rel="preload" href="/static/js/chat-worker.js" as="worker">
@@ -129,7 +129,7 @@
               :class="{
                   'md:ml-64': sidebarOpen,
                   'md:ml-16': !sidebarOpen,
-                  'md:mr-[calc(100vw-16rem)]': chatMode === 'page',
+                  'md:mr-[calc(100vw-4rem)]': chatMode === 'page',
                   'md:mr-[520px]': chatMode === 'full',
                   'md:mr-[340px]': chatMode === 'third'
               }">

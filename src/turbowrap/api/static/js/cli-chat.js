@@ -996,7 +996,18 @@ function chatSidebar() {
         expandChat() {
             const modes = ['third', 'full', 'page'];
             const idx = modes.indexOf(this.chatMode);
-            this.chatMode = modes[(idx + 1) % modes.length];
+            const newMode = modes[(idx + 1) % modes.length];
+            this.chatMode = newMode;
+
+            // When entering 'page' mode, collapse left sidebar
+            // sidebarOpen is in parent scope (html x-data)
+            if (newMode === 'page') {
+                // Access parent scope's sidebarOpen
+                const htmlEl = document.documentElement;
+                if (htmlEl._x_dataStack) {
+                    htmlEl._x_dataStack[0].sidebarOpen = false;
+                }
+            }
         },
 
         /**
