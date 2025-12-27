@@ -856,7 +856,21 @@ class FixOrchestrator:
             commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
             commit_prompt = commit_prompt.replace("{commit_message}", commit_message)
             commit_prompt = commit_prompt.replace("{issue_codes}", issue_codes)
-            await self._run_claude_cli(commit_prompt, timeout=30, model="haiku")
+            commit_result = await self._run_claude_cli(commit_prompt, timeout=30, model="haiku")
+
+            # Check commit result - handle both __ERROR__: (from CLI wrapper) and ERROR: (from agent)
+            if commit_result is None or (commit_result and commit_result.startswith("__ERROR__:")):
+                error_msg = (
+                    commit_result.replace("__ERROR__: ", "") if commit_result else "Commit failed"
+                )
+                logger.error(f"[FIX] Git commit failed: {error_msg}")
+                raise RuntimeError(f"Git commit failed: {error_msg}")
+            if commit_result and "ERROR:" in commit_result:
+                # Agent reported an error in its output
+                error_start = commit_result.find("ERROR:")
+                error_msg = commit_result[error_start:].strip()
+                logger.error(f"[FIX] Git commit agent error: {error_msg}")
+                raise RuntimeError(f"Git commit failed: {error_msg}")
 
             # Step 4: Collect git info and build results
             commit_sha, modified_files, _ = await self._get_git_info()

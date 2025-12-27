@@ -55,7 +55,7 @@ ModelType = Literal["opus", "sonnet", "haiku"]
 MODEL_MAP = {
     "opus": "claude-opus-4-5-20251101",
     "sonnet": "claude-sonnet-4-20250514",
-    "haiku": "claude-haiku-3-5-20241022",
+    "haiku": "claude-haiku-4-5-20251001",
 }
 
 # Default timeout
@@ -520,11 +520,32 @@ class ClaudeCLI:
             if stderr_text and process.returncode != 0:
                 logger.error(f"[CLAUDE CLI] STDERR: {stderr_text[:2000]}")
 
-            if process.returncode != 0:
-                return None, [], None, None, f"Exit code {process.returncode}: {stderr_text[:500]}"
+            # Parse stream-json output (ALWAYS - even on error to preserve output for debugging)
+            raw_output = "".join(output_chunks) if output_chunks else None
 
-            # Parse stream-json output
-            raw_output = "".join(output_chunks)
+            if process.returncode != 0:
+                # Still parse output to extract any useful information
+                output: str | None = None
+                model_usage: list[ModelUsage] = []
+                thinking: str | None = None
+                api_error: str | None = None
+                if raw_output:
+                    output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
+                    logger.info(
+                        f"[CLAUDE CLI] Exit code {process.returncode} but got output: {len(raw_output)} bytes"
+                    )
+
+                error_msg = f"Exit code {process.returncode}: {stderr_text[:500]}"
+                if api_error:
+                    error_msg = f"{error_msg}\nAPI Error: {api_error}"
+
+                return output, model_usage, thinking, raw_output, error_msg
+
+            # Normal success path
+            if not raw_output:
+                logger.warning("[CLAUDE CLI] No output received from CLI")
+                return None, [], None, None, "No output received from CLI"
+
             output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
 
             # Return API error as the error field if present
