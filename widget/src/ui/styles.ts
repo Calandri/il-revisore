@@ -29,7 +29,7 @@ export const WIDGET_STYLES = `
 .iw-trigger {
   position: fixed;
   z-index: 2147483647;
-  padding: 14px 24px;
+  padding: 14px;
   border-radius: 50px;
   background: linear-gradient(135deg, var(--iw-accent) 0%, #8b5cf6 100%);
   color: white;
@@ -41,13 +41,28 @@ export const WIDGET_STYLES = `
   font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 8px;
-  transition: all 0.2s ease;
+  gap: 0;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.iw-trigger span {
+  max-width: 0;
+  opacity: 0;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .iw-trigger:hover {
+  padding: 14px 20px;
+  gap: 8px;
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+}
+
+.iw-trigger:hover span {
+  max-width: 150px;
+  opacity: 1;
 }
 
 .iw-trigger.bottom-right {
