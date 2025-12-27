@@ -502,7 +502,7 @@ class Orchestrator:
             )
         )
 
-        evaluation = await self._run_evaluator(
+        evaluation, eval_error = await self._run_evaluator(
             context=context,
             issues=prioritized_issues,
             reviewer_results=reviewer_results,
@@ -522,15 +522,17 @@ class Orchestrator:
             )
             await emit_log("INFO", f"✓ Evaluation: {evaluation.overall_score}/100")
         else:
+            error_msg = eval_error or "Unknown error"
             await emit(
                 ProgressEvent(
                     type=ProgressEventType.REVIEWER_ERROR,
                     reviewer_name="evaluator",
                     reviewer_display_name="Repository Evaluator",
-                    error="Evaluation failed",
+                    error=error_msg,
+                    message=f"Evaluation failed: {error_msg[:100]}",
                 )
             )
-            await emit_log("WARNING", "⚠ Evaluation skipped")
+            await emit_log("ERROR", f"✗ Evaluation: {error_msg[:80]}")
 
         # Step 6: Build final report
         report = self._build_report(
@@ -1117,7 +1119,7 @@ class Orchestrator:
         repo_info: RepositoryInfo,
         emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
         review_id: str | None = None,
-    ) -> RepositoryEvaluation | None:
+    ) -> tuple[RepositoryEvaluation | None, str | None]:
         """
         Run the final repository evaluator.
 
@@ -1130,7 +1132,7 @@ class Orchestrator:
             review_id: Review ID for S3 logging
 
         Returns:
-            RepositoryEvaluation with 6 scores, or None if failed
+            Tuple of (RepositoryEvaluation or None, error message or None)
         """
         try:
             evaluator = ClaudeEvaluator()
@@ -1163,12 +1165,14 @@ class Orchestrator:
                     f"arch={evaluation.architecture_quality}, "
                     f"code={evaluation.code_quality}"
                 )
+                return evaluation, None
 
-            return evaluation
+            # Evaluation returned None (parse error or CLI issue)
+            return None, "Evaluator returned empty response"
 
         except Exception as e:
-            logger.error(f"Evaluator failed: {e}")
-            return None
+            logger.exception(f"Evaluator failed: {e}")
+            return None, str(e)
 
     def _build_report(
         self,
