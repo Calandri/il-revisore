@@ -19,11 +19,11 @@ class AutoUpdateSettings(BaseSettings):
 
     # LLM model settings
     analysis_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3-flash-preview",
         description="Model for Step 1 analysis",
     )
     research_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3-flash-preview",
         description="Model for Step 2 web research with grounding",
     )
     evaluation_model: str = Field(

@@ -581,7 +581,7 @@ class TestGeminiChallengerModes:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger, GeminiMode
 
@@ -595,7 +595,7 @@ class TestGeminiChallengerModes:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger, GeminiMode
 
@@ -608,7 +608,7 @@ class TestGeminiChallengerModes:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger, GeminiMode
 
@@ -623,7 +623,7 @@ class TestGeminiChallengerModes:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger
 
@@ -643,7 +643,7 @@ class TestGeminiChallengerModes:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             from turbowrap.review.reviewers.gemini_challenger import GeminiChallenger
 
@@ -666,7 +666,7 @@ class TestDeprecatedGeminiCLIChallenger:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 
@@ -683,7 +683,7 @@ class TestDeprecatedGeminiCLIChallenger:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -698,7 +698,7 @@ class TestDeprecatedGeminiCLIChallenger:
         with patch("turbowrap.review.reviewers.gemini_challenger.get_settings") as mock:
             mock.return_value.challenger.satisfaction_threshold = 85.0
             mock.return_value.agents.effective_google_key = "test-key"
-            mock.return_value.agents.gemini_model = "gemini-2.0-flash"
+            mock.return_value.agents.gemini_model = "gemini-3-flash-preview"
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")

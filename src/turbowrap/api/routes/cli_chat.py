@@ -136,7 +136,7 @@ Respond with ONLY the title, nothing else."""
             args = [
                 "gemini",
                 "-m",
-                "gemini-2.5-flash",
+                "gemini-3-flash-preview",
                 prompt,
             ]
 

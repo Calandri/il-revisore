@@ -1,7 +1,7 @@
 ---
 name: git-merger-gemini
 description: Merges a fix branch to main, resolves conflicts with AI, and pushes to remote
-model: gemini-2.0-flash
+model: gemini-3-flash-preview
 tools: Read, Grep, Glob, Bash
 ---
 
