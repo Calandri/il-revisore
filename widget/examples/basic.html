@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Issue Widget Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      line-height: 1.6;
+    }
+    h1 { color: #111827; }
+    p { color: #6b7280; }
+    .demo-box {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    pre {
+      background: #1f2937;
+      color: #f9fafb;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Issue Widget Demo</h1>
+  <p>This page demonstrates the TurboWrap Issue Widget. Click the floating button in the bottom-right corner to report an issue.</p>
+
+  <div class="demo-box">
+    <h3>Sample Content</h3>
+    <p>This is some sample content on the page. The widget will capture this when taking a screenshot.</p>
+    <ul>
+      <li>Feature 1: Report bugs easily</li>
+      <li>Feature 2: AI-powered analysis</li>
+      <li>Feature 3: Automatic Linear integration</li>
+    </ul>
+  </div>
+
+  <h2>Installation</h2>
+  <pre><code>&lt;script&gt;
+  window.IssueWidgetConfig = {
+    apiUrl: 'https://api.turbowrap.io',
+    apiKey: 'iw_your_api_key',
+    teamId: 'your-team-uuid',
+    position: 'bottom-right',
+    buttonText: 'Report Issue'
+  };
+&lt;/script&gt;
+&lt;script src="https://cdn.jsdelivr.net/npm/@turbowrap/issue-widget@latest/dist/issue-widget.min.js"&gt;&lt;/script&gt;</code></pre>
+
+  <!-- Widget Configuration -->
+  <script>
+    window.IssueWidgetConfig = {
+      // Replace with your actual values
+      apiUrl: 'http://localhost:8000',
+      apiKey: 'test_api_key',
+      teamId: 'test-team-id',
+      position: 'bottom-right',
+      buttonText: 'Report Issue',
+      theme: 'auto',
+      onIssueCreated: (issue) => {
+        console.log('Issue created:', issue);
+        alert(`Issue created: ${issue.identifier}`);
+      },
+      onError: (error) => {
+        console.error('Widget error:', error);
+      }
+    };
+  </script>
+
+  <!-- For development: load from local dist -->
+  <script src="../dist/issue-widget.iife.js"></script>
+</body>
+</html>
