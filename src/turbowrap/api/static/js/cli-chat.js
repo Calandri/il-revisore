@@ -656,7 +656,7 @@ function chatSidebar() {
                 if (cliType === 'claude') {
                     modelOverride = 'claude-haiku-4-5-20251001';
                 } else if (cliType === 'gemini') {
-                    modelOverride = 'gemini-2.0-flash';
+                    modelOverride = 'gemini-3-flash-preview';
                 }
                 console.log(`[chatSidebar] Slash command detected, using model: ${modelOverride}`);
             }
