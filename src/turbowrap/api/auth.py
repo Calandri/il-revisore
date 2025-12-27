@@ -219,3 +219,88 @@ def get_user_info(access_token: str) -> dict[str, Any] | None:
     except ClientError as e:
         logger.warning(f"Failed to get user info: {e}")
         return None
+
+
+def cognito_forgot_password(email: str) -> tuple[bool, str]:
+    """
+    Initiate forgot password flow - sends verification code to email.
+
+    Args:
+        email: User email
+
+    Returns:
+        Tuple of (success, message)
+    """
+    settings = get_settings()
+    client = get_cognito_client()
+
+    try:
+        client.forgot_password(
+            ClientId=settings.auth.cognito_app_client_id,
+            Username=email,
+        )
+        logger.info(f"Password reset initiated for {email}")
+        return True, "Codice di verifica inviato alla tua email"
+
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "")
+
+        if error_code == "UserNotFoundException":
+            # Don't reveal if user exists - return success anyway
+            logger.warning(f"Forgot password for non-existent user: {email}")
+            return True, "Se l'email esiste, riceverai un codice di verifica"
+        if error_code == "LimitExceededException":
+            logger.warning(f"Rate limit exceeded for forgot password: {email}")
+            return False, "Troppi tentativi. Riprova tra qualche minuto"
+        if error_code == "InvalidParameterException":
+            logger.warning(f"Invalid parameter for forgot password: {email}")
+            return False, "Email non valida"
+
+        logger.error(f"Forgot password error: {error_code} - {e}")
+        return False, "Errore durante il reset. Riprova più tardi"
+
+
+def cognito_confirm_forgot_password(email: str, code: str, new_password: str) -> tuple[bool, str]:
+    """
+    Confirm forgot password with verification code.
+
+    Args:
+        email: User email
+        code: Verification code from email
+        new_password: New password
+
+    Returns:
+        Tuple of (success, message)
+    """
+    settings = get_settings()
+    client = get_cognito_client()
+
+    try:
+        client.confirm_forgot_password(
+            ClientId=settings.auth.cognito_app_client_id,
+            Username=email,
+            ConfirmationCode=code,
+            Password=new_password,
+        )
+        logger.info(f"Password reset confirmed for {email}")
+        return True, "Password reimpostata con successo"
+
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "")
+
+        if error_code == "CodeMismatchException":
+            return False, "Codice di verifica non valido"
+        if error_code == "ExpiredCodeException":
+            return False, "Codice scaduto. Richiedi un nuovo codice"
+        if error_code == "InvalidPasswordException":
+            return (
+                False,
+                "Password non valida. Deve avere almeno 8 caratteri, maiuscole, minuscole e numeri",
+            )
+        if error_code == "UserNotFoundException":
+            return False, "Utente non trovato"
+        if error_code == "LimitExceededException":
+            return False, "Troppi tentativi. Riprova tra qualche minuto"
+
+        logger.error(f"Confirm forgot password error: {error_code} - {e}")
+        return False, "Errore durante il reset. Riprova più tardi"

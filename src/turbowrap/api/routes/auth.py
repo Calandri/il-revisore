@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
 
 from ...config import get_settings
-from ..auth import cognito_login
+from ..auth import cognito_confirm_forgot_password, cognito_forgot_password, cognito_login
 from ..deps import get_current_user
 
 router = APIRouter(tags=["auth"])
@@ -130,4 +130,106 @@ async def me(current_user: dict[str, Any] = Depends(get_current_user)) -> UserIn
         email=current_user.get("email"),
         username=current_user.get("username"),
         sub=current_user.get("sub"),
+    )
+
+
+# =============================================================================
+# Forgot Password Flow
+# =============================================================================
+
+
+@router.get("/forgot-password", response_class=HTMLResponse, response_model=None)
+async def forgot_password_page(
+    request: Request,
+    error: str | None = None,
+    success: str | None = None,
+    email: str | None = None,
+) -> Response:
+    """Render forgot password page."""
+    templates = request.app.state.templates
+    return cast(
+        HTMLResponse,
+        templates.TemplateResponse(
+            "pages/forgot-password.html",
+            {
+                "request": request,
+                "error": error,
+                "success": success,
+                "email": email,
+            },
+        ),
+    )
+
+
+@router.post("/auth/forgot-password")
+async def forgot_password(
+    request: Request,
+    email: str = Form(...),
+) -> RedirectResponse:
+    """Initiate forgot password flow - sends verification code."""
+    success, message = cognito_forgot_password(email)
+
+    if success:
+        # Redirect to reset-password page with email pre-filled
+        return RedirectResponse(
+            url=f"/reset-password?email={email}&success={message.replace(' ', '+')}",
+            status_code=302,
+        )
+
+    return RedirectResponse(
+        url=f"/forgot-password?error={message.replace(' ', '+')}&email={email}",
+        status_code=302,
+    )
+
+
+@router.get("/reset-password", response_class=HTMLResponse, response_model=None)
+async def reset_password_page(
+    request: Request,
+    error: str | None = None,
+    success: str | None = None,
+    email: str | None = None,
+) -> Response:
+    """Render reset password page."""
+    templates = request.app.state.templates
+    return cast(
+        HTMLResponse,
+        templates.TemplateResponse(
+            "pages/reset-password.html",
+            {
+                "request": request,
+                "error": error,
+                "success": success,
+                "email": email,
+            },
+        ),
+    )
+
+
+@router.post("/auth/reset-password")
+async def reset_password(
+    request: Request,
+    email: str = Form(...),
+    code: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...),
+) -> RedirectResponse:
+    """Confirm password reset with verification code."""
+    # Validate passwords match
+    if password != confirm_password:
+        return RedirectResponse(
+            url=f"/reset-password?error=Le+password+non+coincidono&email={email}",
+            status_code=302,
+        )
+
+    success, message = cognito_confirm_forgot_password(email, code, password)
+
+    if success:
+        return RedirectResponse(
+            url=f"/reset-password?success={message.replace(' ', '+')}",
+            status_code=302,
+        )
+
+    return RedirectResponse(
+        url=f"/reset-password?error={message.replace(' ', '+')}&email={email}",
+        status_code=302,
     )
