@@ -137,7 +137,11 @@ class FixOrchestrator:
             setting = db.query(Setting).filter(Setting.key == "github_token").first()
             if setting and setting.value:
                 self._github_token_cache = str(setting.value)
+                logger.info(
+                    f"[FIX] GitHub token found in DB (length={len(self._github_token_cache)})"
+                )
                 return self._github_token_cache
+            logger.warning("[FIX] GitHub token NOT found in DB settings")
         except Exception as e:
             logger.warning(f"Failed to get GitHub token from DB: {e}")
         finally:

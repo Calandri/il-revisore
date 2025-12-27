@@ -435,6 +435,11 @@ class ClaudeCLI:
             # GitHub token for git operations (credential helper reads from this)
             if self.github_token:
                 env["GITHUB_TOKEN"] = self.github_token
+                logger.info(
+                    f"[CLAUDE CLI] GITHUB_TOKEN set in env (length={len(self.github_token)})"
+                )
+            else:
+                logger.warning("[CLAUDE CLI] No GITHUB_TOKEN provided - git auth may fail")
 
             # Get API key from AWS Secrets Manager or environment
             api_key = get_anthropic_api_key() or os.environ.get("ANTHROPIC_API_KEY")
