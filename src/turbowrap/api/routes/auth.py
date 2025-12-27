@@ -1,6 +1,7 @@
 """Authentication routes."""
 
 from typing import Any, cast
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,7 +31,10 @@ class UserInfo(BaseModel):
 
 @router.get("/login", response_class=HTMLResponse, response_model=None)
 async def login_page(
-    request: Request, error: str | None = None, next: str | None = None
+    request: Request,
+    error: str | None = None,
+    success: str | None = None,
+    next: str | None = None,
 ) -> Response:
     """Render login page."""
     get_settings()
@@ -48,6 +52,7 @@ async def login_page(
             {
                 "request": request,
                 "error": error,
+                "success": success,
                 "next": next or "/",
             },
         ),
@@ -172,12 +177,12 @@ async def forgot_password(
     if success:
         # Redirect to reset-password page with email pre-filled
         return RedirectResponse(
-            url=f"/reset-password?email={email}&success={message.replace(' ', '+')}",
+            url=f"/reset-password?email={quote(email)}&success={quote(message)}",
             status_code=302,
         )
 
     return RedirectResponse(
-        url=f"/forgot-password?error={message.replace(' ', '+')}&email={email}",
+        url=f"/forgot-password?error={quote(message)}&email={quote(email)}",
         status_code=302,
     )
 
@@ -217,19 +222,20 @@ async def reset_password(
     # Validate passwords match
     if password != confirm_password:
         return RedirectResponse(
-            url=f"/reset-password?error=Le+password+non+coincidono&email={email}",
+            url=f"/reset-password?error={quote('Le password non coincidono')}&email={quote(email)}",
             status_code=302,
         )
 
     success, message = cognito_confirm_forgot_password(email, code, password)
 
     if success:
+        # Password reset successful - redirect to login with success message
         return RedirectResponse(
-            url=f"/reset-password?success={message.replace(' ', '+')}",
+            url=f"/login?success={quote(message)}",
             status_code=302,
         )
 
     return RedirectResponse(
-        url=f"/reset-password?error={message.replace(' ', '+')}&email={email}",
+        url=f"/reset-password?error={quote(message)}&email={quote(email)}",
         status_code=302,
     )
