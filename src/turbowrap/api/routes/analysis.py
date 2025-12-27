@@ -37,9 +37,6 @@ LINT_TYPES = {
     "BE": ["ruff", "mypy"],  # Backend linting
 }
 
-# Lint types that use Gemini CLI (faster for complex analysis)
-GEMINI_LINT_TYPES = {"mypy"}
-
 
 def _load_agent(agent_path: Path) -> str:
     """Load agent prompt from MD file, stripping frontmatter."""
