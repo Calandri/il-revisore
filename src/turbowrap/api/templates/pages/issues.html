@@ -92,20 +92,20 @@
 {% block content %}
 <div class="space-y-6" x-data="issuesApp()">
     <!-- Header -->
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-            <h1 class="text-3xl font-bold">Issues</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">Problemi trovati nelle code review</p>
+            <h1 class="text-2xl sm:text-3xl font-bold">Issues</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">Problemi trovati nelle code review</p>
         </div>
         <div class="flex items-center gap-2">
             <button @click="refresh()"
                     :disabled="loading"
-                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                    class="min-h-[44px] px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
                 <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                           d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
-                Aggiorna
+                <span class="hidden sm:inline">Aggiorna</span>
             </button>
         </div>
     </div>
@@ -186,12 +186,12 @@
 
     <!-- Filters -->
     <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-        <div class="flex flex-wrap gap-4">
+        <div class="flex flex-wrap gap-3 md:gap-4">
             <!-- Repository filter -->
-            <div>
+            <div class="w-full sm:w-auto">
                 <label class="block text-sm text-gray-500 mb-1">Repository</label>
                 <select x-model="filters.repository_id" @change="refresh()"
-                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
                     <option value="">Tutti</option>
                     {% for repo in repos %}
                     <option value="{{ repo.id }}">{{ repo.name }}</option>
@@ -200,29 +200,32 @@
             </div>
 
             <!-- Lint+Fix Button -->
-            <div class="flex items-end gap-2">
-                <select x-model="lintFixCategory" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="BE">Backend (Ruff/Mypy)</option>
-                    <option value="FE">Frontend (TSC/ESLint)</option>
-                    <option value="all">Tutti</option>
-                </select>
+            <div class="w-full sm:w-auto flex flex-col sm:flex-row sm:items-end gap-2">
+                <div class="flex-1 sm:flex-none">
+                    <label class="block text-sm text-gray-500 mb-1 sm:hidden">Lint Type</label>
+                    <select x-model="lintFixCategory" class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                        <option value="BE">Backend (Ruff/Mypy)</option>
+                        <option value="FE">Frontend (TSC/ESLint)</option>
+                        <option value="all">Tutti</option>
+                    </select>
+                </div>
                 <button @click="runLintFix()"
                         :disabled="isAnalyzing || !filters.repository_id"
-                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="min-h-[44px] px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         :title="!filters.repository_id ? 'Seleziona prima una repository' : 'Trova e correggi issues linting'">
                     <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M5 13l4 4L19 7"/>
                     </svg>
-                    Lint+Fix
+                    <span>Lint+Fix</span>
                 </button>
             </div>
 
             <!-- Severity filter -->
-            <div>
+            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
                 <label class="block text-sm text-gray-500 mb-1">Severity</label>
                 <select x-model="filters.severity" @change="refresh()"
-                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
                     <option value="">Tutti</option>
                     <option value="CRITICAL">Critical</option>
                     <option value="HIGH">High</option>
@@ -232,10 +235,10 @@
             </div>
 
             <!-- Status filter -->
-            <div>
+            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
                 <label class="block text-sm text-gray-500 mb-1">Status</label>
                 <select x-model="filters.status" @change="refresh()"
-                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
                     <option value="">Tutti</option>
                     <option value="open">Open</option>
                     <option value="in_progress">In Progress</option>
@@ -246,10 +249,10 @@
             </div>
 
             <!-- Category filter -->
-            <div>
+            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
                 <label class="block text-sm text-gray-500 mb-1">Category</label>
                 <select x-model="filters.category" @change="refresh()"
-                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
                     <option value="">Tutti</option>
                     <option value="security">Security</option>
                     <option value="performance">Performance</option>
@@ -261,73 +264,77 @@
                 </select>
             </div>
 
+            <!-- Order by filter -->
+            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
+                <label class="block text-sm text-gray-500 mb-1">Ordina per</label>
+                <select x-model="filters.order_by" @change="refresh()"
+                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                    <option value="severity">Severità</option>
+                    <option value="updated_at">Ultima modifica</option>
+                    <option value="created_at">Data creazione</option>
+                </select>
+            </div>
+
             <!-- Search filter -->
-            <div class="flex-1 min-w-[200px]">
+            <div class="w-full sm:flex-1 sm:min-w-[200px]">
                 <label class="block text-sm text-gray-500 mb-1">Cerca</label>
                 <div class="relative">
                     <input type="text"
                            x-model="filters.search"
                            @input.debounce.300ms="refresh()"
                            placeholder="Cerca in titolo, descrizione, file..."
-                           class="w-full px-3 py-2 pl-9 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
+                           class="w-full min-h-[44px] px-3 py-2 pl-9 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
                     <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                     </svg>
                 </div>
-            </div>
-
-            <!-- Order by filter -->
-            <div>
-                <label class="block text-sm text-gray-500 mb-1">Ordina per</label>
-                <select x-model="filters.order_by" @change="refresh()"
-                        class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="severity">Severità</option>
-                    <option value="updated_at">Ultima modifica</option>
-                    <option value="created_at">Data creazione</option>
-                </select>
             </div>
         </div>
     </div>
 
     <!-- Issues List -->
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <h2 class="font-semibold">Lista Issues</h2>
-                <span class="text-sm text-gray-500" x-text="issues.length + ' risultati'"></span>
-            </div>
-            <div class="flex items-center gap-3">
-                <button @click="resetAllInProgress()"
-                        x-show="issues.filter(i => i.status === 'in_progress').length > 0"
-                        class="text-sm text-yellow-600 hover:text-yellow-700 flex items-center gap-1">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                    Reset In Progress (<span x-text="issues.filter(i => i.status === 'in_progress').length"></span>)
-                </button>
-                <button @click="selectAll()"
-                        class="text-sm text-gray-600 dark:text-gray-400 hover:text-primary">
-                    Seleziona Tutte
-                </button>
-                <button @click="selectAllCritical()"
-                        class="text-sm text-gray-600 dark:text-gray-400 hover:text-primary">
-                    Solo Critical/High
-                </button>
-                <button @click="clearSelection()"
-                        x-show="selectedIssues.length > 0"
-                        class="text-sm text-gray-500 hover:text-red-500">
-                    Deseleziona
-                </button>
-                <button @click="fixSelected()"
-                        :disabled="selectedIssues.length === 0 || isFixing"
-                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    </svg>
-                    Sistema Selezionate (<span x-text="selectedIssues.length"></span>)
-                </button>
+        <div class="p-4 border-b dark:border-gray-700">
+            <!-- Header row - stack on mobile -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <h2 class="font-semibold">Lista Issues</h2>
+                    <span class="text-sm text-gray-500" x-text="issues.length + ' risultati'"></span>
+                </div>
+                <!-- Action buttons - wrap on mobile -->
+                <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <button @click="resetAllInProgress()"
+                            x-show="issues.filter(i => i.status === 'in_progress').length > 0"
+                            class="min-h-[44px] px-3 py-2 text-sm text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg flex items-center gap-1 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        <span class="hidden xs:inline">Reset</span> (<span x-text="issues.filter(i => i.status === 'in_progress').length"></span>)
+                    </button>
+                    <button @click="selectAll()"
+                            class="min-h-[44px] px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors">
+                        <span class="hidden sm:inline">Seleziona</span> Tutte
+                    </button>
+                    <button @click="selectAllCritical()"
+                            class="min-h-[44px] px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors">
+                        Critical<span class="hidden sm:inline">/High</span>
+                    </button>
+                    <button @click="clearSelection()"
+                            x-show="selectedIssues.length > 0"
+                            class="min-h-[44px] px-3 py-2 text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                        Deseleziona
+                    </button>
+                    <button @click="fixSelected()"
+                            :disabled="selectedIssues.length === 0 || isFixing"
+                            class="min-h-[44px] bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <span class="hidden sm:inline">Sistema</span> (<span x-text="selectedIssues.length"></span>)
+                    </button>
+                </div>
             </div>
         </div>
 

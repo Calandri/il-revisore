@@ -349,7 +349,7 @@
             <!-- Analyze Relationships button - icon only on mobile -->
             <button @click="analyzeRelationships()"
                     :disabled="isAnalyzingRelationships || isRunning"
-                    class="bg-indigo-500 text-white p-2 md:px-4 md:py-2 rounded-lg hover:bg-indigo-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="min-h-[44px] min-w-[44px] bg-indigo-500 text-white p-2.5 md:px-4 md:py-2 rounded-lg hover:bg-indigo-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Analizza connessioni tra repository">
                 <svg x-show="!isAnalyzingRelationships" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -366,7 +366,7 @@
             <button x-show="isRunning && taskId"
                     @click="cancelReview()"
                     :disabled="isCancelling"
-                    class="bg-red-500 text-white p-2 md:px-4 md:py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 disabled:opacity-50">
+                    class="min-h-[44px] min-w-[44px] bg-red-500 text-white p-2.5 md:px-4 md:py-2 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
                 <svg x-show="!isCancelling" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
@@ -380,7 +380,7 @@
             <!-- Resume button (shown when a failed review has checkpoints) -->
             <button x-show="isResumable && !isRunning"
                     @click="startReview(true)"
-                    class="bg-orange-500 text-white p-2 md:px-4 md:py-2 rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-2"
+                    class="min-h-[44px] min-w-[44px] bg-orange-500 text-white p-2.5 md:px-4 md:py-2 rounded-lg hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
                     :title="`Riprendi: ${resumableInfo?.checkpoints?.length || 0} reviewer salvati`">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -393,7 +393,7 @@
             <!-- Start button -->
             <button @click="startReview()"
                     :disabled="!selectedRepo || isRunning"
-                    class="bg-primary text-white px-4 md:px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-1 md:flex-none justify-center">
+                    class="min-h-[44px] bg-primary text-white px-4 md:px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed flex-1 md:flex-none justify-center">
                 <svg x-show="!isRunning" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                           d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
