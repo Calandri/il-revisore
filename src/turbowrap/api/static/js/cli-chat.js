@@ -4,10 +4,33 @@
  * Manages the right sidebar chat interface for Claude/Gemini CLI.
  * Supports:
  * - Multi-chat sessions
- * - SSE streaming
+ * - SSE streaming via SharedWorker (persists across page navigation)
  * - Quick settings (model, agent, thinking)
  * - 3 display modes (full/third/icons)
  */
+
+// SharedWorker singleton (shared across all chatSidebar instances)
+let chatWorker = null;
+let chatWorkerPort = null;
+let workerMessageHandler = null;
+
+/**
+ * Get or create the SharedWorker connection
+ */
+function getChatWorker() {
+    if (!chatWorker) {
+        try {
+            chatWorker = new SharedWorker('/static/js/chat-worker.js');
+            chatWorkerPort = chatWorker.port;
+            chatWorkerPort.start();
+            console.log('[cli-chat] SharedWorker connected');
+        } catch (e) {
+            console.warn('[cli-chat] SharedWorker not supported, falling back to direct fetch:', e);
+            return null;
+        }
+    }
+    return chatWorkerPort;
+}
 
 /**
  * Chat Sidebar Alpine Component
@@ -36,6 +59,8 @@ function chatSidebar() {
         // Branch management
         branches: [],           // Available branches in repo
         loadingBranches: false, // Loading state for branches
+        // SharedWorker support
+        useWorker: true,        // Will be set to false if worker not supported
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -45,6 +70,10 @@ function chatSidebar() {
          */
         async init() {
             console.log('[chatSidebar] Initializing...');
+
+            // Connect to SharedWorker
+            this.setupWorker();
+
             try {
                 await this.loadSessions();
                 console.log('[chatSidebar] Sessions loaded:', this.sessions.length);
@@ -58,6 +87,14 @@ function chatSidebar() {
                     if (session) {
                         console.log('[chatSidebar] Restoring active session:', savedSessionId);
                         await this.selectSession(session);
+
+                        // Request state from worker (in case stream was active during navigation)
+                        if (this.useWorker && chatWorkerPort) {
+                            chatWorkerPort.postMessage({
+                                type: 'GET_STATE',
+                                sessionId: savedSessionId
+                            });
+                        }
                     }
                 }
             } catch (error) {
@@ -66,6 +103,139 @@ function chatSidebar() {
 
             // Poll for session updates every 10s
             setInterval(() => this.loadSessions(), 10000);
+        },
+
+        /**
+         * Setup SharedWorker connection and message handler
+         */
+        setupWorker() {
+            const port = getChatWorker();
+            if (!port) {
+                this.useWorker = false;
+                console.log('[chatSidebar] Worker not available, using direct fetch');
+                return;
+            }
+
+            // Set up message handler (only once globally)
+            if (!workerMessageHandler) {
+                const self = this;
+                workerMessageHandler = (event) => {
+                    self.handleWorkerMessage(event.data);
+                };
+                port.onmessage = workerMessageHandler;
+            }
+
+            console.log('[chatSidebar] Worker setup complete');
+        },
+
+        /**
+         * Handle messages from SharedWorker
+         */
+        handleWorkerMessage(data) {
+            const { type, sessionId, content, fullContent, event, messageId, title, error, state, activeStreams } = data;
+
+            // Ignore messages for other sessions
+            if (sessionId && this.activeSession?.id !== sessionId) {
+                console.log('[chatSidebar] Ignoring worker message for different session:', sessionId);
+                return;
+            }
+
+            switch (type) {
+                case 'STREAM_START':
+                    console.log('[chatSidebar] Worker: stream started');
+                    this.streaming = true;
+                    this.streamContent = '';
+                    this.systemInfo = [];
+                    break;
+
+                case 'CHUNK':
+                    // Use fullContent from worker for accurate state
+                    this.streamContent = fullContent || this.streamContent + content;
+                    this.$nextTick(() => this.scrollToBottom());
+                    break;
+
+                case 'SYSTEM':
+                    console.log('[chatSidebar] Worker: system event:', event?.subtype);
+                    if (!this.systemInfo) this.systemInfo = [];
+                    this.systemInfo.push(event);
+                    break;
+
+                case 'DONE':
+                    console.log('[chatSidebar] Worker: stream done, messageId:', messageId);
+                    this.messages.push({
+                        id: messageId,
+                        role: 'assistant',
+                        content: content || this.streamContent,
+                        created_at: new Date().toISOString()
+                    });
+                    this.streamContent = '';
+                    this.streaming = false;
+
+                    // Check for queued message (ACCODA functionality)
+                    if (this.pendingMessage) {
+                        const queuedMsg = this.pendingMessage;
+                        this.pendingMessage = null;
+                        console.log('[chatSidebar] Sending queued message:', queuedMsg.substring(0, 50));
+                        setTimeout(() => {
+                            this.inputMessage = queuedMsg;
+                            this.sendMessage();
+                        }, 100);
+                    }
+                    break;
+
+                case 'TITLE_UPDATE':
+                    console.log('[chatSidebar] Worker: title updated:', title);
+                    if (this.activeSession) {
+                        this.activeSession.display_name = title;
+                    }
+                    const idx = this.sessions.findIndex(s => s.id === sessionId);
+                    if (idx >= 0) {
+                        this.sessions[idx].display_name = title;
+                    }
+                    break;
+
+                case 'ERROR':
+                    console.error('[chatSidebar] Worker: error:', error);
+                    this.showToast('Errore: ' + error, 'error');
+                    this.streaming = false;
+                    break;
+
+                case 'STREAM_ABORTED':
+                    console.log('[chatSidebar] Worker: stream aborted');
+                    // If we have partial content, save it
+                    if (this.streamContent.trim()) {
+                        this.messages.push({
+                            id: 'stopped-' + Date.now(),
+                            role: 'assistant',
+                            content: this.streamContent + '\n\n*[Interrotto]*',
+                            created_at: new Date().toISOString()
+                        });
+                    }
+                    this.streamContent = '';
+                    this.streaming = false;
+                    break;
+
+                case 'STREAM_END':
+                    console.log('[chatSidebar] Worker: stream ended');
+                    this.streaming = false;
+                    break;
+
+                case 'STATE_SYNC':
+                    console.log('[chatSidebar] Worker: state sync received', { activeStreams, state });
+                    // Restore state if there was an active stream
+                    if (state && sessionId === this.activeSession?.id) {
+                        if (state.streaming) {
+                            this.streaming = true;
+                            this.streamContent = state.streamContent || '';
+                            this.systemInfo = state.systemInfo || [];
+                            console.log('[chatSidebar] Restored active stream state');
+                        }
+                    }
+                    break;
+
+                default:
+                    console.log('[chatSidebar] Worker: unknown message type:', type);
+            }
         },
 
         /**
@@ -303,6 +473,15 @@ function chatSidebar() {
          * Stop the current streaming response
          */
         stopStreaming() {
+            // If using worker, tell it to stop
+            if (this.useWorker && chatWorkerPort && this.activeSession) {
+                chatWorkerPort.postMessage({
+                    type: 'STOP_STREAM',
+                    sessionId: this.activeSession.id
+                });
+            }
+
+            // Legacy: abort direct fetch if in use
             if (this.abortController) {
                 this.abortController.abort();
                 this.abortController = null;
@@ -391,6 +570,7 @@ function chatSidebar() {
 
         /**
          * Send a message and stream response via SSE
+         * Uses SharedWorker if available, falls back to direct fetch
          */
         async sendMessage() {
             if (!this.inputMessage.trim() || !this.activeSession || this.streaming) return;
@@ -401,9 +581,6 @@ function chatSidebar() {
             this.streamContent = '';
             this.systemInfo = [];  // Reset system info for new message
 
-            // Create AbortController for cancellation
-            this.abortController = new AbortController();
-
             // Add user message immediately
             const userMsg = {
                 id: 'temp-' + Date.now(),
@@ -413,6 +590,31 @@ function chatSidebar() {
             };
             this.messages.push(userMsg);
             this.$nextTick(() => this.scrollToBottom());
+
+            // Use SharedWorker if available
+            if (this.useWorker && chatWorkerPort) {
+                console.log('[chatSidebar] Sending via SharedWorker');
+                chatWorkerPort.postMessage({
+                    type: 'SEND_MESSAGE',
+                    sessionId: this.activeSession.id,
+                    content: content,
+                    userMessage: userMsg
+                });
+                // Response will come via handleWorkerMessage
+                return;
+            }
+
+            // Fallback: direct fetch (legacy behavior)
+            console.log('[chatSidebar] Sending via direct fetch (worker not available)');
+            await this.sendMessageDirect(content);
+        },
+
+        /**
+         * Direct fetch implementation (fallback when worker not available)
+         */
+        async sendMessageDirect(content) {
+            // Create AbortController for cancellation
+            this.abortController = new AbortController();
 
             try {
                 // Close any existing EventSource

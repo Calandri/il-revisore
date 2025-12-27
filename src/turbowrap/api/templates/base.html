@@ -43,6 +43,9 @@
     <!-- Custom JS (MUST load before Alpine.js) -->
     <script src="/static/js/cli-chat.js"></script>
 
+    <!-- Preload SharedWorker for faster chat initialization -->
+    <link rel="preload" href="/static/js/chat-worker.js" as="worker">
+
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
