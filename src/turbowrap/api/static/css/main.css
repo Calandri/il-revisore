@@ -2,6 +2,11 @@
  * TurboWrap Custom Styles
  */
 
+/* Alpine.js x-cloak - Hide elements until Alpine initializes */
+[x-cloak] {
+    display: none !important;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
     width: 8px;

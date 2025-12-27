@@ -1,5 +1,5 @@
 <!-- Right Chat Sidebar -->
-<aside x-show="chatMode !== 'hidden'"
+<aside x-cloak x-show="chatMode !== 'hidden'"
        x-data="chatSidebar()"
        x-init="init()"
        class="fixed right-0 top-0 h-full bg-white dark:bg-gray-900 shadow-2xl transition-all duration-300 z-40 flex flex-col border-l border-gray-200 dark:border-gray-700"
@@ -423,7 +423,7 @@
 </aside>
 
 <!-- FAB Toggle Button -->
-<button x-show="chatMode === 'hidden'"
+<button x-cloak x-show="chatMode === 'hidden'"
         @click="chatMode = 'third'"
         x-transition
         class="fixed right-6 bottom-6 w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xl shadow-indigo-500/30 flex items-center justify-center hover:from-indigo-600 hover:to-purple-700 transition-all z-50 hover:scale-110"
