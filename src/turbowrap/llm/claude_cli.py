@@ -646,8 +646,12 @@ class ClaudeCLI:
             logger.info(f"[CLAUDE CLI] Process exited with code {process.returncode}")
 
             stderr_text = "".join(stderr_chunks)
-            if stderr_text and process.returncode != 0:
-                logger.error(f"[CLAUDE CLI] STDERR: {stderr_text[:2000]}")
+            if stderr_text:
+                if process.returncode != 0:
+                    logger.error(f"[CLAUDE CLI] STDERR: {stderr_text[:2000]}")
+                else:
+                    # Log as WARNING so it appears in Log Viewer even on success
+                    logger.warning(f"[CLAUDE CLI] Output: {stderr_text[:2000]}")
 
             # Parse stream-json output (ALWAYS - even on error to preserve output for debugging)
             raw_output = "".join(output_chunks) if output_chunks else None
