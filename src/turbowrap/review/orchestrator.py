@@ -25,6 +25,7 @@ from turbowrap.orchestration import (
     prioritize_issues,
 )
 from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
+from turbowrap.review.dual_llm_runner import DualLLMResult, DualLLMRunner
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.progress import (
     ProgressEvent,
@@ -39,7 +40,7 @@ from turbowrap.review.models.report import (
     RepoType,
     ReviewerResult,
 )
-from turbowrap.review.models.review import Issue, ReviewMode, ReviewOutput, ReviewRequest
+from turbowrap.review.models.review import Issue, ReviewMode, ReviewRequest
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
 from turbowrap.review.utils.file_utils import FileUtils
@@ -345,8 +346,8 @@ class Orchestrator:
                     )
 
         else:
-            # Run without challenger pattern (simple mode) - still parallel
-            async def run_simple_with_progress(
+            # Run with Dual-LLM pattern (Claude + Gemini in parallel)
+            async def run_dual_llm_with_progress(
                 reviewer_name: str,
             ) -> tuple[str, str, Any]:
                 display_name = get_reviewer_display_name(reviewer_name)
@@ -356,35 +357,90 @@ class Orchestrator:
                         type=ProgressEventType.REVIEWER_STARTED,
                         reviewer_name=reviewer_name,
                         reviewer_display_name=display_name,
+                        message=f"Starting {display_name} (Claude + Gemini)...",
                     )
                 )
 
+                started_at = datetime.utcnow()
+
                 try:
-                    result = await self._run_simple_review(context, reviewer_name)
+                    result = await self._run_dual_llm_review(context, reviewer_name, emit)
+
+                    # Build status message with LLM details
+                    status_parts = []
+                    if result.claude_status == "ok":
+                        status_parts.append(f"Claude: {result.claude_issues_count}")
+                    else:
+                        status_parts.append("Claude: failed")
+                    if result.gemini_status == "ok":
+                        status_parts.append(f"Gemini: {result.gemini_issues_count}")
+                    else:
+                        status_parts.append("Gemini: failed")
+                    status_parts.append(f"Merged: {result.merged_issues_count}")
+                    if result.overlap_count > 0:
+                        status_parts.append(f"Overlap: {result.overlap_count}")
 
                     await emit(
                         ProgressEvent(
                             type=ProgressEventType.REVIEWER_COMPLETED,
                             reviewer_name=reviewer_name,
                             reviewer_display_name=display_name,
-                            issues_found=len(result.issues),
-                            model_usage=[m.model_dump() for m in result.model_usage],
+                            issues_found=result.merged_issues_count,
+                            message=f"{display_name}: {' | '.join(status_parts)}",
                         )
                     )
+
+                    # Toast notification with dual-LLM details
+                    await emit_log(
+                        "INFO",
+                        f"✓ {display_name}: {result.merged_issues_count} issues "
+                        f"(C:{result.claude_issues_count} G:{result.gemini_issues_count})",
+                    )
+
+                    # SAVE CHECKPOINT on success
+                    if checkpoint_callback:
+                        await checkpoint_callback(
+                            reviewer_name,
+                            "completed",
+                            result.final_review.issues,
+                            100.0,  # No satisfaction score in dual-LLM mode
+                            1,  # Single iteration (parallel)
+                            [],  # No detailed model usage yet
+                            started_at,
+                        )
 
                     return (reviewer_name, "success", result)
 
                 except Exception as e:
+                    logger.error(f"Reviewer {reviewer_name} failed: {e}")
+
                     await emit(
                         ProgressEvent(
                             type=ProgressEventType.REVIEWER_ERROR,
                             reviewer_name=reviewer_name,
+                            reviewer_display_name=display_name,
                             error=str(e),
+                            message=f"{display_name} failed: {str(e)[:50]}",
                         )
                     )
+
+                    await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
+
+                    # SAVE FAILED CHECKPOINT
+                    if checkpoint_callback:
+                        await checkpoint_callback(
+                            reviewer_name,
+                            "failed",
+                            [],
+                            0.0,
+                            0,
+                            [],
+                            started_at,
+                        )
+
                     return (reviewer_name, "error", str(e))
 
-            tasks = [run_simple_with_progress(name) for name in reviewers]
+            tasks = [run_dual_llm_with_progress(name) for name in reviewers]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for result in results:
@@ -396,18 +452,24 @@ class Orchestrator:
                 reviewer_name, status, data = result
 
                 if status == "success":
-                    # data is ReviewOutput here
-                    assert isinstance(data, ReviewOutput)
+                    # data is DualLLMResult here
+                    assert isinstance(data, DualLLMResult)
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
                             status="completed",
-                            issues_found=len(data.issues),
-                            duration_seconds=data.duration_seconds,
-                            iterations=1,
+                            issues_found=data.merged_issues_count,
+                            duration_seconds=data.total_duration_seconds,
+                            iterations=1,  # Dual-LLM runs in parallel, not iteratively
+                            # Add dual-LLM metadata: 100% if both ok, 50% otherwise
+                            final_satisfaction=(
+                                100.0
+                                if data.claude_status == "ok" and data.gemini_status == "ok"
+                                else 50.0
+                            ),
                         )
                     )
-                    all_issues.extend(data.issues)
+                    all_issues.extend(data.final_review.issues)
                 else:
                     # data is str (error message) here
                     assert isinstance(data, str)
@@ -974,21 +1036,73 @@ class Orchestrator:
             on_content_callback=on_content,
         )
 
-    async def _run_simple_review(
+    async def _run_dual_llm_review(
         self,
         context: ReviewContext,
         reviewer_name: str,
-    ) -> ReviewOutput:
-        """Run a simple review without challenger pattern."""
+        emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
+    ) -> DualLLMResult:
+        """
+        Run dual-LLM review (Claude + Gemini in parallel).
+
+        Uses DualLLMRunner to execute both LLMs and merge results.
+
+        Args:
+            context: Review context with repo path and metadata
+            reviewer_name: Name of the reviewer (e.g., reviewer_be_architecture)
+            emit: Optional callback for progress events
+
+        Returns:
+            DualLLMResult with merged issues and per-LLM stats
+        """
         from turbowrap.review.reviewers.claude_cli_reviewer import ClaudeCLIReviewer
+        from turbowrap.review.reviewers.gemini_cli_reviewer import GeminiCLIReviewer
 
-        reviewer = ClaudeCLIReviewer(name=reviewer_name)
+        # Create both reviewers with the same name (same agent prompt)
+        claude_reviewer = ClaudeCLIReviewer(name=reviewer_name)
+        gemini_reviewer = GeminiCLIReviewer(name=reviewer_name)
 
+        # Load agent prompt (same for both)
         with contextlib.suppress(FileNotFoundError):
-            context.agent_prompt = reviewer.load_agent_prompt(self.settings.agents_dir)
+            context.agent_prompt = claude_reviewer.load_agent_prompt(self.settings.agents_dir)
 
-        # CLI reviewer receives file list and explores autonomously
-        return await reviewer.review(context, context.files)
+        # Create streaming callbacks for progress events
+        display_name = get_reviewer_display_name(reviewer_name)
+
+        async def on_claude_chunk(chunk: str) -> None:
+            if emit:
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=f"{reviewer_name}_claude",
+                        reviewer_display_name=f"{display_name} (Claude)",
+                        content=chunk,
+                    )
+                )
+
+        async def on_gemini_chunk(chunk: str) -> None:
+            if emit:
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=f"{reviewer_name}_gemini",
+                        reviewer_display_name=f"{display_name} (Gemini)",
+                        content=chunk,
+                    )
+                )
+
+        # Create runner and execute
+        runner = DualLLMRunner(
+            claude_reviewer=claude_reviewer,
+            gemini_reviewer=gemini_reviewer,
+        )
+
+        return await runner.run(
+            context=context,
+            file_list=context.files,
+            on_claude_chunk=on_claude_chunk,
+            on_gemini_chunk=on_gemini_chunk,
+        )
 
     # NOTE: _deduplicate_issues, _severity_rank, _prioritize_issues moved to
     # turbowrap.orchestration.report_utils for shared use across orchestrators
