@@ -48,11 +48,62 @@
         </button>
     </div>
 
+    <!-- Repository Selection Modal -->
+    <div x-show="showRepoSelector"
+         x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         @click.self="cancelCreateSession()">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+             @click.stop>
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700"
+                 :class="pendingCliType === 'claude' ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10' : 'bg-gradient-to-r from-blue-500/10 to-cyan-500/10'">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-3">
+                    <div :class="pendingCliType === 'claude' ? 'from-orange-500 to-amber-500' : 'from-blue-500 to-cyan-500'"
+                         class="w-8 h-8 rounded-lg bg-gradient-to-br flex items-center justify-center text-white font-bold">
+                        <span x-text="pendingCliType === 'claude' ? 'C' : 'G'"></span>
+                    </div>
+                    <span x-text="pendingCliType === 'claude' ? 'Nuova Chat Claude' : 'Nuova Chat Gemini'"></span>
+                </h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Seleziona una repository per il contesto (opzionale)</p>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Repository</label>
+                <select x-model="selectedRepoId"
+                        class="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white py-2.5 px-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                    <option :value="null">Nessuna repository (chat generica)</option>
+                    <template x-for="repo in repositories" :key="repo.id">
+                        <option :value="repo.id" x-text="repo.name || repo.project_name"></option>
+                    </template>
+                </select>
+                <p class="text-xs text-gray-400 mt-2">
+                    Con una repository selezionata, la chat avrà contesto sui file e branch
+                </p>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+                <button @click="cancelCreateSession()"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    Annulla
+                </button>
+                <button @click="confirmCreateSession()"
+                        :disabled="creating"
+                        :class="pendingCliType === 'claude' ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600' : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600'"
+                        class="px-4 py-2 text-sm font-medium text-white rounded-lg transition-all shadow-lg disabled:opacity-50">
+                    Crea Chat
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sessions List -->
     <div class="flex-1 overflow-y-auto" x-show="!activeSession">
         <!-- New Chat Buttons -->
         <div class="p-4 space-y-2">
-            <button @click="createSession('claude')"
+            <button @click="startCreateSession('claude')"
                     :disabled="creating"
                     class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white transition-all shadow-lg shadow-orange-500/25 disabled:opacity-50 group">
                 <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -64,7 +115,7 @@
                 </div>
             </button>
 
-            <button @click="createSession('gemini')"
+            <button @click="startCreateSession('gemini')"
                     :disabled="creating"
                     class="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white transition-all shadow-lg shadow-blue-500/25 disabled:opacity-50 group">
                 <div class="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">

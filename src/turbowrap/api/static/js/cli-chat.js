@@ -84,6 +84,7 @@ function chatSidebar() {
                 console.log('[chatSidebar] Sessions loaded:', this.sessions.length);
                 await this.loadAgents();
                 console.log('[chatSidebar] Agents loaded:', this.agents.length);
+                await this.loadRepositories();
 
                 // Restore active session from localStorage
                 const savedSessionId = localStorage.getItem('chatActiveSessionId');
@@ -277,6 +278,50 @@ function chatSidebar() {
         },
 
         /**
+         * Load available repositories for session context
+         */
+        async loadRepositories() {
+            try {
+                const res = await fetch('/api/git/repositories');
+                if (res.ok) {
+                    this.repositories = await res.json();
+                    console.log('[chatSidebar] Loaded repositories:', this.repositories.length);
+                }
+            } catch (error) {
+                console.error('Error loading repositories:', error);
+            }
+        },
+
+        /**
+         * Start creating a new session (show repo selector)
+         */
+        startCreateSession(cliType) {
+            this.pendingCliType = cliType;
+            this.selectedRepoId = null;
+            this.showRepoSelector = true;
+        },
+
+        /**
+         * Confirm repo selection and create session
+         */
+        async confirmCreateSession() {
+            if (!this.pendingCliType) return;
+            this.showRepoSelector = false;
+            await this.createSession(this.pendingCliType, this.selectedRepoId);
+            this.pendingCliType = null;
+            this.selectedRepoId = null;
+        },
+
+        /**
+         * Cancel repo selection
+         */
+        cancelCreateSession() {
+            this.showRepoSelector = false;
+            this.pendingCliType = null;
+            this.selectedRepoId = null;
+        },
+
+        /**
          * Load branches for the active session's repository
          */
         async loadBranches() {
@@ -350,17 +395,24 @@ function chatSidebar() {
         /**
          * Create a new chat session
          */
-        async createSession(cliType) {
+        async createSession(cliType, repositoryId = null) {
             this.creating = true;
             try {
+                const payload = {
+                    cli_type: cliType,
+                    display_name: cliType === 'claude' ? 'Claude Chat' : 'Gemini Chat',
+                    color: cliType === 'claude' ? '#f97316' : '#3b82f6'
+                };
+
+                // Add repository context if selected
+                if (repositoryId) {
+                    payload.repository_id = repositoryId;
+                }
+
                 const res = await fetch('/api/cli-chat/sessions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        cli_type: cliType,
-                        display_name: cliType === 'claude' ? 'Claude Chat' : 'Gemini Chat',
-                        color: cliType === 'claude' ? '#f97316' : '#3b82f6'
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (res.ok) {
