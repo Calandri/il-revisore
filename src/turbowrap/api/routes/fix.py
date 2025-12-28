@@ -780,10 +780,17 @@ async def merge_and_push(
         s3_prefix="git-merge",
     )
 
+    logger.info(f"[MERGE] Starting merge for branch: {request.branch_name} on repo: {repo.name}")
+
     result = await gemini.run(
         prompt=merge_prompt,
         context_id=f"merge-{request.branch_name}-{datetime.now().strftime('%H%M%S')}",
+        # Explicit tracking parameters
+        operation_type="git_merge",
+        repo_name=repo.name,
     )
+
+    logger.info(f"[MERGE] Completed: success={result.success}")
 
     if not result.success:
         logger.error(f"Merge failed: {result.error}")

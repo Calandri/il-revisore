@@ -952,7 +952,11 @@ class GeminiCLI:
             return operation
 
         except Exception as e:
-            logger.warning(f"[GEMINI CLI] Failed to register operation: {e}")
+            import traceback
+
+            logger.error(
+                f"[GEMINI CLI] Failed to register operation: {e}\n{traceback.format_exc()}"
+            )
             return None
 
     def _complete_operation(
@@ -993,7 +997,11 @@ class GeminiCLI:
             )
 
         except Exception as e:
-            logger.warning(f"[GEMINI CLI] Failed to complete operation: {e}")
+            import traceback
+
+            logger.error(
+                f"[GEMINI CLI] Failed to complete operation: {e}\n{traceback.format_exc()}"
+            )
 
     def _fail_operation(self, operation_id: str, error: str) -> None:
         """Fail operation in tracker."""
@@ -1005,7 +1013,11 @@ class GeminiCLI:
             logger.info(f"[GEMINI CLI] Operation failed: {operation_id[:8]}")
 
         except Exception as e:
-            logger.warning(f"[GEMINI CLI] Failed to mark operation as failed: {e}")
+            import traceback
+
+            logger.error(
+                f"[GEMINI CLI] Failed to mark operation as failed: {e}\n{traceback.format_exc()}"
+            )
 
     def _update_operation(self, operation_id: str, details: dict[str, Any]) -> None:
         """Update operation details in tracker (e.g., add S3 URLs)."""
@@ -1016,4 +1028,6 @@ class GeminiCLI:
             tracker.update(operation_id, details=details)
 
         except Exception as e:
-            logger.warning(f"[GEMINI CLI] Failed to update operation: {e}")
+            import traceback
+
+            logger.error(f"[GEMINI CLI] Failed to update operation: {e}\n{traceback.format_exc()}")
