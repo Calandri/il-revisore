@@ -377,25 +377,26 @@ class StagingStatus(BaseModel):
     """Staging container status."""
 
     running: bool
-    container_id: str | None = None
-    image: str | None = None
-    started_at: str | None = None
+    version: str | None = None
+    commit_sha: str | None = None
+    build_date: str | None = None
 
 
 @router.get("/staging/status", response_model=StagingStatus)
 async def get_staging_status() -> StagingStatus:
-    """Check if staging container is running by hitting its health endpoint on port 8001."""
+    """Check if staging container is running and get its version from port 8001."""
     try:
-        # Try to reach staging container via HTTP (same host, port 8001)
-        # Use the EC2 metadata service to get the instance's private IP,
-        # or fall back to localhost (works if container network is host mode)
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Try localhost first (works in most Docker setups via host network)
             response = await client.get("http://172.17.0.1:8001/api/status")
             if response.status_code == 200:
-                return StagingStatus(running=True)
+                data = response.json()
+                return StagingStatus(
+                    running=True,
+                    version=data.get("version"),
+                    commit_sha=data.get("commit_sha"),
+                    build_date=data.get("build_date"),
+                )
     except httpx.ConnectError:
-        # Staging not running or not reachable
         return StagingStatus(running=False)
     except Exception as e:
         logger.debug(f"Staging check failed: {e}")

@@ -184,8 +184,11 @@ function systemMonitor() {
                 const res = await fetch('/api/deployments/staging/status');
                 if (!res.ok) throw new Error('Staging API error');
                 const data = await res.json();
-                this.stagingReady = data.running;
                 this.stagingInfo = data.running ? data : null;
+                // Only show "staging ready" if staging is running AND has a different version than production
+                const stagingVersion = data.version;
+                const prodVersion = this.productionVersion?.version;
+                this.stagingReady = data.running && stagingVersion && prodVersion && (stagingVersion !== prodVersion);
             } catch (e) {
                 console.error('Staging status error:', e);
                 this.stagingReady = false;
