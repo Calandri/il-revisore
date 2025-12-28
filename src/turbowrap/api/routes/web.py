@@ -321,6 +321,23 @@ async def mockups_page(request: Request, db: Session = Depends(get_db)) -> Respo
     )
 
 
+@router.get("/mockup-deploy", response_class=HTMLResponse)
+async def mockup_deploy_page(request: Request) -> Response:
+    """Static mockup page for deployment UI redesign."""
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/mockup_deploy.html",
+            {
+                "request": request,
+                "active_page": "mockup-deploy",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/mockups/{mockup_id}/preview", response_class=HTMLResponse)
 async def mockup_preview_page(
     request: Request,

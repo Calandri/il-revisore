@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Mockup Deploy UI{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-6">Mockup: Deploy Panel Semplificato</h1>
+
+    <!-- CASO 1: Tutto allineato (staging == production) -->
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold mb-3 text-gray-600">Caso 1: Staging = Production</h2>
+        <div class="w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 overflow-hidden">
+            <!-- Header semplice -->
+            <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-600 flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">Deployments</span>
+                <a href="https://github.com/Calandri/il-revisore/actions" target="_blank" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </div>
+            <!-- IN PRODUZIONE -->
+            <div class="px-3 py-3 bg-emerald-50 dark:bg-emerald-900/30 border-b dark:border-gray-700">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase">In Produzione</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="font-mono text-sm font-bold text-emerald-800 dark:text-emerald-200">24ecc49</span>
+                    <span class="text-[10px] text-gray-500">fix(ui): staging ready...</span>
+                </div>
+            </div>
+            <!-- RECENTI -->
+            <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-600">
+                <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase">Recenti</span>
+            </div>
+            <div class="max-h-40 overflow-y-auto">
+                <div class="px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span class="font-mono text-[11px] text-blue-600">24ecc49</span>
+                        </div>
+                        <span class="text-[10px] text-gray-500">3m fa</span>
+                    </div>
+                </div>
+                <div class="px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span class="font-mono text-[11px] text-blue-600">5844c52</span>
+                        </div>
+                        <span class="text-[10px] text-gray-500">2h fa</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CASO 2: Staging diverso da Production -->
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold mb-3 text-gray-600">Caso 2: Staging != Production (nuova versione)</h2>
+        <div class="w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 overflow-hidden">
+            <!-- Header semplice -->
+            <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-600 flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">Deployments</span>
+                <a href="#" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </div>
+            <!-- NUOVA VERSIONE BANNER -->
+            <div class="px-3 py-3 bg-purple-50 dark:bg-purple-900/20 border-b dark:border-gray-700">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
+                    <span class="text-xs font-bold text-purple-700 dark:text-purple-300">NUOVA VERSIONE</span>
+                </div>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-mono text-sm font-bold text-purple-800 dark:text-purple-200">abc1234</span>
+                    <span class="text-[10px] text-gray-500">in staging</span>
+                </div>
+                <button class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+                    </svg>
+                    Porta in Produzione
+                </button>
+            </div>
+            <!-- IN PRODUZIONE -->
+            <div class="px-3 py-2 bg-emerald-50 dark:bg-emerald-900/30 border-b dark:border-gray-700">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase">In Produzione</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="font-mono text-sm font-bold text-emerald-800 dark:text-emerald-200">5844c52</span>
+                    <span class="text-[10px] text-gray-500">fix(docker): add procps</span>
+                </div>
+            </div>
+            <!-- RECENTI -->
+            <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-600">
+                <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase">Recenti</span>
+            </div>
+            <div class="max-h-32 overflow-y-auto">
+                <div class="px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span class="font-mono text-[11px] text-purple-600">abc1234</span>
+                        </div>
+                        <span class="text-[10px] text-purple-500">staging</span>
+                    </div>
+                </div>
+                <div class="px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <span class="font-mono text-[11px] text-blue-600">5844c52</span>
+                        </div>
+                        <span class="text-[10px] text-gray-500">2h fa</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CASO 3: Deploy in corso -->
+    <div class="mb-8">
+        <h2 class="text-lg font-semibold mb-3 text-gray-600">Caso 3: Deploy in corso</h2>
+        <div class="w-72 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 overflow-hidden">
+            <!-- Header -->
+            <div class="px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-600 flex items-center justify-between">
+                <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">Deployments</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded-full animate-pulse">
+                    In corso
+                </span>
+            </div>
+            <!-- DEPLOY IN CORSO -->
+            <div class="px-3 py-3 bg-yellow-50 dark:bg-yellow-900/20 border-b dark:border-gray-700">
+                <div class="flex items-center gap-2 mb-1">
+                    <svg class="w-4 h-4 text-yellow-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    <span class="text-xs font-bold text-yellow-700 dark:text-yellow-300">BUILDING...</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="font-mono text-sm text-yellow-800 dark:text-yellow-200">xyz9876</span>
+                    <span class="text-[10px] text-gray-500">30s fa</span>
+                </div>
+            </div>
+            <!-- IN PRODUZIONE -->
+            <div class="px-3 py-2 bg-emerald-50 dark:bg-emerald-900/30 border-b dark:border-gray-700">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase">In Produzione</span>
+                </div>
+                <span class="font-mono text-sm font-bold text-emerald-800 dark:text-emerald-200">5844c52</span>
+            </div>
+            <!-- RECENTI -->
+            <div class="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50">
+                <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase">Recenti</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-8 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+        <h3 class="font-semibold text-blue-800 dark:text-blue-200 mb-2">Cosa cambia:</h3>
+        <ul class="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+            <li>- Rimosso pulsante "Deploy" separato (ridondante)</li>
+            <li>- Rimosso "ULTIMO DEPLOY OK" (ridondante con Recenti)</li>
+            <li>- Rimosso "STAGING PRONTO" generico</li>
+            <li>- Aggiunto banner "NUOVA VERSIONE" solo quando serve</li>
+            <li>- Semplificato header (solo titolo + link GitHub)</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

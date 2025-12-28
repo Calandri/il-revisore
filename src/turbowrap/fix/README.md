@@ -267,6 +267,39 @@ gemini
 
 ---
 
+## Model Selection Strategy
+
+Il fixer usa **3 modelli diversi** per ottimizzare costi e qualità:
+
+### Per-Task Model Assignment
+
+| Task | Model | Cost | Rationale |
+|------|-------|------|-----------|
+| Branch creation | Claude Haiku | ~$0.01 | Simple git operation |
+| Code fixes | Claude Opus | ~$0.50-1.00 | Complex reasoning needed |
+| Fix validation | Gemini Pro | ~$0.10 | Specialized code review |
+| Atomic commits | Claude Haiku | ~$0.01 | Simple git operation |
+
+### Typical Fix Flow (from logs)
+
+```
+[Haiku]  → Branch/prep     - $0.04
+[Opus]   → Fix code        - $0.85
+[Gemini] → Validate (100%) - (included in Gemini costs)
+[Haiku]  → Commit          - $0.01
+─────────────────────────────────────────────
+Total: ~$0.90 per fix session
+```
+
+### Dynamic Thinking Budget
+
+Heavy batches (workload > 10) get extra thinking tokens:
+- Base: 8,000 tokens
+- Scale: +1,000 per workload point above 10
+- Max: 16,000 tokens
+
+---
+
 ## Agent Files
 
 I file agent in `agents/` vengono caricati automaticamente:

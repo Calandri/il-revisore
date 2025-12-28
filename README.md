@@ -19,6 +19,7 @@ AI-Powered Code Repository Orchestrator with Web UI and AWS Deployment.
 | Code Reviewer (FE) | Claude Opus | Frontend architecture & quality review |
 | Challenger | Gemini Pro | Validates reviews (iterative loop until threshold) |
 | Fixer | Claude Opus | Autonomous code fixes based on issues |
+| Git Operations | Claude Haiku | Branch creation, commits (cost-optimized) |
 | Tree Generator | Gemini Flash | Documentation tree (STRUCTURE.md) |
 
 ## Tech Stack
