@@ -700,6 +700,27 @@ class GeminiCLI:
                                 result_data = data
                                 logger.info(f"[GEMINI CLI] Result: status={data.get('status')}")
 
+                            elif msg_type == "tool_use":
+                                # {"type":"tool_use","tool_name":"delegate_to_agent","tool_id":"...","parameters":{}}
+                                tool_name = data.get("tool_name", "unknown")
+                                if on_chunk:
+                                    await on_chunk(f"\n🔧 **Tool:** `{tool_name}`\n")
+
+                            elif msg_type == "tool_result":
+                                # {"type":"tool_result","tool_id":"...","status":"success|error","output":"..."}
+                                status = data.get("status", "unknown")
+                                status_icon = "✅" if status == "success" else "❌"
+                                error_msg = (
+                                    data.get("error", {}).get("message", "")
+                                    if status == "error"
+                                    else ""
+                                )
+                                if on_chunk:
+                                    if error_msg:
+                                        await on_chunk(f"{status_icon} `{error_msg}`\n")
+                                    else:
+                                        await on_chunk(f"{status_icon} Tool completed\n")
+
                         except json.JSONDecodeError:
                             # Not JSON, could be raw output - skip
                             pass

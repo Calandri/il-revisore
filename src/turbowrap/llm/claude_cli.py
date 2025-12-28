@@ -726,6 +726,7 @@ class ClaudeCLI:
             total_bytes = 0
             line_buffer = ""
             in_thinking_block = False  # Track if we're streaming a thinking block
+            current_block_type = ""  # Track current content block type (thinking, tool_use, text)
 
             assert process.stdout is not None
             try:
@@ -769,19 +770,31 @@ class ClaudeCLI:
                                             event = event.get("event", {})
                                             event_type = event.get("type", "")
 
-                                        # Track thinking block state
+                                        # Track thinking and tool_use block state
                                         if event_type == "content_block_start":
                                             block = event.get("content_block", {})
-                                            if block.get("type") == "thinking":
+                                            block_type = block.get("type", "")
+                                            if block_type == "thinking":
                                                 in_thinking_block = True
+                                                current_block_type = "thinking"
                                                 # Only add prefix if using on_chunk for thinking
                                                 if not on_thinking:
                                                     await on_chunk("\n🧠 ")
+                                            elif block_type == "tool_use":
+                                                # Tool use block: show tool name
+                                                current_block_type = "tool_use"
+                                                tool_name = block.get("name", "unknown")
+                                                await on_chunk(f"\n🔧 **Tool:** `{tool_name}`\n")
+                                            else:
+                                                current_block_type = block_type
                                         elif event_type == "content_block_stop":
                                             if in_thinking_block:
                                                 in_thinking_block = False
                                                 if not on_thinking:
                                                     await on_chunk("\n\n")
+                                            elif current_block_type == "tool_use":
+                                                await on_chunk("✅ Tool completed\n")
+                                            current_block_type = ""
 
                                         # Extract text and thinking from content_block_delta
                                         elif event_type == "content_block_delta":
