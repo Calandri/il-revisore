@@ -929,6 +929,9 @@ class Operation(Base):
     branch_name = Column(String(255), nullable=True)
     user_name = Column(String(255), nullable=True)
 
+    # Hierarchy - links child operations to parent session
+    parent_session_id = Column(String(100), nullable=True, index=True)
+
     # Details (flexible JSON for operation-specific data)
     details = Column(JSON, nullable=True)
     # Expected keys: model, cli, agent, working_dir, prompt_preview, prompt_length, s3_prompt_url, etc.
@@ -958,6 +961,7 @@ class Operation(Base):
         Index("idx_operations_repo", "repository_id"),
         Index("idx_operations_started", "started_at"),
         Index("idx_operations_type_status", "operation_type", "status"),
+        Index("idx_operations_parent_session", "parent_session_id"),
     )
 
     @property

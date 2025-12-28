@@ -28,7 +28,8 @@ from ...review.models.review import (
 from ...review.orchestrator import Orchestrator
 from ..review_manager import ReviewManager, ReviewSession, get_review_manager
 from .checkpoint_service import CheckpointService
-from .operation_tracker import OperationType, get_tracker
+
+# NOTE: Operation tracking is now handled atomically at the ClaudeCLI/GeminiCLI level
 
 logger = logging.getLogger(__name__)
 
@@ -198,21 +199,8 @@ class ReviewStreamService:
         if repo_name.endswith(".git"):
             repo_name = repo_name[:-4]
 
-        # Register with unified OperationTracker
-        tracker = get_tracker()
-        tracker.register(
-            op_type=OperationType.REVIEW,
-            operation_id=task_id,
-            repo_id=repository_id,
-            repo_name=repo_name,
-            user=None,  # Review is system-initiated
-            details={
-                "mode": review_mode,
-                "challenger_enabled": challenger_enabled,
-                "include_functional": include_functional,
-                "resumed_checkpoints": len(checkpoints_for_closure),
-            },
-        )
+        # NOTE: Operation tracking is now handled atomically at the ClaudeCLI/GeminiCLI level
+        # Each CLI call (reviewers) creates its own Operation with parent_session_id linking
 
         # Create the review coroutine
         async def run_review(session: ReviewSession) -> None:
@@ -277,15 +265,7 @@ class ReviewStreamService:
                 # Save results
                 await self._save_review_results(review_db, task_id, repository_id, report)
 
-                # Mark unified tracker as completed
-                tracker.complete(
-                    task_id,
-                    result={
-                        "total_issues": len(report.issues),
-                        "score": report.summary.overall_score,
-                        "recommendation": report.summary.recommendation.value,
-                    },
-                )
+                # NOTE: Operation tracking is handled atomically by ClaudeCLI/GeminiCLI
 
             except asyncio.CancelledError:
                 db_task = review_db.query(Task).filter(Task.id == task_id).first()
@@ -293,8 +273,6 @@ class ReviewStreamService:
                     db_task.status = "cancelled"  # type: ignore[assignment]
                     db_task.completed_at = datetime.utcnow()  # type: ignore[assignment]
                     review_db.commit()
-                # Mark unified tracker as cancelled
-                tracker.cancel(task_id)
                 raise
 
             except Exception as e:
@@ -312,9 +290,6 @@ class ReviewStreamService:
                     db_task.error = str(e)  # type: ignore[assignment]
                     db_task.completed_at = datetime.utcnow()  # type: ignore[assignment]
                     review_db.commit()
-
-                # Mark unified tracker as failed
-                tracker.fail(task_id, error=str(e))
 
             finally:
                 review_db.close()

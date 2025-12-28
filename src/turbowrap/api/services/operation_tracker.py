@@ -108,6 +108,9 @@ class Operation:
     branch_name: str | None = None
     user_name: str | None = None
 
+    # Hierarchy - links child operations to parent session
+    parent_session_id: str | None = None
+
     # Operation-specific details (flexible dict)
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -246,6 +249,7 @@ class OperationTracker:
         repo_name: str | None = None,
         branch: str | None = None,
         user: str | None = None,
+        parent_session_id: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> Operation:
         """
@@ -258,6 +262,7 @@ class OperationTracker:
             repo_name: Repository name (for display)
             branch: Branch name
             user: User who initiated the operation
+            parent_session_id: Parent session ID for hierarchical grouping
             details: Operation-specific details
 
         Returns:
@@ -276,6 +281,7 @@ class OperationTracker:
                 repository_name=repo_name,
                 branch_name=branch,
                 user_name=user,
+                parent_session_id=parent_session_id,
                 details=details or {},
             )
 
@@ -653,6 +659,7 @@ class OperationTracker:
                     repository_name=operation.repository_name,
                     branch_name=operation.branch_name,
                     user_name=operation.user_name,
+                    parent_session_id=operation.parent_session_id,
                     details=operation.details,
                     started_at=operation.created_at,
                 )

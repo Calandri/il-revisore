@@ -420,7 +420,11 @@ class FixOrchestrator:
                 branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
                 branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
                 branch_result = await self._run_claude_cli(
-                    branch_creator_prompt, timeout=60, model="haiku"
+                    branch_creator_prompt,
+                    timeout=60,
+                    model="haiku",
+                    parent_session_id=session_id,
+                    agent_type="branch_creator",
                 )
 
                 # Check for errors: None, __ERROR__ prefix, or ERROR: in Claude's output
@@ -664,7 +668,8 @@ class FixOrchestrator:
                             on_chunk=on_chunk_claude,
                             thinking_budget=thinking_budget,
                             session_context=session_context,
-                            operation_id=session_id,
+                            parent_session_id=session_id,
+                            agent_type="fixer",
                         )
                         if output is None or (output and output.startswith("__ERROR__:")):
                             error_detail = (
@@ -737,33 +742,21 @@ class FixOrchestrator:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
                     # Use shared GeminiCLI from orchestration utilities
-                    # NOTE: track_operation=False because fix session handles tracking
+                    # Atomic tracking at leaf level
                     gemini_result = await self.gemini_cli.run(
                         review_prompt,
                         on_chunk=on_chunk_gemini,
-                        track_operation=False,
+                        track_operation=True,  # Atomic tracking at leaf level
+                        operation_details={
+                            "parent_session_id": session_id,
+                            "agent_type": "reviewer",
+                            "batch_id": batch_id,
+                        },
                     )
                     gemini_output = gemini_result.output if gemini_result.success else None
                     last_gemini_output = gemini_output
 
-                    # Update operation tracker with Gemini review details
-                    try:
-                        from turbowrap.api.services.operation_tracker import get_tracker
-
-                        tracker = get_tracker()
-                        gemini_update: dict[str, Any] = {
-                            "gemini_model": (
-                                self.gemini_cli.model
-                                if hasattr(self.gemini_cli, "model")
-                                else "gemini-2.5-flash"
-                            ),
-                            "gemini_review_batch": batch_id,
-                        }
-                        if gemini_result.success and hasattr(gemini_result, "s3_output_url"):
-                            gemini_update["gemini_s3_output_url"] = gemini_result.s3_output_url
-                        tracker.update(session_id, details=gemini_update)
-                    except Exception as e:
-                        logger.warning(f"[FIX] Failed to update tracker with Gemini details: {e}")
+                    # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
 
                     if gemini_output is None:
                         logger.warning(
@@ -853,7 +846,11 @@ class FixOrchestrator:
 
                         try:
                             commit_result = await self._run_claude_cli(
-                                commit_prompt, timeout=30, model="haiku"
+                                commit_prompt,
+                                timeout=30,
+                                model="haiku",
+                                parent_session_id=session_id,
+                                agent_type="committer",
                             )
                             if commit_result and (
                                 commit_result.startswith("__ERROR__:") or "ERROR:" in commit_result
@@ -1512,12 +1509,14 @@ The reviewer found issues with the previous fix. Address this feedback:
         thinking_budget: int | None = None,
         model: str = "opus",
         session_context: FixSessionContext | None = None,
-        operation_id: str | None = None,
+        parent_session_id: str | None = None,
+        agent_type: str | None = None,
     ) -> str | None:
         """Run Claude CLI with prompt and optional streaming callback.
 
         Uses the centralized ClaudeCLI utility for execution.
         Supports session persistence via session_context.
+        Each call creates its own Operation for atomic tracking.
 
         Args:
             prompt: The prompt to send to Claude
@@ -1526,10 +1525,12 @@ The reviewer found issues with the previous fix. Address this feedback:
             thinking_budget: Override thinking budget (None = use default from config)
             model: Model alias (opus, sonnet, haiku)
             session_context: Optional session context for persistence between batches
+            parent_session_id: Parent session ID for linking sub-operations
+            agent_type: Type of agent (fixer, committer, branch_creator) for tracking
         """
         # Check if compaction is needed before this call (based on context_size = cache_read)
         if session_context and session_context.needs_compaction():
-            await self._compact_context(session_context, on_chunk)
+            await self._compact_context(session_context, on_chunk, parent_session_id)
 
         # Create ClaudeCLI with appropriate timeout and model
         cli = self._get_claude_cli(timeout, model)
@@ -1541,7 +1542,7 @@ The reviewer found issues with the previous fix. Address this feedback:
                 await on_chunk(f"[stderr] {line}\n")
 
         # Run with the centralized utility
-        # NOTE: track_operation=False because fix session already tracks via OperationTracker
+        # Each CLI call creates its own Operation for atomic tracking
         result = await cli.run(
             prompt,
             context_id=f"fix_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
@@ -1551,7 +1552,11 @@ The reviewer found issues with the previous fix. Address this feedback:
             save_thinking=True,
             on_chunk=on_chunk,
             on_stderr=on_stderr,
-            track_operation=False,  # Fix session handles tracking
+            track_operation=True,  # Atomic tracking at leaf level
+            operation_details={
+                "parent_session_id": parent_session_id,
+                "agent_type": agent_type or "fixer",
+            },
             resume_session_id=session_context.claude_session_id if session_context else None,
         )
 
@@ -1573,57 +1578,8 @@ The reviewer found issues with the previous fix. Address this feedback:
                 f"Context size: {session_context.context_size:,} / {MAX_SESSION_TOKENS:,} tokens"
             )
 
-        # Update operation tracker with details from Claude CLI run
-        if operation_id and result:
-            try:
-                from turbowrap.api.services.operation_tracker import get_tracker
-
-                tracker = get_tracker()
-
-                # Get current operation to read existing values
-                current_op = tracker.get(operation_id)
-                current_details = current_op.details if current_op else {}
-
-                # Build update details
-                update_details: dict[str, Any] = {
-                    "prompt_preview": prompt[:500].replace("\n", " ").strip(),
-                    "prompt_length": len(prompt),
-                    "claude_session_id": result.session_id,
-                }
-
-                # Add S3 URLs - keep first prompt URL, always update output URL
-                if hasattr(result, "s3_prompt_url") and result.s3_prompt_url:
-                    # Only set if not already present (first call)
-                    if "s3_prompt_url" not in current_details:
-                        update_details["s3_prompt_url"] = result.s3_prompt_url
-                if hasattr(result, "s3_output_url") and result.s3_output_url:
-                    # Always update with latest output
-                    update_details["s3_output_url"] = result.s3_output_url
-
-                # Aggregate token totals (add to existing)
-                if result.model_usage:
-                    call_input = sum(u.input_tokens for u in result.model_usage)
-                    call_output = sum(u.output_tokens for u in result.model_usage)
-                    call_cache_read = sum(u.cache_read_tokens for u in result.model_usage)
-                    call_cache_create = sum(u.cache_creation_tokens for u in result.model_usage)
-
-                    # Add to previous totals
-                    prev_input = current_details.get("total_input_tokens", 0)
-                    prev_output = current_details.get("total_output_tokens", 0)
-                    prev_cache_read = current_details.get("total_cache_read_tokens", 0)
-                    prev_cache_create = current_details.get("total_cache_creation_tokens", 0)
-
-                    update_details["total_input_tokens"] = prev_input + call_input
-                    update_details["total_output_tokens"] = prev_output + call_output
-                    update_details["total_cache_read_tokens"] = prev_cache_read + call_cache_read
-                    update_details["total_cache_creation_tokens"] = (
-                        prev_cache_create + call_cache_create
-                    )
-
-                tracker.update(operation_id, details=update_details)
-                logger.debug(f"[FIX] Updated operation {operation_id[:8]} with CLI details")
-            except Exception as e:
-                logger.warning(f"[FIX] Failed to update operation tracker: {e}")
+        # NOTE: Operation tracking is now handled atomically by ClaudeCLI.run()
+        # Each CLI call creates its own Operation with parent_session_id linking
 
         if not result.success:
             # Check for billing errors
@@ -1657,6 +1613,7 @@ The reviewer found issues with the previous fix. Address this feedback:
         self,
         session_context: FixSessionContext,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
+        parent_session_id: str | None = None,
     ) -> None:
         """Compact session context using Claude's /compact slash command.
 
@@ -1688,7 +1645,11 @@ The reviewer found issues with the previous fix. Address this feedback:
             save_output=True,
             save_thinking=False,
             on_chunk=on_chunk,
-            track_operation=False,
+            track_operation=True,  # Atomic tracking at leaf level
+            operation_details={
+                "parent_session_id": parent_session_id,
+                "agent_type": "compaction",
+            },
             resume_session_id=session_context.claude_session_id,  # Same session!
         )
 
@@ -1908,6 +1869,11 @@ The reviewer found issues with the previous fix. Address this feedback:
         violations: list[str] = []
 
         for file_path in modified_files:
+            # Skip hidden files/directories (dotfiles like .reviews/, .gitignore, etc.)
+            # These are typically metadata created by the system, not agent code changes
+            if file_path.startswith("."):
+                continue
+
             # Check if file is within any allowed path
             is_allowed = any(file_path.startswith(p + "/") or file_path == p for p in allowed)
             if not is_allowed:

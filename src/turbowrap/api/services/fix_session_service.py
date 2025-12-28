@@ -62,7 +62,8 @@ from ...fix import (  # noqa: E402
 )
 from ...linear import LinearStateManager  # noqa: E402
 from ...review.integrations.linear import LinearClient  # noqa: E402
-from .operation_tracker import OperationType, get_tracker  # noqa: E402
+
+# NOTE: Operation tracking is now handled atomically at the ClaudeCLI/GeminiCLI level
 
 logger = logging.getLogger(__name__)
 
@@ -248,35 +249,12 @@ class FixSessionService:
             user_notes=user_notes,  # User-provided context/instructions
         )
 
-        # Register with unified OperationTracker
-        tracker = get_tracker()
-
-        # Get model from settings
-        from turbowrap.config import get_settings
-
-        settings = get_settings()
-        model_name = settings.agents.claude_model or "claude-opus-4-5-20251101"
-
-        tracker.register(
-            op_type=OperationType.FIX,
-            operation_id=session_id,
-            repo_id=repository_id,
-            repo_name=repo_name,
-            branch=existing_branch_name,  # Will be updated when fix starts
-            user=user_name,
-            details={
-                "task_id": task_id,
-                "issue_count": len(issues),
-                "issue_codes": [cast(str, i.issue_code) for i in issues],
-                "model": model_name,
-                "working_dir": str(repo.local_path) if repo.local_path else None,
-                "cli": "claude",
-                "agent": "fixer",
-            },
-        )
+        # NOTE: Operation tracking is now handled atomically at the ClaudeCLI level
+        # Each CLI call (fixer, committer, reviewer) creates its own Operation
+        # with parent_session_id linking them to this session_id
 
         logger.info(
-            f"[FIX] Operation registered in tracker: session_id={session_id}, "
+            f"[FIX] Session created: session_id={session_id}, "
             f"repo={repo_name}, issues={len(issues)}"
         )
 
@@ -455,9 +433,6 @@ class FixSessionService:
         repo_path = Path(cast(str, session_info.repository.local_path))
         idempotency_key = session_info.idempotency_key
 
-        # Get tracker reference for callbacks
-        tracker = get_tracker()
-
         async def progress_callback(event: FixProgressEvent) -> None:
             """Enqueue progress events."""
             nonlocal session_id
@@ -466,8 +441,6 @@ class FixSessionService:
             # Update branch_name in session metadata when fix starts
             if event.type == FixEventType.FIX_SESSION_STARTED and event.branch_name:
                 self.idempotency.update_branch_name(idempotency_key, event.branch_name)
-                # Also update unified tracker
-                tracker.update(session_info.session_id, branch=event.branch_name)
             await event_queue.put(event)
 
         async def run_fix() -> None:
@@ -494,7 +467,6 @@ class FixSessionService:
                         f"Fix failed: {result.error or 'Unknown error'}",
                     )
                     self.idempotency.update_status(idempotency_key, "failed")
-                    tracker.fail(session_info.session_id, error=result.error or "Unknown error")
                     return  # Exit early, finally block will close DB and signal completion
 
                 # Update issue statuses in database
@@ -528,17 +500,7 @@ class FixSessionService:
                     },
                 )
 
-                # Mark unified tracker as completed
-                tracker.complete(
-                    session_info.session_id,
-                    result={
-                        "completed": completed_count,
-                        "failed": failed_count,
-                        "total": len(result.results),
-                        "branch": result.branch_name,
-                        "commit_sha": commit_sha,
-                    },
-                )
+                # NOTE: Operation tracking is handled atomically by ClaudeCLI/GeminiCLI
 
             except ScopeValidationError as e:
                 # Workspace scope violation - files modified outside allowed workspace
@@ -550,11 +512,6 @@ class FixSessionService:
                 )
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
-                # Mark unified tracker as failed
-                tracker.fail(
-                    session_info.session_id,
-                    error=f"Scope violation: {e.workspace_path}",
-                )
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
@@ -569,7 +526,6 @@ class FixSessionService:
                 logger.warning(f"Fix task cancelled for session {session_info.session_id}")
                 await self.reset_issues_on_error(fix_db, session_info.issues, "Fix cancelled")
                 self.idempotency.update_status(idempotency_key, "cancelled")
-                tracker.fail(session_info.session_id, error="Task cancelled")
                 raise  # Re-raise to properly signal cancellation
 
             except Exception as e:
@@ -577,8 +533,6 @@ class FixSessionService:
                 await self.reset_issues_on_error(fix_db, session_info.issues)
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
-                # Mark unified tracker as failed
-                tracker.fail(session_info.session_id, error=str(e))
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
