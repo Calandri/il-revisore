@@ -250,6 +250,13 @@ class FixSessionService:
 
         # Register with unified OperationTracker
         tracker = get_tracker()
+
+        # Get model from settings
+        from turbowrap.config import get_settings
+
+        settings = get_settings()
+        model_name = settings.agents.default_model or "claude-opus-4-5-20251101"
+
         tracker.register(
             op_type=OperationType.FIX,
             operation_id=session_id,
@@ -261,6 +268,10 @@ class FixSessionService:
                 "task_id": task_id,
                 "issue_count": len(issues),
                 "issue_codes": [cast(str, i.issue_code) for i in issues],
+                "model": model_name,
+                "working_dir": str(repo.local_path) if repo.local_path else None,
+                "cli": "claude",
+                "agent": "fixer",
             },
         )
 

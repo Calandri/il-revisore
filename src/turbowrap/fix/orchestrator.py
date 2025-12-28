@@ -657,6 +657,7 @@ class FixOrchestrator:
                             on_chunk=on_chunk_claude,
                             thinking_budget=thinking_budget,
                             session_context=session_context,
+                            operation_id=session_id,
                         )
                         if output is None or (output and output.startswith("__ERROR__:")):
                             error_detail = (
@@ -737,6 +738,25 @@ class FixOrchestrator:
                     )
                     gemini_output = gemini_result.output if gemini_result.success else None
                     last_gemini_output = gemini_output
+
+                    # Update operation tracker with Gemini review details
+                    try:
+                        from turbowrap.api.services.operation_tracker import get_tracker
+
+                        tracker = get_tracker()
+                        gemini_update: dict[str, Any] = {
+                            "gemini_model": (
+                                self.gemini_cli.model
+                                if hasattr(self.gemini_cli, "model")
+                                else "gemini-2.5-flash"
+                            ),
+                            "gemini_review_batch": batch_id,
+                        }
+                        if gemini_result.success and hasattr(gemini_result, "s3_output_url"):
+                            gemini_update["gemini_s3_output_url"] = gemini_result.s3_output_url
+                        tracker.update(session_id, details=gemini_update)
+                    except Exception as e:
+                        logger.warning(f"[FIX] Failed to update tracker with Gemini details: {e}")
 
                     if gemini_output is None:
                         logger.warning(
@@ -1485,6 +1505,7 @@ The reviewer found issues with the previous fix. Address this feedback:
         thinking_budget: int | None = None,
         model: str = "opus",
         session_context: FixSessionContext | None = None,
+        operation_id: str | None = None,
     ) -> str | None:
         """Run Claude CLI with prompt and optional streaming callback.
 
@@ -1544,6 +1565,38 @@ The reviewer found issues with the previous fix. Address this feedback:
                 f"[FIX] Session {result.session_id[:8] if result.session_id else 'N/A'}... | "
                 f"Context size: {session_context.context_size:,} / {MAX_SESSION_TOKENS:,} tokens"
             )
+
+        # Update operation tracker with details from Claude CLI run
+        if operation_id and result:
+            try:
+                from turbowrap.api.services.operation_tracker import get_tracker
+
+                tracker = get_tracker()
+
+                # Build update details
+                update_details: dict[str, Any] = {
+                    "prompt_preview": prompt[:500].replace("\n", " ").strip(),
+                    "prompt_length": len(prompt),
+                    "claude_session_id": result.session_id,
+                }
+
+                # Add S3 URLs if available
+                if hasattr(result, "s3_prompt_url") and result.s3_prompt_url:
+                    update_details["s3_prompt_url"] = result.s3_prompt_url
+                if hasattr(result, "s3_output_url") and result.s3_output_url:
+                    update_details["s3_output_url"] = result.s3_output_url
+
+                # Add token totals
+                if result.model_usage:
+                    total_input = sum(u.input_tokens for u in result.model_usage)
+                    total_output = sum(u.output_tokens for u in result.model_usage)
+                    update_details["total_input_tokens"] = total_input
+                    update_details["total_output_tokens"] = total_output
+
+                tracker.update(operation_id, details=update_details)
+                logger.debug(f"[FIX] Updated operation {operation_id[:8]} with CLI details")
+            except Exception as e:
+                logger.warning(f"[FIX] Failed to update operation tracker: {e}")
 
         if not result.success:
             # Check for billing errors

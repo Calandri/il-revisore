@@ -174,6 +174,82 @@
             </div>
         </template>
     </div> <!-- End History Tab -->
+
+    <!-- Full Prompt Modal -->
+    <div x-show="showPromptModal"
+         x-cloak
+         class="fixed inset-0 z-50 overflow-y-auto"
+         @keydown.escape.window="closePromptModal()">
+        <div class="min-h-screen px-4 text-center">
+            <!-- Background overlay -->
+            <div class="fixed inset-0 bg-black/50 transition-opacity"
+                 @click="closePromptModal()"
+                 x-show="showPromptModal"
+                 x-transition:enter="ease-out duration-300"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="ease-in duration-200"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"></div>
+
+            <!-- Center helper -->
+            <span class="inline-block h-screen align-middle" aria-hidden="true">&#8203;</span>
+
+            <!-- Modal panel -->
+            <div class="inline-block w-full max-w-4xl my-8 text-left align-middle transition-all transform bg-white dark:bg-gray-800 shadow-xl rounded-2xl"
+                 x-show="showPromptModal"
+                 x-transition:enter="ease-out duration-300"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100"
+                 x-transition:leave="ease-in duration-200"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-95"
+                 @click.stop>
+                <!-- Header -->
+                <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        Full Prompt
+                    </h3>
+                    <button @click="closePromptModal()"
+                            class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <!-- Content -->
+                <div class="px-6 py-4 max-h-[70vh] overflow-y-auto">
+                    <template x-if="promptModalLoading">
+                        <div class="flex items-center justify-center py-12">
+                            <svg class="w-8 h-8 animate-spin text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        </div>
+                    </template>
+                    <template x-if="!promptModalLoading">
+                        <pre class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 font-mono text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap overflow-x-auto" x-text="promptModalContent"></pre>
+                    </template>
+                </div>
+                <!-- Footer -->
+                <div class="px-6 py-4 border-t dark:border-gray-700 flex justify-end gap-3">
+                    <button @click="navigator.clipboard.writeText(promptModalContent); showToast('Prompt copied!', 'success')"
+                            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                        </svg>
+                        Copy
+                    </button>
+                    <button @click="closePromptModal()"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -390,6 +466,11 @@ function liveTasksApp() {
             });
         },
 
+        // Full prompt modal state
+        showPromptModal: false,
+        promptModalContent: '',
+        promptModalLoading: false,
+
         // Stream control functions
         getStreamOutput(operationId) {
             return this.streamOutputs[operationId] || [];
@@ -407,6 +488,25 @@ function liveTasksApp() {
             }
         },
 
+        // Show full prompt in modal
+        async showFullPrompt(operationId) {
+            this.showPromptModal = true;
+            this.promptModalLoading = true;
+            this.promptModalContent = '';
+            try {
+                this.promptModalContent = await this.fetchPrompt(operationId);
+            } catch (error) {
+                this.promptModalContent = 'Error loading prompt: ' + error.message;
+            } finally {
+                this.promptModalLoading = false;
+            }
+        },
+
+        closePromptModal() {
+            this.showPromptModal = false;
+            this.promptModalContent = '';
+        },
+
         // Refresh live operations
         async refresh() {
             this.loading = true;
@@ -415,12 +515,50 @@ function liveTasksApp() {
                 if (response.ok) {
                     const data = await response.json();
                     this.operations = data.operations || [];
+
+                    // Poll output streams for active in_progress operations
+                    for (const op of this.operations) {
+                        if (op.status === 'in_progress' && !this.pausedStreams.has(op.operation_id)) {
+                            this.pollOutputStream(op.operation_id);
+                        }
+                    }
                 }
             } catch (error) {
                 console.error('Error fetching operations:', error);
             } finally {
                 this.loading = false;
             }
+        },
+
+        // Poll output stream from S3 for an operation
+        async pollOutputStream(operationId) {
+            try {
+                const response = await fetch(`/api/operations/${operationId}/output`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'ok' && data.content) {
+                        // Split content into lines for display
+                        const lines = data.content.split('\n').filter(l => l.trim());
+                        this.streamOutputs[operationId] = lines;
+                    }
+                }
+            } catch (error) {
+                console.error(`Error polling stream for ${operationId}:`, error);
+            }
+        },
+
+        // Fetch full prompt for an operation
+        async fetchPrompt(operationId) {
+            try {
+                const response = await fetch(`/api/operations/${operationId}/prompt`);
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.content || 'No prompt available';
+                }
+            } catch (error) {
+                console.error(`Error fetching prompt for ${operationId}:`, error);
+            }
+            return 'Error fetching prompt';
         },
 
         // Mark operation as complete

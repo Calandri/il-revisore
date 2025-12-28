@@ -407,3 +407,134 @@ async def reset_stuck_issues() -> dict[str, Any]:
         }
     finally:
         db.close()
+
+
+@router.get("/{operation_id}/prompt")
+async def get_operation_prompt(operation_id: str) -> dict[str, Any]:
+    """
+    Get the prompt content for an operation.
+
+    Fetches from S3 if s3_prompt_url is available, otherwise returns prompt_preview.
+    """
+    import boto3
+
+    tracker = get_tracker()
+
+    # Check active operations
+    op = next((o for o in tracker.get_active() if o.operation_id == operation_id), None)
+
+    # If not active, check history
+    if not op:
+        from ...db.models import Operation as DBOperation
+        from ...db.session import get_session_local
+
+        SessionLocal = get_session_local()
+        db = SessionLocal()
+        try:
+            db_op = db.query(DBOperation).filter(DBOperation.operation_id == operation_id).first()
+            if db_op and db_op.details:
+                details = db_op.details if isinstance(db_op.details, dict) else {}
+                s3_url = details.get("s3_prompt_url")
+                preview = details.get("prompt_preview")
+            else:
+                return {"status": "not_found", "content": None}
+        finally:
+            db.close()
+    else:
+        details = op.details or {}
+        s3_url = details.get("s3_prompt_url")
+        preview = details.get("prompt_preview")
+
+    # Try to fetch from S3
+    if s3_url and s3_url.startswith("s3://"):
+        try:
+            # Parse s3://bucket/key
+            parts = s3_url.replace("s3://", "").split("/", 1)
+            bucket = parts[0]
+            key = parts[1] if len(parts) > 1 else ""
+
+            s3 = boto3.client("s3")
+            response = s3.get_object(Bucket=bucket, Key=key)
+            content = response["Body"].read().decode("utf-8")
+
+            return {
+                "status": "ok",
+                "source": "s3",
+                "s3_url": s3_url,
+                "content": content,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to fetch prompt from S3: {e}")
+
+    # Fallback to preview
+    return {
+        "status": "ok",
+        "source": "preview",
+        "content": preview or "No prompt available",
+    }
+
+
+@router.get("/{operation_id}/output")
+async def get_operation_output(operation_id: str) -> dict[str, Any]:
+    """
+    Get the output content for an operation.
+
+    Fetches from S3 if s3_output_url is available.
+    """
+    import boto3
+
+    tracker = get_tracker()
+
+    # Check active operations
+    op = next((o for o in tracker.get_active() if o.operation_id == operation_id), None)
+
+    # Build details from operation or DB
+    details: dict[str, Any] = {}
+    result: dict[str, Any] = {}
+
+    if not op:
+        from ...db.models import Operation as DBOperation
+        from ...db.session import get_session_local
+
+        SessionLocal = get_session_local()
+        db = SessionLocal()
+        try:
+            db_op = db.query(DBOperation).filter(DBOperation.operation_id == operation_id).first()
+            if db_op:
+                details = db_op.details if isinstance(db_op.details, dict) else {}
+                result = db_op.result if isinstance(db_op.result, dict) else {}
+            else:
+                return {"status": "not_found", "content": None}
+        finally:
+            db.close()
+    else:
+        details = op.details or {}
+        result = op.result or {}
+
+    # Try s3_output_url from result first, then details
+    s3_url = result.get("s3_output_url") or details.get("s3_output_url")
+
+    if s3_url and s3_url.startswith("s3://"):
+        try:
+            parts = s3_url.replace("s3://", "").split("/", 1)
+            bucket = parts[0]
+            key = parts[1] if len(parts) > 1 else ""
+
+            s3 = boto3.client("s3")
+            response = s3.get_object(Bucket=bucket, Key=key)
+            content = response["Body"].read().decode("utf-8")
+
+            return {
+                "status": "ok",
+                "source": "s3",
+                "s3_url": s3_url,
+                "content": content,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to fetch output from S3: {e}")
+
+    return {
+        "status": "pending",
+        "source": "none",
+        "content": "Output not yet available",
+    }
