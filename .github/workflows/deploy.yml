@@ -66,7 +66,7 @@ jobs:
               "docker pull 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
 
               "echo Step 2: Mount EBS repos volume if not mounted...",
-              "if [ -b /dev/xvdf ]; then if ! mountpoint -q /mnt/repos; then sudo mkdir -p /mnt/repos && (blkid /dev/xvdf | grep -q ext4 || sudo mkfs.ext4 /dev/xvdf) && sudo mount /dev/xvdf /mnt/repos && sudo chown -R 1000:1000 /mnt/repos && grep -q /dev/xvdf /etc/fstab || echo /dev/xvdf /mnt/repos ext4 defaults,nofail 0 2 | sudo tee -a /etc/fstab; echo EBS volume mounted; else echo EBS already mounted; fi; else echo No EBS volume at /dev/xvdf, using fallback; sudo mkdir -p /mnt/repos && sudo chown -R 1000:1000 /mnt/repos; fi",
+              "if [ -b /dev/xvdf ]; then if ! mountpoint -q /mnt/repos; then sudo mkdir -p /mnt/repos && { blkid /dev/xvdf | grep -q ext4 || sudo mkfs.ext4 /dev/xvdf; } && sudo mount /dev/xvdf /mnt/repos && sudo chown -R 1000:1000 /mnt/repos && { grep -q /dev/xvdf /etc/fstab || echo /dev/xvdf /mnt/repos ext4 defaults,nofail 0 2 | sudo tee -a /etc/fstab; }; echo EBS volume mounted; else echo EBS already mounted; fi; else echo No EBS volume at /dev/xvdf, using fallback; sudo mkdir -p /mnt/repos && sudo chown -R 1000:1000 /mnt/repos; fi",
 
               "echo Step 3: Get secrets...",
               "SECRETS=$(aws secretsmanager get-secret-value --secret-id agent-zero/global/api-keys --region eu-west-3 --query SecretString --output text)",
