@@ -55,6 +55,12 @@ class ClaudeError(AgentError):
     pass
 
 
+class GrokError(AgentError):
+    """Grok/xAI API error."""
+
+    pass
+
+
 class DatabaseError(TurboWrapError):
     """Database operation error."""
 

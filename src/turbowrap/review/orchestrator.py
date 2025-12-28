@@ -25,7 +25,7 @@ from turbowrap.orchestration import (
     prioritize_issues,
 )
 from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
-from turbowrap.review.dual_llm_runner import DualLLMResult, DualLLMRunner
+from turbowrap.review.dual_llm_runner import TripleLLMResult, TripleLLMRunner
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.progress import (
     ProgressEvent,
@@ -346,8 +346,8 @@ class Orchestrator:
                     )
 
         else:
-            # Run with Dual-LLM pattern (Claude + Gemini in parallel)
-            async def run_dual_llm_with_progress(
+            # Run with Triple-LLM pattern (Claude + Gemini + Grok in parallel)
+            async def run_triple_llm_with_progress(
                 reviewer_name: str,
             ) -> tuple[str, str, Any]:
                 display_name = get_reviewer_display_name(reviewer_name)
@@ -357,28 +357,32 @@ class Orchestrator:
                         type=ProgressEventType.REVIEWER_STARTED,
                         reviewer_name=reviewer_name,
                         reviewer_display_name=display_name,
-                        message=f"Starting {display_name} (Claude + Gemini)...",
+                        message=f"Starting {display_name} (Claude + Gemini + Grok)...",
                     )
                 )
 
                 started_at = datetime.utcnow()
 
                 try:
-                    result = await self._run_dual_llm_review(context, reviewer_name, emit)
+                    result = await self._run_triple_llm_review(context, reviewer_name, emit)
 
                     # Build status message with LLM details
                     status_parts = []
                     if result.claude_status == "ok":
-                        status_parts.append(f"Claude: {result.claude_issues_count}")
+                        status_parts.append(f"C:{result.claude_issues_count}")
                     else:
-                        status_parts.append("Claude: failed")
+                        status_parts.append("C:✗")
                     if result.gemini_status == "ok":
-                        status_parts.append(f"Gemini: {result.gemini_issues_count}")
+                        status_parts.append(f"G:{result.gemini_issues_count}")
                     else:
-                        status_parts.append("Gemini: failed")
-                    status_parts.append(f"Merged: {result.merged_issues_count}")
-                    if result.overlap_count > 0:
-                        status_parts.append(f"Overlap: {result.overlap_count}")
+                        status_parts.append("G:✗")
+                    if result.grok_status == "ok":
+                        status_parts.append(f"X:{result.grok_issues_count}")
+                    else:
+                        status_parts.append("X:✗")
+                    status_parts.append(f"Tot:{result.merged_issues_count}")
+                    if result.triple_overlap_count > 0:
+                        status_parts.append(f"3x:{result.triple_overlap_count}")
 
                     await emit(
                         ProgressEvent(
@@ -390,11 +394,11 @@ class Orchestrator:
                         )
                     )
 
-                    # Toast notification with dual-LLM details
+                    # Toast notification with triple-LLM details
                     await emit_log(
                         "INFO",
                         f"✓ {display_name}: {result.merged_issues_count} issues "
-                        f"(C:{result.claude_issues_count} G:{result.gemini_issues_count})",
+                        f"(C:{result.claude_issues_count} G:{result.gemini_issues_count} X:{result.grok_issues_count})",
                     )
 
                     # SAVE CHECKPOINT on success
@@ -403,7 +407,7 @@ class Orchestrator:
                             reviewer_name,
                             "completed",
                             result.final_review.issues,
-                            100.0,  # No satisfaction score in dual-LLM mode
+                            100.0,  # No satisfaction score in triple-LLM mode
                             1,  # Single iteration (parallel)
                             [],  # No detailed model usage yet
                             started_at,
@@ -440,7 +444,7 @@ class Orchestrator:
 
                     return (reviewer_name, "error", str(e))
 
-            tasks = [run_dual_llm_with_progress(name) for name in reviewers]
+            tasks = [run_triple_llm_with_progress(name) for name in reviewers]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for result in results:
@@ -452,21 +456,25 @@ class Orchestrator:
                 reviewer_name, status, data = result
 
                 if status == "success":
-                    # data is DualLLMResult here
-                    assert isinstance(data, DualLLMResult)
+                    # data is TripleLLMResult here
+                    assert isinstance(data, TripleLLMResult)
+                    # Count how many LLMs succeeded
+                    llms_ok = sum(
+                        [
+                            data.claude_status == "ok",
+                            data.gemini_status == "ok",
+                            data.grok_status == "ok",
+                        ]
+                    )
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
                             status="completed",
                             issues_found=data.merged_issues_count,
                             duration_seconds=data.total_duration_seconds,
-                            iterations=1,  # Dual-LLM runs in parallel, not iteratively
-                            # Add dual-LLM metadata: 100% if both ok, 50% otherwise
-                            final_satisfaction=(
-                                100.0
-                                if data.claude_status == "ok" and data.gemini_status == "ok"
-                                else 50.0
-                            ),
+                            iterations=1,  # Triple-LLM runs in parallel, not iteratively
+                            # 100% if all 3 ok, 66% if 2 ok, 33% if 1 ok
+                            final_satisfaction=llms_ok * 33.33,
                         )
                     )
                     all_issues.extend(data.final_review.issues)
@@ -1034,16 +1042,16 @@ class Orchestrator:
             on_content_callback=on_content,
         )
 
-    async def _run_dual_llm_review(
+    async def _run_triple_llm_review(
         self,
         context: ReviewContext,
         reviewer_name: str,
         emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
-    ) -> DualLLMResult:
+    ) -> TripleLLMResult:
         """
-        Run dual-LLM review (Claude + Gemini in parallel).
+        Run triple-LLM review (Claude + Gemini + Grok in parallel).
 
-        Uses DualLLMRunner to execute both LLMs and merge results.
+        Uses TripleLLMRunner to execute all three LLMs and merge results.
 
         Args:
             context: Review context with repo path and metadata
@@ -1051,22 +1059,24 @@ class Orchestrator:
             emit: Optional callback for progress events
 
         Returns:
-            DualLLMResult with merged issues and per-LLM stats
+            TripleLLMResult with merged issues and per-LLM stats
         """
         from turbowrap.review.reviewers.claude_cli_reviewer import ClaudeCLIReviewer
         from turbowrap.review.reviewers.gemini_cli_reviewer import GeminiCLIReviewer
+        from turbowrap.review.reviewers.grok_cli_reviewer import GrokCLIReviewer
 
-        # Create both reviewers with the same name (same agent prompt)
+        # Create all three reviewers with the same name (same agent prompt)
         claude_reviewer = ClaudeCLIReviewer(name=reviewer_name)
         gemini_reviewer = GeminiCLIReviewer(name=reviewer_name)
+        grok_reviewer = GrokCLIReviewer(name=reviewer_name)
 
-        # Load agent prompt (same for both)
+        # Load agent prompt (same for all)
         with contextlib.suppress(FileNotFoundError):
             context.agent_prompt = claude_reviewer.load_agent_prompt(self.settings.agents_dir)
 
         # Create streaming callbacks for progress events
         # NOTE: Use base reviewer_name so content goes to the right card
-        # Content from both LLMs will mix but that's OK for parallel mode
+        # Content from all LLMs will mix but that's OK for parallel mode
         display_name = get_reviewer_display_name(reviewer_name)
 
         async def on_claude_chunk(chunk: str) -> None:
@@ -1091,10 +1101,22 @@ class Orchestrator:
                     )
                 )
 
+        async def on_grok_chunk(chunk: str) -> None:
+            if emit:
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name=reviewer_name,
+                        reviewer_display_name=display_name,
+                        content=chunk,
+                    )
+                )
+
         # Create runner and execute
-        runner = DualLLMRunner(
+        runner = TripleLLMRunner(
             claude_reviewer=claude_reviewer,
             gemini_reviewer=gemini_reviewer,
+            grok_reviewer=grok_reviewer,
         )
 
         return await runner.run(
@@ -1102,6 +1124,7 @@ class Orchestrator:
             file_list=context.files,
             on_claude_chunk=on_claude_chunk,
             on_gemini_chunk=on_gemini_chunk,
+            on_grok_chunk=on_grok_chunk,
         )
 
     # NOTE: _deduplicate_issues, _severity_rank, _prioritize_issues moved to

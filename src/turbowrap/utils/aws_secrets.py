@@ -71,3 +71,9 @@ def get_google_api_key() -> str | None:
     """Get GOOGLE_API_KEY from AWS Secrets Manager."""
     secrets = get_secrets()
     return secrets.get("GOOGLE_API_KEY")
+
+
+def get_grok_api_key() -> str | None:
+    """Get GROK_API_KEY from AWS Secrets Manager."""
+    secrets = get_secrets()
+    return secrets.get("GROK_API_KEY")

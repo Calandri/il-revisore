@@ -401,6 +401,22 @@
                                           x-text="issue.severity"></span>
                                     <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded"
                                           x-text="issue.category"></span>
+                                    <!-- Flagged by LLM badges -->
+                                    <template x-if="issue.flagged_by && issue.flagged_by.length > 0">
+                                        <span class="flex items-center gap-1">
+                                            <template x-for="llm in issue.flagged_by" :key="llm">
+                                                <span class="px-1.5 py-0.5 text-xs rounded font-medium"
+                                                      :class="{
+                                                          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': llm === 'claude',
+                                                          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': llm === 'gemini',
+                                                          'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400': llm === 'grok',
+                                                          'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300': !['claude', 'gemini', 'grok'].includes(llm)
+                                                      }"
+                                                      x-text="llm === 'claude' ? 'C' : llm === 'gemini' ? 'G' : llm === 'grok' ? 'X' : llm.charAt(0).toUpperCase()"
+                                                      :title="llm.charAt(0).toUpperCase() + llm.slice(1)"></span>
+                                            </template>
+                                        </span>
+                                    </template>
                                     <!-- Effort badge -->
                                     <template x-if="issue.estimated_effort">
                                         <span class="px-2 py-0.5 text-xs rounded-full flex items-center gap-1"
@@ -729,6 +745,32 @@
                                             Review risultato (<span x-text="fixLog?.gemini_review?.length || 0"></span> chars)
                                         </summary>
                                         <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.gemini_review"></pre>
+                                    </details>
+                                </div>
+
+                                <!-- Grok Prompt -->
+                                <div x-show="fixLog?.grok_prompt">
+                                    <h4 class="font-medium mb-2 flex items-center gap-2">
+                                        <span class="text-cyan-500">Grok CLI Prompt</span>
+                                    </h4>
+                                    <details class="bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                        <summary class="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm">
+                                            Mostra prompt (<span x-text="fixLog?.grok_prompt?.length || 0"></span> chars)
+                                        </summary>
+                                        <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.grok_prompt"></pre>
+                                    </details>
+                                </div>
+
+                                <!-- Grok Review Output -->
+                                <div x-show="fixLog?.grok_review">
+                                    <h4 class="font-medium mb-2 flex items-center gap-2">
+                                        <span class="text-cyan-500">Grok Review Output</span>
+                                    </h4>
+                                    <details class="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg" open>
+                                        <summary class="px-3 py-2 cursor-pointer hover:bg-cyan-100 dark:hover:bg-cyan-900/30 rounded-lg text-sm">
+                                            Review risultato (<span x-text="fixLog?.grok_review?.length || 0"></span> chars)
+                                        </summary>
+                                        <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.grok_review"></pre>
                                     </details>
                                 </div>
                             </div>

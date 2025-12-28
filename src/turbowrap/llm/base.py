@@ -15,7 +15,9 @@ class AgentResponse(BaseModel):
     prompt_tokens: int | None = Field(default=None, ge=0, description="Input tokens used")
     completion_tokens: int | None = Field(default=None, ge=0, description="Output tokens generated")
     model: str | None = Field(default=None, description="Model identifier used")
-    agent_type: Literal["gemini", "claude"] | None = Field(default=None, description="LLM type")
+    agent_type: Literal["gemini", "claude", "grok"] | None = Field(
+        default=None, description="LLM type"
+    )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -43,7 +45,7 @@ class BaseAgent(ABC):
 
     @property
     @abstractmethod
-    def agent_type(self) -> Literal["gemini", "claude"]:
+    def agent_type(self) -> Literal["gemini", "claude", "grok"]:
         """LLM type identifier."""
         ...
 
