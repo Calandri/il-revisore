@@ -809,15 +809,26 @@ class GeminiCLI:
                 except Exception as e:
                     logger.warning(f"[GEMINI CLI] Failed to parse stats: {e}")
 
-            # Save ALL raw output to S3 (includes stats JSON)
+            # Save output to S3 - BOTH raw JSONL and readable markdown
             s3_output_url = None
-            if save_output and raw_output_lines:
-                raw_content = "\n".join(raw_output_lines)
-                s3_output_url = await self._s3_saver.save_raw(
-                    raw_content,
-                    "output",
-                    context_id,
-                )
+            if save_output:
+                # 1. Raw JSONL with EVERYTHING (primary - for debugging)
+                if raw_output_lines:
+                    raw_content = "\n".join(raw_output_lines)
+                    s3_output_url = await self._s3_saver.save_raw(
+                        raw_content,
+                        "output",
+                        context_id,
+                    )
+                # 2. Also save readable markdown for humans
+                if output:
+                    await self._s3_saver.save_markdown(
+                        output,
+                        "output_readable",
+                        context_id,
+                        {"model": self.model, "duration_ms": duration_ms},
+                        "Gemini CLI",
+                    )
 
             # Check result status
             status = result_data.get("status", "unknown") if result_data else "unknown"
