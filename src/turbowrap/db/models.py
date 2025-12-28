@@ -917,7 +917,7 @@ class Operation(Base):
     __tablename__ = "operations"
 
     # Primary key
-    id = Column(String(36), primary_key=True, default=generate_uuid)
+    id = Column(String(100), primary_key=True, default=generate_uuid)
 
     # Operation identity
     operation_type = Column(String(50), nullable=False, index=True)  # Uses OperationType values
