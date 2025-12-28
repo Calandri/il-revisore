@@ -187,18 +187,6 @@
     <!-- Filters -->
     <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
         <div class="flex flex-wrap gap-3 md:gap-4">
-            <!-- Repository filter -->
-            <div class="w-full sm:w-auto">
-                <label class="block text-sm text-gray-500 mb-1">Repository</label>
-                <select x-model="filters.repository_id" @change="refresh()"
-                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="">Tutti</option>
-                    {% for repo in repos %}
-                    <option value="{{ repo.id }}">{{ repo.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
             <!-- Lint+Fix Button -->
             <div class="w-full sm:w-auto flex flex-col sm:flex-row sm:items-end gap-2">
                 <div class="flex-1 sm:flex-none">
@@ -212,7 +200,7 @@
                 <button @click="runLintFix()"
                         :disabled="isAnalyzing || !filters.repository_id"
                         class="min-h-[44px] px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        :title="!filters.repository_id ? 'Seleziona prima una repository' : 'Trova e correggi issues linting'">
+                        :title="!filters.repository_id ? 'Seleziona prima un repository dal footer' : 'Trova e correggi issues linting'">
                     <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M5 13l4 4L19 7"/>
@@ -350,7 +338,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            <p>Nessuna issue trovata</p>
+            <template x-if="!filters.repository_id">
+                <div>
+                    <p>Seleziona un repository</p>
+                    <p class="text-xs mt-1 opacity-70">dal footer in basso ↓</p>
+                </div>
+            </template>
+            <template x-if="filters.repository_id">
+                <p>Nessuna issue trovata per questa repository</p>
+            </template>
         </div>
 
         <div x-show="!loading && issues.length > 0" class="divide-y dark:divide-gray-700">
@@ -1430,6 +1426,21 @@ function issuesApp() {
         },
 
         async init() {
+            // Sync with global context store
+            const store = Alpine.store('globalContext');
+            if (store?.selectedRepoId) {
+                this.filters.repository_id = store.selectedRepoId;
+            }
+
+            // Watch for global context changes
+            window.addEventListener('global-context-changed', (e) => {
+                const newRepoId = e.detail.repoId || '';
+                if (newRepoId !== this.filters.repository_id) {
+                    this.filters.repository_id = newRepoId;
+                    this.refresh();
+                }
+            });
+
             await this.refresh();
         },
 
