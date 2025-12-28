@@ -8,7 +8,14 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-4 shrink-0">
         <div>
-            <h1 class="text-2xl font-bold">Mockups</h1>
+            <h1 class="text-2xl font-bold flex items-center gap-2 flex-wrap">
+                <span>Mockups</span>
+                <template x-if="$store.globalContext?.selectedRepo">
+                    <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
+                        per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
+                    </span>
+                </template>
+            </h1>
             <p class="text-gray-500 dark:text-gray-400">Genera e gestisci mockup UI con AI</p>
         </div>
         <div class="flex gap-2">
@@ -169,6 +176,7 @@ function mockupsPage() {
         loading: false,
         viewMode: 'grid',
         expandedRepos: [],
+        selectedRepoId: null,
         selectedProject: null,
         selectedMockup: null,
         selectedElement: null,
@@ -180,11 +188,31 @@ function mockupsPage() {
         creatingProject: false,
 
         async init() {
+            // Sync with global context store
+            const store = Alpine.store('globalContext');
+            if (store?.selectedRepoId) {
+                this.selectedRepoId = store.selectedRepoId;
+            }
+
+            // Watch for global context changes
+            window.addEventListener('global-context-changed', (e) => {
+                const newRepoId = e.detail.repoId || '';
+                this.selectedRepoId = newRepoId;
+                // Auto-expand the selected repo in the tree
+                if (newRepoId && !this.expandedRepos.includes(newRepoId)) {
+                    this.expandedRepos.push(newRepoId);
+                }
+            });
+
             await this.loadProjects();
-            // Expand first repo by default
-            if (this.repositories.length > 0) {
+
+            // Expand repo from global context, or first repo by default
+            if (this.selectedRepoId && !this.expandedRepos.includes(this.selectedRepoId)) {
+                this.expandedRepos.push(this.selectedRepoId);
+            } else if (this.repositories.length > 0 && this.expandedRepos.length === 0) {
                 this.expandedRepos.push(this.repositories[0].id);
             }
+
             // Load all mockups initially
             await this.loadMockups();
         },
