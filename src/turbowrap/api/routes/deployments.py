@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -305,10 +306,15 @@ async def _run_local_command(
         dict with status, stdout, stderr
     """
     try:
+        # Ensure PATH includes /usr/local/bin where docker is installed
+        env = os.environ.copy()
+        env["PATH"] = f"/usr/local/bin:/usr/bin:/bin:{env.get('PATH', '')}"
+
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
 
         try:

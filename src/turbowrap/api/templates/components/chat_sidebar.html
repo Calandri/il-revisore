@@ -1,3 +1,6 @@
+<!-- Chat Sidebar Wrapper - x-data scope for tooltip -->
+<div x-data="chatSidebar()" x-init="init()">
+
 <!-- Mobile backdrop for chat sidebar (blocks interaction with content below) -->
 <div x-cloak x-show="chatMode !== 'hidden'"
      x-transition:enter="transition-opacity ease-out duration-200"
@@ -11,8 +14,6 @@
 
 <!-- Right Chat Sidebar - Minimal Tab Design -->
 <aside x-cloak x-show="chatMode !== 'hidden'"
-       x-data="chatSidebar()"
-       x-init="init()"
        x-effect="
            // Lock body scroll on mobile when chat is open
            if (window.innerWidth < 768 && chatMode !== 'hidden') {
@@ -579,19 +580,22 @@
         </div>
     </div>
 
-    <!-- Fixed Tooltip (positioned with JS) - OUTSIDE overflow-hidden container -->
-    <div x-show="activeTooltip" x-cloak
-         class="fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none shadow-lg"
-         :style="`top: ${tooltipPosition.top}px; left: ${tooltipPosition.left}px; transform: translateX(-100%) translateY(-50%);`"
-         x-text="tooltipText"
-         x-transition:enter="transition ease-out duration-100"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-75"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0">
-    </div>
 </aside>
+
+<!-- Fixed Tooltip - OUTSIDE aside to avoid transform breaking fixed positioning -->
+<div x-show="activeTooltip" x-cloak
+     class="fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none shadow-lg"
+     :style="`top: ${tooltipPosition.top}px; left: ${tooltipPosition.left}px; transform: translateX(-100%) translateY(-50%);`"
+     x-text="tooltipText"
+     x-transition:enter="transition ease-out duration-100"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-75"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0">
+</div>
+
+</div><!-- End Chat Sidebar Wrapper -->
 
 <!-- FAB Toggle Button -->
 <button x-cloak x-show="chatMode === 'hidden'"
