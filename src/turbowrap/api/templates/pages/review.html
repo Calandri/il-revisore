@@ -465,11 +465,11 @@
                    x-text="reviewMode === 'initial' ? 'Review architetturale basata su documentazione' : 'Review dettagliata del codice modificato'"></p>
             </div>
 
-            <!-- Review Mode: Dual LLM vs Challenger Loop -->
+            <!-- Review Mode: Triple LLM vs Challenger Loop -->
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Modalità Review</label>
                 <div class="flex gap-3">
-                    <!-- Dual LLM Button -->
+                    <!-- Triple LLM Button -->
                     <button type="button" @click="challengerEnabled = false" :disabled="isRunning"
                             class="mode-toggle-btn flex-1 px-4 py-3 text-sm font-medium rounded-xl border-2 transition-all disabled:opacity-50"
                             :class="!challengerEnabled
@@ -480,12 +480,14 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                             </svg>
-                            <span class="font-semibold">Dual LLM</span>
+                            <span class="font-semibold">Triple LLM</span>
                         </div>
                         <div class="flex items-center justify-center gap-1.5 text-xs opacity-80">
                             <span class="stats-badge px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">Claude</span>
                             <span>+</span>
-                            <span class="stats-badge px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">Gemini</span>
+                            <span class="stats-badge px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">Gemini</span>
+                            <span>+</span>
+                            <span class="stats-badge px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400">Grok</span>
                         </div>
                     </button>
                     <!-- Challenger Loop Button -->
