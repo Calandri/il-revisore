@@ -16,7 +16,8 @@ from .git_utils import (
     parse_github_url,
     pull_repo,
     push_repo,
-    smart_push_with_conflict_resolution,
+    smart_push,
+    smart_push_with_conflict_resolution,  # Deprecated, use smart_push
 )
 
 __all__ = [
@@ -32,7 +33,8 @@ __all__ = [
     "clone_repo",
     "pull_repo",
     "push_repo",
-    "smart_push_with_conflict_resolution",
+    "smart_push",
+    "smart_push_with_conflict_resolution",  # Deprecated
     "get_repo_status",
     "get_current_branch",
     "parse_github_url",

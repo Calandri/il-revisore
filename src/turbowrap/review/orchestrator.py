@@ -43,9 +43,9 @@ from turbowrap.review.models.report import (
 from turbowrap.review.models.review import Issue, ReviewMode, ReviewRequest
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
-from turbowrap.review.utils.file_utils import FileUtils
 from turbowrap.review.utils.repo_detector import RepoDetector
 from turbowrap.tools.structure_generator import StructureGenerator
+from turbowrap.utils.file_utils import is_text_file, read_file
 from turbowrap.utils.git_utils import GitUtils
 
 logger = logging.getLogger(__name__)
@@ -744,7 +744,7 @@ class Orchestrator:
                 if any(pattern in path.name for pattern in exclude_patterns):
                     continue
 
-                if FileUtils.is_text_file(path):
+                if is_text_file(path):
                     files.append(str(rel_path))
 
         return files[:100]  # Limit to 100 files
@@ -895,8 +895,8 @@ class Orchestrator:
         for file_path in context.files:
             try:
                 full_path = context.repo_path / file_path if context.repo_path else Path(file_path)
-                if full_path.exists() and FileUtils.is_text_file(full_path):
-                    content = FileUtils.read_file(full_path)
+                if full_path.exists() and is_text_file(full_path):
+                    content = read_file(full_path)
                     # Limit file size
                     if len(content) < 50000:
                         context.file_contents[file_path] = content

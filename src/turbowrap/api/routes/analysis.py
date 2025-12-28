@@ -20,6 +20,7 @@ from ...db.models import Issue, IssueStatus, Repository, Task
 from ...orchestration.cli_runner import GeminiCLI
 from ...utils.aws_secrets import get_anthropic_api_key
 from ...utils.git_utils import get_current_branch
+from ...utils.lint_utils import parse_lint_json_from_llm
 from ..deps import get_db
 
 logger = logging.getLogger(__name__)
@@ -231,7 +232,7 @@ async def run_lint_analysis(
             }
 
             # Parse JSON output from Claude
-            issues = _parse_lint_output(output)
+            issues = parse_lint_json_from_llm(output)
 
             if not issues:
                 yield {
@@ -350,39 +351,6 @@ async def run_lint_analysis(
             }
 
     return EventSourceResponse(generate())
-
-
-def _parse_lint_output(output: str) -> list[dict[str, Any]]:
-    """Parse JSON issues from Claude's lint output."""
-    if not output:
-        return []
-
-    # Try to find JSON array in output
-    # Claude might wrap it in markdown code blocks
-    json_text = output.strip()
-
-    # Handle markdown code blocks
-    if "```" in json_text:
-        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", json_text)
-        if json_match:
-            json_text = json_match.group(1).strip()
-
-    # Try to find JSON array directly
-    if not json_text.startswith("["):
-        # Look for array start
-        array_match = re.search(r"\[\s*\{[\s\S]*\}\s*\]", json_text)
-        if array_match:
-            json_text = array_match.group()
-
-    try:
-        issues = json.loads(json_text)
-        if isinstance(issues, list):
-            return issues
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse lint output as JSON: {e}")
-        logger.debug(f"Raw output: {output[:1000]}")
-        return []
 
 
 @router.get("/lint/{task_id}")

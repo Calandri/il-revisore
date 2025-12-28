@@ -7,12 +7,13 @@ Provides:
 """
 
 import asyncio
-import codecs
+import json
 import logging
 import os
+import re
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -249,6 +250,85 @@ class GeminiProClient(GeminiClient):
 
 
 @dataclass
+class GeminiModelUsage:
+    """Token usage for a single model in Gemini CLI session."""
+
+    model: str
+    requests: int = 0
+    input_tokens: int = 0
+    cache_reads: int = 0
+    output_tokens: int = 0
+
+
+@dataclass
+class GeminiSessionStats:
+    """Session statistics from Gemini CLI /stats command."""
+
+    session_id: str | None = None
+    tool_calls_total: int = 0
+    tool_calls_success: int = 0
+    tool_calls_failed: int = 0
+    success_rate: float = 0.0
+    wall_time_seconds: float = 0.0
+    agent_active_seconds: float = 0.0
+    api_time_seconds: float = 0.0
+    api_time_percent: float = 0.0
+    tool_time_seconds: float = 0.0
+    tool_time_percent: float = 0.0
+    model_usage: list[GeminiModelUsage] = field(default_factory=list)
+
+    @property
+    def total_input_tokens(self) -> int:
+        """Total input tokens across all models."""
+        return sum(m.input_tokens for m in self.model_usage)
+
+    @property
+    def total_output_tokens(self) -> int:
+        """Total output tokens across all models."""
+        return sum(m.output_tokens for m in self.model_usage)
+
+    @property
+    def total_tokens(self) -> int:
+        """Total tokens (input + output) across all models."""
+        return self.total_input_tokens + self.total_output_tokens
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "session_id": self.session_id,
+            "tool_calls": {
+                "total": self.tool_calls_total,
+                "success": self.tool_calls_success,
+                "failed": self.tool_calls_failed,
+                "success_rate": self.success_rate,
+            },
+            "performance": {
+                "wall_time_seconds": self.wall_time_seconds,
+                "agent_active_seconds": self.agent_active_seconds,
+                "api_time_seconds": self.api_time_seconds,
+                "api_time_percent": self.api_time_percent,
+                "tool_time_seconds": self.tool_time_seconds,
+                "tool_time_percent": self.tool_time_percent,
+            },
+            "model_usage": [
+                {
+                    "model": m.model,
+                    "requests": m.requests,
+                    "input_tokens": m.input_tokens,
+                    "cache_reads": m.cache_reads,
+                    "output_tokens": m.output_tokens,
+                }
+                for m in self.model_usage
+            ],
+            "totals": {
+                "input_tokens": self.total_input_tokens,
+                "output_tokens": self.total_output_tokens,
+                "total_tokens": self.total_tokens,
+            },
+        }
+
+
+@dataclass
 class GeminiCLIResult:
     """Result from Gemini CLI execution."""
 
@@ -260,6 +340,164 @@ class GeminiCLIResult:
     error: str | None = None
     s3_prompt_url: str | None = None
     s3_output_url: str | None = None
+    session_stats: GeminiSessionStats | None = None
+
+
+def _parse_time_string(time_str: str) -> float:
+    """Parse time string like '2m 54s' or '6.2s' to seconds."""
+    if not time_str:
+        return 0.0
+
+    total_seconds = 0.0
+    # Match minutes
+    m_match = re.search(r"(\d+)m", time_str)
+    if m_match:
+        total_seconds += int(m_match.group(1)) * 60
+    # Match seconds (including decimals)
+    s_match = re.search(r"([\d.]+)s", time_str)
+    if s_match:
+        total_seconds += float(s_match.group(1))
+    return total_seconds
+
+
+def _parse_token_count(token_str: str) -> int:
+    """Parse token count string like '1,435' or '10449' to int."""
+    if not token_str:
+        return 0
+    # Remove commas and convert
+    return int(token_str.replace(",", "").strip())
+
+
+def _parse_stats_output(stats_output: str) -> GeminiSessionStats:
+    """Parse the output of Gemini CLI /stats command.
+
+    Example input:
+        Session Stats
+        Session ID: 5023644b-f81c-4fc7-8d0d-f61906c4a4d5
+        Tool Calls: 5 ( ✓ 4 x 1 )
+        Success Rate: 80.0%
+        Performance
+        Wall Time: 2m 54s
+        Agent Active: 6.2s
+          » API Time: 6.2s (100.0%)
+          » Tool Time: 0s (0.0%)
+        Model Usage                 Reqs   Input Tokens   Cache Reads  Output Tokens
+        ────────────────────────────────────────────────────────────────────────────
+        gemini-2.5-flash-lite          1          1,435             0             12
+        gemini-3-flash-preview         1         10,449             0             50
+    """
+    stats = GeminiSessionStats()
+
+    # Session ID
+    session_match = re.search(r"Session ID:\s*([\w-]+)", stats_output)
+    if session_match:
+        stats.session_id = session_match.group(1)
+
+    # Tool Calls: 5 ( ✓ 4 x 1 )
+    tool_match = re.search(r"Tool Calls:\s*(\d+)\s*\(\s*✓\s*(\d+)\s*x\s*(\d+)\s*\)", stats_output)
+    if tool_match:
+        stats.tool_calls_total = int(tool_match.group(1))
+        stats.tool_calls_success = int(tool_match.group(2))
+        stats.tool_calls_failed = int(tool_match.group(3))
+
+    # Success Rate: 80.0%
+    success_match = re.search(r"Success Rate:\s*([\d.]+)%", stats_output)
+    if success_match:
+        stats.success_rate = float(success_match.group(1))
+
+    # Wall Time: 2m 54s
+    wall_match = re.search(r"Wall Time:\s*([\dm\s.]+s)", stats_output)
+    if wall_match:
+        stats.wall_time_seconds = _parse_time_string(wall_match.group(1))
+
+    # Agent Active: 6.2s
+    active_match = re.search(r"Agent Active:\s*([\dm\s.]+s)", stats_output)
+    if active_match:
+        stats.agent_active_seconds = _parse_time_string(active_match.group(1))
+
+    # API Time: 6.2s (100.0%)
+    api_match = re.search(r"API Time:\s*([\dm\s.]+s)\s*\(([\d.]+)%\)", stats_output)
+    if api_match:
+        stats.api_time_seconds = _parse_time_string(api_match.group(1))
+        stats.api_time_percent = float(api_match.group(2))
+
+    # Tool Time: 0s (0.0%)
+    tool_time_match = re.search(r"Tool Time:\s*([\dm\s.]+s)\s*\(([\d.]+)%\)", stats_output)
+    if tool_time_match:
+        stats.tool_time_seconds = _parse_time_string(tool_time_match.group(1))
+        stats.tool_time_percent = float(tool_time_match.group(2))
+
+    # Model Usage table - find lines after the header separator
+    # Pattern: model_name   reqs   input_tokens   cache_reads   output_tokens
+    model_lines = re.findall(
+        r"^\s*([\w.-]+)\s+(\d+)\s+([\d,]+)\s+(\d+)\s+([\d,]+)\s*$",
+        stats_output,
+        re.MULTILINE,
+    )
+    for match in model_lines:
+        model_name, reqs, input_tokens, cache_reads, output_tokens = match
+        # Skip if it looks like a header
+        if model_name.lower() in ("model", "usage", "reqs"):
+            continue
+        stats.model_usage.append(
+            GeminiModelUsage(
+                model=model_name,
+                requests=int(reqs),
+                input_tokens=_parse_token_count(input_tokens),
+                cache_reads=int(cache_reads),
+                output_tokens=_parse_token_count(output_tokens),
+            )
+        )
+
+    return stats
+
+
+# Stats output marker to identify where stats begin in output
+STATS_MARKER = "Session Stats"
+
+
+def _parse_stream_json_stats(result_data: dict[str, Any]) -> GeminiSessionStats:
+    """Parse stats from stream-json result message.
+
+    Example result_data:
+        {
+            "type": "result",
+            "status": "success",
+            "stats": {
+                "total_tokens": 626568,
+                "input_tokens": 617877,
+                "output_tokens": 2334,
+                "cached": 354810,
+                "input": 263067,
+                "duration_ms": 92993,
+                "tool_calls": 25
+            }
+        }
+    """
+    stats = GeminiSessionStats()
+
+    if "stats" not in result_data:
+        return stats
+
+    s = result_data["stats"]
+
+    # Map stream-json stats to our dataclass
+    stats.tool_calls_total = s.get("tool_calls", 0)
+    stats.wall_time_seconds = s.get("duration_ms", 0) / 1000.0
+
+    # Create a single model usage entry with aggregated stats
+    if s.get("total_tokens", 0) > 0 or s.get("input_tokens", 0) > 0:
+        stats.model_usage.append(
+            GeminiModelUsage(
+                model=result_data.get("model", "unknown"),
+                requests=1,
+                input_tokens=s.get("input_tokens", 0),
+                cache_reads=s.get("cached", 0),
+                output_tokens=s.get("output_tokens", 0),
+            )
+        )
+
+    return stats
 
 
 class GeminiCLI:
@@ -391,19 +629,19 @@ class GeminiCLI:
             if api_key:
                 env["GEMINI_API_KEY"] = api_key
 
-            # Build command
-            args = ["gemini", "--model", self.model]
+            # Build command with stream-json output
+            args = ["gemini", "--model", self.model, "-o", "stream-json"]
             if self.auto_accept:
                 args.extend(["--approval-mode", "yolo"])
-            # Note: --summarize-tool-output doesn't exist in Gemini CLI
-            # The parameter is kept for API compatibility but ignored
+            # Add the prompt as positional argument
             args.append(prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None
 
-            logger.info(f"[GEMINI CLI] Starting with model: {self.model}")
+            logger.info(f"[GEMINI CLI] Starting stream-json mode with model: {self.model}")
             logger.info(f"[GEMINI CLI] Prompt length: {len(prompt)} chars")
 
+            # Launch process (no stdin needed with positional prompt)
             process = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.PIPE,
@@ -412,28 +650,59 @@ class GeminiCLI:
                 env=env,
             )
 
-            # Stream stdout with incremental UTF-8 decoder
+            # Parse stream-json output
             output_chunks: list[str] = []
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            session_id: str | None = None
+            model_from_init: str | None = None
+            result_data: dict[str, Any] | None = None
+            line_buffer = ""
 
             async def read_stream() -> None:
+                nonlocal line_buffer, session_id, model_from_init, result_data
                 assert process.stdout is not None
+
                 while True:
-                    chunk = await process.stdout.read(1024)
+                    chunk = await process.stdout.read(4096)
                     if not chunk:
-                        # Flush remaining bytes
-                        decoded = decoder.decode(b"", final=True)
-                        if decoded:
-                            output_chunks.append(decoded)
-                            if on_chunk:
-                                await on_chunk(decoded)
                         break
-                    # Incremental decode - handles partial multi-byte chars
-                    decoded = decoder.decode(chunk)
-                    if decoded:
-                        output_chunks.append(decoded)
-                        if on_chunk:
-                            await on_chunk(decoded)
+
+                    # Decode and process line by line
+                    line_buffer += chunk.decode("utf-8", errors="replace")
+
+                    while "\n" in line_buffer:
+                        line, line_buffer = line_buffer.split("\n", 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            data = json.loads(line)
+                            msg_type = data.get("type", "")
+
+                            if msg_type == "init":
+                                # {"type":"init","session_id":"...","model":"..."}
+                                session_id = data.get("session_id")
+                                model_from_init = data.get("model")
+                                logger.info(
+                                    f"[GEMINI CLI] Init: session={session_id}, model={model_from_init}"
+                                )
+
+                            elif msg_type == "message" and data.get("role") == "assistant":
+                                # {"type":"message","role":"assistant","content":"...","delta":true}
+                                content = data.get("content", "")
+                                if content:
+                                    output_chunks.append(content)
+                                    if on_chunk:
+                                        await on_chunk(content)
+
+                            elif msg_type == "result":
+                                # {"type":"result","status":"success","stats":{...}}
+                                result_data = data
+                                logger.info(f"[GEMINI CLI] Result: status={data.get('status')}")
+
+                        except json.JSONDecodeError:
+                            # Not JSON, could be raw output - skip
+                            pass
 
             try:
                 await asyncio.wait_for(read_stream(), timeout=self.timeout)
@@ -441,27 +710,9 @@ class GeminiCLI:
                 logger.error(f"[GEMINI CLI] Timeout after {self.timeout}s")
                 process.kill()
 
-                # Preserve partial output on timeout
                 duration_ms = int((time.time() - start_time) * 1000)
-                partial_output = "".join(output_chunks) if output_chunks else ""
+                partial_output = "".join(output_chunks)
 
-                # Save error to S3
-                s3_output_url = None
-                if save_output:
-                    error_content = (
-                        f"# Timeout Error\n\nTimeout after {self.timeout}s\n\n"
-                        f"# Partial Output ({len(partial_output)} chars)\n\n"
-                        f"{partial_output}"
-                    )
-                    await self._s3_saver.save_markdown(
-                        error_content,
-                        "error",
-                        context_id,
-                        {"model": self.model, "duration_ms": duration_ms},
-                        "Gemini CLI",
-                    )
-
-                # Auto-fail operation on timeout
                 if operation:
                     self._fail_operation(operation.operation_id, f"Timeout after {self.timeout}s")
 
@@ -473,13 +724,29 @@ class GeminiCLI:
                     model=self.model,
                     duration_ms=duration_ms,
                     s3_prompt_url=s3_prompt_url,
-                    s3_output_url=s3_output_url,
                 )
 
             await process.wait()
 
             duration_ms = int((time.time() - start_time) * 1000)
             output = "".join(output_chunks)
+
+            # Parse stats from result message
+            session_stats: GeminiSessionStats | None = None
+            if result_data:
+                try:
+                    # Add model from init if available
+                    if model_from_init:
+                        result_data["model"] = model_from_init
+                    session_stats = _parse_stream_json_stats(result_data)
+                    session_stats.session_id = session_id
+
+                    logger.info(
+                        f"[GEMINI CLI] Stats: {session_stats.total_tokens} tokens, "
+                        f"{session_stats.tool_calls_total} tool calls"
+                    )
+                except Exception as e:
+                    logger.warning(f"[GEMINI CLI] Failed to parse stats: {e}")
 
             # Save output to S3
             s3_output_url = None
@@ -492,22 +759,15 @@ class GeminiCLI:
                     "Gemini CLI",
                 )
 
-            if process.returncode != 0:
+            # Check result status
+            status = result_data.get("status", "unknown") if result_data else "unknown"
+            if process.returncode != 0 or status != "success":
                 stderr = await process.stderr.read() if process.stderr else b""
-                error_msg = f"Exit code {process.returncode}: {stderr.decode()[:500]}"
+                error_msg = (
+                    f"Exit code {process.returncode}, status={status}: {stderr.decode()[:500]}"
+                )
                 logger.error(f"[GEMINI CLI] Failed: {error_msg}")
 
-                # Save error to S3
-                if save_output:
-                    await self._s3_saver.save_markdown(
-                        f"# Error\n\n{error_msg}\n\n# Output\n\n{output}",
-                        "error",
-                        context_id,
-                        {"model": self.model, "duration_ms": duration_ms},
-                        "Gemini CLI",
-                    )
-
-                # Auto-fail operation
                 if operation:
                     self._fail_operation(operation.operation_id, error_msg)
 
@@ -517,14 +777,19 @@ class GeminiCLI:
                     raw_output=output,
                     error=error_msg,
                     duration_ms=duration_ms,
-                    model=self.model,
+                    model=model_from_init or self.model,
                     s3_prompt_url=s3_prompt_url,
                     s3_output_url=s3_output_url,
+                    session_stats=session_stats,
                 )
 
-            # Auto-complete operation
+            # Auto-complete operation with stats
             if operation:
-                self._complete_operation(operation.operation_id, duration_ms=duration_ms)
+                self._complete_operation(
+                    operation.operation_id,
+                    duration_ms=duration_ms,
+                    session_stats=session_stats,
+                )
 
             logger.info(f"[GEMINI CLI] Completed in {duration_ms}ms")
             return GeminiCLIResult(
@@ -532,9 +797,10 @@ class GeminiCLI:
                 output=output,
                 raw_output=output,
                 duration_ms=duration_ms,
-                model=self.model,
+                model=model_from_init or self.model,
                 s3_prompt_url=s3_prompt_url,
                 s3_output_url=s3_output_url,
+                session_stats=session_stats,
             )
 
         except FileNotFoundError:
@@ -662,20 +928,37 @@ class GeminiCLI:
             logger.warning(f"[GEMINI CLI] Failed to register operation: {e}")
             return None
 
-    def _complete_operation(self, operation_id: str, duration_ms: int) -> None:
-        """Complete operation in tracker."""
+    def _complete_operation(
+        self,
+        operation_id: str,
+        duration_ms: int,
+        session_stats: GeminiSessionStats | None = None,
+    ) -> None:
+        """Complete operation in tracker with session stats."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker
 
             tracker = get_tracker()
-            tracker.complete(
-                operation_id,
-                result={
-                    "duration_ms": duration_ms,
-                    "model": self.model,
-                },
+
+            # Build result with stats if available
+            result: dict[str, Any] = {
+                "duration_ms": duration_ms,
+                "model": self.model,
+            }
+
+            if session_stats:
+                result["session_stats"] = session_stats.to_dict()
+                result["total_tokens"] = session_stats.total_tokens
+                result["total_input_tokens"] = session_stats.total_input_tokens
+                result["total_output_tokens"] = session_stats.total_output_tokens
+                result["tool_calls"] = session_stats.tool_calls_total
+                result["models_used"] = [m.model for m in session_stats.model_usage]
+
+            tracker.complete(operation_id, result=result)
+            logger.info(
+                f"[GEMINI CLI] Operation completed: {operation_id[:8]} "
+                f"({session_stats.total_tokens if session_stats else 0} tokens)"
             )
-            logger.info(f"[GEMINI CLI] Operation completed: {operation_id[:8]}")
 
         except Exception as e:
             logger.warning(f"[GEMINI CLI] Failed to complete operation: {e}")

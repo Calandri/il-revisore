@@ -18,7 +18,12 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from turbowrap.llm.base import BaseAgent
 
-from turbowrap.utils.file_utils import calculate_tokens
+from turbowrap.utils.file_utils import (
+    BE_EXTENSIONS,
+    FE_EXTENSIONS,
+    calculate_tokens,
+    should_ignore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,35 +41,6 @@ class RepoType(str, Enum):
     FULLSTACK = "fullstack"
     UNKNOWN = "unknown"
 
-
-# File extensions by type
-BE_EXTENSIONS = {".py"}
-FE_EXTENSIONS = {".tsx", ".ts", ".jsx", ".js"}
-
-# Directories to ignore
-IGNORE_DIRS = {
-    "node_modules",
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    "dist",
-    "build",
-    ".next",
-    "coverage",
-    ".pytest_cache",
-    "eggs",
-    "*.egg-info",
-    ".tox",
-    ".mypy_cache",
-    ".reviews",
-    ".ruff_cache",
-    "htmlcov",
-    ".eggs",
-}
-
-# Files to ignore
-IGNORE_FILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
 
 # Tree generation config
 MAX_TREE_DEPTH = 3
@@ -139,14 +115,6 @@ class DirectoryStructure:
 def count_tokens(content: str) -> int:
     """Count tokens using tiktoken cl100k_base encoding."""
     return calculate_tokens(content)["tokens"]
-
-
-def should_ignore(path: Path) -> bool:
-    """Check if path should be ignored."""
-    for part in path.parts:
-        if part in IGNORE_DIRS or part.startswith("."):
-            return True
-    return path.name in IGNORE_FILES
 
 
 class StructureGenerator:

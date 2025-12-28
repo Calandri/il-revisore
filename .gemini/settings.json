@@ -1,24 +1,25 @@
 {
   "$schema": "https://raw.githubusercontent.com/google-gemini/gemini-cli/main/schemas/settings.schema.json",
   "model": {
-    "name": "gemini-3-pro-preview",
-    "summarizeToolOutput": {
-      "run_shell_command": {
-        "tokenBudget": 2000
-      }
-    }
+    "name": "gemini-3-pro-preview"
   },
   "tools": {
     "autoAccept": true,
     "shell": {
+      "enableInteractiveShell": true,
+      "showColor": true,
       "inactivityTimeout": 300
+    },
+    "useRipgrep": true,
+    "useSmartEdit": true,
+    "writeTodos": true,
+    "outputTruncation": {
+      "maxCharacters": 4000000,
+      "maxLines": 2000
     }
   },
   "ui": {
     "hideBanner": true,
     "hideTips": true
-  },
-  "output": {
-    "format": "json"
   }
 }

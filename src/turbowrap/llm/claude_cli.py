@@ -35,6 +35,7 @@ import codecs
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -74,6 +75,166 @@ class ModelUsage:
 
 
 @dataclass
+class ClaudeContextStats:
+    """Context usage statistics from Claude CLI /context command."""
+
+    model: str = ""
+    tokens_used: int = 0
+    tokens_max: int = 0
+    usage_percent: float = 0.0
+    system_prompt_tokens: int = 0
+    system_prompt_percent: float = 0.0
+    system_tools_tokens: int = 0
+    system_tools_percent: float = 0.0
+    mcp_tools_tokens: int = 0
+    mcp_tools_percent: float = 0.0
+    custom_agents_tokens: int = 0
+    custom_agents_percent: float = 0.0
+    messages_tokens: int = 0
+    messages_percent: float = 0.0
+    free_space_tokens: int = 0
+    free_space_percent: float = 0.0
+    autocompact_buffer_tokens: int = 0
+    autocompact_buffer_percent: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "model": self.model,
+            "context": {
+                "tokens_used": self.tokens_used,
+                "tokens_max": self.tokens_max,
+                "usage_percent": self.usage_percent,
+            },
+            "breakdown": {
+                "system_prompt": {
+                    "tokens": self.system_prompt_tokens,
+                    "percent": self.system_prompt_percent,
+                },
+                "system_tools": {
+                    "tokens": self.system_tools_tokens,
+                    "percent": self.system_tools_percent,
+                },
+                "mcp_tools": {
+                    "tokens": self.mcp_tools_tokens,
+                    "percent": self.mcp_tools_percent,
+                },
+                "custom_agents": {
+                    "tokens": self.custom_agents_tokens,
+                    "percent": self.custom_agents_percent,
+                },
+                "messages": {
+                    "tokens": self.messages_tokens,
+                    "percent": self.messages_percent,
+                },
+                "free_space": {
+                    "tokens": self.free_space_tokens,
+                    "percent": self.free_space_percent,
+                },
+                "autocompact_buffer": {
+                    "tokens": self.autocompact_buffer_tokens,
+                    "percent": self.autocompact_buffer_percent,
+                },
+            },
+        }
+
+
+def _parse_token_string(token_str: str) -> int:
+    """Parse token string like '3.4k' or '175.0k' or '317' to int."""
+    if not token_str:
+        return 0
+    token_str = token_str.strip().lower()
+    if token_str.endswith("k"):
+        return int(float(token_str[:-1]) * 1000)
+    return int(float(token_str.replace(",", "")))
+
+
+def _parse_context_output(context_output: str) -> ClaudeContextStats:
+    """Parse the output of Claude CLI /context command.
+
+    Example input:
+        Context Usage
+        ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   claude-opus-4-5-20251101 · 93k/200k tokens (47%)
+        ...
+        ⛁ System prompt: 3.4k tokens (1.7%)
+        ⛁ System tools: 17.2k tokens (8.6%)
+        ⛁ MCP tools: 26.1k tokens (13.0%)
+        ⛁ Custom agents: 1.4k tokens (0.7%)
+        ⛁ Messages: 317 tokens (0.2%)
+        ⛶ Free space: 107k (53.3%)
+        ⛝ Autocompact buffer: 45.0k tokens (22.5%)
+    """
+    stats = ClaudeContextStats()
+
+    # Model and main usage: claude-opus-4-5-20251101 · 93k/200k tokens (47%)
+    main_match = re.search(
+        r"(claude-[\w-]+)\s*[·•]\s*([\d.]+k?)\s*/\s*([\d.]+k?)\s*tokens\s*\(([\d.]+)%\)",
+        context_output,
+    )
+    if main_match:
+        stats.model = main_match.group(1)
+        stats.tokens_used = _parse_token_string(main_match.group(2))
+        stats.tokens_max = _parse_token_string(main_match.group(3))
+        stats.usage_percent = float(main_match.group(4))
+
+    # System prompt: 3.4k tokens (1.7%)
+    sys_prompt_match = re.search(
+        r"System prompt:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
+    )
+    if sys_prompt_match:
+        stats.system_prompt_tokens = _parse_token_string(sys_prompt_match.group(1))
+        stats.system_prompt_percent = float(sys_prompt_match.group(2))
+
+    # System tools: 17.2k tokens (8.6%)
+    sys_tools_match = re.search(
+        r"System tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
+    )
+    if sys_tools_match:
+        stats.system_tools_tokens = _parse_token_string(sys_tools_match.group(1))
+        stats.system_tools_percent = float(sys_tools_match.group(2))
+
+    # MCP tools: 26.1k tokens (13.0%)
+    mcp_match = re.search(r"MCP tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
+    if mcp_match:
+        stats.mcp_tools_tokens = _parse_token_string(mcp_match.group(1))
+        stats.mcp_tools_percent = float(mcp_match.group(2))
+
+    # Custom agents: 1.4k tokens (0.7%)
+    agents_match = re.search(
+        r"Custom agents:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
+    )
+    if agents_match:
+        stats.custom_agents_tokens = _parse_token_string(agents_match.group(1))
+        stats.custom_agents_percent = float(agents_match.group(2))
+
+    # Messages: 317 tokens (0.2%)
+    messages_match = re.search(r"Messages:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
+    if messages_match:
+        stats.messages_tokens = _parse_token_string(messages_match.group(1))
+        stats.messages_percent = float(messages_match.group(2))
+
+    # Free space: 107k (53.3%)
+    free_match = re.search(r"Free space:\s*([\d.]+k?)\s*\(([\d.]+)%\)", context_output)
+    if free_match:
+        stats.free_space_tokens = _parse_token_string(free_match.group(1))
+        stats.free_space_percent = float(free_match.group(2))
+
+    # Autocompact buffer: 45.0k tokens (22.5%)
+    buffer_match = re.search(
+        r"Autocompact buffer:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
+    )
+    if buffer_match:
+        stats.autocompact_buffer_tokens = _parse_token_string(buffer_match.group(1))
+        stats.autocompact_buffer_percent = float(buffer_match.group(2))
+
+    return stats
+
+
+# Context output marker to identify where context stats begin
+CONTEXT_MARKER = "Context Usage"
+
+
+@dataclass
 class ClaudeCLIResult:
     """Result from Claude CLI execution."""
 
@@ -88,6 +249,7 @@ class ClaudeCLIResult:
     s3_prompt_url: str | None = None
     s3_output_url: str | None = None
     s3_thinking_url: str | None = None
+    context_stats: ClaudeContextStats | None = None
 
 
 class ClaudeCLI:
@@ -202,6 +364,7 @@ class ClaudeCLI:
         save_output: bool = True,
         save_thinking: bool = True,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
+        on_thinking: Callable[[str], Awaitable[None]] | None = None,
         on_stderr: Callable[[str], Awaitable[None]] | None = None,
         # Operation tracking parameters
         track_operation: bool = True,
@@ -219,7 +382,8 @@ class ClaudeCLI:
             save_prompt: Save prompt to S3
             save_output: Save output to S3
             save_thinking: Save thinking to S3
-            on_chunk: Callback for streaming output chunks
+            on_chunk: Callback for streaming output chunks (text only)
+            on_thinking: Callback for streaming thinking chunks (extended thinking)
             on_stderr: Callback for streaming stderr (--verbose output)
             track_operation: Enable automatic operation tracking (default: True)
             operation_type: Explicit operation type ("fix", "review", etc.)
@@ -253,6 +417,7 @@ class ClaudeCLI:
                 save_output=save_output,
                 save_thinking=save_thinking,
                 on_chunk=on_chunk,
+                on_thinking=on_thinking,
                 on_stderr=on_stderr,
                 operation=operation,
                 start_time=start_time,
@@ -272,6 +437,7 @@ class ClaudeCLI:
         save_output: bool,
         save_thinking: bool,
         on_chunk: Callable[[str], Awaitable[None]] | None,
+        on_thinking: Callable[[str], Awaitable[None]] | None,
         on_stderr: Callable[[str], Awaitable[None]] | None,
         operation: Any,
         start_time: float,
@@ -300,7 +466,7 @@ class ClaudeCLI:
 
         # Run CLI
         output, model_usage, thinking, raw_output, error = await self._execute_cli(
-            full_prompt, thinking_budget, on_chunk, on_stderr
+            full_prompt, thinking_budget, on_chunk, on_thinking, on_stderr
         )
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -439,9 +605,17 @@ class ClaudeCLI:
         prompt: str,
         thinking_budget: int | None,
         on_chunk: Callable[[str], Awaitable[None]] | None,
+        on_thinking: Callable[[str], Awaitable[None]] | None,
         on_stderr: Callable[[str], Awaitable[None]] | None,
     ) -> tuple[str | None, list[ModelUsage], str | None, str | None, str | None]:
         """Execute Claude CLI subprocess.
+
+        Args:
+            prompt: The prompt to send.
+            thinking_budget: Token budget for extended thinking.
+            on_chunk: Callback for text output chunks.
+            on_thinking: Callback for thinking chunks (extended thinking).
+            on_stderr: Callback for stderr output.
 
         Returns:
             Tuple of (output, model_usage, thinking, raw_output, error)
@@ -600,11 +774,14 @@ class ClaudeCLI:
                                             block = event.get("content_block", {})
                                             if block.get("type") == "thinking":
                                                 in_thinking_block = True
-                                                await on_chunk("\n🧠 ")
+                                                # Only add prefix if using on_chunk for thinking
+                                                if not on_thinking:
+                                                    await on_chunk("\n🧠 ")
                                         elif event_type == "content_block_stop":
                                             if in_thinking_block:
                                                 in_thinking_block = False
-                                                await on_chunk("\n\n")
+                                                if not on_thinking:
+                                                    await on_chunk("\n\n")
 
                                         # Extract text and thinking from content_block_delta
                                         elif event_type == "content_block_delta":
@@ -615,10 +792,13 @@ class ClaudeCLI:
                                                 if text:
                                                     await on_chunk(text)
                                             elif delta_type == "thinking_delta":
-                                                # Stream thinking (prefix added at block start)
+                                                # Stream thinking to dedicated callback if available
                                                 thinking_chunk = delta.get("thinking", "")
                                                 if thinking_chunk:
-                                                    await on_chunk(thinking_chunk)
+                                                    if on_thinking:
+                                                        await on_thinking(thinking_chunk)
+                                                    else:
+                                                        await on_chunk(thinking_chunk)
                                         elif event_type == "assistant":
                                             for block in event.get("message", {}).get(
                                                 "content", []
@@ -629,7 +809,12 @@ class ClaudeCLI:
                                                     # Stream complete thinking block
                                                     thinking_block = block.get("thinking", "")
                                                     if thinking_block:
-                                                        await on_chunk(f"\n🧠 {thinking_block}\n")
+                                                        if on_thinking:
+                                                            await on_thinking(thinking_block)
+                                                        else:
+                                                            await on_chunk(
+                                                                f"\n🧠 {thinking_block}\n"
+                                                            )
                                     except json.JSONDecodeError:
                                         pass
 
@@ -883,24 +1068,55 @@ class ClaudeCLI:
         duration_ms: int,
         model_usage: list[ModelUsage],
     ) -> None:
-        """Complete operation in tracker."""
+        """Complete operation in tracker with model usage stats."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker
 
             tracker = get_tracker()
-            total_tokens = sum(u.input_tokens + u.output_tokens for u in model_usage)
+
+            # Calculate totals
+            total_input = sum(u.input_tokens for u in model_usage)
+            total_output = sum(u.output_tokens for u in model_usage)
+            total_tokens = total_input + total_output
             total_cost = sum(u.cost_usd for u in model_usage)
+            total_cache_read = sum(u.cache_read_tokens for u in model_usage)
+            total_cache_creation = sum(u.cache_creation_tokens for u in model_usage)
+
+            # Build detailed model usage for DB
+            model_usage_list = [
+                {
+                    "model": u.model,
+                    "input_tokens": u.input_tokens,
+                    "output_tokens": u.output_tokens,
+                    "cache_read_tokens": u.cache_read_tokens,
+                    "cache_creation_tokens": u.cache_creation_tokens,
+                    "cost_usd": u.cost_usd,
+                }
+                for u in model_usage
+            ]
 
             tracker.complete(
                 operation_id,
                 result={
                     "duration_ms": duration_ms,
                     "model": self.model,
+                    # Legacy fields (for backward compatibility)
                     "tokens": total_tokens,
                     "cost_usd": total_cost,
+                    # New detailed fields (aligned with Gemini)
+                    "total_tokens": total_tokens,
+                    "total_input_tokens": total_input,
+                    "total_output_tokens": total_output,
+                    "total_cache_read_tokens": total_cache_read,
+                    "total_cache_creation_tokens": total_cache_creation,
+                    "models_used": list({u.model for u in model_usage}),
+                    "model_usage": model_usage_list,
                 },
             )
-            logger.info(f"[CLAUDE CLI] Operation completed: {operation_id[:8]}")
+            logger.info(
+                f"[CLAUDE CLI] Operation completed: {operation_id[:8]} "
+                f"({total_tokens} tokens, ${total_cost:.4f})"
+            )
 
         except Exception as e:
             logger.warning(f"[CLAUDE CLI] Failed to complete operation: {e}")

@@ -220,7 +220,7 @@ fix_challenger:
   satisfaction_threshold: 95.0   # N% required to approve
 
   # Gemini settings
-  model: "gemini-2.5-pro"
+  model: "gemini-3-flash-preview"
   thinking_budget: 10000         # Thinking tokens for Gemini
 ```
 

@@ -368,6 +368,12 @@ class ChatHooks:
         Returns:
             Lint results
         """
+        from turbowrap.utils.lint_utils import (
+            format_issues_for_display,
+            run_eslint,
+            run_ruff,
+        )
+
         result: dict[str, Any] = {
             "file": str(file_path),
             "passed": True,
@@ -377,37 +383,28 @@ class ChatHooks:
 
         suffix = file_path.suffix.lower()
 
-        try:
-            if suffix == ".py":
-                # Run ruff for Python
-                import subprocess
+        if suffix == ".py":
+            lint_result = await asyncio.to_thread(run_ruff, file_path)
+            result["passed"] = lint_result.passed
+            result["errors"] = format_issues_for_display(lint_result.issues)
+            if lint_result.skipped:
+                result["skipped"] = True
+            if lint_result.error:
+                result["error"] = lint_result.error
 
-                proc = await asyncio.to_thread(
-                    subprocess.run,
-                    ["ruff", "check", str(file_path), "--output-format", "json"],
-                    capture_output=True,
-                    text=True,
-                )
-
-                if proc.returncode != 0 and proc.stdout:
-                    import json as json_mod
-
-                    issues = json_mod.loads(proc.stdout)
-                    result["errors"] = [
-                        f"{i['code']}: {i['message']} (line {i['location']['row']})" for i in issues
-                    ]
-                    result["passed"] = len(result["errors"]) == 0
-
-            elif suffix in (".ts", ".tsx", ".js", ".jsx"):
-                # Could run eslint here
-                pass
-
-        except FileNotFoundError:
-            # Linter not installed
-            result["skipped"] = True
-        except Exception as e:
-            logger.warning(f"Lint check failed: {e}")
-            result["error"] = str(e)
+        elif suffix in (".ts", ".tsx", ".js", ".jsx"):
+            lint_result = await asyncio.to_thread(run_eslint, file_path)
+            result["passed"] = lint_result.passed
+            result["errors"] = format_issues_for_display(
+                [i for i in lint_result.issues if i.severity == "error"]
+            )
+            result["warnings"] = format_issues_for_display(
+                [i for i in lint_result.issues if i.severity == "warning"]
+            )
+            if lint_result.skipped:
+                result["skipped"] = True
+            if lint_result.error:
+                result["error"] = lint_result.error
 
         return result
 

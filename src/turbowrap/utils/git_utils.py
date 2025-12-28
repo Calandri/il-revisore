@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,12 +18,9 @@ from ..exceptions import CloneError, RepositoryError, SyncError
 logger = logging.getLogger(__name__)
 
 
-def _get_git_env() -> dict[str, str]:
-    """Get environment with git terminal prompts disabled."""
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env["GIT_ASKPASS"] = ""
-    return env
+# =============================================================================
+# Models
+# =============================================================================
 
 
 class GitStatus(BaseModel):
@@ -34,13 +32,24 @@ class GitStatus(BaseModel):
     is_clean: bool = Field(..., description="True if working directory is clean")
     ahead: int = Field(default=0, ge=0, description="Commits ahead of remote")
     behind: int = Field(default=0, ge=0, description="Commits behind remote")
-    modified: list[str] = Field(default_factory=list, description="Modified files")
+    modified: list[str] = Field(default_factory=list, description="Modified files (unstaged)")
+    staged: list[str] = Field(default_factory=list, description="Staged files")
     untracked: list[str] = Field(default_factory=list, description="Untracked files")
 
     @property
     def has_changes(self) -> bool:
         """Check if there are any local changes."""
         return not self.is_clean or self.ahead > 0
+
+
+class CommitInfo(BaseModel):
+    """Git commit information for API responses."""
+
+    sha: str
+    message: str
+    author: str
+    date: str
+    pushed: bool = True  # True if commit exists on remote
 
 
 class GitHubRepo(BaseModel):
@@ -62,6 +71,87 @@ class GitHubRepo(BaseModel):
         return v
 
 
+@dataclass
+class GitOperationResult:
+    """Result of a complex git operation (merge/smart push)."""
+
+    success: bool
+    message: str
+    output: str | None = None
+    ai_resolved: bool = False
+
+
+# =============================================================================
+# Core Utilities
+# =============================================================================
+
+
+def _get_git_env() -> dict[str, str]:
+    """Get environment with git terminal prompts disabled."""
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ASKPASS"] = ""
+    return env
+
+
+def run_git_command(
+    repo_path: Path,
+    command: list[str],
+    timeout: int = 60,
+    check: bool = True,
+    capture_output: bool = True,
+) -> str:
+    """Run a git command in the repository directory with robust handling.
+
+    Args:
+        repo_path: Path to the repository
+        command: Git command as list (e.g., ['branch', '--show-current'])
+        timeout: Command timeout in seconds
+        check: If True, raise exception on non-zero exit code
+        capture_output: If True, return stdout.
+
+    Returns:
+        Command output as string (if capture_output=True)
+
+    Raises:
+        RuntimeError: If command fails and check=True
+    """
+    try:
+        env = _get_git_env()
+        # Ensure 'git' is part of command if not already
+        full_cmd = ["git"] + command if command[0] != "git" else command
+
+        result = subprocess.run(
+            full_cmd,
+            cwd=repo_path,
+            capture_output=capture_output,
+            text=True,
+            check=check,
+            timeout=timeout,
+            env=env,
+        )
+        # Use rstrip() to preserve leading whitespace (critical for porcelain format)
+        return result.stdout.rstrip() if capture_output and result.stdout else ""
+
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.strip() if e.stderr else "Unknown error"
+        # Mask tokens if present
+        error_msg = re.sub(r"https://[^@]+@", "https://***@", error_msg)
+
+        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
+            raise SyncError(
+                "Git authentication failed. Configure credentials with: "
+                "git config --global credential.helper osxkeychain"
+            ) from e
+
+        if check:
+            raise RuntimeError(f"Git command failed: {error_msg}") from e
+        return ""
+
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"Git command timed out after {timeout}s: {' '.join(command)}") from e
+
+
 def parse_github_url(url: str) -> GitHubRepo:
     """Parse GitHub URL to extract owner and repo name.
 
@@ -70,12 +160,7 @@ def parse_github_url(url: str) -> GitHubRepo:
 
     Returns:
         GitHubRepo with parsed info.
-
-    Raises:
-        RepositoryError: If URL is invalid.
     """
-    # HTTPS: https://github.com/owner/repo.git
-    # SSH: git@github.com:owner/repo.git
     patterns = [
         r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?$",
         r"git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$",
@@ -117,9 +202,14 @@ def get_local_path(url: str) -> Path:
         Path where repo should be cloned.
     """
     settings = get_settings()
-    repo_info = parse_github_url(url)
-    repo_hash = get_repo_hash(url)
-    return settings.repos_dir / f"{repo_info.name}-{repo_hash}"
+    try:
+        repo_info = parse_github_url(url)
+        repo_hash = get_repo_hash(url)
+        return settings.repos_dir / f"{repo_info.name}-{repo_hash}"
+    except RepositoryError:
+        # Fallback for non-github URLs
+        repo_hash = get_repo_hash(url)
+        return settings.repos_dir / f"repo-{repo_hash}"
 
 
 def _get_auth_url(url: str, token: str | None = None) -> str:
@@ -136,13 +226,17 @@ def _get_auth_url(url: str, token: str | None = None) -> str:
         return url
 
     # Strip any existing token from URL first
-    # Handles: https://ghp_xxx@github.com/... or https://github.com/...
     clean_url = re.sub(r"https://[^@]+@github\.com/", "https://github.com/", url)
 
     # Convert https://github.com/owner/repo.git to https://token@github.com/owner/repo.git
     if clean_url.startswith("https://github.com/"):
         return clean_url.replace("https://github.com/", f"https://{token}@github.com/")
     return url
+
+
+# =============================================================================
+# High Level Operations
+# =============================================================================
 
 
 def clone_repo(
@@ -156,15 +250,11 @@ def clone_repo(
     Args:
         url: GitHub repository URL.
         branch: Branch to clone.
-        token: Optional GitHub token for private repos.
-        target_path: Optional explicit path to clone to. If not provided,
-                     uses get_local_path(url) to generate a path.
+        token: Optional GitHub token.
+        target_path: Optional explicit code path.
 
     Returns:
         Path to cloned repository.
-
-    Raises:
-        CloneError: If clone fails.
     """
     local_path = target_path if target_path else get_local_path(url)
 
@@ -214,6 +304,8 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
         raise SyncError(f"Repository not found: {repo_path}")
 
     git_env = _get_git_env()
+    original_url = None
+
     try:
         # If token provided, temporarily update remote URL
         if token:
@@ -249,8 +341,7 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
             )
         finally:
             # Restore clean URL (strip any token for security)
-            if token:
-                # Strip any token from URL before restoring
+            if token and original_url:
                 clean_url = re.sub(
                     r"https://[^@]+@github\.com/", "https://github.com/", original_url
                 )
@@ -288,271 +379,55 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
     Args:
         repo_path: Path to local repository.
         message: Commit message.
-
-    Raises:
-        SyncError: If push fails.
     """
     if not repo_path.exists():
         raise SyncError(f"Repository not found: {repo_path}")
 
-    git_env = _get_git_env()
     try:
-        # Stage all changes
-        subprocess.run(
-            ["git", "add", "-A"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            env=git_env,
-        )
-
-        # Commit
-        subprocess.run(
-            ["git", "commit", "-m", message],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            env=git_env,
-        )
-
-        # Push
-        subprocess.run(
-            ["git", "push"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            text=True,
-            env=git_env,
-        )
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip() if e.stderr else "Unknown error"
-        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
-            raise SyncError(
-                "Git authentication failed. Configure credentials with: "
-                "git config --global credential.helper osxkeychain"
-            ) from e
-        raise SyncError(f"Failed to push: {error_msg}") from e
-
-
-async def smart_push_with_conflict_resolution(
-    repo_path: Path,
-    message: str = "Update via TurboWrap",
-    api_key: str | None = None,
-) -> dict[str, Any]:
-    """
-    Smart push that uses Claude CLI to resolve conflicts if needed.
-
-    Flow:
-    1. Stage and commit local changes
-    2. Pull from remote
-    3. If conflicts, launch Claude CLI to resolve them
-    4. Push to remote
-
-    Args:
-        repo_path: Path to local repository.
-        message: Commit message.
-        api_key: Anthropic API key (optional, uses env if not provided).
-
-    Returns:
-        dict with status and details.
-    """
-    import asyncio
-    import os
-
-    result: dict[str, Any] = {
-        "status": "success",
-        "had_conflicts": False,
-        "claude_resolved": False,
-        "message": "",
-    }
-
-    if not repo_path.exists():
-        raise SyncError(f"Repository not found: {repo_path}")
-
-    git_env = _get_git_env()
-    try:
-        # 1. Stage all changes
-        subprocess.run(
-            ["git", "add", "-A"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            env=git_env,
-        )
-
-        # 2. Commit (may fail if nothing to commit - that's ok)
+        run_git_command(repo_path, ["add", "-A"])
+        # Commit might fail if empty, which is fine
         try:
-            subprocess.run(
-                ["git", "commit", "-m", message],
-                cwd=repo_path,
-                check=True,
-                capture_output=True,
-                env=git_env,
-            )
-        except subprocess.CalledProcessError:
-            # Nothing to commit, continue anyway
+            run_git_command(repo_path, ["commit", "-m", message])
+        except RuntimeError:
             pass
 
-        # 3. Pull with rebase to get remote changes
-        pull_result = subprocess.run(
-            ["git", "pull", "--no-rebase"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            env=git_env,
-        )
-
-        # 4. Check for conflicts
-        if pull_result.returncode != 0 or "CONFLICT" in pull_result.stdout:
-            result["had_conflicts"] = True
-
-            # Check if there are actual conflict markers
-            status_result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                env=git_env,
-            )
-
-            # UU = unmerged, both modified (conflict)
-            has_conflicts = any(
-                line.startswith("UU") or line.startswith("AA")
-                for line in status_result.stdout.split("\n")
-                if line.strip()
-            )
-
-            if has_conflicts:
-                # Launch Claude CLI to resolve conflicts
-                env = os.environ.copy()
-                if api_key:
-                    env["ANTHROPIC_API_KEY"] = api_key
-
-                resolve_prompt = """You have merge conflicts to resolve. Please:
-
-1. Read the conflicted files using git status
-2. For each conflicted file, read it and resolve the conflict markers (<<<<<<<, =======, >>>>>>>)
-3. Keep the best parts of both versions, or merge them logically
-4. After resolving, run: git add <file> for each resolved file
-5. Then commit with: git commit -m "Merge conflicts resolved"
-
-Important: Output ONLY the commands you ran and a brief summary. No explanations needed."""
-
-                process = await asyncio.create_subprocess_exec(
-                    "claude",
-                    "--print",
-                    "--dangerously-skip-permissions",
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(repo_path),
-                    env=env,
-                )
-
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(input=resolve_prompt.encode()),
-                    timeout=120,  # 2 minutes max
-                )
-
-                if process.returncode == 0:
-                    result["claude_resolved"] = True
-                    result["message"] = "Conflicts resolved by Claude"
-                else:
-                    raise SyncError(f"Claude failed to resolve conflicts: {stderr.decode()}")
-
-        # 5. Push (with -u to set upstream if needed)
-        subprocess.run(
-            ["git", "push", "-u", "origin", "HEAD"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            text=True,
-            env=git_env,
-        )
-
-        result["message"] = "Push successful" + (
-            " (conflicts resolved)" if result["claude_resolved"] else ""
-        )
-        return result
-
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip() if e.stderr else "Unknown error"
-        if "Authentication failed" in error_msg or "could not read Username" in error_msg:
-            raise SyncError(
-                "Git authentication failed. Configure credentials with: "
-                "git config --global credential.helper osxkeychain"
-            ) from e
-        raise SyncError(f"Failed to push: {error_msg}") from e
+        run_git_command(repo_path, ["push"])
+    except RuntimeError as e:
+        raise SyncError(f"Failed to push: {e}") from e
 
 
 def get_current_branch(repo_path: Path) -> str:
-    """Get current branch name.
-
-    Args:
-        repo_path: Path to repository.
-
-    Returns:
-        Branch name.
-    """
+    """Get current branch name."""
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            text=True,
-            env=_get_git_env(),
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
+        return run_git_command(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"])
+    except RuntimeError:
         return "unknown"
 
 
 def list_branches(repo_path: Path, include_remote: bool = True) -> list[str]:
-    """List all branches in the repository.
-
-    Args:
-        repo_path: Path to repository.
-        include_remote: Include remote-tracking branches.
-
-    Returns:
-        List of branch names.
-    """
+    """List all branches."""
     if not repo_path.exists():
         raise RepositoryError(f"Repository not found: {repo_path}")
 
     try:
-        # First fetch to get latest remote branches
-        subprocess.run(
-            ["git", "fetch", "--prune"],
-            cwd=repo_path,
-            capture_output=True,
-            env=_get_git_env(),
-        )
+        # Fetch prune
+        try:
+            run_git_command(repo_path, ["fetch", "--prune"], timeout=60)
+        except RuntimeError:
+            pass  # Ignore fetch errors (offline)
 
-        # Get all branches
-        args = ["git", "branch", "-a"] if include_remote else ["git", "branch"]
-        result = subprocess.run(
-            args,
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            text=True,
-            env=_get_git_env(),
-        )
+        args = ["branch", "-a"] if include_remote else ["branch"]
+        output = run_git_command(repo_path, args)
 
         branches = set()
-        for line in result.stdout.strip().split("\n"):
+        for line in output.split("\n"):
             line = line.strip()
             if not line:
                 continue
-            # Remove leading * for current branch
             if line.startswith("* "):
                 line = line[2:]
-            # Handle remote branches (remotes/origin/branch-name)
             if line.startswith("remotes/origin/"):
-                branch_name = line[15:]  # Strip "remotes/origin/"
-                # Skip HEAD pointer
+                branch_name = line[15:]
                 if branch_name.startswith("HEAD"):
                     continue
                 branches.add(branch_name)
@@ -560,8 +435,8 @@ def list_branches(repo_path: Path, include_remote: bool = True) -> list[str]:
                 branches.add(line)
 
         return sorted(branches)
-    except subprocess.CalledProcessError as e:
-        raise RepositoryError(f"Failed to list branches: {e.stderr}") from e
+    except RuntimeError as e:
+        raise RepositoryError(f"Failed to list branches: {e}") from e
 
 
 def checkout_branch(repo_path: Path, branch: str) -> str:
@@ -617,85 +492,57 @@ def checkout_branch(repo_path: Path, branch: str) -> str:
 
 
 def get_repo_status(repo_path: Path) -> GitStatus:
-    """Get repository status.
-
-    Args:
-        repo_path: Path to repository.
-
-    Returns:
-        GitStatus object.
-    """
+    """Get detailed repository status."""
     branch = get_current_branch(repo_path)
-
     try:
-        # Check for uncommitted changes
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=repo_path,
-            check=True,
-            capture_output=True,
-            text=True,
-            env=_get_git_env(),
-        )
-        is_clean = len(result.stdout.strip()) == 0
+        status_out = run_git_command(repo_path, ["status", "--porcelain"])
+        is_clean = not bool(status_out.strip())
 
-        # Parse modified/untracked
         modified = []
+        staged = []
         untracked = []
-        for line in result.stdout.strip().split("\n"):
-            if line:
-                status = line[:2]
-                filepath = line[2:].lstrip()
-                if status.startswith("?"):
-                    # Check if it's a directory - if so, list files inside
-                    full_path = repo_path / filepath
-                    if full_path.is_dir():
-                        # Expand directory to show individual files
-                        for child in full_path.rglob("*"):
-                            if child.is_file():
-                                rel_path = str(child.relative_to(repo_path))
-                                untracked.append(rel_path)
-                    else:
-                        untracked.append(filepath)
-                else:
-                    modified.append(filepath)
 
-        # Get ahead/behind counts from remote
-        ahead = 0
-        behind = 0
+        for line in status_out.split("\n"):
+            if not line:
+                continue
+            # Format is "XY PATH" where XY is 2 chars, then space, then path
+            # X = index status, Y = worktree status
+            if len(line) < 4:
+                continue
+
+            x = line[0]
+            y = line[1]
+            # Skip the space separator (position 2) and get the filepath
+            # Handle edge cases where separator might be missing
+            if len(line) > 2 and line[2] == " ":
+                filepath = line[3:].strip()
+            else:
+                # Fallback: split on first space after status codes
+                filepath = line[2:].lstrip().strip()
+
+            if not filepath:
+                continue
+
+            if x == "?" and y == "?":
+                untracked.append(filepath)
+                continue
+
+            # Check index (Staged)
+            if x in ("M", "A", "R", "C", "D"):
+                staged.append(filepath)
+
+            # Check worktree (Modified)
+            if y in ("M", "D"):
+                modified.append(filepath)
+
+        # Ahead/Behind
+        ahead = behind = 0
         try:
-            # Check if upstream tracking branch exists
-            subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"],
-                cwd=repo_path,
-                check=True,
-                capture_output=True,
-                text=True,
-                env=_get_git_env(),
-            )
-            # Get ahead count (local commits not in remote)
-            ahead_result = subprocess.run(
-                ["git", "rev-list", "--count", "@{upstream}..HEAD"],
-                cwd=repo_path,
-                check=True,
-                capture_output=True,
-                text=True,
-                env=_get_git_env(),
-            )
-            ahead = int(ahead_result.stdout.strip() or "0")
-
-            # Get behind count (remote commits not in local)
-            behind_result = subprocess.run(
-                ["git", "rev-list", "--count", "HEAD..@{upstream}"],
-                cwd=repo_path,
-                check=True,
-                capture_output=True,
-                text=True,
-                env=_get_git_env(),
-            )
-            behind = int(behind_result.stdout.strip() or "0")
-        except (subprocess.CalledProcessError, ValueError):
-            # No upstream tracking branch or other error - leave as 0
+            ahead_str = run_git_command(repo_path, ["rev-list", "--count", "@{u}..HEAD"])
+            ahead = int(ahead_str)
+            behind_str = run_git_command(repo_path, ["rev-list", "--count", "HEAD..@{u}"])
+            behind = int(behind_str)
+        except (RuntimeError, ValueError):
             pass
 
         return GitStatus(
@@ -704,14 +551,316 @@ def get_repo_status(repo_path: Path) -> GitStatus:
             ahead=ahead,
             behind=behind,
             modified=modified,
+            staged=staged,
             untracked=untracked,
         )
-    except subprocess.CalledProcessError:
-        return GitStatus(branch=branch, is_clean=True, modified=[], untracked=[])
+
+    except RuntimeError:
+        return GitStatus(
+            branch=branch,
+            is_clean=True,
+        )
 
 
 # =============================================================================
-# Classes merged from review/utils/git_utils.py
+# AI Conflict Resolution
+# =============================================================================
+
+
+async def resolve_conflicts_with_gemini(
+    repo_path: Path,
+    context_desc: str = "merge/rebase",
+    op_id: str | None = None,
+) -> GitOperationResult:
+    """Resolve current directory conflicts using Gemini Flash.
+
+    Args:
+        repo_path: Repository with conflicts.
+        context_desc: Description of operation (e.g. "Merge from feature-x").
+        op_id: Operation ID for logging.
+
+    Returns:
+        GitOperationResult.
+    """
+    op_id = op_id or str(uuid.uuid4())
+    logger.info(f"Resolving conflicts in {repo_path} using Gemini Flash")
+
+    # 1. Identify conflicting files
+    try:
+        status_out = run_git_command(repo_path, ["status", "--porcelain"])
+        conflicting_files = [
+            line[3:].strip()
+            for line in status_out.split("\n")
+            if line.startswith("UU ") or line.startswith("AA ")
+        ]
+    except RuntimeError as e:
+        return GitOperationResult(success=False, message=f"Failed to check status: {e}")
+
+    if not conflicting_files:
+        return GitOperationResult(
+            success=True, message="No conflicting files found", ai_resolved=False
+        )
+
+    # 2. Build Prompt
+    prompt = f"""You are an intelligent git conflict resolver.
+Context: {context_desc}
+
+The following files have merge conflicts:
+{chr(10).join(f'- {f}' for f in conflicting_files)}
+
+For EACH conflicting file:
+1. Read the file to identify conflict markers (<<<<<<<, =======, >>>>>>>).
+2. Understand the intent of both changes.
+3. Edit the file to RESOLVE the conflict. Combine changes logically.
+4. Remove all conflict markers.
+5. Run `git add <file>` to stage the resolution.
+
+Finally, when all files are resolved/staged:
+- Verify no conflict markers remain.
+
+Do NOT run 'git commit'. Just resolve and stage.
+Start by reading the files.
+"""
+
+    # 3. Run Gemini (lazy import to avoid circular dependency)
+    from ..llm.gemini import GeminiCLI
+
+    gemini = GeminiCLI(
+        working_dir=repo_path,
+        model="flash",
+        timeout=300,
+        s3_prefix="git-conflicts",
+    )
+
+    result = await gemini.run(
+        prompt=prompt,
+        context_id=op_id,
+        track_operation=True,
+        operation_type="git_resolve",
+        repo_name=repo_path.name,
+    )
+
+    if not result.success:
+        return GitOperationResult(
+            success=False, message=f"Gemini failed to resolve: {result.error}", output=result.output
+        )
+
+    # 4. Verify Resolution
+    try:
+        status_out = run_git_command(repo_path, ["status", "--porcelain"])
+        still_conflicting = [line for line in status_out.split("\n") if line.startswith("UU ")]
+
+        if still_conflicting:
+            return GitOperationResult(
+                success=False,
+                message=f"Partial resolution. {len(still_conflicting)} files still conflicting.",
+                output=result.output,
+            )
+
+        return GitOperationResult(
+            success=True,
+            message="All conflicts resolved and staged by Gemini.",
+            output=result.output,
+            ai_resolved=True,
+        )
+
+    except RuntimeError as e:
+        return GitOperationResult(
+            success=False, message=f"Verification failed: {e}", output=result.output
+        )
+
+
+# =============================================================================
+# Smart Push - AI-Powered Git Workflow
+# =============================================================================
+
+SMART_PUSH_INSTRUCTIONS_FILE = ".turbowrap/SMART_PUSH.md"
+
+SMART_PUSH_INSTRUCTIONS_CONTENT = """# Smart Push Instructions
+
+You are a Git automation agent. Execute the following workflow autonomously.
+
+## Workflow Steps
+
+### 1. Check Status
+```bash
+git status
+```
+Review what files have changed.
+
+### 2. Stage All Changes
+```bash
+git add -A
+```
+
+### 3. Commit Changes
+Create a meaningful commit message based on the changes:
+```bash
+git commit -m "<descriptive message based on changes>"
+```
+If nothing to commit, skip to step 4.
+
+### 4. Pull from Remote
+```bash
+git pull --rebase
+```
+
+### 5. Handle Conflicts (if any)
+If conflicts occur:
+1. Read each conflicted file
+2. Identify conflict markers: `<<<<<<<`, `=======`, `>>>>>>>`
+3. Resolve by combining both changes logically
+4. Remove all conflict markers
+5. Stage resolved files: `git add <file>`
+6. Continue rebase: `git rebase --continue`
+
+### 6. Push to Remote
+```bash
+git push
+```
+If push fails due to upstream, use:
+```bash
+git push -u origin HEAD
+```
+
+## Important Notes
+- Always verify no conflict markers remain before committing
+- If rebase fails completely, abort with `git rebase --abort`
+- Report success or failure at the end
+"""
+
+
+def _ensure_smart_push_instructions(repo_path: Path) -> Path:
+    """Ensure the smart push instructions MD file exists.
+
+    Args:
+        repo_path: Repository path.
+
+    Returns:
+        Path to the instructions file.
+    """
+    instructions_path = repo_path / SMART_PUSH_INSTRUCTIONS_FILE
+
+    if not instructions_path.exists():
+        instructions_path.parent.mkdir(parents=True, exist_ok=True)
+        instructions_path.write_text(SMART_PUSH_INSTRUCTIONS_CONTENT)
+        logger.info(f"Created smart push instructions: {instructions_path}")
+
+    return instructions_path
+
+
+async def smart_push(
+    repo_path: Path,
+    commit_message: str | None = None,
+    op_id: str | None = None,
+) -> GitOperationResult:
+    """AI-powered smart push: delegates entire git workflow to Gemini Flash.
+
+    The agent will autonomously:
+    1. Stage all changes
+    2. Commit with appropriate message
+    3. Pull from remote (with rebase)
+    4. Resolve any conflicts
+    5. Push to remote
+
+    Args:
+        repo_path: Path to the repository.
+        commit_message: Optional commit message hint for the agent.
+        op_id: Operation ID for tracking.
+
+    Returns:
+        GitOperationResult with success status and details.
+    """
+    op_id = op_id or str(uuid.uuid4())
+
+    if not repo_path.exists():
+        return GitOperationResult(success=False, message=f"Repository not found: {repo_path}")
+
+    # Ensure instructions file exists
+    _ensure_smart_push_instructions(repo_path)
+
+    # Build prompt
+    prompt_parts = [
+        f"Read the instructions in `{SMART_PUSH_INSTRUCTIONS_FILE}` and execute the workflow.",
+    ]
+
+    if commit_message:
+        prompt_parts.append(f"Use this commit message hint: {commit_message}")
+
+    prompt_parts.append("Start now. Report success or failure at the end.")
+
+    prompt = "\n".join(prompt_parts)
+
+    logger.info(f"[smart_push] Launching Gemini Flash for {repo_path.name}")
+
+    # Launch Gemini Flash (lazy import to avoid circular dependency)
+    from ..llm.gemini import GeminiCLI
+
+    gemini = GeminiCLI(
+        working_dir=repo_path,
+        model="flash",
+        timeout=300,
+        s3_prefix="smart-push",
+    )
+
+    result = await gemini.run(
+        prompt=prompt,
+        context_id=op_id,
+        track_operation=True,
+        operation_type="smart_push",
+        repo_name=repo_path.name,
+    )
+
+    if not result.success:
+        return GitOperationResult(
+            success=False,
+            message=f"Smart push failed: {result.error}",
+            output=result.output,
+            ai_resolved=False,
+        )
+
+    # Verify push succeeded by checking if we're ahead of remote
+    try:
+        ahead_str = run_git_command(repo_path, ["rev-list", "--count", "@{u}..HEAD"])
+        ahead = int(ahead_str) if ahead_str else 0
+
+        if ahead > 0:
+            return GitOperationResult(
+                success=False,
+                message=f"Push incomplete: still {ahead} commits ahead of remote",
+                output=result.output,
+                ai_resolved=True,
+            )
+    except (RuntimeError, ValueError):
+        # No upstream or other issue - assume success if gemini reported success
+        pass
+
+    return GitOperationResult(
+        success=True,
+        message="Smart push completed successfully",
+        output=result.output,
+        ai_resolved=True,
+    )
+
+
+# Backward compatibility alias
+async def smart_push_with_conflict_resolution(
+    repo_path: Path,
+    message: str = "Update via TurboWrap",
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """Deprecated: Use smart_push() instead."""
+    result = await smart_push(repo_path, commit_message=message)
+    return {
+        "status": "success" if result.success else "failed",
+        "had_conflicts": result.ai_resolved,
+        "claude_resolved": False,
+        "message": result.message,
+    }
+
+
+# =============================================================================
+# PR Review Utilities (from review/utils/git_utils.py)
 # =============================================================================
 
 
@@ -726,8 +875,12 @@ class PRInfo:
 
 
 @dataclass
-class CommitInfo:
-    """Information about a commit."""
+class RepoCommitInfo:
+    """Detailed commit information for repository operations.
+
+    Note: This is separate from CommitInfo (API model) to avoid conflicts.
+    Use this for internal git log parsing, not API responses.
+    """
 
     sha: str
     short_sha: str
@@ -841,12 +994,12 @@ class RepoGitUtils:
         """Get current branch name."""
         return self._run_git("branch", "--show-current")
 
-    def get_current_commit(self) -> CommitInfo:
+    def get_current_commit(self) -> RepoCommitInfo:
         """Get current commit info."""
         format_str = "%H|%h|%an|%ae|%s|%ci"
         output = self._run_git("log", "-1", f"--format={format_str}")
         parts = output.split("|")
-        return CommitInfo(
+        return RepoCommitInfo(
             sha=parts[0],
             short_sha=parts[1],
             author=parts[2],

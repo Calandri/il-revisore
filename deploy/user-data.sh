@@ -99,15 +99,18 @@ echo "Pulling Docker image from ECR..."
 docker pull $ECR_REPO
 
 # Run container with all exposed ports
-# Backend: 8000-8005, Frontend: 3001-3005, Services: 6000-6006
+# Backend: 8000-8008, Frontend: 3000-3008, Services: 6000-6006
 echo "Starting container..."
 docker run -d \
   --name turbowrap \
   --restart always \
-  -p 8000:8000 -p 8001:8001 -p 8002:8002 -p 8003:8003 -p 8004:8004 -p 8005:8005 \
-  -p 3001:3001 -p 3002:3002 -p 3003:3003 -p 3004:3004 -p 3005:3005 \
+  -p 8000:8000 -p 8001:8001 -p 8002:8002 -p 8003:8003 -p 8004:8004 \
+  -p 8005:8005 -p 8006:8006 -p 8007:8007 -p 8008:8008 \
+  -p 3000:3000 -p 3001:3001 -p 3002:3002 -p 3003:3003 -p 3004:3004 \
+  -p 3005:3005 -p 3006:3006 -p 3007:3007 -p 3008:3008 \
   -p 6000:6000 -p 6001:6001 -p 6002:6002 -p 6003:6003 -p 6004:6004 -p 6005:6005 -p 6006:6006 \
   -v /opt/turbowrap/data:/data \
+  -v "$REPOS_MOUNT":/data/repos \
   --env-file /opt/turbowrap/.env \
   $ECR_REPO
 

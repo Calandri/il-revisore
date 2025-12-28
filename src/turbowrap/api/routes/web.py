@@ -8,8 +8,6 @@ from sqlalchemy.orm import Session
 from starlette.responses import Response
 
 from ...db.models import Repository, Setting, Task
-from ...utils.aws_secrets import get_anthropic_api_key
-from ...utils.git_utils import smart_push_with_conflict_resolution
 from ..deps import get_current_user, get_db
 
 router = APIRouter(tags=["web"])
@@ -554,17 +552,25 @@ async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(g
     repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if repo and repo.local_path:
         try:
-            api_key = get_anthropic_api_key()
-            result = await smart_push_with_conflict_resolution(
+            # Use new Agentic Smart Push (Gemini Flash)
+            from ...utils.git_utils import smart_push
+
+            result = await smart_push(
                 Path(str(repo.local_path)),
-                message="Update via TurboWrap",
-                api_key=api_key,
+                commit_message="Update via TurboWrap",
             )
-            if result.get("claude_resolved"):
-                push_message = f"Push completato - Claude ha risolto i conflitti per {repo.name}"
+
+            if result.success:
+                if result.ai_resolved:
+                    push_message = f"Push completato (AI resolved) per {repo.name}"
+                else:
+                    push_message = f"Push completato per {repo.name}"
+                logger.info(push_message)
             else:
-                push_message = f"Push completato per {repo.name}"
-            logger.info(push_message)
+                push_error = f"Push fallito: {result.message}"
+                if result.output:
+                    logger.error(f"Push output: {result.output}")
+
         except Exception as e:
             push_error = f"Push fallito per {repo.name}: {str(e)}"
             logger.error(push_error)
