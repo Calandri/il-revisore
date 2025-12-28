@@ -5,7 +5,7 @@
 {% block content_wrapper_class %}px-2 pt-2{% endblock %}
 
 {% block content %}
-<div class="h-[calc(100vh-1rem)] flex flex-col" x-data="fileEditor()" x-init="init()">
+<div class="h-[calc(100vh-2.5rem)] flex flex-col" x-data="fileEditor()" x-init="init()">
     <!-- Mobile Tab Navigation -->
     <div class="flex gap-2 lg:hidden mb-2 shrink-0">
         <button @click="activeTab = 'files'"
@@ -74,16 +74,6 @@
             <!-- Expanded state: full sidebar -->
             <template x-if="!sidebarCollapsed">
                 <div class="flex-1 flex flex-col min-h-0">
-                    <!-- Repository Selector -->
-                    <div class="p-3 border-b dark:border-gray-700 shrink-0">
-                        <select x-model="selectedRepoId" @change="loadFileTree()"
-                                class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                            <option value="">Seleziona repository</option>
-                            {% for repo in repos %}
-                            <option value="{{ repo.id }}">{{ repo.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
 
             <!-- Quick Filters -->
             <div class="p-3 border-b dark:border-gray-700 shrink-0">
@@ -160,7 +150,8 @@
 
                 <!-- Empty states -->
                 <div x-show="!loadingTree && !selectedRepoId" class="p-4 text-center text-gray-500 text-sm">
-                    Seleziona un repository
+                    <p>Seleziona un repository</p>
+                    <p class="text-xs mt-1 opacity-70">dal footer in basso ↓</p>
                 </div>
                 <div x-show="!loadingTree && selectedRepoId && fileExtension !== 'changes' && fileTree && fileTree.children?.length === 0" class="p-4 text-center text-gray-500 text-sm">
                     Nessun file trovato
@@ -410,78 +401,6 @@
      }"><span class="diff-line-number" x-text="line.lineNum || ''"></span><span x-text="line.content"></span></div></template></pre>
                 </div>
             </div>
-
-            <!-- Status Bar (VS Code style) -->
-            <div class="px-4 py-1.5 bg-blue-600 dark:bg-blue-900 text-white text-xs flex items-center justify-between shrink-0">
-                <!-- Left side -->
-                <div class="flex items-center gap-4">
-                    <!-- Branch (clickable) -->
-                    <button @click="openBranchSelector()"
-                            class="flex items-center gap-1 hover:bg-blue-500 dark:hover:bg-blue-800 px-2 py-0.5 rounded transition-colors"
-                            :disabled="!selectedRepoId">
-                        <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
-                        </svg>
-                        <span x-text="gitStatus?.branch || '-'"></span>
-                        <svg class="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <!-- Git Actions (mini toolbar) -->
-                    <div class="flex items-center gap-1" x-show="selectedRepoId">
-                        <!-- Commit (AI) - prominente quando ci sono changes -->
-                        <button @click="openAiCommitModal()"
-                                x-show="(gitStatus?.modified?.length > 0 || gitStatus?.untracked?.length > 0)"
-                                title="Commit con messaggio AI"
-                                class="px-2 py-0.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium flex items-center gap-1"
-                                :disabled="gitOperationLoading || generatingCommitMessage">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                            </svg>
-                            <span>Commit</span>
-                        </button>
-                        <div class="w-px h-4 bg-gray-600 mx-1" x-show="(gitStatus?.modified?.length > 0 || gitStatus?.untracked?.length > 0)"></div>
-                        <button @click="gitFetch()" title="Fetch" class="p-1 hover:bg-blue-500 dark:hover:bg-blue-800 rounded" :disabled="gitOperationLoading">
-                            <svg class="w-3.5 h-3.5" :class="{'animate-spin': gitOperationLoading}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                            </svg>
-                        </button>
-                        <button @click="gitPull()" title="Pull" class="p-1 hover:bg-blue-500 dark:hover:bg-blue-800 rounded" :disabled="gitOperationLoading">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
-                            </svg>
-                        </button>
-                        <button @click="gitPush()" title="Push" class="p-1 hover:bg-blue-500 dark:hover:bg-blue-800 rounded" :disabled="gitOperationLoading">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
-                            </svg>
-                        </button>
-                    </div>
-                    <!-- Modified count -->
-                    <div x-show="gitStatus?.modified?.length > 0 || gitStatus?.untracked?.length > 0"
-                         class="flex items-center gap-2">
-                        <span x-show="gitStatus?.modified?.length > 0" class="text-orange-300" x-text="(gitStatus?.modified?.length || 0) + 'M'"></span>
-                        <span x-show="gitStatus?.untracked?.length > 0" class="text-green-300" x-text="(gitStatus?.untracked?.length || 0) + 'U'"></span>
-                    </div>
-                    <!-- Ahead/Behind -->
-                    <div x-show="gitStatus?.ahead > 0 || gitStatus?.behind > 0" class="flex items-center gap-1">
-                        <span x-show="gitStatus?.ahead > 0" class="flex items-center gap-0.5">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7"/></svg>
-                            <span x-text="gitStatus?.ahead || 0"></span>
-                        </span>
-                        <span x-show="gitStatus?.behind > 0" class="flex items-center gap-0.5">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7"/></svg>
-                            <span x-text="gitStatus?.behind || 0"></span>
-                        </span>
-                    </div>
-                </div>
-                <!-- Right side -->
-                <div class="flex items-center gap-4">
-                    <span x-show="currentFilePath" x-text="'Ln ' + cursorLine + ', Col ' + cursorCol"></span>
-                    <span>UTF-8</span>
-                    <span x-show="currentFilePath" x-text="currentFilePath.split('.').pop()?.toUpperCase() || ''"></span>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -676,54 +595,6 @@
         <span x-text="toast.message"></span>
     </div>
 
-    <!-- Branch Selector Modal (VS Code style) -->
-    <div x-show="showBranchSelector"
-         x-transition:enter="transition ease-out duration-100"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-75"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         @click.self="showBranchSelector = false"
-         @keydown.escape.window="showBranchSelector = false"
-         class="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/50">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-96 max-h-[60vh] overflow-hidden border dark:border-gray-700"
-             @click.outside="showBranchSelector = false">
-            <!-- Search -->
-            <div class="p-3 border-b dark:border-gray-700">
-                <input x-model="branchFilter"
-                       x-ref="branchSearchInput"
-                       type="text"
-                       placeholder="Search branches..."
-                       class="w-full px-3 py-2 bg-gray-100 dark:bg-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-            </div>
-            <!-- Loading -->
-            <div x-show="loadingBranches" class="p-4 text-center text-gray-500">
-                <svg class="animate-spin w-5 h-5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-            </div>
-            <!-- Branch List -->
-            <div x-show="!loadingBranches" class="overflow-y-auto max-h-80">
-                <template x-for="branch in filteredBranches" :key="branch">
-                    <button @click="switchBranch(branch)"
-                            class="w-full px-4 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm transition-colors"
-                            :class="branch === gitStatus?.branch ? 'bg-primary/10' : ''">
-                        <span x-show="branch === gitStatus?.branch" class="w-2 h-2 bg-green-500 rounded-full"></span>
-                        <span x-show="branch !== gitStatus?.branch" class="w-2 h-2"></span>
-                        <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
-                        </svg>
-                        <span x-text="branch"></span>
-                        <span x-show="branch === gitStatus?.branch" class="ml-auto text-xs text-gray-400">(current)</span>
-                    </button>
-                </template>
-                <div x-show="filteredBranches.length === 0" class="p-4 text-center text-gray-500 text-sm">
-                    No branches found
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
@@ -775,12 +646,6 @@ function fileEditor() {
         // Go to Definition
         definitionPopup: { show: false, x: 0, y: 0, definitions: [], loading: false },
 
-        // Branch selector
-        showBranchSelector: false,
-        branches: [],
-        branchFilter: '',
-        loadingBranches: false,
-
         // Git operations
         gitOperationLoading: false,
 
@@ -800,13 +665,21 @@ function fileEditor() {
         loadingCommitFiles: false,
 
         init() {
-            // Check URL for repo parameter
-            const params = new URLSearchParams(window.location.search);
-            const repoId = params.get('repo');
-            if (repoId) {
-                this.selectedRepoId = repoId;
+            // Sync with global context store
+            const store = Alpine.store('globalContext');
+            if (store?.selectedRepoId) {
+                this.selectedRepoId = store.selectedRepoId;
                 this.loadFileTree();
             }
+
+            // Watch for global context changes
+            window.addEventListener('global-context-changed', (e) => {
+                const newRepoId = e.detail.repoId || '';
+                if (newRepoId !== this.selectedRepoId) {
+                    this.selectedRepoId = newRepoId;
+                    this.loadFileTree();
+                }
+            });
 
             // Track cursor position in textarea
             this.$nextTick(() => {
@@ -1359,83 +1232,6 @@ function fileEditor() {
                 'export': 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/30'
             };
             return colors[type] || 'text-gray-500 bg-gray-100 dark:bg-gray-700';
-        },
-
-        // --- Branch Selector ---
-
-        get filteredBranches() {
-            if (!this.branchFilter) return this.branches;
-            const filter = this.branchFilter.toLowerCase();
-            return this.branches.filter(b => b.toLowerCase().includes(filter));
-        },
-
-        async openBranchSelector() {
-            if (!this.selectedRepoId) return;
-
-            this.showBranchSelector = true;
-            this.branchFilter = '';
-            this.loadingBranches = true;
-
-            // Focus search input
-            this.$nextTick(() => {
-                if (this.$refs.branchSearchInput) {
-                    this.$refs.branchSearchInput.focus();
-                }
-            });
-
-            try {
-                const res = await fetch(`/api/git/repositories/${this.selectedRepoId}/branches`);
-                if (res.ok) {
-                    const data = await res.json();
-                    this.branches = data.branches || [];
-                } else {
-                    this.branches = [];
-                    this.showToast('Failed to load branches', 'error');
-                }
-            } catch (e) {
-                console.error('Error loading branches:', e);
-                this.branches = [];
-            }
-            this.loadingBranches = false;
-        },
-
-        async switchBranch(branch) {
-            if (branch === this.gitStatus?.branch) {
-                this.showBranchSelector = false;
-                return;
-            }
-
-            if (this.isDirty && !confirm('You have unsaved changes. Continue?')) {
-                return;
-            }
-
-            this.showBranchSelector = false;
-            this.gitOperationLoading = true;
-
-            try {
-                const res = await fetch(`/api/git/repositories/${this.selectedRepoId}/checkout`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ branch })
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    this.showToast(`Switched to ${branch}`, 'success');
-                    // Reload file tree and git status
-                    await this.loadFileTree();
-                    // Reload current file if open
-                    if (this.currentFilePath) {
-                        await this.loadFile(this.currentFilePath);
-                    }
-                } else {
-                    this.showToast(data.message || 'Checkout failed', 'error');
-                }
-            } catch (e) {
-                console.error('Error switching branch:', e);
-                this.showToast('Checkout failed', 'error');
-            }
-            this.gitOperationLoading = false;
         },
 
         // --- Git Operations ---
