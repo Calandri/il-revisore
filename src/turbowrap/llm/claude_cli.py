@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from turbowrap.config import get_settings
+from turbowrap.llm.mixins import parse_token_string
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
@@ -149,16 +150,6 @@ class ClaudeContextStats:
         }
 
 
-def _parse_token_string(token_str: str) -> int:
-    """Parse token string like '3.4k' or '175.0k' or '317' to int."""
-    if not token_str:
-        return 0
-    token_str = token_str.strip().lower()
-    if token_str.endswith("k"):
-        return int(float(token_str[:-1]) * 1000)
-    return int(float(token_str.replace(",", "")))
-
-
 def _parse_context_output(context_output: str) -> ClaudeContextStats:
     """Parse the output of Claude CLI /context command.
 
@@ -183,8 +174,8 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
     )
     if main_match:
         stats.model = main_match.group(1)
-        stats.tokens_used = _parse_token_string(main_match.group(2))
-        stats.tokens_max = _parse_token_string(main_match.group(3))
+        stats.tokens_used = parse_token_string(main_match.group(2))
+        stats.tokens_max = parse_token_string(main_match.group(3))
         stats.usage_percent = float(main_match.group(4))
 
     # System prompt: 3.4k tokens (1.7%)
@@ -192,7 +183,7 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         r"System prompt:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
     if sys_prompt_match:
-        stats.system_prompt_tokens = _parse_token_string(sys_prompt_match.group(1))
+        stats.system_prompt_tokens = parse_token_string(sys_prompt_match.group(1))
         stats.system_prompt_percent = float(sys_prompt_match.group(2))
 
     # System tools: 17.2k tokens (8.6%)
@@ -200,13 +191,13 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         r"System tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
     if sys_tools_match:
-        stats.system_tools_tokens = _parse_token_string(sys_tools_match.group(1))
+        stats.system_tools_tokens = parse_token_string(sys_tools_match.group(1))
         stats.system_tools_percent = float(sys_tools_match.group(2))
 
     # MCP tools: 26.1k tokens (13.0%)
     mcp_match = re.search(r"MCP tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
     if mcp_match:
-        stats.mcp_tools_tokens = _parse_token_string(mcp_match.group(1))
+        stats.mcp_tools_tokens = parse_token_string(mcp_match.group(1))
         stats.mcp_tools_percent = float(mcp_match.group(2))
 
     # Custom agents: 1.4k tokens (0.7%)
@@ -214,19 +205,19 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         r"Custom agents:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
     if agents_match:
-        stats.custom_agents_tokens = _parse_token_string(agents_match.group(1))
+        stats.custom_agents_tokens = parse_token_string(agents_match.group(1))
         stats.custom_agents_percent = float(agents_match.group(2))
 
     # Messages: 317 tokens (0.2%)
     messages_match = re.search(r"Messages:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
     if messages_match:
-        stats.messages_tokens = _parse_token_string(messages_match.group(1))
+        stats.messages_tokens = parse_token_string(messages_match.group(1))
         stats.messages_percent = float(messages_match.group(2))
 
     # Free space: 107k (53.3%)
     free_match = re.search(r"Free space:\s*([\d.]+k?)\s*\(([\d.]+)%\)", context_output)
     if free_match:
-        stats.free_space_tokens = _parse_token_string(free_match.group(1))
+        stats.free_space_tokens = parse_token_string(free_match.group(1))
         stats.free_space_percent = float(free_match.group(2))
 
     # Autocompact buffer: 45.0k tokens (22.5%)
@@ -234,7 +225,7 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         r"Autocompact buffer:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
     if buffer_match:
-        stats.autocompact_buffer_tokens = _parse_token_string(buffer_match.group(1))
+        stats.autocompact_buffer_tokens = parse_token_string(buffer_match.group(1))
         stats.autocompact_buffer_percent = float(buffer_match.group(2))
 
     return stats
@@ -380,6 +371,10 @@ class ClaudeCLI:
     async def run(
         self,
         prompt: str,
+        # Required operation tracking parameters
+        operation_type: str,
+        repo_name: str,
+        # Optional parameters
         context_id: str | None = None,
         thinking_budget: int | None = None,
         save_prompt: bool = True,
@@ -388,10 +383,7 @@ class ClaudeCLI:
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
         on_thinking: Callable[[str], Awaitable[None]] | None = None,
         on_stderr: Callable[[str], Awaitable[None]] | None = None,
-        # Operation tracking parameters
         track_operation: bool = True,
-        operation_type: str | None = None,
-        repo_name: str | None = None,
         user_name: str | None = None,
         operation_details: dict[str, Any] | None = None,
         # Session persistence
@@ -401,6 +393,8 @@ class ClaudeCLI:
 
         Args:
             prompt: The prompt to send to Claude
+            operation_type: Operation type ("fix", "review", "commit", etc.) - REQUIRED
+            repo_name: Repository name for display in banner - REQUIRED
             context_id: Optional ID for S3 logging (e.g., review_id, issue_id)
             thinking_budget: Override thinking budget (None = use default from config)
             save_prompt: Save prompt to S3
@@ -410,10 +404,8 @@ class ClaudeCLI:
             on_thinking: Callback for streaming thinking chunks (extended thinking)
             on_stderr: Callback for streaming stderr (--verbose output)
             track_operation: Enable automatic operation tracking (default: True)
-            operation_type: Explicit operation type ("fix", "review", etc.)
-            repo_name: Repository name for display in banner
-            user_name: User who initiated the operation
-            operation_details: Additional metadata for the operation
+            user_name: User who initiated the operation (optional)
+            operation_details: Additional metadata for the operation (optional)
             resume_session_id: Session ID to resume (uses --resume instead of --session-id)
 
         Returns:
@@ -634,6 +626,8 @@ class ClaudeCLI:
     def run_sync(
         self,
         prompt: str,
+        operation_type: str,
+        repo_name: str,
         context_id: str | None = None,
         thinking_budget: int | None = None,
         save_prompt: bool = True,
@@ -644,6 +638,11 @@ class ClaudeCLI:
 
         Use this when calling from non-async code.
         Note: Streaming callbacks are not supported in sync mode.
+
+        Args:
+            prompt: The prompt to send to Claude
+            operation_type: Operation type ("fix", "review", etc.) - REQUIRED
+            repo_name: Repository name for tracking - REQUIRED
         """
         try:
             loop = asyncio.get_running_loop()
@@ -659,6 +658,8 @@ class ClaudeCLI:
                     asyncio.run,
                     self.run(
                         prompt=prompt,
+                        operation_type=operation_type,
+                        repo_name=repo_name,
                         context_id=context_id,
                         thinking_budget=thinking_budget,
                         save_prompt=save_prompt,
@@ -671,6 +672,8 @@ class ClaudeCLI:
             return asyncio.run(
                 self.run(
                     prompt=prompt,
+                    operation_type=operation_type,
+                    repo_name=repo_name,
                     context_id=context_id,
                     thinking_budget=thinking_budget,
                     save_prompt=save_prompt,

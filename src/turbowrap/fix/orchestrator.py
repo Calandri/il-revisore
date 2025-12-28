@@ -745,6 +745,8 @@ class FixOrchestrator:
                     # Atomic tracking at leaf level
                     gemini_result = await self.gemini_cli.run(
                         review_prompt,
+                        operation_type="review",
+                        repo_name=self.repo_path.name,
                         on_chunk=on_chunk_gemini,
                         track_operation=True,  # Atomic tracking at leaf level
                         operation_details={
@@ -1545,6 +1547,8 @@ The reviewer found issues with the previous fix. Address this feedback:
         # Each CLI call creates its own Operation for atomic tracking
         result = await cli.run(
             prompt,
+            operation_type="fix",
+            repo_name=self.repo_path.name,
             context_id=f"fix_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             thinking_budget=thinking_budget,
             save_prompt=True,
@@ -1640,6 +1644,8 @@ The reviewer found issues with the previous fix. Address this feedback:
 
         result = await cli.run(
             "/compact",  # Claude's slash command for context compaction
+            operation_type="compaction",
+            repo_name=self.repo_path.name,
             context_id=f"compaction_{session_context.compaction_count}",
             save_prompt=False,
             save_output=True,

@@ -317,11 +317,12 @@ while ensuring the rest of the page remains functional.
 
         result = await cli.run(
             prompt=full_prompt,
+            operation_type="mockup",
+            repo_name=f"mockup_{mockup_id[:8]}",
             context_id=f"mockup_{mockup_id}",
             save_prompt=True,
             save_output=True,
             track_operation=True,
-            operation_type="mockup",
         )
 
         if not result.success:
@@ -364,7 +365,11 @@ while ensuring the rest of the page remains functional.
             from ...llm.gemini import GeminiCLI
 
             cli = GeminiCLI()
-            result = await cli.run(full_prompt)
+            result = await cli.run(
+                full_prompt,
+                operation_type="mockup",
+                repo_name=f"mockup_{mockup_id[:8]}",
+            )
 
             if not result.success:
                 return MockupGenerationResult(
@@ -404,7 +409,11 @@ while ensuring the rest of the page remains functional.
             from ...llm.grok import GrokCLI
 
             cli = GrokCLI()
-            result = await cli.run(full_prompt)
+            result = await cli.run(
+                full_prompt,
+                operation_type="mockup",
+                repo_name=f"mockup_{mockup_id[:8]}",
+            )
 
             if not result.success:
                 return MockupGenerationResult(

@@ -564,14 +564,15 @@ class GeminiCLI:
     async def run(
         self,
         prompt: str,
+        # Required operation tracking parameters
+        operation_type: str,
+        repo_name: str,
+        # Optional parameters
         context_id: str | None = None,
         save_prompt: bool = True,
         save_output: bool = True,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
-        # Operation tracking parameters
         track_operation: bool = True,
-        operation_type: str | None = None,
-        repo_name: str | None = None,
         user_name: str | None = None,
         operation_details: dict[str, Any] | None = None,
     ) -> GeminiCLIResult:
@@ -580,15 +581,15 @@ class GeminiCLI:
 
         Args:
             prompt: The prompt to send
+            operation_type: Operation type ("fix", "review", "git_merge", etc.) - REQUIRED
+            repo_name: Repository name for tracking - REQUIRED
             context_id: Optional ID for S3 logging
             save_prompt: Save prompt to S3
             save_output: Save output to S3
             on_chunk: Optional callback for streaming output
             track_operation: Enable automatic operation tracking (default: True)
-            operation_type: Explicit operation type ("fix", "review", etc.)
-            repo_name: Repository name for display in banner
-            user_name: User who initiated the operation
-            operation_details: Additional metadata for the operation
+            user_name: User who initiated the operation (optional)
+            operation_details: Additional metadata for the operation (optional)
 
         Returns:
             GeminiCLIResult with output and S3 URLs

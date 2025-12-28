@@ -140,8 +140,11 @@ class ClaudeCLIReviewer(BaseReviewer):
 
         # Run Claude CLI with centralized utility
         cli = self._get_claude_cli(context)
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
         result = await cli.run(
             prompt,
+            operation_type="review",
+            repo_name=repo_name,
             context_id=f"{review_id}_{self.name}",
             save_prompt=True,
             save_output=True,

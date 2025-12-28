@@ -118,6 +118,8 @@ class CLIRunner:
     async def run_claude(
         self,
         prompt: str,
+        operation_type: str,
+        repo_name: str,
         context_id: str | None = None,
         thinking_budget: int | None = None,
     ) -> ClaudeCLIResult:
@@ -126,6 +128,8 @@ class CLIRunner:
 
         Args:
             prompt: The prompt to send
+            operation_type: Operation type ("fix", "review", etc.) - REQUIRED
+            repo_name: Repository name for tracking - REQUIRED
             context_id: Optional ID for S3 logging
             thinking_budget: Override thinking budget
 
@@ -135,6 +139,8 @@ class CLIRunner:
         cli = self.get_claude_cli()
         return await cli.run(
             prompt=prompt,
+            operation_type=operation_type,
+            repo_name=repo_name,
             context_id=context_id or datetime.utcnow().strftime("%Y%m%d_%H%M%S"),
             thinking_budget=thinking_budget,
         )
@@ -142,6 +148,8 @@ class CLIRunner:
     async def run_gemini(
         self,
         prompt: str,
+        operation_type: str,
+        repo_name: str,
         context_id: str | None = None,
     ) -> GeminiCLIResult:
         """
@@ -149,13 +157,20 @@ class CLIRunner:
 
         Args:
             prompt: The prompt to send
+            operation_type: Operation type ("review", "git_merge", etc.) - REQUIRED
+            repo_name: Repository name for tracking - REQUIRED
             context_id: Optional ID for S3 logging
 
         Returns:
             GeminiCLIResult with output
         """
         cli = self.get_gemini_cli()
-        return await cli.run(prompt=prompt, context_id=context_id)
+        return await cli.run(
+            prompt=prompt,
+            operation_type=operation_type,
+            repo_name=repo_name,
+            context_id=context_id,
+        )
 
 
 # Re-exports for convenience

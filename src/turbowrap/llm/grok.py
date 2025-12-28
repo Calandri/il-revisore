@@ -273,14 +273,16 @@ class GrokCLI:
     async def run(
         self,
         prompt: str,
+        # Required operation tracking parameters
+        operation_type: str,
+        repo_name: str,
+        # Optional parameters
         context_id: str | None = None,
         save_prompt: bool = True,
         save_output: bool = True,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
         headless: bool = True,
         track_operation: bool = True,
-        operation_type: str | None = None,
-        repo_name: str | None = None,
         user_name: str | None = None,
         operation_details: dict[str, Any] | None = None,
     ) -> GrokCLIResult:
@@ -289,16 +291,16 @@ class GrokCLI:
 
         Args:
             prompt: The prompt to send
+            operation_type: Operation type ("fix", "review", etc.) - REQUIRED
+            repo_name: Repository name for tracking - REQUIRED
             context_id: Optional ID for S3 logging
             save_prompt: Save prompt to S3
             save_output: Save output to S3
             on_chunk: Optional callback for streaming output
             headless: Use -p flag for non-interactive mode (default True)
             track_operation: Enable automatic operation tracking
-            operation_type: Explicit operation type
-            repo_name: Repository name for display
-            user_name: User who initiated the operation
-            operation_details: Additional metadata
+            user_name: User who initiated the operation (optional)
+            operation_details: Additional metadata (optional)
 
         Returns:
             GrokCLIResult with output, messages, and stats

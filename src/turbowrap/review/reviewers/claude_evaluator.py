@@ -119,6 +119,8 @@ class ClaudeEvaluator:
 
         result = await cli.run(
             prompt,
+            operation_type="evaluate",
+            repo_name=repo_info.name or "unknown",
             context_id=context_id,
             save_prompt=True,
             save_output=True,

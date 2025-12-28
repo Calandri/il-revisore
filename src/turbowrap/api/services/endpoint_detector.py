@@ -341,6 +341,8 @@ Return ONLY the JSON array, nothing else."""
         async def run_cli() -> tuple[bool, str, str | None]:
             result = await cli.run(
                 prompt,
+                operation_type="endpoint_detection",
+                repo_name=Path(repo_path).name,
                 context_id=f"endpoints_{Path(repo_path).name}",
                 save_prompt=True,
                 save_output=True,

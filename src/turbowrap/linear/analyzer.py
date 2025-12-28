@@ -67,6 +67,8 @@ class LinearIssueAnalyzer:
             cli = self._get_claude_cli()
             result = await cli.run(
                 prompt,
+                operation_type="linear_analysis",
+                repo_name=str(issue.linear_identifier),
                 context_id=f"{issue.linear_identifier}_phase1",
                 save_prompt=True,
                 save_output=True,
@@ -110,6 +112,8 @@ class LinearIssueAnalyzer:
             cli = self._get_claude_cli()
             result = await cli.run(
                 prompt,
+                operation_type="linear_analysis",
+                repo_name=str(issue.linear_identifier),
                 context_id=f"{issue.linear_identifier}_phase2",
                 save_prompt=True,
                 save_output=True,

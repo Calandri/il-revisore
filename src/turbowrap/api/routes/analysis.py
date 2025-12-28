@@ -510,9 +510,9 @@ async def run_lint_fix(
 
                 gemini_result = await gemini_cli.run(
                     prompt,
-                    context_id=f"{task_id}/{lint_type}",
-                    repo_name=repo.name,
                     operation_type="fix",
+                    repo_name=str(repo.name),
+                    context_id=f"{task_id}/{lint_type}",
                     operation_details={"lint_type": lint_type, "task_id": task_id},
                 )
 
