@@ -706,6 +706,7 @@ function liveTasksApp() {
             if (!this.streamOutputs[operationId]) {
                 this.streamOutputs[operationId] = {
                     lines: [],
+                    buffer: '',  // Accumulates incomplete lines
                     connected: false,
                     status: 'connecting'
                 };
@@ -736,6 +737,7 @@ function liveTasksApp() {
             if (operationId && !this.streamOutputs[operationId]) {
                 this.streamOutputs[operationId] = {
                     lines: [],
+                    buffer: '',
                     connected: false,
                     status: 'idle'
                 };
@@ -754,9 +756,17 @@ function liveTasksApp() {
 
                 case 'CHUNK':
                     if (stream && data.content) {
-                        // Split content into lines and add to buffer
-                        const newLines = data.content.split('\n').filter(l => l);
-                        stream.lines.push(...newLines);
+                        // Accumulate content in buffer and split on complete lines
+                        stream.buffer = (stream.buffer || '') + data.content;
+                        const parts = stream.buffer.split('\n');
+                        // All but last part are complete lines
+                        const completeLines = parts.slice(0, -1).filter(l => l.trim());
+                        // Last part is incomplete (may be empty if ended with \n)
+                        stream.buffer = parts[parts.length - 1];
+                        // Add complete lines
+                        if (completeLines.length > 0) {
+                            stream.lines.push(...completeLines);
+                        }
                         // Limit buffer to 1000 lines
                         if (stream.lines.length > 1000) {
                             stream.lines = stream.lines.slice(-1000);
@@ -772,6 +782,11 @@ function liveTasksApp() {
 
                 case 'COMPLETE':
                     if (stream) {
+                        // Flush any remaining buffer content
+                        if (stream.buffer && stream.buffer.trim()) {
+                            stream.lines.push(stream.buffer);
+                            stream.buffer = '';
+                        }
                         stream.status = 'completed';
                         stream.connected = false;
                     }
