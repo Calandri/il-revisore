@@ -49,6 +49,7 @@
 
     <!-- Custom JS (MUST load before Alpine.js) -->
     <script src="/static/js/cli-chat.js?v=0.9.66"></script>
+    <script src="/static/js/global-context.js?v=1.0.0"></script>
 
     <!-- Preload SharedWorker for faster chat initialization -->
     <link rel="preload" href="/static/js/chat-worker.js" as="worker">
@@ -132,7 +133,7 @@
         {% include "components/sidebar.html" %}
 
         <!-- Main content -->
-        <main class="flex-1 overflow-auto transition-all duration-300"
+        <main class="flex-1 overflow-auto transition-all duration-300 pb-14"
               :class="{
                   'md:ml-64': sidebarOpen,
                   'md:ml-16': !sidebarOpen,
@@ -150,6 +151,9 @@
     </div>
 
     </div> <!-- End flex column layout -->
+
+    <!-- Global Context Footer (Repo + Branch Selector) -->
+    {% include "components/global_context_footer.html" %}
 
     <!-- Custom JS -->
     <script src="/static/js/app.js"></script>

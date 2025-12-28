@@ -1,0 +1,158 @@
+<!-- Global Repository + Branch Selector Footer -->
+<footer x-data="globalContextFooter()"
+        x-init="init()"
+        class="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg transition-all duration-300"
+        :class="{
+            'md:ml-64': sidebarOpen,
+            'md:ml-16': !sidebarOpen,
+            'md:mr-[520px]': chatMode === 'full',
+            'md:mr-[340px]': chatMode === 'third'
+        }">
+
+    <div class="flex items-center h-12 px-3 gap-3">
+        <!-- Repository Selector -->
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+            <!-- Repo Icon -->
+            <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+            </svg>
+
+            <!-- Repo Dropdown -->
+            <div class="relative flex-1 min-w-0 max-w-xs">
+                <select x-model="$store.globalContext.selectedRepoId"
+                        @change="onRepoChange($event.target.value)"
+                        :disabled="$store.globalContext.loading"
+                        class="w-full px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg border-0 focus:ring-2 focus:ring-primary truncate appearance-none pr-8 cursor-pointer disabled:opacity-50">
+                    <option value="">Select repository...</option>
+                    <template x-for="repo in $store.globalContext.repositories" :key="repo.id">
+                        <option :value="repo.id"
+                                x-text="repo.name"
+                                :disabled="repo.path_exists === false"
+                                :class="{ 'opacity-50': repo.path_exists === false }">
+                        </option>
+                    </template>
+                </select>
+                <!-- Loading/Chevron -->
+                <div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg x-show="$store.globalContext.loading" class="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    <svg x-show="!$store.globalContext.loading" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Branch Selector (only when repo selected and cloned) -->
+        <template x-if="$store.globalContext.selectedRepoId && $store.globalContext.hasClonedPath">
+            <div class="flex items-center gap-2">
+                <!-- Divider -->
+                <div class="w-px h-6 bg-gray-200 dark:bg-gray-600"></div>
+
+                <!-- Branch Icon -->
+                <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+
+                <!-- Branch Dropdown -->
+                <div class="relative min-w-[120px] max-w-[180px]">
+                    <select x-model="$store.globalContext.selectedBranch"
+                            @change="onBranchChange($event.target.value)"
+                            :disabled="$store.globalContext.branchesLoading"
+                            class="w-full px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg border-0 focus:ring-2 focus:ring-primary truncate appearance-none pr-8 cursor-pointer disabled:opacity-50">
+                        <option value="">Select branch...</option>
+                        <template x-for="branch in $store.globalContext.branches" :key="branch">
+                            <option :value="branch" x-text="branch"></option>
+                        </template>
+                    </select>
+                    <!-- Loading/Chevron -->
+                    <div class="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg x-show="$store.globalContext.branchesLoading" class="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <svg x-show="!$store.globalContext.branchesLoading" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- Not cloned warning -->
+        <template x-if="$store.globalContext.selectedRepoId && !$store.globalContext.hasClonedPath">
+            <div class="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <span>Not cloned</span>
+            </div>
+        </template>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-1">
+            <!-- Refresh button -->
+            <button @click="refresh()"
+                    :disabled="$store.globalContext.loading"
+                    class="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+                    title="Refresh repositories">
+                <svg class="w-4 h-4" :class="{ 'animate-spin': $store.globalContext.loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+            </button>
+
+            <!-- Clear button -->
+            <template x-if="$store.globalContext.selectedRepoId">
+                <button @click="$store.globalContext.clear()"
+                        class="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        title="Clear selection">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </template>
+        </div>
+    </div>
+</footer>
+
+<script>
+function globalContextFooter() {
+    return {
+        // Access parent scope (from html element x-data)
+        get sidebarOpen() {
+            // Try to get from Alpine root data
+            const htmlData = Alpine.$data(document.documentElement);
+            return htmlData?.sidebarOpen ?? (window.innerWidth >= 768);
+        },
+
+        get chatMode() {
+            return localStorage.getItem('chatMode') || 'third';
+        },
+
+        async init() {
+            // Initialize the global context store
+            await Alpine.store('globalContext').init();
+
+            // Watch for sidebar changes
+            this.$watch(() => this.sidebarOpen, () => {
+                // Force re-render for margin adjustment
+                this.$nextTick(() => {});
+            });
+        },
+
+        async onRepoChange(repoId) {
+            await Alpine.store('globalContext').selectRepo(repoId || null);
+        },
+
+        async onBranchChange(branch) {
+            await Alpine.store('globalContext').selectBranch(branch || null);
+        },
+
+        async refresh() {
+            await Alpine.store('globalContext').refresh();
+        }
+    };
+}
+</script>

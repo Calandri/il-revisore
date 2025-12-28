@@ -40,6 +40,90 @@
         </div>
     </div>
 
+    <!-- Statistics Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <!-- Total Operations -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Totale (7g)</p>
+                    <p class="text-2xl font-bold mt-1" x-text="stats.total_operations ?? '-'"></p>
+                </div>
+                <div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Completed -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Completate</p>
+                    <p class="text-2xl font-bold mt-1 text-green-600 dark:text-green-400" x-text="stats.by_status?.completed ?? 0"></p>
+                </div>
+                <div class="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Failed -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Fallite</p>
+                    <p class="text-2xl font-bold mt-1" :class="(stats.by_status?.failed ?? 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'" x-text="stats.by_status?.failed ?? 0"></p>
+                </div>
+                <div class="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- In Progress -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">In corso</p>
+                    <p class="text-2xl font-bold mt-1 text-yellow-600 dark:text-yellow-400" x-text="stats.by_status?.in_progress ?? 0"></p>
+                </div>
+                <div class="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-yellow-600 dark:text-yellow-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Operations by Type (collapsible) -->
+    <div x-show="Object.keys(stats.by_type || {}).length > 0" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <button @click="showTypeBreakdown = !showTypeBreakdown" class="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Operazioni per tipo</span>
+            <svg class="w-5 h-5 text-gray-400 transition-transform" :class="showTypeBreakdown && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+        <div x-show="showTypeBreakdown" x-collapse class="px-4 pb-4">
+            <div class="flex flex-wrap gap-2">
+                <template x-for="(count, type) in stats.by_type" :key="type">
+                    <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm"
+                         :class="getTypeBadgeClass(type)">
+                        <span x-text="getTypeLabel(type)"></span>
+                        <span class="font-bold" x-text="count"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
     <!-- Tabs -->
     <div class="border-b dark:border-gray-700">
         <nav class="-mb-px flex space-x-8" aria-label="Tabs">
@@ -257,6 +341,10 @@ function liveTasksApp() {
     return {
         // Tab state
         activeTab: 'live',
+
+        // Statistics
+        stats: {},
+        showTypeBreakdown: false,
 
         // Expanded cards tracking
         expandedOperations: [],
@@ -551,14 +639,26 @@ function liveTasksApp() {
         async fetchPrompt(operationId) {
             try {
                 const response = await fetch(`/api/operations/${operationId}/prompt`);
-                if (response.ok) {
-                    const data = await response.json();
+                const data = await response.json();
+
+                if (!response.ok) {
+                    return `HTTP Error ${response.status}: ${data.detail || data.message || 'Unknown error'}`;
+                }
+
+                // Show status info if not ok
+                if (data.status === 'error') {
+                    return `Error: ${data.error || 'Unknown error'}\nS3 URL: ${data.s3_url || 'N/A'}\n\nFallback content:\n${data.content || 'None'}`;
+                }
+
+                if (data.status === 'no_prompt') {
                     return data.content || 'No prompt available';
                 }
+
+                return data.content || 'No prompt content returned';
             } catch (error) {
                 console.error(`Error fetching prompt for ${operationId}:`, error);
+                return `Fetch error: ${error.message}`;
             }
-            return 'Error fetching prompt';
         },
 
         // Mark operation as complete
@@ -685,10 +785,26 @@ function liveTasksApp() {
             }, 3000);
         },
 
+        // Load statistics
+        async loadStats() {
+            try {
+                const response = await fetch('/api/operations/stats?days=7');
+                if (response.ok) {
+                    this.stats = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        },
+
         init() {
             this.refresh();
+            this.loadStats();
             // Poll every 5 seconds
-            this.pollInterval = setInterval(() => this.refresh(), 5000);
+            this.pollInterval = setInterval(() => {
+                this.refresh();
+                this.loadStats();
+            }, 5000);
         },
 
         destroy() {
