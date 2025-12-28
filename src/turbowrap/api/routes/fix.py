@@ -782,7 +782,7 @@ async def merge_and_push(
 
     result = await gemini.run(
         prompt=merge_prompt,
-        context_id=f"merge-{request.branch_name}",
+        context_id=f"merge-{request.branch_name}-{datetime.now().strftime('%H%M%S')}",
     )
 
     if not result.success:
