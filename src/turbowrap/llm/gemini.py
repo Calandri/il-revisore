@@ -341,6 +341,8 @@ class GeminiCLIResult:
     s3_prompt_url: str | None = None
     s3_output_url: str | None = None
     session_stats: GeminiSessionStats | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def _parse_time_string(time_str: str) -> float:

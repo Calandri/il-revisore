@@ -217,6 +217,8 @@ class GrokCLIResult:
     s3_prompt_url: str | None = None
     s3_output_url: str | None = None
     session_stats: GrokSessionStats | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class GrokCLI:

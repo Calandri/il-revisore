@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+
+{% block title %}Mockups - TurboWrap{% endblock %}
+
+{% block content %}
+<div class="h-[calc(100vh-3rem)] flex flex-col" x-data="mockupsPage()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-4 shrink-0">
+        <div>
+            <h1 class="text-2xl font-bold">Mockups</h1>
+            <p class="text-gray-500 dark:text-gray-400">Genera e gestisci mockup UI con AI</p>
+        </div>
+        <div class="flex gap-2">
+            <button @click="showNewProjectModal = true"
+                    class="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                    </svg>
+                    Nuovo Progetto
+                </span>
+            </button>
+            <button @click="openMockupChat()"
+                    class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Genera Mockup
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content: 3-column layout -->
+    <div class="flex-1 flex gap-4 min-h-0">
+
+        <!-- Left: Repository/Project Tree -->
+        <div class="w-64 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col shrink-0">
+            <div class="p-3 border-b dark:border-gray-700">
+                <h3 class="font-semibold text-sm">Progetti</h3>
+            </div>
+            <div class="flex-1 overflow-y-auto p-2">
+                <template x-for="repo in repositories" :key="repo.id">
+                    <div class="mb-2">
+                        <button @click="toggleRepo(repo.id)"
+                                class="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-left">
+                            <svg class="w-4 h-4 text-gray-400 transition-transform"
+                                 :class="expandedRepos.includes(repo.id) ? 'rotate-90' : ''"
+                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <span class="text-sm truncate" x-text="repo.name.split('/')[1] || repo.name"></span>
+                        </button>
+
+                        <!-- Projects under repo -->
+                        <div x-show="expandedRepos.includes(repo.id)" x-collapse class="ml-6 mt-1 space-y-1">
+                            <template x-for="project in getProjectsForRepo(repo.id)" :key="project.id">
+                                <button @click="selectProject(project)"
+                                        class="w-full flex items-center gap-2 px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        :class="selectedProject?.id === project.id ? 'bg-primary/10 text-primary' : ''">
+                                    <div class="w-3 h-3 rounded" :style="`background-color: ${project.color}`"></div>
+                                    <span class="truncate" x-text="project.name"></span>
+                                    <span class="ml-auto text-xs text-gray-400" x-text="project.mockup_count"></span>
+                                </button>
+                            </template>
+
+                            <button @click="showNewProjectModal = true; newProjectRepoId = repo.id"
+                                    class="w-full flex items-center gap-2 px-2 py-1 rounded text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                </svg>
+                                Nuovo progetto
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Empty state -->
+                <div x-show="repositories.length === 0" class="text-center py-8 text-gray-400 text-sm">
+                    <p>Nessun repository</p>
+                    <p class="mt-1">Aggiungi un repository per iniziare</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center: Mockup Grid -->
+        <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col min-w-0">
+            <div class="p-3 border-b dark:border-gray-700 flex items-center justify-between">
+                <h3 class="font-semibold text-sm" x-text="selectedProject ? selectedProject.name : 'Tutti i Mockup'"></h3>
+                <div class="flex gap-2">
+                    <button @click="viewMode = 'grid'"
+                            class="p-1.5 rounded"
+                            :class="viewMode === 'grid' ? 'bg-gray-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-700'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                        </svg>
+                    </button>
+                    <button @click="viewMode = 'list'"
+                            class="p-1.5 rounded"
+                            :class="viewMode === 'list' ? 'bg-gray-100 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-700'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4">
+                <!-- Loading -->
+                <div x-show="loading" class="flex items-center justify-center h-32">
+                    <svg class="animate-spin w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+
+                <!-- Empty state -->
+                <div x-show="!loading && mockups.length === 0" class="text-center py-12">
+                    <svg class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
+                    </svg>
+                    <h3 class="text-lg font-medium text-gray-500 dark:text-gray-400">Nessun mockup</h3>
+                    <p class="text-gray-400 dark:text-gray-500 mt-1">Genera il tuo primo mockup con /mockup nella chat</p>
+                    <button @click="openMockupChat()" class="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                        Genera Mockup
+                    </button>
+                </div>
+
+                <!-- Grid View -->
+                <div x-show="!loading && viewMode === 'grid'"
+                     class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <template x-for="mockup in mockups" :key="mockup.id">
+                        {% include "components/mockup_card.html" %}
+                    </template>
+                </div>
+
+                <!-- List View -->
+                <div x-show="!loading && viewMode === 'list'" class="space-y-2">
+                    <template x-for="mockup in mockups" :key="mockup.id">
+                        {% include "components/mockup_row.html" %}
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Preview Panel -->
+        <div x-show="selectedMockup"
+             x-transition
+             class="w-96 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col shrink-0">
+            {% include "components/mockup_preview.html" %}
+        </div>
+    </div>
+
+    <!-- New Project Modal -->
+    {% include "components/mockup_project_modal.html" %}
+</div>
+
+<script>
+function mockupsPage() {
+    return {
+        repositories: {{ repos | tojson }},
+        projects: [],
+        mockups: [],
+        loading: false,
+        viewMode: 'grid',
+        expandedRepos: [],
+        selectedProject: null,
+        selectedMockup: null,
+        selectedElement: null,
+        showNewProjectModal: false,
+        newProjectRepoId: null,
+        newProjectName: '',
+        newProjectDescription: '',
+        newProjectDesignSystem: 'tailwind',
+        creatingProject: false,
+
+        async init() {
+            await this.loadProjects();
+            // Expand first repo by default
+            if (this.repositories.length > 0) {
+                this.expandedRepos.push(this.repositories[0].id);
+            }
+            // Load all mockups initially
+            await this.loadMockups();
+        },
+
+        async loadProjects() {
+            try {
+                const res = await fetch('/api/mockups/projects');
+                this.projects = await res.json();
+            } catch (e) {
+                console.error('Failed to load projects:', e);
+            }
+        },
+
+        async loadMockups(projectId = null) {
+            this.loading = true;
+            try {
+                const url = projectId
+                    ? `/api/mockups/?project_id=${projectId}`
+                    : '/api/mockups/';
+                const res = await fetch(url);
+                const data = await res.json();
+                this.mockups = data.mockups || [];
+            } catch (e) {
+                console.error('Failed to load mockups:', e);
+                this.mockups = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        getProjectsForRepo(repoId) {
+            return this.projects.filter(p => p.repository_id === repoId);
+        },
+
+        toggleRepo(repoId) {
+            const idx = this.expandedRepos.indexOf(repoId);
+            if (idx >= 0) {
+                this.expandedRepos.splice(idx, 1);
+            } else {
+                this.expandedRepos.push(repoId);
+            }
+        },
+
+        selectProject(project) {
+            this.selectedProject = project;
+            this.selectedMockup = null;
+            this.loadMockups(project.id);
+        },
+
+        clearProjectSelection() {
+            this.selectedProject = null;
+            this.selectedMockup = null;
+            this.loadMockups();
+        },
+
+        selectMockup(mockup) {
+            this.selectedMockup = mockup;
+            this.selectedElement = null;
+        },
+
+        async createProject() {
+            if (!this.newProjectName.trim() || !this.newProjectRepoId) return;
+
+            this.creatingProject = true;
+            try {
+                const res = await fetch('/api/mockups/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: this.newProjectRepoId,
+                        name: this.newProjectName,
+                        description: this.newProjectDescription,
+                        design_system: this.newProjectDesignSystem
+                    })
+                });
+
+                if (res.ok) {
+                    const project = await res.json();
+                    this.projects.push(project);
+                    this.showNewProjectModal = false;
+                    this.newProjectName = '';
+                    this.newProjectDescription = '';
+                    this.newProjectDesignSystem = 'tailwind';
+
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: 'Progetto creato!', type: 'success' }
+                    }));
+                } else {
+                    throw new Error('Failed to create project');
+                }
+            } catch (e) {
+                console.error('Failed to create project:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Errore nella creazione del progetto', type: 'error' }
+                }));
+            } finally {
+                this.creatingProject = false;
+            }
+        },
+
+        async deleteMockup(mockupId) {
+            if (!confirm('Eliminare questo mockup?')) return;
+
+            try {
+                const res = await fetch(`/api/mockups/${mockupId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    this.mockups = this.mockups.filter(m => m.id !== mockupId);
+                    if (this.selectedMockup?.id === mockupId) {
+                        this.selectedMockup = null;
+                    }
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: 'Mockup eliminato', type: 'success' }
+                    }));
+                }
+            } catch (e) {
+                console.error('Failed to delete mockup:', e);
+            }
+        },
+
+        openMockupChat() {
+            // Open chat sidebar with /mockup command
+            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+                detail: { command: '/mockup' }
+            }));
+        },
+
+        modifyMockup(mockupId) {
+            // Open chat with modify context
+            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+                detail: {
+                    command: `/mockup modify ${mockupId}`,
+                    mockupId: mockupId
+                }
+            }));
+        },
+
+        async downloadMockup(mockup) {
+            try {
+                const res = await fetch(`/api/mockups/${mockup.id}/content`);
+                const data = await res.json();
+
+                const blob = new Blob([data.html_content], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${mockup.name.replace(/[^a-z0-9]/gi, '_')}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error('Failed to download mockup:', e);
+            }
+        },
+
+        formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('it-IT', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            });
+        },
+
+        formatTokens(tokensIn, tokensOut) {
+            const inK = tokensIn ? Math.round(tokensIn / 1000) : 0;
+            const outK = tokensOut ? Math.round(tokensOut / 1000) : 0;
+            return `${inK}K / ${outK}K`;
+        }
+    }
+}
+</script>
+{% endblock %}

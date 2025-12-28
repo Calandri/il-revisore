@@ -1,0 +1,141 @@
+<!-- New Project Modal -->
+<div x-show="showNewProjectModal"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+     @click.self="showNewProjectModal = false; newProjectRepoId = null">
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Nuovo Progetto Mockup</h3>
+            <button @click="showNewProjectModal = false; newProjectRepoId = null"
+                    class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors">
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Form -->
+        <form @submit.prevent="createProject()" class="p-6 space-y-4">
+            <!-- Repository Select -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Repository
+                </label>
+                <select x-model="newProjectRepoId"
+                        required
+                        class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary">
+                    <option value="">Seleziona repository...</option>
+                    <template x-for="repo in repositories" :key="repo.id">
+                        <option :value="repo.id" x-text="repo.name"></option>
+                    </template>
+                </select>
+            </div>
+
+            <!-- Project Name -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Nome Progetto
+                </label>
+                <input type="text"
+                       x-model="newProjectName"
+                       required
+                       placeholder="es. Dashboard Admin, Checkout Flow..."
+                       class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-primary">
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Descrizione <span class="text-gray-400">(opzionale)</span>
+                </label>
+                <textarea x-model="newProjectDescription"
+                          rows="2"
+                          placeholder="Breve descrizione del progetto..."
+                          class="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-primary resize-none"></textarea>
+            </div>
+
+            <!-- Design System -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Design System
+                </label>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors"
+                           :class="newProjectDesignSystem === 'tailwind' ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                        <input type="radio" x-model="newProjectDesignSystem" value="tailwind" class="sr-only">
+                        <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                             :class="newProjectDesignSystem === 'tailwind' ? 'border-primary' : 'border-gray-300 dark:border-gray-500'">
+                            <div x-show="newProjectDesignSystem === 'tailwind'" class="w-2 h-2 rounded-full bg-primary"></div>
+                        </div>
+                        <span class="text-sm font-medium">Tailwind CSS</span>
+                    </label>
+
+                    <label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors"
+                           :class="newProjectDesignSystem === 'bootstrap' ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                        <input type="radio" x-model="newProjectDesignSystem" value="bootstrap" class="sr-only">
+                        <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                             :class="newProjectDesignSystem === 'bootstrap' ? 'border-primary' : 'border-gray-300 dark:border-gray-500'">
+                            <div x-show="newProjectDesignSystem === 'bootstrap'" class="w-2 h-2 rounded-full bg-primary"></div>
+                        </div>
+                        <span class="text-sm font-medium">Bootstrap 5</span>
+                    </label>
+
+                    <label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors"
+                           :class="newProjectDesignSystem === 'material' ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                        <input type="radio" x-model="newProjectDesignSystem" value="material" class="sr-only">
+                        <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                             :class="newProjectDesignSystem === 'material' ? 'border-primary' : 'border-gray-300 dark:border-gray-500'">
+                            <div x-show="newProjectDesignSystem === 'material'" class="w-2 h-2 rounded-full bg-primary"></div>
+                        </div>
+                        <span class="text-sm font-medium">Material</span>
+                    </label>
+
+                    <label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors"
+                           :class="newProjectDesignSystem === 'custom' ? 'border-primary bg-primary/5' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'">
+                        <input type="radio" x-model="newProjectDesignSystem" value="custom" class="sr-only">
+                        <div class="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                             :class="newProjectDesignSystem === 'custom' ? 'border-primary' : 'border-gray-300 dark:border-gray-500'">
+                            <div x-show="newProjectDesignSystem === 'custom'" class="w-2 h-2 rounded-full bg-primary"></div>
+                        </div>
+                        <span class="text-sm font-medium">Custom CSS</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-3 pt-4">
+                <button type="button"
+                        @click="showNewProjectModal = false; newProjectRepoId = null"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    Annulla
+                </button>
+                <button type="submit"
+                        :disabled="creatingProject || !newProjectName.trim() || !newProjectRepoId"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <span x-show="!creatingProject">Crea Progetto</span>
+                    <span x-show="creatingProject" class="flex items-center gap-2">
+                        <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Creazione...
+                    </span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

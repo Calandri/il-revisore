@@ -300,6 +300,79 @@ async def endpoints_page(request: Request) -> Response:
     )
 
 
+@router.get("/mockups", response_class=HTMLResponse)
+async def mockups_page(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Mockups page - generate and manage UI mockups with AI."""
+    repos = db.query(Repository).filter(Repository.deleted_at.is_(None)).all()
+    repos_data = [{"id": r.id, "name": r.name} for r in repos]
+
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/mockups.html",
+            {
+                "request": request,
+                "repos": repos_data,
+                "active_page": "mockups",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
+@router.get("/mockups/{mockup_id}/preview", response_class=HTMLResponse)
+async def mockup_preview_page(
+    request: Request,
+    mockup_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Full-page preview of a mockup (fetches HTML from S3)."""
+    from ...db.models import Mockup
+
+    mockup = db.query(Mockup).filter(Mockup.id == mockup_id, Mockup.deleted_at.is_(None)).first()
+
+    if not mockup:
+        return Response(
+            content="<html><body><h1>Mockup not found</h1></body></html>",
+            status_code=404,
+            media_type="text/html",
+        )
+
+    # TODO: Fetch actual content from S3
+    # For now, return a placeholder with mockup info
+    html_content = f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{mockup.name} - Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div class="flex items-center justify-center min-h-screen">
+        <div class="text-center p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md">
+            <div class="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
+                <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{mockup.name}</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-2">{mockup.component_type or 'component'} - v{mockup.version}</p>
+            <p class="text-gray-400 dark:text-gray-500 text-sm mt-4">
+                Generato con {mockup.llm_type}
+            </p>
+            <p class="text-gray-300 dark:text-gray-600 text-xs mt-2">
+                Il contenuto sara' disponibile dopo la generazione
+            </p>
+        </div>
+    </div>
+</body>
+</html>"""
+
+    return Response(content=html_content, media_type="text/html")
+
+
 # HTMX Partial endpoints
 @router.get("/htmx/repos", response_class=HTMLResponse)
 async def htmx_repo_list(request: Request, db: Session = Depends(get_db)) -> Response:
