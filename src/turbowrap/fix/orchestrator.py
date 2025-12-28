@@ -325,6 +325,7 @@ class FixOrchestrator:
         request: FixRequest,
         issues: list[Issue],
         emit: ProgressCallback | None = None,
+        operation_id: str | None = None,
     ) -> FixSessionResult:
         """
         Fix issues with parallel BE/FE execution.
@@ -335,8 +336,14 @@ class FixOrchestrator:
         3. Gemini CLI reviews ALL changes
         4. If score < threshold, retry with feedback (max iterations)
         5. Commit when approved
+
+        Args:
+            request: Fix request with config
+            issues: Issues to fix
+            emit: Progress callback
+            operation_id: Optional operation ID for tracker (uses session_id if not provided)
         """
-        session_id = str(uuid.uuid4())
+        session_id = operation_id or str(uuid.uuid4())
         branch_name = f"fix/{request.task_id[:20]}"
 
         result = FixSessionResult(

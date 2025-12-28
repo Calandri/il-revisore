@@ -481,6 +481,7 @@ class FixSessionService:
                     request=session_info.fix_request,
                     issues=session_info.issues,
                     emit=progress_callback,
+                    operation_id=session_info.session_id,  # Use same ID as tracker
                 )
 
                 # CRITICAL: If orchestrator failed with empty results, reset issues!
