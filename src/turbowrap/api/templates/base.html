@@ -4,8 +4,12 @@
       x-init="
         $watch('darkMode', val => localStorage.setItem('darkMode', val));
         $watch('chatMode', val => localStorage.setItem('chatMode', val));
-        // Reset chat to 'third' when not on chat page and it's in full/page mode
-        if (!window.location.pathname.startsWith('/chat') && (chatMode === 'full' || chatMode === 'page')) {
+        // On mobile, chat is always fullscreen ('page') or hidden
+        if (window.innerWidth < 768 && chatMode !== 'hidden') {
+            chatMode = 'page';
+        }
+        // Reset chat to 'third' on desktop when not on chat page and it's in full/page mode
+        if (window.innerWidth >= 768 && !window.location.pathname.startsWith('/chat') && (chatMode === 'full' || chatMode === 'page')) {
             chatMode = 'third';
         }
       ">

@@ -255,8 +255,45 @@ main {
     display: none;
 }
 
+/* Safe area utilities for iOS notch/home indicator */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.pt-safe {
+    padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Hide scrollbar but allow scrolling */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+/* Prevent overscroll/bounce on iOS */
+html, body {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+}
+
 /* Mobile-specific adjustments */
 @media (max-width: 767px) {
+    /* Prevent body scroll and bounce when fixed elements are open */
+    html {
+        overflow: hidden;
+        height: 100%;
+    }
+
+    body {
+        overflow: auto;
+        height: 100%;
+        overscroll-behavior-y: contain;
+    }
+
     /* Sidebar animation */
     aside {
         will-change: transform;
@@ -280,6 +317,11 @@ main {
     /* Safe area padding for notched devices */
     .pt-14 {
         padding-top: max(3.5rem, env(safe-area-inset-top));
+    }
+
+    /* Input area safe bottom padding */
+    .pb-safe {
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
     }
 }
 

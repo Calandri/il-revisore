@@ -1,12 +1,35 @@
+<!-- Mobile backdrop for chat sidebar (blocks interaction with content below) -->
+<div x-cloak x-show="chatMode !== 'hidden'"
+     x-transition:enter="transition-opacity ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition-opacity ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @click="chatMode = 'hidden'"
+     class="fixed inset-0 bg-black/30 z-30 md:hidden"></div>
+
 <!-- Right Chat Sidebar - Minimal Tab Design -->
 <aside x-cloak x-show="chatMode !== 'hidden'"
        x-data="chatSidebar()"
        x-init="init()"
+       x-effect="
+           // Lock body scroll on mobile when chat is open
+           if (window.innerWidth < 768 && chatMode !== 'hidden') {
+               document.body.style.overflow = 'hidden';
+               document.body.style.position = 'fixed';
+               document.body.style.width = '100%';
+           } else if (window.innerWidth < 768) {
+               document.body.style.overflow = '';
+               document.body.style.position = '';
+               document.body.style.width = '';
+           }
+       "
        class="fixed right-0 top-0 h-full bg-white dark:bg-gray-900 shadow-2xl transition-all duration-300 z-40 flex flex-col border-l border-gray-200 dark:border-gray-700"
        :class="{
-           'w-[calc(100vw-4rem)]': chatMode === 'page',
-           'w-[520px]': chatMode === 'full',
-           'w-[340px]': chatMode === 'third'
+           'w-full md:w-[calc(100vw-4rem)]': chatMode === 'page',
+           'w-full md:w-[520px]': chatMode === 'full',
+           'w-full md:w-[340px]': chatMode === 'third'
        }"
        x-transition:enter="transition ease-out duration-300"
        x-transition:enter-start="opacity-0 transform translate-x-8"
@@ -69,9 +92,9 @@
             </div>
         </div>
 
-        <!-- Expand Button -->
+        <!-- Expand Button (hidden on mobile - only fullscreen there) -->
         <button @click="expandChat()"
-                class="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 shrink-0"
+                class="hidden md:flex h-8 w-8 items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 shrink-0"
                 :title="chatMode === 'page' ? 'Riduci' : 'Espandi'">
             <!-- Third mode: single arrow left (expand) -->
             <svg x-show="chatMode === 'third'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -106,7 +129,7 @@
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="opacity-100 translate-x-0"
          x-transition:leave-end="opacity-0 -translate-x-full"
-         class="absolute top-8 left-0 bottom-0 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-30 flex flex-col shadow-xl">
+         class="absolute top-8 left-0 bottom-0 w-full sm:w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 z-30 flex flex-col shadow-xl">
 
         <!-- History Header -->
         <div class="h-10 flex items-center justify-between px-3 border-b border-gray-200 dark:border-gray-700">
@@ -171,10 +194,14 @@
     <!-- Repository Selection Modal -->
     <div x-show="showRepoSelector"
          x-cloak
-         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+         class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
          @click.self="cancelCreateSession()">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+        <div class="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md sm:mx-4 overflow-hidden max-h-[85vh] flex flex-col"
              @click.stop>
+            <!-- Mobile drag handle -->
+            <div class="sm:hidden flex justify-center pt-2">
+                <div class="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+            </div>
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700"
                  :class="pendingCliType === 'claude' ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10' : 'bg-gradient-to-r from-blue-500/10 to-cyan-500/10'">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-3">
@@ -197,15 +224,15 @@
                 </select>
                 <p class="text-xs text-gray-400 mt-2">Con una repo selezionata, la chat avrà contesto sui file e branch</p>
             </div>
-            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+            <div class="px-6 py-4 pb-safe border-t border-gray-200 dark:border-gray-700 flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3">
                 <button @click="cancelCreateSession()"
-                        class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                        class="w-full sm:w-auto px-4 py-3 sm:py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                     Annulla
                 </button>
                 <button @click="confirmCreateSession()"
                         :disabled="creating"
                         :class="pendingCliType === 'claude' ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600' : 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600'"
-                        class="px-4 py-2 text-sm font-medium text-white rounded-lg transition-all shadow-lg disabled:opacity-50">
+                        class="w-full sm:w-auto px-4 py-3 sm:py-2 text-sm font-medium text-white rounded-lg transition-all shadow-lg disabled:opacity-50">
                     Crea Chat
                 </button>
             </div>
@@ -273,16 +300,49 @@
                 </div>
             </div>
 
+            <!-- Mobile Quick Actions Bar (horizontal, only on mobile) -->
+            <div x-show="activeSession" class="md:hidden border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-2 py-1.5 flex items-center gap-1 overflow-x-auto scrollbar-hide">
+                <button @click="sendSlashCommand('frontend')" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-emerald-50 hover:text-emerald-600 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg>
+                    FE
+                </button>
+                <button @click="sendSlashCommand('backend')" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2"/></svg>
+                    BE
+                </button>
+                <button @click="sendSlashCommand('test')" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Test
+                </button>
+                <div class="w-px h-4 bg-gray-300 dark:bg-gray-600 shrink-0"></div>
+                <button @click="sendSlashCommand('commit')" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-orange-50 hover:text-orange-600 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/></svg>
+                    Commit
+                </button>
+                <button @click="sendSlashCommand('pr')" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 hover:text-indigo-600 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    PR
+                </button>
+                <button @click="sendSlashCommand('review')" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-emerald-50 hover:text-emerald-600 transition-colors flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Review
+                </button>
+                <div class="w-px h-4 bg-gray-300 dark:bg-gray-600 shrink-0"></div>
+                <button @click="showSettings = !showSettings" class="shrink-0 px-2 py-1 rounded-md text-xs bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </button>
+            </div>
+
             <!-- Input Area -->
-            <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+            <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 pb-safe">
                 <form @submit.prevent="sendMessage()" class="flex items-end gap-2">
                     <div class="flex-1 relative">
                         <textarea x-model="inputMessage"
                                   @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim() && !streaming) sendMessage()"
                                   placeholder="Scrivi un messaggio..."
                                   rows="1"
-                                  class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
-                                  style="min-height: 44px; max-height: 120px;"
+                                  class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
+                                  style="min-height: 44px; max-height: 120px; font-size: 16px;"
                                   @input="$el.style.height = '44px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
                     </div>
                     <button x-show="!streaming" type="submit" :disabled="!inputMessage.trim()"
@@ -308,45 +368,36 @@
             </div>
         </div>
 
-        <!-- Quick Actions Toolbar (right strip) -->
-        <div class="w-10 bg-gray-100 dark:bg-gray-800/50 border-l border-gray-200 dark:border-gray-700 flex flex-col py-2 shrink-0 overflow-y-auto">
+        <!-- Quick Actions Toolbar (right strip) - Hidden on mobile -->
+        <div class="hidden md:flex w-10 bg-gray-100 dark:bg-gray-800/50 border-l border-gray-200 dark:border-gray-700 flex-col py-2 shrink-0 overflow-y-auto">
 
             <!-- ═══════════ DEV Section (green/blue) ═══════════ -->
             <div class="px-1 space-y-1">
                 <!-- Frontend Dev Server (/frontend) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'frontend'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('frontend')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-emerald-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'frontend'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Frontend Dev Server (/frontend)</div>
-                </div>
+                <button @mouseenter="showTooltip('Frontend Dev Server (/frontend)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('frontend')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-emerald-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </button>
                 <!-- Backend Dev Server (/backend) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'backend'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('backend')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-blue-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'backend'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Backend Dev Server (/backend)</div>
-                </div>
+                <button @mouseenter="showTooltip('Backend Dev Server (/backend)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('backend')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-blue-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                    </svg>
+                </button>
                 <!-- Run Tests (/test) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'tests'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('test')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-green-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'tests'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Run Tests (/test)</div>
-                </div>
+                <button @mouseenter="showTooltip('Run Tests (/test)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('test')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-green-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </button>
             </div>
 
             <div class="my-2 mx-2 border-t border-gray-300 dark:border-gray-600"></div>
@@ -354,71 +405,53 @@
             <!-- ═══════════ GIT Section (purple/orange/teal) ═══════════ -->
             <div class="px-1 space-y-1">
                 <!-- Merge to Main (/merge) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'merge'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('merge')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-purple-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'merge'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Merge to Main (/merge)</div>
-                </div>
+                <button @mouseenter="showTooltip('Merge to Main (/merge)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('merge')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-purple-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                </button>
                 <!-- Last Commit Analysis (/commit) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'commit'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('commit')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-orange-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'commit'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Last Commit (/commit)</div>
-                </div>
+                <button @mouseenter="showTooltip('Last Commit (/commit)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('commit')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-orange-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                </button>
                 <!-- Modified Files (/modified) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'modified'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('modified')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-amber-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'modified'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Modified Files (/modified)</div>
-                </div>
+                <button @mouseenter="showTooltip('Modified Files (/modified)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('modified')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-amber-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </button>
                 <!-- Create Branch (/branch) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'branch'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('branch')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-teal-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'branch'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Create Branch (/branch)</div>
-                </div>
+                <button @mouseenter="showTooltip('Create Branch (/branch)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('branch')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-teal-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </button>
                 <!-- Create PR (/pr) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'pr'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('pr')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-indigo-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'pr'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Create PR (/pr)</div>
-                </div>
+                <button @mouseenter="showTooltip('Create PR (/pr)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('pr')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-indigo-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                    </svg>
+                </button>
                 <!-- Code Review (/review) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'review'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('review')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-emerald-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'review'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Code Review (/review)</div>
-                </div>
+                <button @mouseenter="showTooltip('Code Review (/review)', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('review')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-emerald-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </button>
             </div>
 
             <div class="my-2 mx-2 border-t border-gray-300 dark:border-gray-600"></div>
@@ -426,27 +459,21 @@
             <!-- ═══════════ CODE QUALITY Section (yellow/pink) ═══════════ -->
             <div class="px-1 space-y-1">
                 <!-- Lint Analysis -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'lint'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('lint')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-yellow-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'lint'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Lint Analysis</div>
-                </div>
+                <button @mouseenter="showTooltip('Lint Analysis', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('lint')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-yellow-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </button>
                 <!-- Format Code -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'format'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('format')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-pink-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'format'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Format Code</div>
-                </div>
+                <button @mouseenter="showTooltip('Format Code', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('format')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-pink-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                </button>
             </div>
 
             <div class="my-2 mx-2 border-t border-gray-300 dark:border-gray-600"></div>
@@ -454,32 +481,26 @@
             <!-- ═══════════ SERVER Section (cyan/rose) ═══════════ -->
             <div class="px-1 space-y-1">
                 <!-- Import Server Logs -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'logs'" @mouseleave="activeTooltip = null"
-                            @click="fetchServerLogs()"
-                            :disabled="isLoadingLogs"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-cyan-500 transition-all disabled:opacity-50">
-                        <svg x-show="!isLoadingLogs" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                        </svg>
-                        <svg x-show="isLoadingLogs" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'logs'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Import Server Logs</div>
-                </div>
+                <button @mouseenter="showTooltip('Import Server Logs', $event)" @mouseleave="hideTooltip()"
+                        @click="fetchServerLogs()"
+                        :disabled="isLoadingLogs"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-cyan-500 transition-all disabled:opacity-50">
+                    <svg x-show="!isLoadingLogs" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    <svg x-show="isLoadingLogs" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                </button>
                 <!-- Deploy to Staging -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'deploy'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('deploy')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-rose-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'deploy'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Deploy to Staging</div>
-                </div>
+                <button @mouseenter="showTooltip('Deploy to Staging', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('deploy')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-rose-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                </button>
             </div>
 
             <div class="my-2 mx-2 border-t border-gray-300 dark:border-gray-600"></div>
@@ -487,29 +508,36 @@
             <!-- ═══════════ AI Section (violet/indigo) ═══════════ -->
             <div class="px-1 space-y-1">
                 <!-- Transform/Refactor -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'transform'" @mouseleave="activeTooltip = null"
-                            @click="sendSlashCommand('refactor')"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-violet-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'transform'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Transform/Refactor</div>
-                </div>
+                <button @mouseenter="showTooltip('Transform/Refactor', $event)" @mouseleave="hideTooltip()"
+                        @click="sendSlashCommand('refactor')"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-violet-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                </button>
                 <!-- Change Model (opens settings) -->
-                <div class="relative">
-                    <button @mouseenter="activeTooltip = 'model'" @mouseleave="activeTooltip = null"
-                            @click="showSettings = !showSettings"
-                            class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-indigo-500 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                        </svg>
-                    </button>
-                    <div x-show="activeTooltip === 'model'" x-cloak class="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50">Change Model</div>
-                </div>
+                <button @mouseenter="showTooltip('Change Model', $event)" @mouseleave="hideTooltip()"
+                        @click="showSettings = !showSettings"
+                        class="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-indigo-500 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </button>
             </div>
+        </div>
+
+        <!-- Fixed Tooltip (positioned with JS) -->
+        <div x-show="activeTooltip" x-cloak
+             class="fixed z-[100] bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none -translate-y-1/2"
+             :style="`top: ${tooltipPosition.top}px; left: ${tooltipPosition.left}px; transform: translateX(-100%) translateY(-50%);`"
+             x-text="tooltipText"
+             x-transition:enter="transition ease-out duration-100"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-75"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0">
         </div>
 
         <!-- Settings Panel (absolute overlay) -->
@@ -517,7 +545,7 @@
              x-cloak
              @click.outside="showSettings = false"
              x-transition
-             class="absolute top-2 right-2 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 z-50">
+             class="absolute top-2 right-2 left-2 sm:left-auto sm:w-72 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 z-50">
             <div class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Impostazioni Chat</div>
             <div class="mb-4">
                 <label class="block text-xs font-medium text-gray-500 mb-2">Modello</label>
@@ -567,11 +595,11 @@
 
 <!-- FAB Toggle Button -->
 <button x-cloak x-show="chatMode === 'hidden'"
-        @click="chatMode = 'third'"
+        @click="chatMode = window.innerWidth < 768 ? 'page' : 'third'"
         x-transition
-        class="fixed right-6 bottom-24 w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xl shadow-indigo-500/30 flex items-center justify-center hover:from-indigo-600 hover:to-purple-700 transition-all z-50 hover:scale-110"
+        class="fixed right-4 md:right-6 bottom-20 md:bottom-24 w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xl shadow-indigo-500/30 flex items-center justify-center hover:from-indigo-600 hover:to-purple-700 transition-all z-50 hover:scale-110"
         title="Apri Chat CLI">
-    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg class="w-6 h-6 md:w-7 md:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
     </svg>
 </button>

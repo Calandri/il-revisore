@@ -71,6 +71,8 @@ function chatSidebar() {
         // UI state
         showHistory: false,     // Show history panel (hamburger)
         activeTooltip: null,    // Active tooltip in toolbar
+        tooltipText: '',        // Text for fixed tooltip
+        tooltipPosition: { top: 0, left: 0 }, // Position for fixed tooltip
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -1048,6 +1050,30 @@ function chatSidebar() {
          */
         toggleHistory() {
             this.showHistory = !this.showHistory;
+        },
+
+        /**
+         * Show tooltip at button position
+         * @param {string} text - Tooltip text
+         * @param {MouseEvent} event - Mouse event from button
+         */
+        showTooltip(text, event) {
+            const btn = event.currentTarget;
+            const rect = btn.getBoundingClientRect();
+            this.tooltipText = text;
+            this.tooltipPosition = {
+                top: rect.top + rect.height / 2,
+                left: rect.left - 8 // 8px gap from button
+            };
+            this.activeTooltip = text;
+        },
+
+        /**
+         * Hide tooltip
+         */
+        hideTooltip() {
+            this.activeTooltip = null;
+            this.tooltipText = '';
         },
 
         // ============================================================
