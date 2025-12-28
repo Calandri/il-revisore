@@ -24,18 +24,26 @@ logger = logging.getLogger(__name__)
 
 # Design system prompts
 DESIGN_SYSTEM_PROMPTS = {
-    "tailwind": """Use Tailwind CSS utility classes for all styling.
-Include the Tailwind CDN: <script src="https://cdn.tailwindcss.com"></script>
-Follow Tailwind best practices with responsive classes (sm:, md:, lg:).""",
-    "bootstrap": """Use Bootstrap 5 for styling.
-Include Bootstrap CSS: <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-Include Bootstrap JS: <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>""",
-    "material": """Use Material Design principles with custom CSS.
-Include Material Icons: <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-Use Material Design color palette and elevation shadows.""",
-    "custom": """Use custom CSS with modern best practices.
-Include CSS custom properties (CSS variables) for theming.
-Use flexbox and grid for layouts.""",
+    "tailwind": (
+        "Use Tailwind CSS utility classes for all styling.\n"
+        'Include the Tailwind CDN: <script src="https://cdn.tailwindcss.com"></script>\n'
+        "Follow Tailwind best practices with responsive classes (sm:, md:, lg:)."
+    ),
+    "bootstrap": (
+        "Use Bootstrap 5 for styling.\n"
+        "Include Bootstrap CSS and JS from CDN.\n"
+        "Use Bootstrap grid system and components."
+    ),
+    "material": (
+        "Use Material Design principles with custom CSS.\n"
+        "Include Material Icons from Google Fonts.\n"
+        "Use Material Design color palette and elevation shadows."
+    ),
+    "custom": (
+        "Use custom CSS with modern best practices.\n"
+        "Include CSS custom properties (CSS variables) for theming.\n"
+        "Use flexbox and grid for layouts."
+    ),
 }
 
 # TurboWrap color palette
@@ -54,7 +62,7 @@ TurboWrap Brand Colors:
 """
 
 MOCKUP_SYSTEM_PROMPT = """You are an expert UI/UX designer and frontend developer.
-Your task is to create beautiful, modern, and functional UI mockups as complete standalone HTML files.
+Your task is to create beautiful, modern UI mockups as complete standalone HTML files.
 
 REQUIREMENTS:
 1. Generate a SINGLE complete HTML file with all CSS and JavaScript inline
