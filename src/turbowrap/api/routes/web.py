@@ -149,6 +149,48 @@ async def issues_page(request: Request, db: Session = Depends(get_db)) -> Respon
     )
 
 
+@router.get("/issues/{issue_code}", response_class=HTMLResponse)
+async def issue_detail_page(
+    request: Request,
+    issue_code: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Issue detail page - shows full issue info by issue_code."""
+    from ...db.models import Issue
+
+    # Find issue by issue_code
+    issue = db.query(Issue).filter(Issue.issue_code == issue_code).first()
+    if not issue:
+        # Try to find by ID as fallback
+        issue = db.query(Issue).filter(Issue.id == issue_code).first()
+
+    if not issue:
+        # Return 404 page
+        return Response(
+            content="<html><body><h1>Issue not found</h1><p>The issue code you requested does not exist.</p><a href='/issues'>Back to Issues</a></body></html>",
+            status_code=404,
+            media_type="text/html",
+        )
+
+    # Get repository info
+    repository = db.query(Repository).filter(Repository.id == issue.repository_id).first()
+
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/issue_detail.html",
+            {
+                "request": request,
+                "issue": issue,
+                "repository": repository,
+                "active_page": "issues",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/live-tasks", response_class=HTMLResponse)
 async def live_tasks_page(request: Request) -> Response:
     """Live tasks page - shows active fix sessions."""
