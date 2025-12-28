@@ -159,6 +159,8 @@ function globalContextFooter() {
         syncStatus: null,
         syncLoading: false,
         highlighted: false,
+        pollInterval: null,
+        POLL_INTERVAL_MS: 30000, // 30 seconds
 
         get sidebarOpen() {
             const htmlData = Alpine.$data(document.documentElement);
@@ -176,14 +178,17 @@ function globalContextFooter() {
             // Load sync status if repo is already selected
             if (Alpine.store('globalContext').selectedRepoId) {
                 await this.loadSyncStatus();
+                this.startPolling();
             }
 
-            // Watch for repo changes to auto-load sync status
+            // Watch for repo changes to auto-load sync status and start/stop polling
             this.$watch('$store.globalContext.selectedRepoId', async (repoId) => {
                 if (repoId) {
                     await this.loadSyncStatus();
+                    this.startPolling();
                 } else {
                     this.syncStatus = null;
+                    this.stopPolling();
                 }
             });
 
@@ -193,6 +198,67 @@ function globalContextFooter() {
                     await this.loadSyncStatus();
                 }
             });
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => this.stopPolling());
+        },
+
+        startPolling() {
+            this.stopPolling(); // Clear any existing interval
+            this.pollInterval = setInterval(() => this.checkForExternalChanges(), this.POLL_INTERVAL_MS);
+            console.log('[globalContextFooter] Branch polling started (every 30s)');
+        },
+
+        stopPolling() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
+                console.log('[globalContextFooter] Branch polling stopped');
+            }
+        },
+
+        async checkForExternalChanges() {
+            const repoId = Alpine.store('globalContext').selectedRepoId;
+            if (!repoId || this.syncLoading) return;
+
+            try {
+                // Fetch current branch from API
+                const res = await fetch(`/api/git/repositories/${repoId}/branch`);
+                if (!res.ok) return;
+
+                const data = await res.json();
+                const actualBranch = data.branch;
+                const selectedBranch = Alpine.store('globalContext').selectedBranch;
+
+                // Check if branch changed externally
+                if (actualBranch && actualBranch !== selectedBranch) {
+                    console.log(`[globalContextFooter] Branch changed externally: ${selectedBranch} → ${actualBranch}`);
+
+                    // Update the store silently (without triggering selectBranch which might do checkout)
+                    Alpine.store('globalContext').selectedBranch = actualBranch;
+                    localStorage.setItem('globalBranch', actualBranch);
+
+                    // Notify user
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: {
+                            message: `Branch switched to: ${actualBranch}`,
+                            type: 'success'
+                        }
+                    }));
+
+                    // Refresh sync status for new branch
+                    await this.loadSyncStatus();
+
+                    // Reload branches list in case new branches were created
+                    await Alpine.store('globalContext').loadBranches();
+                }
+
+                // Also check sync status periodically (ahead/behind might change)
+                await this.loadSyncStatus();
+
+            } catch (e) {
+                console.error('[globalContextFooter] Failed to check for external changes:', e);
+            }
         },
 
         async selectRepo(repoId) {
