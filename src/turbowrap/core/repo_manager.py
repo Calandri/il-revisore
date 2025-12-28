@@ -192,7 +192,10 @@ class RepoManager:
 
         effective_token = self._get_token(token)
 
-        local_path = clone_repo(repo_info.url, branch, effective_token)
+        # Pass workspace_path to generate unique folder for monorepo apps
+        local_path = clone_repo(
+            repo_info.url, branch, effective_token, workspace_path=workspace_path
+        )
 
         scan_path = local_path / workspace_path if workspace_path else local_path
         be_files, fe_files = discover_files(scan_path)
@@ -318,7 +321,10 @@ class RepoManager:
         effective_token = self._get_token(token)
 
         repo_info = parse_github_url(url)
-        local_path = clone_repo(repo_info.url, branch, effective_token)
+        # Pass workspace_path to generate unique folder for monorepo apps
+        local_path = clone_repo(
+            repo_info.url, branch, effective_token, workspace_path=workspace_path
+        )
 
         scan_path = local_path / workspace_path if workspace_path else local_path
         be_files, fe_files = discover_files(scan_path)
