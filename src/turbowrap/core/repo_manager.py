@@ -12,7 +12,13 @@ from ..config import get_settings
 from ..db.models import LinkType, Repository, RepositoryLink, Setting
 from ..exceptions import RepositoryError
 from ..utils.file_utils import FileInfo, detect_repo_type, discover_files, load_file_content
-from ..utils.git_utils import clone_repo, get_repo_status, parse_github_url, pull_repo
+from ..utils.git_utils import (
+    clone_repo,
+    get_local_path,
+    get_repo_status,
+    parse_github_url,
+    pull_repo,
+)
 
 
 def _calculate_token_totals(repo_path: Path, files: list[FileInfo]) -> dict[str, int]:
@@ -372,10 +378,22 @@ class RepoManager:
         if not repo:
             raise RepositoryError(f"Repository not found: {repo_id}")
 
-        local_path = Path(cast(str, repo.local_path))
+        # Generate correct path using workspace_path (for monorepo unique folders)
+        repo_url = cast(str, repo.url)
+        workspace_path = cast(str | None, repo.workspace_path)
+        expected_path = get_local_path(repo_url, workspace_path)
+        current_path = Path(cast(str, repo.local_path))
+
+        # Use expected path if different (migration to new folder format)
+        local_path = expected_path if expected_path != current_path else current_path
 
         # Check if local path exists
         if local_path.exists() and (local_path / ".git").exists():
+            # Update DB if path changed
+            if local_path != current_path:
+                repo.local_path = str(local_path)  # type: ignore[assignment]
+                self.db.commit()
+                self.db.refresh(repo)
             return repo  # All good
 
         import logging
@@ -386,16 +404,19 @@ class RepoManager:
         effective_token = self._get_token(token)
 
         try:
-            repo_url = cast(str, repo.url)
             repo_branch = cast(str, repo.default_branch) if repo.default_branch else "main"
-            clone_repo(repo_url, repo_branch, effective_token, target_path=local_path)
+            new_path = clone_repo(
+                repo_url, repo_branch, effective_token, workspace_path=workspace_path
+            )
 
+            # Update local_path to new format
+            repo.local_path = str(new_path)  # type: ignore[assignment]
             repo.last_synced_at = datetime.utcnow()  # type: ignore[assignment]
             repo.status = "active"  # type: ignore[assignment]
             self.db.commit()
             self.db.refresh(repo)
 
-            logger.info(f"Successfully re-cloned repository: {repo.name}")
+            logger.info(f"Successfully re-cloned repository: {repo.name} -> {new_path}")
             return repo
 
         except Exception as e:
