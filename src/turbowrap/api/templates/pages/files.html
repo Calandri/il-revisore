@@ -610,6 +610,7 @@ function fileEditor() {
 
         // Repository and files
         selectedRepoId: '',
+        selectedBranch: '',  // Track current branch for reload on change
         fileExtension: '.md',
         fileTree: null,
         expandedFolders: {},
@@ -669,14 +670,23 @@ function fileEditor() {
             const store = Alpine.store('globalContext');
             if (store?.selectedRepoId) {
                 this.selectedRepoId = store.selectedRepoId;
+                this.selectedBranch = store.selectedBranch || '';
                 this.loadFileTree();
             }
 
-            // Watch for global context changes
+            // Watch for global context changes (repo OR branch)
             window.addEventListener('global-context-changed', (e) => {
                 const newRepoId = e.detail.repoId || '';
+                const newBranch = e.detail.branch || '';
+
                 if (newRepoId !== this.selectedRepoId) {
+                    // Repo changed
                     this.selectedRepoId = newRepoId;
+                    this.selectedBranch = newBranch;
+                    this.loadFileTree();
+                } else if (newBranch && newBranch !== this.selectedBranch) {
+                    // Branch changed for same repo - reload file tree
+                    this.selectedBranch = newBranch;
                     this.loadFileTree();
                 }
             });

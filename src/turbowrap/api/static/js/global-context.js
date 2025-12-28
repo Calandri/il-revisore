@@ -107,15 +107,48 @@ document.addEventListener('alpine:init', () => {
             this._emitChange();
         },
 
-        // Select branch
+        // Select branch (performs git checkout)
         async selectBranch(branch) {
-            this.selectedBranch = branch || null;
+            if (!branch || branch === this.selectedBranch) return;
 
-            if (branch) {
-                localStorage.setItem('globalBranch', branch);
-            } else {
-                localStorage.removeItem('globalBranch');
+            // Perform git checkout
+            if (this.selectedRepoId) {
+                try {
+                    const res = await fetch(`/api/git/repositories/${this.selectedRepoId}/checkout`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ branch })
+                    });
+
+                    const result = await res.json();
+
+                    if (!result.success) {
+                        console.error('[globalContext] Checkout failed:', result.message);
+                        window.dispatchEvent(new CustomEvent('show-toast', {
+                            detail: {
+                                message: `Checkout failed: ${result.message || 'Unknown error'}`,
+                                type: 'error'
+                            }
+                        }));
+                        return; // Don't update state if checkout failed
+                    }
+
+                    // Show success toast
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Switched to ${branch}`, type: 'success' }
+                    }));
+                } catch (e) {
+                    console.error('[globalContext] Checkout error:', e);
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: 'Checkout failed: Network error', type: 'error' }
+                    }));
+                    return;
+                }
             }
+
+            // Update state after successful checkout
+            this.selectedBranch = branch;
+            localStorage.setItem('globalBranch', branch);
 
             // Emit event
             this._emitChange();

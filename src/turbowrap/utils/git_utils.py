@@ -168,23 +168,30 @@ def parse_github_url(url: str) -> GitHubRepo:
     raise RepositoryError(f"Invalid GitHub URL: {url}")
 
 
-def get_repo_hash(url: str) -> str:
-    """Generate a unique hash for repository URL.
+def get_repo_hash(url: str, workspace_path: str | None = None) -> str:
+    """Generate a unique hash for repository URL and optional workspace.
 
     Args:
         url: Repository URL.
+        workspace_path: Optional workspace path for monorepos.
 
     Returns:
         Short hash string.
     """
-    return hashlib.sha256(url.encode()).hexdigest()[:12]
+    # Include workspace_path in hash to generate unique paths for monorepo apps
+    hash_input = url
+    if workspace_path:
+        hash_input = f"{url}::{workspace_path}"
+    return hashlib.sha256(hash_input.encode()).hexdigest()[:12]
 
 
-def get_local_path(url: str) -> Path:
+def get_local_path(url: str, workspace_path: str | None = None) -> Path:
     """Get local path for cloned repository.
 
     Args:
         url: Repository URL.
+        workspace_path: Optional workspace path for monorepos.
+                       When provided, generates a unique folder for each workspace.
 
     Returns:
         Path where repo should be cloned.
@@ -192,11 +199,16 @@ def get_local_path(url: str) -> Path:
     settings = get_settings()
     try:
         repo_info = parse_github_url(url)
-        repo_hash = get_repo_hash(url)
+        repo_hash = get_repo_hash(url, workspace_path)
+        # Include sanitized workspace in folder name for clarity
+        if workspace_path:
+            # Replace / with - for folder name (e.g., apps/helpdesk -> apps-helpdesk)
+            ws_suffix = workspace_path.replace("/", "-").replace("\\", "-")
+            return settings.repos_dir / f"{repo_info.name}-{ws_suffix}-{repo_hash}"
         return settings.repos_dir / f"{repo_info.name}-{repo_hash}"
     except RepositoryError:
         # Fallback for non-github URLs
-        repo_hash = get_repo_hash(url)
+        repo_hash = get_repo_hash(url, workspace_path)
         return settings.repos_dir / f"repo-{repo_hash}"
 
 
@@ -226,6 +238,7 @@ def clone_repo(
     branch: str = "main",
     token: str | None = None,
     target_path: Path | None = None,
+    workspace_path: str | None = None,
 ) -> Path:
     """Clone a GitHub repository.
 
@@ -234,11 +247,13 @@ def clone_repo(
         branch: Branch to clone.
         token: Optional GitHub token.
         target_path: Optional explicit code path.
+        workspace_path: Optional workspace path for monorepos.
+                       Creates a separate clone folder for each workspace.
 
     Returns:
         Path to cloned repository.
     """
-    local_path = target_path if target_path else get_local_path(url)
+    local_path = target_path if target_path else get_local_path(url, workspace_path)
 
     if local_path.exists():
         return pull_repo(local_path, token)
