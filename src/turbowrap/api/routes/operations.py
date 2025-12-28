@@ -436,9 +436,8 @@ async def get_operation_prompt(operation_id: str) -> dict[str, Any]:
             SessionLocal = get_session_local()
             db = SessionLocal()
             try:
-                db_op = (
-                    db.query(DBOperation).filter(DBOperation.operation_id == operation_id).first()
-                )
+                # Note: DB uses 'id', API uses 'operation_id'
+                db_op = db.query(DBOperation).filter(DBOperation.id == operation_id).first()
                 if db_op and db_op.details:
                     details = db_op.details if isinstance(db_op.details, dict) else {}
                     s3_url = details.get("s3_prompt_url")
@@ -537,7 +536,8 @@ async def get_operation_output(operation_id: str) -> dict[str, Any]:
         SessionLocal = get_session_local()
         db = SessionLocal()
         try:
-            db_op = db.query(DBOperation).filter(DBOperation.operation_id == operation_id).first()
+            # Note: DB uses 'id', API uses 'operation_id'
+            db_op = db.query(DBOperation).filter(DBOperation.id == operation_id).first()
             if db_op:
                 details = db_op.details if isinstance(db_op.details, dict) else {}
                 result = db_op.result if isinstance(db_op.result, dict) else {}
