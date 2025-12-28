@@ -50,14 +50,10 @@ from turbowrap.utils.git_utils import GitUtils
 
 logger = logging.getLogger(__name__)
 
-# Type alias for checkpoint data (reviewer_name -> checkpoint dict)
 CheckpointData = dict[str, dict[str, Any]]
 
-# Type alias for progress callback
 ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
-# Type alias for checkpoint callback
-# Args: reviewer_name, status, issues, satisfaction, iterations, model_usage, started_at
 CheckpointCallback = Callable[
     [str, str, list[Issue], float, int, list[dict[str, Any]], datetime],
     Awaitable[None],
@@ -76,9 +72,7 @@ class Orchestrator:
     """
 
     def __init__(self) -> None:
-        """
-        Initialize the orchestrator.
-        """
+        """Initialize the orchestrator."""
         self.settings = get_settings()
         self.repo_detector = RepoDetector()
 
@@ -89,8 +83,7 @@ class Orchestrator:
         completed_checkpoints: CheckpointData | None = None,
         checkpoint_callback: CheckpointCallback | None = None,
     ) -> FinalReport:
-        """
-        Perform a complete code review.
+        """Perform a complete code review.
 
         Args:
             request: Review request with source and options
@@ -110,13 +103,11 @@ class Orchestrator:
 
         logger.info(f"Starting review {report_id}")
 
-        # Helper to emit events
         async def emit(event: ProgressEvent) -> None:
             if progress_callback:
                 event.review_id = report_id
                 await progress_callback(event)
 
-        # Helper to emit toast log notifications
         async def emit_log(level: str, message: str) -> None:
             """Emit a log event for UI toast notifications."""
             await emit(
@@ -127,7 +118,6 @@ class Orchestrator:
                 )
             )
 
-        # Emit review started
         await emit(
             ProgressEvent(
                 type=ProgressEventType.REVIEW_STARTED,
@@ -136,34 +126,27 @@ class Orchestrator:
             )
         )
 
-        # Step 1: Prepare context (may auto-generate STRUCTURE.md)
         context = await self._prepare_context(request, emit, report_id)
 
-        # Step 2: Detect repository type
         repo_type = self._detect_repo_type(context.files, context.structure_docs)
         logger.info(f"Detected repository type: {repo_type.value}")
 
-        # Step 3: Determine which reviewers to run
         reviewers = self._get_reviewers(repo_type, request.options.include_functional)
         logger.info(f"Running reviewers: {reviewers}")
-
-        # Step 4: Run challenger loops for each reviewer IN PARALLEL
         reviewer_results: list[ReviewerResult] = []
         all_issues: list[Issue] = []
         loop_results: list[ChallengerLoopResult] = []
 
-        # Checkpoint data for resume (default to empty)
         checkpoints = completed_checkpoints or {}
 
         if request.options.challenger_enabled:
-            # Run all reviewers in PARALLEL with progress callbacks
+
             async def run_reviewer_with_progress(
                 reviewer_name: str,
             ) -> tuple[str, str, Any]:
                 """Run a single reviewer with progress events."""
                 display_name = get_reviewer_display_name(reviewer_name)
 
-                # CHECK FOR CHECKPOINT: Skip if already completed
                 if reviewer_name in checkpoints:
                     checkpoint = checkpoints[reviewer_name]
                     issues_count = len(checkpoint.get("issues_data", []))
@@ -228,7 +211,6 @@ class Orchestrator:
                         )
                     )
 
-                    # Toast notification for completed reviewer
                     await emit_log(
                         "INFO",
                         (
@@ -238,7 +220,6 @@ class Orchestrator:
                         ),
                     )
 
-                    # SAVE CHECKPOINT on success
                     if checkpoint_callback:
                         await checkpoint_callback(
                             reviewer_name,
@@ -265,15 +246,13 @@ class Orchestrator:
                         )
                     )
 
-                    # Toast notification for failed reviewer
                     await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
 
-                    # SAVE FAILED CHECKPOINT (so we know to retry this one)
                     if checkpoint_callback:
                         await checkpoint_callback(
                             reviewer_name,
                             "failed",
-                            [],  # No issues on failure
+                            [],
                             0.0,
                             0,
                             [],
@@ -282,25 +261,20 @@ class Orchestrator:
 
                     return (reviewer_name, "error", str(e))
 
-            # Execute all reviewers in parallel
             tasks = [run_reviewer_with_progress(name) for name in reviewers]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Process results
             for result in results:
                 if isinstance(result, Exception):
                     continue
 
-                # At this point, result is guaranteed to be a tuple
                 assert isinstance(result, tuple)
                 reviewer_name, status, data = result
 
                 if status == "checkpoint":
-                    # Restore from checkpoint - data is dict[str, Any]
                     assert isinstance(data, dict)
                     checkpoint = data
                     issues_data = checkpoint.get("issues_data", [])
-                    # Convert issue dicts back to Issue objects
                     restored_issues = [
                         Issue.model_validate(issue_dict) for issue_dict in issues_data
                     ]
@@ -309,7 +283,7 @@ class Orchestrator:
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
-                            status="completed",  # From user perspective, it's completed
+                            status="completed",
                             issues_found=len(restored_issues),
                             iterations=checkpoint.get("iterations", 1),
                             final_satisfaction=checkpoint.get("final_satisfaction", 0.0),
@@ -317,7 +291,6 @@ class Orchestrator:
                     )
 
                 elif status == "success":
-                    # data is ChallengerLoopResult here
                     assert isinstance(data, ChallengerLoopResult)
                     loop_result = data
                     loop_results.append(loop_result)
@@ -335,7 +308,6 @@ class Orchestrator:
 
                     all_issues.extend(loop_result.final_review.issues)
                 else:
-                    # data is str (error message) here
                     assert isinstance(data, str)
                     reviewer_results.append(
                         ReviewerResult(
@@ -346,7 +318,7 @@ class Orchestrator:
                     )
 
         else:
-            # Run with Triple-LLM pattern (Claude + Gemini + Grok in parallel)
+
             async def run_triple_llm_with_progress(
                 reviewer_name: str,
             ) -> tuple[str, str, Any]:
@@ -366,7 +338,6 @@ class Orchestrator:
                 try:
                     result = await self._run_triple_llm_review(context, reviewer_name, emit)
 
-                    # Build status message with LLM details
                     status_parts = []
                     if result.claude_status == "ok":
                         status_parts.append(f"C:{result.claude_issues_count}")
@@ -394,14 +365,12 @@ class Orchestrator:
                         )
                     )
 
-                    # Toast notification with triple-LLM details
                     await emit_log(
                         "INFO",
                         f"✓ {display_name}: {result.merged_issues_count} issues "
                         f"(C:{result.claude_issues_count} G:{result.gemini_issues_count} X:{result.grok_issues_count})",
                     )
 
-                    # SAVE CHECKPOINT on success
                     if checkpoint_callback:
                         await checkpoint_callback(
                             reviewer_name,
@@ -430,7 +399,6 @@ class Orchestrator:
 
                     await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
 
-                    # SAVE FAILED CHECKPOINT
                     if checkpoint_callback:
                         await checkpoint_callback(
                             reviewer_name,
@@ -451,14 +419,11 @@ class Orchestrator:
                 if isinstance(result, Exception):
                     continue
 
-                # At this point, result is guaranteed to be a tuple
                 assert isinstance(result, tuple)
                 reviewer_name, status, data = result
 
                 if status == "success":
-                    # data is TripleLLMResult here
                     assert isinstance(data, TripleLLMResult)
-                    # Count how many LLMs succeeded
                     llms_ok = sum(
                         [
                             data.claude_status == "ok",
@@ -473,13 +438,11 @@ class Orchestrator:
                             issues_found=data.merged_issues_count,
                             duration_seconds=data.total_duration_seconds,
                             iterations=1,  # Triple-LLM runs in parallel, not iteratively
-                            # 100% if all 3 ok, 66% if 2 ok, 33% if 1 ok
                             final_satisfaction=llms_ok * 33.33,
                         )
                     )
                     all_issues.extend(data.final_review.issues)
                 else:
-                    # data is str (error message) here
                     assert isinstance(data, str)
                     reviewer_results.append(
                         ReviewerResult(
@@ -561,7 +524,6 @@ class Orchestrator:
             f"recommendation={report.summary.recommendation.value}"
         )
 
-        # Emit review completed
         await emit(
             ProgressEvent(
                 type=ProgressEventType.REVIEW_COMPLETED,
@@ -574,7 +536,6 @@ class Orchestrator:
             )
         )
 
-        # Final toast notification
         await emit_log(
             "INFO",
             (
@@ -607,7 +568,6 @@ class Orchestrator:
         source = request.source
         mode = request.options.mode
 
-        # Set repo_path first (needed for all modes)
         if source.directory:
             context.repo_path = Path(source.directory)
         elif source.pr_url or source.commit_sha or source.files:
@@ -615,28 +575,22 @@ class Orchestrator:
         else:
             context.repo_path = Path.cwd()
 
-        # Set workspace_path for monorepo scope limiting
         if source.workspace_path:
             context.workspace_path = source.workspace_path
             logger.info(f"Monorepo mode: limiting review to workspace '{source.workspace_path}'")
 
-        # Load .llms/structure.xml (used in all modes for context)
         self._load_structure_docs(context)
 
-        # AUTO-GENERATE .llms/structure.xml if missing (for all modes)
         if not context.structure_docs:
             logger.info("No .llms/structure.xml found - auto-generating with Gemini Flash...")
             await self._auto_generate_structure(context, emit)
-            # Reload after generation
             self._load_structure_docs(context)
 
             if not context.structure_docs:
                 logger.warning("Structure generation completed but .llms/structure.xml not found!")
 
-        # INITIAL mode: Use structure docs + file list (no file contents)
         if mode == ReviewMode.INITIAL:
             logger.info("INITIAL mode: Reviewing architecture via .llms/structure.xml only")
-            # Scan files for reference (challenger needs file list)
             if context.workspace_path:
                 scan_base = context.repo_path / context.workspace_path
                 if scan_base.exists():
@@ -647,9 +601,7 @@ class Orchestrator:
                     context.files = self._scan_directory(context.repo_path)
             else:
                 context.files = self._scan_directory(context.repo_path)
-            # No file contents loaded - reviewers use only structure docs
 
-        # DIFF mode: Load only changed/specified files
         else:
             logger.info("DIFF mode: Reviewing changed files")
 
@@ -667,8 +619,6 @@ class Orchestrator:
 
             elif source.directory:
                 # Fallback: scan directory (limited)
-                # Use workspace subfolder if set (monorepo support)
-                # context.repo_path is always set when source.directory is set
                 assert context.repo_path is not None
                 if context.workspace_path:
                     scan_base = context.repo_path / context.workspace_path
@@ -676,16 +626,13 @@ class Orchestrator:
                         logger.warning(f"Workspace path does not exist: {scan_base}")
                         context.files = self._scan_directory(context.repo_path)
                     else:
-                        # Scan workspace and prefix paths so they're relative to repo root
                         workspace_files = self._scan_directory(scan_base)
                         context.files = [f"{context.workspace_path}/{f}" for f in workspace_files]
                 else:
                     context.files = self._scan_directory(context.repo_path)
 
-            # Load file contents for diff mode
             await self._load_file_contents(context)
 
-        # Get git info
         try:
             git = GitUtils(context.repo_path)
             if git.is_git_repo():
@@ -708,7 +655,6 @@ class Orchestrator:
         if not pr_info:
             raise ValueError(f"Invalid PR URL: {pr_url}")
 
-        # Assume we're in the repo directory
         context.repo_path = Path.cwd()
         context.repo_name = f"{pr_info.owner}/{pr_info.repo}"
 
@@ -739,7 +685,6 @@ class Orchestrator:
             ".reviews",
             ".llms",  # Structure docs directory
         }
-        # Exclude previous review output files and temp files
         exclude_patterns = {".turbowrap_review_"}
 
         for path in directory.rglob("*"):
@@ -748,7 +693,6 @@ class Orchestrator:
                 # Check if any parent is in exclude list (use relative path, not absolute)
                 if any(part in exclude_dirs for part in rel_path.parts):
                     continue
-                # Skip review output files
                 if any(pattern in path.name for pattern in exclude_patterns):
                     continue
 
@@ -769,7 +713,6 @@ class Orchestrator:
         if not context.repo_path:
             return
 
-        # For monorepo: load from workspace/.llms/structure.xml
         if context.workspace_path:
             xml_path = context.repo_path / context.workspace_path / ".llms" / "structure.xml"
         else:
@@ -809,14 +752,12 @@ class Orchestrator:
             logger.error("Cannot generate structure: no repo_path set")
             return
 
-        # For monorepo: generate structure.xml only for the workspace
         if context.workspace_path:
             context.repo_path / context.workspace_path
             display_name = context.workspace_path
         else:
             display_name = context.repo_path.name
 
-        # Emit start event
         if emit:
             await emit(
                 ProgressEvent(
@@ -831,13 +772,10 @@ class Orchestrator:
             gemini_client = GeminiClient()
             logger.info("[ORCHESTRATOR] GeminiClient OK")
 
-            # Create generator with GeminiClient
-            # Pass workspace_path for monorepo support
             logger.info(
                 f"[ORCHESTRATOR] StructureGenerator: repo={context.repo_path}, "
                 f"workspace={context.workspace_path}"
             )
-            # context.repo_path is guaranteed to be set at this point
             assert context.repo_path is not None
             generator = StructureGenerator(
                 context.repo_path,
@@ -846,7 +784,6 @@ class Orchestrator:
             )
             logger.info(f"[ORCHESTRATOR] scan_root={generator.scan_root}")
 
-            # Emit progress update
             if emit:
                 await emit(
                     ProgressEvent(
@@ -855,8 +792,6 @@ class Orchestrator:
                     )
                 )
 
-            # Run generation (sync method, run in executor)
-            # Only generate XML format (.llms/structure.xml)
             loop = asyncio.get_event_loop()
             generated_files = await loop.run_in_executor(
                 None, lambda: generator.generate(verbose=True, formats=["xml"])
@@ -867,7 +802,6 @@ class Orchestrator:
                     f"StructureGenerator returned empty list! scan_root={generator.scan_root}"
                 )
 
-            # Emit completion
             if emit:
                 await emit(
                     ProgressEvent(
@@ -895,7 +829,6 @@ class Orchestrator:
                         message="Structure generation FAILED - check logs!",
                     )
                 )
-            # Re-raise so the error is visible
             raise
 
     async def _load_file_contents(self, context: ReviewContext) -> None:
@@ -905,7 +838,6 @@ class Orchestrator:
                 full_path = context.repo_path / file_path if context.repo_path else Path(file_path)
                 if full_path.exists() and is_text_file(full_path):
                     content = read_file(full_path)
-                    # Limit file size
                     if len(content) < 50000:
                         context.file_contents[file_path] = content
             except Exception as e:
@@ -929,16 +861,13 @@ class Orchestrator:
         Returns:
             RepoType enum value
         """
-        # If we have files, use file-based detection
         if files:
             return self.repo_detector.detect(files)
 
         # In INITIAL mode, try to extract from STRUCTURE.md
         if structure_docs:
-            # Look for root STRUCTURE.md (the one with Metadata section)
             for _path, content in structure_docs.items():
                 if "## Metadata" in content and "Repository Type" in content:
-                    # Parse repo type from: **Repository Type**: `BACKEND`
                     import re
 
                     match = re.search(
@@ -976,7 +905,6 @@ class Orchestrator:
         reviewers = []
 
         if repo_type in [RepoType.BACKEND, RepoType.FULLSTACK, RepoType.UNKNOWN]:
-            # For UNKNOWN, assume backend as default since most repos have backend code
             reviewers.append("reviewer_be_architecture")
             reviewers.append("reviewer_be_quality")
 
@@ -984,7 +912,6 @@ class Orchestrator:
             reviewers.append("reviewer_fe_architecture")
             reviewers.append("reviewer_fe_quality")
 
-        # ALWAYS launch analyst_func - business logic is critical
         if include_functional:
             reviewers.append("analyst_func")
 
@@ -1008,7 +935,6 @@ class Orchestrator:
         """Run the challenger loop with progress updates."""
         display_name = get_reviewer_display_name(reviewer_name)
 
-        # Create iteration callback
         async def on_iteration(iteration: int, satisfaction: float, issues_count: int) -> None:
             await emit(
                 ProgressEvent(
@@ -1023,7 +949,6 @@ class Orchestrator:
                 )
             )
 
-        # Create streaming callback for token-by-token updates
         async def on_content(content: str) -> None:
             await emit(
                 ProgressEvent(
@@ -1065,18 +990,14 @@ class Orchestrator:
         from turbowrap.review.reviewers.gemini_cli_reviewer import GeminiCLIReviewer
         from turbowrap.review.reviewers.grok_cli_reviewer import GrokCLIReviewer
 
-        # Create all three reviewers with the same name (same agent prompt)
         claude_reviewer = ClaudeCLIReviewer(name=reviewer_name)
         gemini_reviewer = GeminiCLIReviewer(name=reviewer_name)
         grok_reviewer = GrokCLIReviewer(name=reviewer_name)
 
-        # Load agent prompt (same for all)
         with contextlib.suppress(FileNotFoundError):
             context.agent_prompt = claude_reviewer.load_agent_prompt(self.settings.agents_dir)
 
-        # Create streaming callbacks for progress events
         # NOTE: Use base reviewer_name so content goes to the right card
-        # Content from all LLMs will mix but that's OK for parallel mode
         display_name = get_reviewer_display_name(reviewer_name)
 
         async def on_claude_chunk(chunk: str) -> None:
@@ -1112,7 +1033,6 @@ class Orchestrator:
                     )
                 )
 
-        # Create runner and execute
         runner = TripleLLMRunner(
             claude_reviewer=claude_reviewer,
             gemini_reviewer=gemini_reviewer,
@@ -1128,7 +1048,6 @@ class Orchestrator:
         )
 
     # NOTE: _deduplicate_issues, _severity_rank, _prioritize_issues moved to
-    # turbowrap.orchestration.report_utils for shared use across orchestrators
 
     async def _run_evaluator(
         self,
@@ -1156,7 +1075,6 @@ class Orchestrator:
         try:
             evaluator = ClaudeEvaluator()
 
-            # Create streaming callback
             async def on_chunk(chunk: str) -> None:
                 if emit:
                     await emit(
@@ -1186,7 +1104,6 @@ class Orchestrator:
                 )
                 return evaluation, None
 
-            # Evaluation returned None (parse error or CLI issue)
             return None, "Evaluator returned empty response"
 
         except Exception as e:
@@ -1205,22 +1122,17 @@ class Orchestrator:
         evaluation: RepositoryEvaluation | None = None,
     ) -> FinalReport:
         """Build the final report."""
-        # Count by severity (using shared utility)
         severity_counts = count_by_severity(issues)
 
-        # Calculate score (using shared utility)
         score = calculate_overall_score(issues)
 
-        # Determine recommendation (using shared utility)
         recommendation = calculate_recommendation(severity_counts)
 
-        # Build challenger metadata
         challenger_metadata = self._build_challenger_metadata(loop_results)
 
         # Build next steps (using shared utility)
         next_steps = build_next_steps(issues)
 
-        # Repository info
         repo_info = RepositoryInfo(
             type=repo_type,
             name=context.repo_name,
@@ -1228,7 +1140,6 @@ class Orchestrator:
             commit_sha=context.commit_sha,
         )
 
-        # Summary
         summary = ReportSummary(
             repo_type=repo_type,
             files_reviewed=len(context.files),
@@ -1252,7 +1163,6 @@ class Orchestrator:
         )
 
     # NOTE: _calculate_score, _calculate_recommendation moved to
-    # turbowrap.orchestration.report_utils for shared use across orchestrators
 
     def _build_challenger_metadata(
         self,
@@ -1262,18 +1172,15 @@ class Orchestrator:
         if not loop_results:
             return ChallengerMetadata(enabled=False)
 
-        # Aggregate from all loops
         total_iterations = sum(r.iterations for r in loop_results)
         avg_satisfaction = sum(r.final_satisfaction for r in loop_results) / len(loop_results)
 
-        # Combine iteration history
         all_history = []
         all_insights = []
         for result in loop_results:
             all_history.extend(result.iteration_history)
             all_insights.extend(result.insights)
 
-        # Use worst convergence status
         convergence = loop_results[0].convergence
         for result in loop_results[1:]:
             if result.convergence.value != "THRESHOLD_MET":
@@ -1312,7 +1219,6 @@ class Orchestrator:
         if not context.repo_path or not context.repo_path.exists():
             return
 
-        # Determine search base: workspace subfolder or full repo
         if context.workspace_path:
             search_base = context.repo_path / context.workspace_path
             if not search_base.exists():
@@ -1323,10 +1229,8 @@ class Orchestrator:
 
         stale_dirs: list[Path] = []
 
-        # Find all STRUCTURE.md files within search base
         for structure_file in search_base.rglob("STRUCTURE.md"):
             rel_path = structure_file.relative_to(context.repo_path)
-            # Skip ignored directories (use relative path, not absolute)
             if any(
                 part.startswith(".")
                 or part in {"node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
@@ -1340,12 +1244,8 @@ class Orchestrator:
                 continue
 
             # Extract timestamp from STRUCTURE.md footer
-            # New format: *Generated by TurboWrap - 2025-12-24 16:20 | ts:1735055800*
-            # Old format: *Generated by TurboWrap - 2025-12-24 16:20* (no ts, use file mtime)
             match = re.search(r"\|\s*ts:(\d+)", content)
             if not match:
-                # No timestamp in content - use file modification time as fallback
-                # Consider stale if file is older than 24 hours (legacy files)
                 structure_mtime = structure_file.stat().st_mtime
                 file_age_hours = (time.time() - structure_mtime) / 3600
                 if file_age_hours > 24:
@@ -1365,7 +1265,6 @@ class Orchestrator:
                 if suffix not in {".py", ".ts", ".tsx", ".js", ".jsx"}:
                     continue
 
-                # Compare file mtime with generation timestamp (10s tolerance)
                 file_mtime = int(code_file.stat().st_mtime)
                 if file_mtime > generated_at + 10:
                     is_stale = True
@@ -1388,7 +1287,6 @@ class Orchestrator:
 
         logger.info(f"Found {len(stale_dirs)} stale STRUCTURE.md files to regenerate")
 
-        # Emit progress event
         if emit:
             await emit(
                 ProgressEvent(
@@ -1397,16 +1295,13 @@ class Orchestrator:
                 )
             )
 
-        # Use StructureGenerator to regenerate
         try:
-            # context.repo_path is guaranteed to be set at this point
             assert context.repo_path is not None
             generator = StructureGenerator(
                 context.repo_path,
                 gemini_client=None,  # Quick mode without Gemini for refresh
             )
 
-            # Run regeneration in executor (sync method)
             loop = asyncio.get_event_loop()
             regenerated = await loop.run_in_executor(
                 None, lambda: generator.regenerate_stale(verbose=True)

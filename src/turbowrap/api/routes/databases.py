@@ -15,8 +15,6 @@ from ..deps import get_db
 
 router = APIRouter(prefix="/databases", tags=["databases"])
 
-# Encryption key - in production, this should be from environment variable
-# Generate once and store securely: Fernet.generate_key().decode()
 _ENCRYPTION_KEY = os.environ.get("TURBOWRAP_DB_ENCRYPTION_KEY")
 
 
@@ -58,9 +56,6 @@ def _decrypt_password(encrypted: str | None) -> str | None:
         return None
 
 
-# --- Pydantic Schemas ---
-
-
 class SSLConfig(BaseModel):
     """SSL/TLS configuration."""
 
@@ -89,26 +84,21 @@ class DatabaseConnectionCreate(BaseModel):
     description: str | None = None
     db_type: Literal["mysql", "postgresql", "sqlite", "mongodb", "redis", "mariadb", "mssql"]
 
-    # Connection details
     host: str | None = None
     port: int | None = None
     database: str = Field(..., min_length=1)
     username: str | None = None
     password: str | None = None  # Will be encrypted before storage
 
-    # SSL configuration
     ssl: SSLConfig | None = None
 
-    # SSH tunnel configuration
     ssh: SSHConfig | None = None
 
-    # Options
     connection_timeout: int = Field(default=30, ge=1, le=300)
     read_only: bool = False
     max_connections: int = Field(default=5, ge=1, le=100)
     extra_options: dict[str, Any] | None = None
 
-    # Organization
     color: str | None = None
     icon: str | None = None
     tags: list[str] | None = None
@@ -184,10 +174,8 @@ class DatabaseConnectionResponse(BaseModel):
 class TestConnectionRequest(BaseModel):
     """Request to test a connection (either existing or new)."""
 
-    # Either provide connection_id OR full connection details
     connection_id: str | None = None
 
-    # Or provide connection details directly
     db_type: str | None = None
     host: str | None = None
     port: int | None = None
@@ -206,9 +194,6 @@ class TestConnectionResponse(BaseModel):
     latency_ms: int | None = None
     server_version: str | None = None
     database_size: str | None = None
-
-
-# --- Helper Functions ---
 
 
 def _get_default_port(db_type: str) -> int | None:
@@ -251,9 +236,6 @@ def _model_to_response(conn: DatabaseConnection) -> DatabaseConnectionResponse:
         created_at=cast(datetime, conn.created_at),
         updated_at=cast(datetime, conn.updated_at),
     )
-
-
-# --- Routes ---
 
 
 @router.get("", response_model=list[DatabaseConnectionResponse])
@@ -314,13 +296,11 @@ def create_connection(
         database=req.database,
         username=req.username,
         encrypted_password=_encrypt_password(req.password),
-        # SSL
         ssl_enabled=req.ssl.enabled if req.ssl else False,
         ssl_ca_cert=req.ssl.ca_cert if req.ssl else None,
         ssl_client_cert=req.ssl.client_cert if req.ssl else None,
         ssl_client_key=req.ssl.client_key if req.ssl else None,
         ssl_verify=req.ssl.verify if req.ssl else True,
-        # SSH
         ssh_enabled=req.ssh.enabled if req.ssh else False,
         ssh_host=req.ssh.host if req.ssh else None,
         ssh_port=req.ssh.port if req.ssh else 22,
@@ -331,12 +311,10 @@ def create_connection(
         ssh_passphrase=(
             _encrypt_password(req.ssh.passphrase) if req.ssh and req.ssh.passphrase else None
         ),
-        # Options
         connection_timeout=req.connection_timeout,
         read_only=req.read_only,
         max_connections=req.max_connections,
         extra_options=req.extra_options,
-        # Organization
         color=req.color,
         icon=req.icon,
         tags=req.tags,
@@ -384,12 +362,10 @@ def update_connection(
     if req.username is not None:
         conn.username = req.username  # type: ignore[assignment]
 
-    # Password: if explicitly set (even to empty string), update it
     if req.password is not None:
         encrypted_pw = _encrypt_password(req.password) if req.password else None
         conn.encrypted_password = encrypted_pw  # type: ignore[assignment]
 
-    # SSL configuration
     if req.ssl is not None:
         conn.ssl_enabled = req.ssl.enabled  # type: ignore[assignment]
         conn.ssl_ca_cert = req.ssl.ca_cert  # type: ignore[assignment]
@@ -397,7 +373,6 @@ def update_connection(
         conn.ssl_client_key = req.ssl.client_key  # type: ignore[assignment]
         conn.ssl_verify = req.ssl.verify  # type: ignore[assignment]
 
-    # SSH configuration
     if req.ssh is not None:
         conn.ssh_enabled = req.ssh.enabled  # type: ignore[assignment]
         conn.ssh_host = req.ssh.host  # type: ignore[assignment]
@@ -410,7 +385,6 @@ def update_connection(
             encrypted_pass = _encrypt_password(req.ssh.passphrase) if req.ssh.passphrase else None
             conn.ssh_passphrase = encrypted_pass  # type: ignore[assignment]
 
-    # Options
     if req.connection_timeout is not None:
         conn.connection_timeout = req.connection_timeout  # type: ignore[assignment]
     if req.read_only is not None:
@@ -420,7 +394,6 @@ def update_connection(
     if req.extra_options is not None:
         conn.extra_options = req.extra_options  # type: ignore[assignment]
 
-    # Organization
     if req.color is not None:
         conn.color = req.color  # type: ignore[assignment]
     if req.icon is not None:
@@ -543,7 +516,6 @@ async def test_connection(
     """
     import time
 
-    # Variables for connection details
     db_type_str: str
     host_str: str | None
     port_int: int | None
@@ -586,7 +558,6 @@ async def test_connection(
     start_time = time.time()
 
     try:
-        # Test connection based on database type
         if db_type_str == "sqlite":
             import sqlite3
 

@@ -30,7 +30,6 @@ def _calculate_token_totals(repo_path: Path, files: list[FileInfo]) -> dict[str,
     total_tokens = 0
 
     for file_info in files:
-        # Load content to calculate tokens
         load_file_content(repo_path, file_info)
         total_chars += file_info.chars
         total_lines += file_info.lines
@@ -58,7 +57,6 @@ def get_directory_size(path: Path, skip_git: bool = True) -> int:
 
     total = 0
     for dirpath, dirnames, filenames in os.walk(path):
-        # Skip .git directory for actual code size
         if skip_git:
             dirnames[:] = [d for d in dirnames if d != ".git"]
         for f in filenames:
@@ -97,7 +95,6 @@ class RepoManager:
         Raises:
             RepositoryError: If path is invalid or potentially malicious.
         """
-        # Resolve to absolute path (follows symlinks)
         try:
             resolved = path.resolve()
         except (OSError, RuntimeError) as e:
@@ -150,7 +147,6 @@ class RepoManager:
         Returns:
             Token or None.
         """
-        # 1. Request token has highest priority
         if request_token:
             return request_token
 
@@ -159,7 +155,6 @@ class RepoManager:
         if db_setting and db_setting.value:
             return cast(str, db_setting.value)
 
-        # 3. Fall back to environment variable
         return self._settings.agents.github_token
 
     def clone(
@@ -181,11 +176,9 @@ class RepoManager:
         Returns:
             Created Repository record.
         """
-        # Parse URL
         repo_info = parse_github_url(url)
 
         # Check if already exists with same URL AND workspace_path
-        # This allows multiple clones of same repo with different workspaces
         query = self.db.query(Repository).filter(Repository.url == repo_info.url)
         if workspace_path:
             query = query.filter(Repository.workspace_path == workspace_path)
@@ -197,27 +190,19 @@ class RepoManager:
         if existing:
             return self.sync(cast(str, existing.id), token)
 
-        # Get effective token
         effective_token = self._get_token(token)
 
-        # Clone to local
         local_path = clone_repo(repo_info.url, branch, effective_token)
 
-        # Detect repo type and calculate tokens
-        # For monorepo with workspace_path, only scan the workspace subfolder
         scan_path = local_path / workspace_path if workspace_path else local_path
         be_files, fe_files = discover_files(scan_path)
         repo_type = detect_repo_type(len(be_files), len(fe_files))
 
-        # Calculate token stats for all files
         be_stats = _calculate_token_totals(scan_path, be_files)
         fe_stats = _calculate_token_totals(scan_path, fe_files)
 
-        # Calculate disk size
         disk_size = get_directory_size(scan_path)
 
-        # Create DB record with detailed stats
-        # If workspace_path is set, append it to the name for display
         display_name = repo_info.full_name
         if workspace_path:
             display_name = f"{repo_info.full_name} [{workspace_path}]"
@@ -277,13 +262,10 @@ class RepoManager:
 
         existing = query.first()
         if existing:
-            # If already cloning, just return it (avoid duplicate clones)
             if existing.status == "cloning":
                 return existing
-            # If already cloned (active/error), sync instead
             return self.sync(cast(str, existing.id))
 
-        # Create record with cloning status
         display_name = repo_info.full_name
         if workspace_path:
             display_name = f"{repo_info.full_name} [{workspace_path}]"
@@ -333,26 +315,20 @@ class RepoManager:
         if not repo:
             raise RepositoryError(f"Repository {repo_id} not found")
 
-        # Get effective token
         effective_token = self._get_token(token)
 
-        # Clone to local
         repo_info = parse_github_url(url)
         local_path = clone_repo(repo_info.url, branch, effective_token)
 
-        # Detect repo type and calculate tokens
         scan_path = local_path / workspace_path if workspace_path else local_path
         be_files, fe_files = discover_files(scan_path)
         repo_type = detect_repo_type(len(be_files), len(fe_files))
 
-        # Calculate token stats
         be_stats = _calculate_token_totals(scan_path, be_files)
         fe_stats = _calculate_token_totals(scan_path, fe_files)
 
-        # Calculate disk size
         disk_size = get_directory_size(scan_path)
 
-        # Update repo record
         repo.local_path = str(local_path)  # type: ignore[assignment]
         repo.status = "active"  # type: ignore[assignment]
         repo.repo_type = repo_type  # type: ignore[assignment]
@@ -396,7 +372,6 @@ class RepoManager:
         if local_path.exists() and (local_path / ".git").exists():
             return repo  # All good
 
-        # Local path missing - re-clone
         import logging
 
         logger = logging.getLogger(__name__)
@@ -405,12 +380,10 @@ class RepoManager:
         effective_token = self._get_token(token)
 
         try:
-            # Re-clone to the same path
             repo_url = cast(str, repo.url)
             repo_branch = cast(str, repo.default_branch) if repo.default_branch else "main"
             clone_repo(repo_url, repo_branch, effective_token, target_path=local_path)
 
-            # Update sync timestamp
             repo.last_synced_at = datetime.utcnow()  # type: ignore[assignment]
             repo.status = "active"  # type: ignore[assignment]
             self.db.commit()
@@ -451,21 +424,17 @@ class RepoManager:
         try:
             local_path = Path(cast(str, repo.local_path))
 
-            # Validate path stays within repos directory
             self._validate_path(local_path, base_dir=self._settings.repos_dir)
 
             effective_token = self._get_token(token)
             pull_repo(local_path, effective_token)
 
-            # Re-detect files and recalculate tokens
-            # For monorepo with workspace_path, only scan the workspace subfolder
             workspace_path = cast(str | None, repo.workspace_path)
             scan_path = local_path / workspace_path if workspace_path else local_path
             be_files, fe_files = discover_files(scan_path)
             be_stats = _calculate_token_totals(scan_path, be_files)
             fe_stats = _calculate_token_totals(scan_path, fe_files)
 
-            # Calculate disk size for the scanned path
             disk_size = get_directory_size(scan_path)
 
             repo.status = "active"  # type: ignore[assignment]
@@ -564,7 +533,6 @@ class RepoManager:
         local_path = Path(cast(str, repo.local_path))
         git_status = get_repo_status(local_path)
 
-        # Parse file stats from metadata if available
         files_stats: dict[str, int] | None = None
         if repo.metadata_ and isinstance(repo.metadata_, dict):
             be_count = repo.metadata_.get("be_files")
@@ -587,8 +555,6 @@ class RepoManager:
             "files": files_stats,
         }
 
-    # --- Repository Link Methods ---
-
     def link_repositories(
         self,
         source_id: str,
@@ -610,7 +576,6 @@ class RepoManager:
         Raises:
             RepositoryError: If source or target not found, or link already exists.
         """
-        # Validate repositories exist
         source = self.get(source_id)
         if not source:
             raise RepositoryError(f"Source repository not found: {source_id}")
@@ -619,11 +584,9 @@ class RepoManager:
         if not target:
             raise RepositoryError(f"Target repository not found: {target_id}")
 
-        # Prevent self-linking
         if source_id == target_id:
             raise RepositoryError("Cannot link a repository to itself")
 
-        # Validate link type
         try:
             LinkType(link_type)
         except ValueError:
@@ -646,7 +609,6 @@ class RepoManager:
                 f"Link already exists: {source.name} --{link_type}--> {target.name}"
             )
 
-        # Create link
         link = RepositoryLink(
             source_repo_id=source_id,
             target_repo_id=target_id,
@@ -702,7 +664,6 @@ class RepoManager:
 
         linked_repos: list[dict[str, Any]] = []
 
-        # Outgoing links (this repo is the source)
         if direction is None or direction == "outgoing":
             query = self.db.query(RepositoryLink).filter(RepositoryLink.source_repo_id == repo_id)
             if link_type:
@@ -720,7 +681,6 @@ class RepoManager:
                     }
                 )
 
-        # Incoming links (this repo is the target)
         if direction is None or direction == "incoming":
             query = self.db.query(RepositoryLink).filter(RepositoryLink.target_repo_id == repo_id)
             if link_type:

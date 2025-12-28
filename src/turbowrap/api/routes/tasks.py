@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
-# Global registry for running review tasks (for cancellation)
 _running_reviews: dict[str, asyncio.Task[Any]] = {}
 
 
@@ -62,7 +61,6 @@ def run_task_background(
 
     finally:
         db.close()
-        # Mark as complete in queue
         queue = get_task_queue()
         queue.complete(task_id)
 
@@ -95,14 +93,12 @@ def create_task(
     db: Session = Depends(get_db),
 ) -> Task:
     """Create and queue a new task."""
-    # Verify repository exists
     repo_manager = RepoManager(db)
     repo = repo_manager.get(data.repository_id)
 
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    # Verify task type
     registry = get_task_registry()
     if data.type not in registry.available_tasks:
         raise HTTPException(
@@ -121,7 +117,6 @@ def create_task(
     db.commit()
     db.refresh(task)
 
-    # Add to queue
     queue = get_task_queue()
     queued = QueuedTask(
         task_id=cast(str, task.id),
@@ -131,7 +126,6 @@ def create_task(
     )
     queue.enqueue(queued)
 
-    # Start background execution
     background_tasks.add_task(
         run_task_background,
         cast(str, task.id),
@@ -209,7 +203,6 @@ def get_task_progress(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Calculate elapsed time
     elapsed = None
     if task.started_at:
         if task.completed_at:
@@ -217,7 +210,6 @@ def get_task_progress(
         else:
             elapsed = (datetime.utcnow() - task.started_at).total_seconds()
 
-    # Estimate remaining time
     estimated_remaining = None
     progress = task.progress or 0
 
@@ -294,7 +286,6 @@ async def cancel_task(
             status_code=400, detail=f"Cannot cancel task with status: {task.status}"
         )
 
-    # Try to remove from queue (for pending tasks)
     queue = get_task_queue()
     cancelled = queue.cancel(task_id)
 
@@ -303,7 +294,6 @@ async def cancel_task(
         db.commit()
         return {"status": "cancelled", "id": task_id}
 
-    # Try to cancel via ReviewManager
     manager = get_review_manager()
     if manager.cancel_review(task_id):
         task.status = "cancelled"  # type: ignore[assignment]
@@ -325,7 +315,6 @@ async def cancel_task(
         db.commit()
         return {"status": "cancelled", "id": task_id}
 
-    # Task running but not in registries
     task.status = "cancelled"  # type: ignore[assignment]
     task.completed_at = datetime.utcnow()  # type: ignore[assignment]
     db.commit()
@@ -368,12 +357,10 @@ async def stream_review(
     """
     from ..services.review_stream_service import get_review_stream_service
 
-    # Verify repository exists
     repo = db.query(Repository).filter(Repository.id == repository_id).first()
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    # Delegate to service layer
     service = get_review_stream_service(db)
     session_info = await service.start_or_reconnect(
         repository_id=repository_id,
@@ -427,7 +414,6 @@ async def restart_reviewer(
     from ...review.reviewers.base import ReviewContext
     from ..review_manager import get_review_manager
 
-    # Validate reviewer name (support both old and new naming conventions)
     valid_reviewers = [
         "reviewer_be",
         "reviewer_be_architecture",
@@ -491,7 +477,6 @@ async def restart_reviewer(
                 ),
             )
 
-            # Prepare context (similar to orchestrator._prepare_context)
             context = ReviewContext(request=request)
             context.repo_path = Path(local_path)
             context.metadata["review_id"] = f"{task_id}_{reviewer_name}"  # For S3 logging
@@ -503,7 +488,6 @@ async def restart_reviewer(
                     f"[RESTART] Monorepo mode: limiting review to workspace '{repo.workspace_path}'"
                 )
 
-            # Scan directory for files to review (respect workspace_path for monorepos)
             exclude_dirs = {
                 ".git",
                 "node_modules",
@@ -558,7 +542,6 @@ async def restart_reviewer(
                 ".ml",
                 ".scala",
             }
-            # Exclude config/lock files that shouldn't be reviewed
             exclude_files = {
                 "package.json",
                 "package-lock.json",
@@ -574,7 +557,6 @@ async def restart_reviewer(
             }
 
             files = []
-            # Use workspace_path as scan base for monorepos
             if context.workspace_path:
                 scan_base = context.repo_path / context.workspace_path
             else:
@@ -593,8 +575,6 @@ async def restart_reviewer(
             context.files = files[:100]  # Limit to 100 files
             logger.info(f"[RESTART] Found {len(context.files)} files to review")
 
-            # Load .llms/structure.xml (consolidated XML format, optimized for LLM)
-            # For monorepo: load from workspace/.llms/structure.xml
             if context.workspace_path:
                 xml_path = context.repo_path / context.workspace_path / ".llms" / "structure.xml"
             else:
@@ -617,7 +597,6 @@ async def restart_reviewer(
                     f"NOT FOUND - attempting auto-generation..."
                 )
 
-                # Notify user via WebSocket that structure generation is starting
                 session.add_event(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
@@ -639,7 +618,6 @@ async def restart_reviewer(
                     gemini_client = GeminiClient()
                     logger.info("[RESTART] GeminiClient OK")
 
-                    # Generate structure.xml
                     logger.info(
                         f"[RESTART] StructureGenerator: repo={context.repo_path}, "
                         f"workspace={context.workspace_path}"
@@ -651,7 +629,6 @@ async def restart_reviewer(
                     )
                     logger.info(f"[RESTART] scan_root={generator.scan_root}")
 
-                    # Send progress update
                     session.add_event(
                         ProgressEvent(
                             type=ProgressEventType.REVIEWER_STREAMING,
@@ -673,14 +650,12 @@ async def restart_reviewer(
                         f"[RESTART] Generated {len(generated_files)} files: {generated_files}"
                     )
 
-                    # Reload after generation
                     if xml_path.exists():
                         content = xml_path.read_text(encoding="utf-8")
                         context.structure_docs["structure.xml"] = content
                         logger.info(
                             f"[RESTART] SUCCESS: Loaded structure.xml ({len(content)} chars)"
                         )
-                        # Notify success
                         session.add_event(
                             ProgressEvent(
                                 type=ProgressEventType.REVIEWER_STREAMING,
@@ -703,7 +678,6 @@ async def restart_reviewer(
                     logger.error("[RESTART] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
                     logger.error(f"[RESTART] Error: {e}")
                     logger.error(f"[RESTART] Traceback:\n{traceback.format_exc()}")
-                    # Notify failure
                     session.add_event(
                         ProgressEvent(
                             type=ProgressEventType.REVIEWER_STREAMING,
@@ -712,7 +686,6 @@ async def restart_reviewer(
                             content=f"❌ Structure generation failed: {e}\n",
                         )
                     )
-                    # DON'T swallow the error - let it propagate so the user sees it
                     raise
 
             # Create progress callbacks
@@ -751,7 +724,6 @@ async def restart_reviewer(
 
             # Delete old issues from this reviewer
             # Use raw SQL with JSONB cast for array containment check
-            # (JSON type doesn't support @> operator, need explicit cast to JSONB)
             from sqlalchemy import text
 
             old_issues = (
@@ -792,7 +764,6 @@ async def restart_reviewer(
                     suggested_fix=issue.suggested_fix,
                     references=issue.references if issue.references else None,
                     flagged_by=issue.flagged_by if issue.flagged_by else [reviewer_name],
-                    # Effort estimation for fix batching
                     estimated_effort=issue.estimated_effort,
                     estimated_files_count=issue.estimated_files_count,
                 )
@@ -835,17 +806,14 @@ async def restart_reviewer(
         finally:
             restart_db.close()
 
-    # Use a new session ID for this restart
     restart_session_id = f"{task_id}_restart_{reviewer_name}_{datetime.utcnow().strftime('%H%M%S')}"
 
-    # Start background reviewer restart (session passed directly by manager)
     session = await manager.start_review(
         task_id=restart_session_id,
         repository_id=cast(str, task.repository_id),
         review_coro=run_reviewer_restart,
     )
 
-    # Generator for SSE streaming
     async def generate() -> AsyncIterator[dict[str, str]]:
         """Generate SSE events from reviewer restart progress."""
         queue = session.subscribe()
@@ -921,7 +889,6 @@ def check_resumable(
 
     Returns info about the most recent failed task and its checkpoints.
     """
-    # Find most recent failed task
     failed_task = (
         db.query(Task)
         .filter(

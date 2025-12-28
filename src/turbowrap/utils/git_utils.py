@@ -18,11 +18,6 @@ from ..exceptions import CloneError, RepositoryError, SyncError
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Models
-# =============================================================================
-
-
 class GitStatus(BaseModel):
     """Git repository status."""
 
@@ -81,11 +76,6 @@ class GitOperationResult:
     ai_resolved: bool = False
 
 
-# =============================================================================
-# Core Utilities
-# =============================================================================
-
-
 def _get_git_env() -> dict[str, str]:
     """Get environment with git terminal prompts disabled."""
     env = os.environ.copy()
@@ -130,12 +120,10 @@ def run_git_command(
             timeout=timeout,
             env=env,
         )
-        # Use rstrip() to preserve leading whitespace (critical for porcelain format)
         return result.stdout.rstrip() if capture_output and result.stdout else ""
 
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.strip() if e.stderr else "Unknown error"
-        # Mask tokens if present
         error_msg = re.sub(r"https://[^@]+@", "https://***@", error_msg)
 
         if "Authentication failed" in error_msg or "could not read Username" in error_msg:
@@ -225,18 +213,12 @@ def _get_auth_url(url: str, token: str | None = None) -> str:
     if not token:
         return url
 
-    # Strip any existing token from URL first
     clean_url = re.sub(r"https://[^@]+@github\.com/", "https://github.com/", url)
 
     # Convert https://github.com/owner/repo.git to https://token@github.com/owner/repo.git
     if clean_url.startswith("https://github.com/"):
         return clean_url.replace("https://github.com/", f"https://{token}@github.com/")
     return url
-
-
-# =============================================================================
-# High Level Operations
-# =============================================================================
 
 
 def clone_repo(
@@ -259,12 +241,10 @@ def clone_repo(
     local_path = target_path if target_path else get_local_path(url)
 
     if local_path.exists():
-        # Already cloned, just pull
         return pull_repo(local_path, token)
 
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Use authenticated URL if token provided
     clone_url = _get_auth_url(url, token)
 
     try:
@@ -277,7 +257,6 @@ def clone_repo(
         )
         return local_path
     except subprocess.CalledProcessError as e:
-        # Mask token in error message
         error_msg = e.stderr.replace(token, "***") if token else e.stderr
         if "Authentication failed" in error_msg or "could not read Username" in error_msg:
             raise CloneError(
@@ -307,7 +286,6 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
     original_url = None
 
     try:
-        # If token provided, temporarily update remote URL
         if token:
             # Get current remote URL
             result = subprocess.run(
@@ -321,7 +299,6 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
             original_url = result.stdout.strip()
             auth_url = _get_auth_url(original_url, token)
 
-            # Temporarily set authenticated URL
             subprocess.run(
                 ["git", "remote", "set-url", "origin", auth_url],
                 cwd=repo_path,
@@ -356,7 +333,6 @@ def pull_repo(repo_path: Path, token: str | None = None) -> Path:
         return repo_path
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.replace(token, "***") if token else e.stderr
-        # Detect token/auth related errors
         auth_errors = [
             "Authentication failed",
             "could not read Username",
@@ -385,7 +361,6 @@ def push_repo(repo_path: Path, message: str = "Update") -> None:
 
     try:
         run_git_command(repo_path, ["add", "-A"])
-        # Commit might fail if empty, which is fine
         try:
             run_git_command(repo_path, ["commit", "-m", message])
         except RuntimeError:
@@ -410,7 +385,6 @@ def list_branches(repo_path: Path, include_remote: bool = True) -> list[str]:
         raise RepositoryError(f"Repository not found: {repo_path}")
 
     try:
-        # Fetch prune
         try:
             run_git_command(repo_path, ["fetch", "--prune"], timeout=60)
         except RuntimeError:
@@ -478,7 +452,6 @@ def checkout_branch(repo_path: Path, branch: str) -> str:
             if result.returncode != 0:
                 raise RepositoryError(f"Failed to checkout branch '{branch}': {result.stderr}")
 
-        # Pull latest changes
         subprocess.run(
             ["git", "pull", "--ff-only"],
             cwd=repo_path,
@@ -505,14 +478,11 @@ def get_repo_status(repo_path: Path) -> GitStatus:
         for line in status_out.split("\n"):
             if not line:
                 continue
-            # Format is "XY PATH" where XY is 2 chars, then space, then path
-            # X = index status, Y = worktree status
             if len(line) < 4:
                 continue
 
             x = line[0]
             y = line[1]
-            # Skip the space separator (position 2) and get the filepath
             # Handle edge cases where separator might be missing
             if len(line) > 2 and line[2] == " ":
                 filepath = line[3:].strip()
@@ -535,7 +505,6 @@ def get_repo_status(repo_path: Path) -> GitStatus:
             if y in ("M", "D"):
                 modified.append(filepath)
 
-        # Ahead/Behind
         ahead = behind = 0
         try:
             ahead_str = run_git_command(repo_path, ["rev-list", "--count", "@{u}..HEAD"])
@@ -562,11 +531,6 @@ def get_repo_status(repo_path: Path) -> GitStatus:
         )
 
 
-# =============================================================================
-# AI Conflict Resolution
-# =============================================================================
-
-
 async def resolve_conflicts_with_gemini(
     repo_path: Path,
     context_desc: str = "merge/rebase",
@@ -585,7 +549,6 @@ async def resolve_conflicts_with_gemini(
     op_id = op_id or str(uuid.uuid4())
     logger.info(f"Resolving conflicts in {repo_path} using Gemini Flash")
 
-    # 1. Identify conflicting files
     try:
         status_out = run_git_command(repo_path, ["status", "--porcelain"])
         conflicting_files = [
@@ -645,7 +608,6 @@ Start by reading the files.
             success=False, message=f"Gemini failed to resolve: {result.error}", output=result.output
         )
 
-    # 4. Verify Resolution
     try:
         status_out = run_git_command(repo_path, ["status", "--porcelain"])
         still_conflicting = [line for line in status_out.split("\n") if line.startswith("UU ")]
@@ -670,10 +632,6 @@ Start by reading the files.
         )
 
 
-# =============================================================================
-# Smart Push - AI-Powered Git Workflow
-# =============================================================================
-
 SMART_PUSH_INSTRUCTIONS_FILE = ".turbowrap/SMART_PUSH.md"
 
 SMART_PUSH_INSTRUCTIONS_CONTENT = """# Smart Push Instructions
@@ -688,19 +646,16 @@ git status
 ```
 Review what files have changed.
 
-### 2. Stage All Changes
 ```bash
 git add -A
 ```
 
-### 3. Commit Changes
 Create a meaningful commit message based on the changes:
 ```bash
 git commit -m "<descriptive message based on changes>"
 ```
 If nothing to commit, skip to step 4.
 
-### 4. Pull from Remote
 ```bash
 git pull --rebase
 ```
@@ -714,7 +669,6 @@ If conflicts occur:
 5. Stage resolved files: `git add <file>`
 6. Continue rebase: `git rebase --continue`
 
-### 6. Push to Remote
 ```bash
 git push
 ```
@@ -793,7 +747,6 @@ async def smart_push(
 
     logger.info(f"[smart_push] Launching Gemini Flash for {repo_path.name}")
 
-    # Launch Gemini Flash (lazy import to avoid circular dependency)
     from ..llm.gemini import GeminiCLI
 
     gemini = GeminiCLI(
@@ -832,7 +785,6 @@ async def smart_push(
                 ai_resolved=True,
             )
     except (RuntimeError, ValueError):
-        # No upstream or other issue - assume success if gemini reported success
         pass
 
     return GitOperationResult(
@@ -843,7 +795,6 @@ async def smart_push(
     )
 
 
-# Backward compatibility alias
 async def smart_push_with_conflict_resolution(
     repo_path: Path,
     message: str = "Update via TurboWrap",
@@ -857,11 +808,6 @@ async def smart_push_with_conflict_resolution(
         "claude_resolved": False,
         "message": result.message,
     }
-
-
-# =============================================================================
-# PR Review Utilities (from review/utils/git_utils.py)
-# =============================================================================
 
 
 @dataclass
@@ -917,7 +863,6 @@ class RepoGitUtils:
         )
         if result.returncode != 0:
             error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-            # Detect auth errors
             if "Authentication failed" in error_msg or "could not read Username" in error_msg:
                 raise RuntimeError(
                     "Git authentication failed. Configure credentials with: "
@@ -942,14 +887,12 @@ class RepoGitUtils:
             List of changed file paths
         """
         if base_ref is None:
-            # Find merge base with main/master
             try:
                 base_ref = self._run_git("merge-base", "main", head_ref)
             except RuntimeError:
                 try:
                     base_ref = self._run_git("merge-base", "master", head_ref)
                 except RuntimeError:
-                    # Fall back to comparing with HEAD~1
                     base_ref = f"{head_ref}~1"
 
         output = self._run_git("diff", "--name-only", base_ref, head_ref)
@@ -1039,9 +982,6 @@ class RepoGitUtils:
         Returns:
             PRInfo or None if invalid URL
         """
-        # Match patterns like:
-        # https://github.com/owner/repo/pull/123
-        # https://github.com/owner/repo/pull/123/files
         match = re.match(
             r"https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)",
             url,
@@ -1066,5 +1006,4 @@ class RepoGitUtils:
         return output.split("\n") if output else []
 
 
-# Backwards compatibility alias
 GitUtils = RepoGitUtils

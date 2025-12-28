@@ -28,25 +28,20 @@ logger = logging.getLogger(__name__)
 class OperationType(str, Enum):
     """Types of operations that can be tracked."""
 
-    # AI-powered operations (long-running)
     FIX = "fix"
     REVIEW = "review"
 
-    # Git write operations (medium duration)
     GIT_COMMIT = "git_commit"
     GIT_MERGE = "git_merge"
     GIT_PUSH = "git_push"
     GIT_PULL = "git_pull"
 
-    # Repository operations (can be long for large repos)
     CLONE = "clone"
     SYNC = "sync"
 
-    # Post-fix operations
     MERGE_AND_PUSH = "merge_and_push"
     OPEN_PR = "open_pr"
 
-    # Deployment
     DEPLOY = "deploy"
     PROMOTE = "promote"
 
@@ -54,7 +49,6 @@ class OperationType(str, Enum):
     CLI_TASK = "cli_task"
 
 
-# Human-readable labels for each operation type
 OPERATION_LABELS: dict[OperationType, str] = {
     OperationType.FIX: "fixing issues on",
     OperationType.REVIEW: "reviewing",
@@ -70,7 +64,6 @@ OPERATION_LABELS: dict[OperationType, str] = {
     OperationType.CLI_TASK: "running task on",
 }
 
-# Colors for frontend (Tailwind classes)
 OPERATION_COLORS: dict[OperationType, str] = {
     OperationType.FIX: "violet",
     OperationType.REVIEW: "blue",
@@ -96,25 +89,20 @@ class Operation:
     flexible enough to handle fix, review, git, and deploy operations.
     """
 
-    # Core identity
     operation_id: str
     operation_type: OperationType
     status: str  # "in_progress", "completed", "failed", "cancelled"
     created_at: datetime = field(default_factory=datetime.utcnow)
 
-    # Context (common to all operations)
     repository_id: str | None = None
     repository_name: str | None = None
     branch_name: str | None = None
     user_name: str | None = None
 
-    # Hierarchy - links child operations to parent session
     parent_session_id: str | None = None
 
-    # Operation-specific details (flexible dict)
     details: dict[str, Any] = field(default_factory=dict)
 
-    # Completion data
     started_at: datetime | None = None
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
@@ -177,7 +165,6 @@ class OperationTracker:
     Usage:
         tracker = OperationTracker()
 
-        # Register an operation
         op = tracker.register(
             op_type=OperationType.GIT_PUSH,
             repo_id="abc-123",
@@ -190,19 +177,15 @@ class OperationTracker:
         # Update during execution
         tracker.update(op.operation_id, branch="feature-x")
 
-        # Complete or fail
         tracker.complete(op.operation_id, result={"pushed": True})
-        # OR
         tracker.fail(op.operation_id, error="Authentication failed")
     """
 
     _instance: OperationTracker | None = None
     _lock = RLock()
 
-    # Time-to-live for completed/failed operations (1 hour)
     TTL_SECONDS = 3600
 
-    # Stale threshold (30 minutes)
     STALE_THRESHOLD_SECONDS = 1800
 
     def __new__(cls) -> OperationTracker:
@@ -219,7 +202,6 @@ class OperationTracker:
         """Initialize the internal store."""
         self._operations: dict[str, Operation] = {}
         self._store_lock = RLock()
-        # Pub/sub for SSE streaming
         self._subscribers: dict[str, list[Any]] = {}  # operation_id -> list of asyncio.Queue
 
     def _cleanup_expired(self) -> None:
@@ -292,7 +274,6 @@ class OperationTracker:
                 f"(repo={repo_name}, branch={branch}, user={user})"
             )
 
-            # Persist to database (async-safe, non-blocking)
             self._persist_register(operation)
 
             return operation
@@ -330,7 +311,6 @@ class OperationTracker:
             if details:
                 op.details.update(details)
 
-            # Persist details update to database
             if details:
                 self._persist_update(operation_id, {"details": op.details})
 
@@ -360,11 +340,9 @@ class OperationTracker:
             op.status = "completed"
             op.completed_at = datetime.utcnow()
 
-            # Merge token/S3 data from details into result
             # This ensures data saved via update() is available in result for frontend
             merged_result = result.copy() if result else {}
 
-            # Copy token fields from details if not already in result
             token_fields = [
                 "total_input_tokens",
                 "total_output_tokens",
@@ -378,7 +356,6 @@ class OperationTracker:
                 if field_name not in merged_result and field_name in op.details:
                     merged_result[field_name] = op.details[field_name]
 
-            # Copy S3 URLs from details if not already in result
             s3_fields = ["s3_prompt_url", "s3_output_url"]
             for field_name in s3_fields:
                 if field_name not in merged_result and field_name in op.details:
@@ -391,7 +368,6 @@ class OperationTracker:
                 f"(duration={op.duration_seconds:.1f}s)"
             )
 
-            # Persist to database
             self._persist_complete(op)
 
             return op
@@ -423,7 +399,6 @@ class OperationTracker:
 
             logger.error(f"[TRACKER] Failed {op.operation_type.value}: {operation_id} - {error}")
 
-            # Persist to database
             self._persist_fail(op)
 
             return op
@@ -440,7 +415,6 @@ class OperationTracker:
 
             logger.info(f"[TRACKER] Cancelled {op.operation_type.value}: {operation_id}")
 
-            # Persist to database
             self._persist_cancel(op)
 
             return op
@@ -493,7 +467,6 @@ class OperationTracker:
             if repo_id:
                 operations = [op for op in operations if op.repository_id == repo_id]
 
-            # Sort by creation time, newest first
             operations.sort(key=lambda x: x.created_at, reverse=True)
 
             return operations
@@ -530,9 +503,7 @@ class OperationTracker:
         """Check if there are any active operations."""
         return self.count_active(op_type) > 0
 
-    # =========================================================================
     # Pub/Sub Methods for SSE Streaming
-    # =========================================================================
 
     def subscribe(self, operation_id: str) -> Any:
         """
@@ -573,7 +544,6 @@ class OperationTracker:
                         f"[TRACKER] Unsubscribed from {operation_id[:8]}, "
                         f"remaining: {len(self._subscribers[operation_id])}"
                     )
-                    # Cleanup empty subscriber lists
                     if not self._subscribers[operation_id]:
                         del self._subscribers[operation_id]
                 except ValueError:
@@ -636,10 +606,6 @@ class OperationTracker:
         with self._store_lock:
             return len(self._subscribers.get(operation_id, []))
 
-    # =========================================================================
-    # Database Persistence Methods
-    # =========================================================================
-
     def _persist_register(self, operation: Operation) -> None:
         """Persist a new operation to database."""
         import traceback
@@ -675,7 +641,6 @@ class OperationTracker:
             finally:
                 db.close()
         except Exception as e:
-            # Don't fail the operation if DB persistence fails
             logger.error(
                 f"[TRACKER-DB] Failed to persist operation {operation.operation_id}: "
                 f"{e}\n{traceback.format_exc()}"
@@ -811,7 +776,6 @@ class OperationTracker:
             logger.warning(f"[TRACKER-DB] Failed to cancel operation in DB: {e}")
 
 
-# Convenience function for getting the singleton
 def get_tracker() -> OperationTracker:
     """Get the global OperationTracker instance."""
     return OperationTracker()

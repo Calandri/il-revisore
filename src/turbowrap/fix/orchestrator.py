@@ -37,12 +37,10 @@ from turbowrap.llm.claude_cli import ClaudeCLI
 # Import GeminiCLI from shared orchestration utilities
 from turbowrap.orchestration.cli_runner import GeminiCLI
 
-# S3 bucket for fix logs (same as thinking logs)
 S3_BUCKET = "turbowrap-thinking"
 
 logger = logging.getLogger(__name__)
 
-# Session persistence constants
 MAX_SESSION_TOKENS = 150_000  # 150k token limit (50k margin on 200k Opus)
 
 
@@ -59,10 +57,8 @@ class FixSessionContext:
     """
 
     claude_session_id: str | None = None
-    # Cumulative stats (for reporting)
     cumulative_input_tokens: int = 0
     cumulative_output_tokens: int = 0
-    # Last request's cache stats (for context size calculation)
     last_cache_read_tokens: int = 0  # Context size = how much Claude reads from cache
     last_cache_creation_tokens: int = 0
     compaction_count: int = 0
@@ -92,7 +88,6 @@ class BillingError(Exception):
     pass
 
 
-# Agent file paths
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 FIXER_AGENT = AGENTS_DIR / "fixer.md"
 FIX_CHALLENGER_AGENT = AGENTS_DIR / "fix_challenger.md"
@@ -102,22 +97,16 @@ ENGINEERING_PRINCIPLES = AGENTS_DIR / "engineering_principles.md"
 GIT_BRANCH_CREATOR_AGENT = AGENTS_DIR / "git_branch_creator.md"
 GIT_COMMITTER_AGENT = AGENTS_DIR / "git_committer.md"
 
-# File extensions for frontend vs backend
 FRONTEND_EXTENSIONS = {".tsx", ".ts", ".jsx", ".js", ".css", ".scss", ".html", ".vue", ".svelte"}
 BACKEND_EXTENSIONS = {".py", ".go", ".java", ".rb", ".php", ".rs", ".c", ".cpp", ".h"}
 
-# Type for progress callback
 ProgressCallback = Callable[[FixProgressEvent], Awaitable[None]]
 
 # Timeouts
 CLAUDE_CLI_TIMEOUT = 900  # 15 minutes per fix
 GEMINI_CLI_TIMEOUT = 120  # 2 minutes per review
 
-# Parallelism limits - prevent macOS file watcher exhaustion (EOPNOTSUPP)
-# Sequential execution: first all BE issues, then all FE issues (not parallel)
-# This avoids file watcher limit issues on macOS
 
-# Issue batching - don't overload a single Claude CLI with too many issues
 MAX_ISSUES_PER_CLI_CALL = 5  # Max issues per batch (fallback if no estimates)
 MAX_WORKLOAD_POINTS_PER_BATCH = 15  # Max workload points per batch
 DEFAULT_EFFORT = 3  # Default effort if not estimated (1-5 scale)
@@ -140,25 +129,20 @@ class FixOrchestrator:
         self.repo_path = repo_path
         self.settings = get_settings()
 
-        # Get challenger settings from config
         fix_config = self.settings.fix_challenger
         self.max_iterations = fix_config.max_iterations  # default 3
         self.satisfaction_threshold = fix_config.satisfaction_threshold  # default 95.0
 
-        # Load agent prompts
         self._agent_cache: dict[str, str] = {}
 
-        # S3 client for logging
         self.s3_client = boto3.client("s3")
         self.s3_bucket = S3_BUCKET
 
-        # Gemini CLI for review (using shared orchestration utility)
         self.gemini_cli = GeminiCLI(
             working_dir=repo_path,
             timeout=GEMINI_CLI_TIMEOUT,
         )
 
-        # Cache for GitHub token
         self._github_token_cache: str | None = None
 
     def _get_github_token(self) -> str | None:
@@ -205,7 +189,6 @@ class FixOrchestrator:
 
         content = agent_path.read_text(encoding="utf-8")
 
-        # Strip YAML frontmatter (--- ... ---)
         if content.startswith("---"):
             end_match = re.search(r"\n---\n", content[3:])
             if end_match:
@@ -263,7 +246,6 @@ class FixOrchestrator:
             elif self._is_frontend_file(str(issue.file)):
                 fe_issues.append(issue)
             else:
-                # Default to backend for unknown extensions
                 be_issues.append(issue)
 
         return be_issues, fe_issues
@@ -283,14 +265,11 @@ class FixOrchestrator:
             Code snippet with line numbers, or empty string if file not found
         """
         if issue.current_code:
-            # Already have the code, return it with line info
-            # fmt: off
             line_info = (
                 f"(lines {issue.line}-{issue.end_line})"
                 if issue.line and issue.end_line
                 else f"(line {issue.line})" if issue.line else ""
             )
-            # fmt: on
             return f"{line_info}\n{issue.current_code}"
 
         if not issue.line:
@@ -375,7 +354,6 @@ class FixOrchestrator:
             )
 
         try:
-            # Classify issues
             be_issues, fe_issues = self._classify_issues(issues)
             has_be = len(be_issues) > 0
             has_fe = len(fe_issues) > 0
@@ -416,7 +394,6 @@ class FixOrchestrator:
                 if proc.returncode != 0:
                     raise Exception(f"Failed to checkout branch {branch_name}: {stderr.decode()}")
             else:
-                # Create new branch from main (using agent)
                 branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
                 branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
                 branch_result = await self._run_claude_cli(
@@ -438,7 +415,6 @@ class FixOrchestrator:
                     is_error = True
                     specific_error = branch_result.replace("__ERROR__: ", "")
                 elif "ERROR:" in branch_result:
-                    # Claude reported an error in its output
                     is_error = True
                     # Extract error message after "ERROR:"
                     error_start = branch_result.find("ERROR:")
@@ -460,11 +436,9 @@ class FixOrchestrator:
             feedback_fe = ""
             last_gemini_output: str | None = None  # Store for fix explanation
 
-            # Collect prompts for S3 logging
             claude_prompts: list[dict[str, Any]] = []  # [{type: "be"|"fe", batch: N, prompt: str}]
             gemini_prompt: str | None = None
 
-            # Helper functions for batch processing
             def get_issue_workload(issue: Issue) -> int:
                 """Calculate workload points for an issue based on estimates."""
                 effort = int(issue.estimated_effort) if issue.estimated_effort else DEFAULT_EFFORT
@@ -497,14 +471,11 @@ class FixOrchestrator:
                     batches.append(current_batch)
                 return batches
 
-            # Calculate ALL batches upfront (once, before iterations)
             all_be_batches = batch_issues_by_workload(be_issues) if has_be else []
             all_fe_batches = batch_issues_by_workload(fe_issues) if has_fe else []
             len(all_be_batches) + len(all_fe_batches)
 
             # Track batch results across iterations
-            # Key: "BE-1", "FE-2", etc.
-            # Value: {"passed": bool, "score": float, "failed_issues": list}
             batch_results: dict[str, dict[str, Any]] = {}
             for idx in range(len(all_be_batches)):
                 batch_results[f"BE-{idx + 1}"] = {
@@ -525,17 +496,12 @@ class FixOrchestrator:
             successful_issues: list[Issue] = []
             failed_issues: list[Issue] = []
 
-            # Session context for persistence between batches
-            # Single unified session shared between all BE/FE batches
             session_context = FixSessionContext()
 
             for iteration in range(1, self.max_iterations + 1):
-                # Determine which batches to process this iteration
                 if iteration == 1:
-                    # First iteration: process ALL batches
                     batches_to_process = list(batch_results.keys())
                 else:
-                    # Subsequent iterations: only retry FAILED batches
                     batches_to_process = [
                         batch_id
                         for batch_id, result in batch_results.items()
@@ -546,7 +512,6 @@ class FixOrchestrator:
                     logger.info("All batches passed, no more retries needed")
                     break
 
-                # Show iteration plan
                 be_retry = [b for b in batches_to_process if b.startswith("BE")]
                 fe_retry = [b for b in batches_to_process if b.startswith("FE")]
                 plan_parts = []
@@ -594,17 +559,14 @@ class FixOrchestrator:
                 completed_batches = 0
                 all_passed_this_iteration = True
 
-                # Process each batch: Claude fix -> Gemini review (per batch)
                 for batch_id in batches_to_process:
                     batch_type = "BE" if batch_id.startswith("BE") else "FE"
                     batch_idx = int(batch_id.split("-")[1])
                     batch = batch_results[batch_id]["issues"]
                     completed_batches += 1
 
-                    # Get feedback for this batch from previous iteration
                     feedback = feedback_be if batch_type == "BE" else feedback_fe
 
-                    # Create streaming callback for this batch
                     async def on_chunk_claude(chunk: str, bt: str = batch_type) -> None:
                         await safe_emit(
                             FixProgressEvent(
@@ -647,11 +609,8 @@ class FixOrchestrator:
                             }
                         )
 
-                    # Calculate thinking budget based on workload
-                    # Heavy batches (workload > 10) get more thinking budget for complex reasoning
                     thinking_budget = None
                     if batch_workload > 10:
-                        # Scale: base 8k + 1k per workload point above 10, max 16k
                         base_budget = self.settings.thinking.budget_tokens
                         thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
                         logger.info(
@@ -679,7 +638,6 @@ class FixOrchestrator:
                             await emit_log(
                                 "ERROR", f"Claude CLI failed for {batch_id}: {error_detail}"
                             )
-                            # Mark batch as failed
                             batch_results[batch_id]["passed"] = False
                             batch_results[batch_id]["score"] = 0.0
                             all_passed_this_iteration = False
@@ -741,7 +699,6 @@ class FixOrchestrator:
                     if iteration == 1 and completed_batches == 1:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
-                    # Use shared GeminiCLI from orchestration utilities
                     # Atomic tracking at leaf level
                     gemini_result = await self.gemini_cli.run(
                         review_prompt,
@@ -772,14 +729,12 @@ class FixOrchestrator:
                         successful_issues.extend(batch)
                         continue
 
-                    # Parse per-batch review
                     score, failed_issue_codes, per_issue_scores, quality_scores = (
                         self._parse_batch_review(gemini_output, batch)
                     )
                     batch_results[batch_id]["score"] = score
                     batch_results[batch_id]["failed_issues"] = failed_issue_codes
 
-                    # Show per-issue scores and quality scores
                     if per_issue_scores:
                         scores_summary = " | ".join(
                             [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
@@ -807,8 +762,6 @@ class FixOrchestrator:
                         batch_results[batch_id]["passed"] = True
                         await emit_log("INFO", f"{batch_id} passed with score {score}/100")
 
-                        # === ATOMIC BATCH COMMIT ===
-                        # Commit immediately after batch passes Gemini review
                         batch_issue_codes = ", ".join(str(i.issue_code) for i in batch)
                         batch_commit_msg = f"[FIX] {batch_issue_codes}"
                         commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
@@ -817,7 +770,6 @@ class FixOrchestrator:
 
                         batch_commit_success = False
 
-                        # Validate workspace scope BEFORE commit (for monorepos)
                         if request.workspace_path:
                             uncommitted = await self._get_uncommitted_files()
                             violations = self._validate_workspace_scope(
@@ -830,7 +782,6 @@ class FixOrchestrator:
                                     "ERROR",
                                     f"Batch {batch_id} scope violation: {violations[:3]}",
                                 )
-                                # Revert changes and skip this batch
                                 await self._revert_uncommitted_changes()
                                 failed_issues.extend(batch)
                                 batch_results[batch_id]["passed"] = False
@@ -859,7 +810,6 @@ class FixOrchestrator:
                             ):
                                 await emit_log("ERROR", f"Batch {batch_id} commit failed")
                             else:
-                                # Get commit SHA and update DB
                                 (
                                     batch_commit_sha,
                                     batch_modified_files,
@@ -868,7 +818,6 @@ class FixOrchestrator:
                                 batch_results[batch_id]["commit_sha"] = batch_commit_sha
                                 batch_results[batch_id]["modified_files"] = batch_modified_files
 
-                                # Update issues in DB to RESOLVED
                                 await self._update_batch_issues_resolved(
                                     batch, batch_commit_sha, branch_name, session_id
                                 )
@@ -894,13 +843,10 @@ class FixOrchestrator:
                             await emit_log(
                                 "ERROR", f"Batch {batch_id} commit error: {str(e)[:100]}"
                             )
-                        # === END ATOMIC BATCH COMMIT ===
 
-                        # Only add to successful_issues if commit succeeded
                         if batch_commit_success:
                             successful_issues.extend(batch)
                         else:
-                            # Commit failed - add to failed_issues
                             failed_issues.extend(batch)
                             batch_results[batch_id]["passed"] = False  # Mark as failed
                             await safe_emit(
@@ -919,7 +865,6 @@ class FixOrchestrator:
                                 type=FixEventType.FIX_CHALLENGER_APPROVED,
                                 session_id=session_id,
                                 message=f"   ✅ {batch_id} PASSED ({score}/100)",
-                                # Include issue IDs so frontend can mark chips green
                                 issue_ids=[i.id for i in batch],
                                 issue_codes=[i.issue_code for i in batch],
                             )
@@ -932,7 +877,6 @@ class FixOrchestrator:
                             f"{batch_id} needs retry "
                             f"(score {score} < {self.satisfaction_threshold})",
                         )
-                        # Store feedback for retry
                         if batch_type == "BE":
                             feedback_be = gemini_output
                         else:
@@ -951,7 +895,6 @@ class FixOrchestrator:
                             )
                         )
 
-                # End of iteration summary
                 passed_batches = [b for b, r in batch_results.items() if r["passed"]]
                 failed_batches = [b for b, r in batch_results.items() if not r["passed"]]
 
@@ -965,7 +908,6 @@ class FixOrchestrator:
                     )
                 )
 
-                # ========== INCREMENTAL S3 SAVE ==========
                 # Save logs after each iteration so we have partial data if session crashes
                 await self._save_fix_log_to_s3(
                     session_id,
@@ -989,7 +931,6 @@ class FixOrchestrator:
                     )
                     break
 
-            # After all iterations, collect failed issues from batches that never passed
             for _batch_id, batch_data in batch_results.items():
                 if not batch_data["passed"]:
                     failed_issues.extend(batch_data["issues"])
@@ -1006,18 +947,12 @@ class FixOrchestrator:
                     )
 
             # NOTE: Workspace scope validation now happens BEFORE each batch commit (in the loop above)
-            # Each batch is validated and if there are violations, the batch is reverted and skipped
 
             # Step 3: Commits already done per-batch (atomic commits)
-            # No final commit needed - each batch was committed after passing Gemini review
 
             # Step 4: Collect results from batch commits
             fix_explanation = self._build_fix_explanation(successful_issues, last_gemini_output)
 
-            # Count issues based on batch_results (Gemini approval is the source of truth)
-            # If Gemini approved a batch (score >= threshold), those issues are COMPLETED
-            # This is more reliable than file-path matching which can fail
-            # with path format differences
             actually_fixed_count = len(successful_issues)
             failed_count = len(failed_issues)
 
@@ -1026,14 +961,10 @@ class FixOrchestrator:
                 f"{failed_count} failed (based on batch_results)"
             )
 
-            # Create IssueFixResult for SUCCESSFUL issues (from passed batches)
-            # Each issue gets its batch's commit_sha
             for issue in successful_issues:
                 issue_file = str(issue.file)
-                # Get diff for display (best effort, doesn't affect status)
                 fix_code = await self._get_diff_for_file(issue_file)
 
-                # Find which batch this issue was in to get commit info
                 issue_commit_sha = None
                 issue_modified_files: list[str] = []
                 issue_codes_for_msg = str(issue.issue_code)
@@ -1061,9 +992,7 @@ class FixOrchestrator:
                 )
                 result.results.append(issue_result)
 
-            # Create FAILED results for issues from batches that didn't pass Gemini review
             for issue in failed_issues:
-                # Find which batch this issue was in and get the score
                 batch_info = ""
                 for batch_id, data in batch_results.items():
                     if issue in data.get("issues", []):
@@ -1100,7 +1029,6 @@ class FixOrchestrator:
             )
 
             # Save fix log to S3 for debugging (10 day retention)
-            # Final save with is_partial=False (session completed)
             await self._save_fix_log_to_s3(
                 session_id,
                 result,
@@ -1174,7 +1102,6 @@ class FixOrchestrator:
         workspace_check = ""
         if workspace_path:
             workspace_check = f"""
-## ⚠️ WORKSPACE SCOPE CHECK
 
 This is a MONOREPO with restricted workspace: `{workspace_path}/`
 
@@ -1185,13 +1112,10 @@ If any files outside `{workspace_path}/` were modified, this is a CRITICAL failu
 """
 
         task = f"""
-# Task: Review Batch {batch_type}-{batch_idx} Fixes
 {workspace_check}
-## Issues in This Batch
 
 {issues_section}
 
-## Instructions
 1. Run `git diff` to see the changes made for these {len(issues)} issues
 2. For EACH issue, evaluate if the fix correctly addresses the problem
 3. Check for bugs, security issues, or breaking changes
@@ -1232,7 +1156,6 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         per_issue_scores: dict[str, float] = {}
         quality_scores: dict[str, int] = {}
 
-        # Try to parse JSON block from output
         json_match = re.search(r"```json\s*([\s\S]*?)```", output)
         if json_match:
             try:
@@ -1241,14 +1164,12 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
                 if "quality_scores" in review_data:
                     quality_scores = review_data["quality_scores"]
                     logger.info(f"Parsed quality_scores: {quality_scores}")
-                # Also try to get satisfaction_score from JSON
                 if "satisfaction_score" in review_data:
                     batch_score = float(review_data["satisfaction_score"])
                     logger.info(f"Parsed satisfaction_score from JSON: {batch_score}")
             except json.JSONDecodeError as e:
                 logger.debug(f"Failed to parse JSON block: {e}")
 
-        # Parse BATCH_SCORE (fallback or override)
         match = re.search(r"BATCH_SCORE:\s*(\d+)", output, re.IGNORECASE)
         if match:
             batch_score = float(match.group(1))
@@ -1260,17 +1181,14 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
                 batch_score = float(match.group(1))
                 logger.info(f"Parsed SCORE (fallback): {batch_score}")
 
-        # Parse per-issue scores
         for issue in issues:
             code = str(issue.issue_code)
-            # Look for pattern: - ISSUE-123: 95 | reason
             pattern = rf"-\s*{re.escape(code)}:\s*(\d+)"
             match = re.search(pattern, output, re.IGNORECASE)
             if match:
                 per_issue_scores[code] = float(match.group(1))
                 logger.debug(f"Issue {code}: score {per_issue_scores[code]}")
 
-        # Parse FAILED_ISSUES
         match = re.search(r"FAILED_ISSUES:\s*(.+?)(?:\n|$)", output, re.IGNORECASE)
         if match:
             failed_text = match.group(1).strip().lower()
@@ -1282,7 +1200,6 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
                 ]
                 logger.info(f"Parsed FAILED_ISSUES: {failed_issues}")
 
-        # If no explicit FAILED_ISSUES, derive from per_issue_scores
         if not failed_issues and per_issue_scores:
             failed_issues = [
                 code
@@ -1324,7 +1241,6 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             workspace_path: Monorepo workspace restriction (e.g., "packages/frontend")
             user_notes: User-provided notes with additional context or instructions
         """
-        # Load agent prompt based on type
         if agent_type == "fe":
             agent_prompt = self._get_fixer_prompt_fe()
         else:
@@ -1333,14 +1249,11 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         # Build task with all issues
         task_parts = ["# Task: Fix Code Issues\n"]
 
-        # Add structure documentation for repository context
         structure_doc = self._load_structure_doc(workspace_path)
         if structure_doc:
-            # Wrap XML in semantic tags for better LLM parsing
             if structure_doc.strip().startswith("<?xml"):
                 task_parts.append(
                     f"""
-## Repository Structure
 
 Use this structure documentation to understand the codebase architecture:
 
@@ -1354,7 +1267,6 @@ Use this structure documentation to understand the codebase architecture:
             else:
                 task_parts.append(
                     f"""
-## Repository Structure
 
 Use this structure documentation to understand the codebase architecture:
 
@@ -1364,11 +1276,9 @@ Use this structure documentation to understand the codebase architecture:
 """
                 )
 
-        # Add workspace scope restriction if set
         if workspace_path:
             task_parts.append(
                 f"""
-## ⚠️ WORKSPACE SCOPE RESTRICTION
 
 **CRITICAL**: This is a MONOREPO. You are ONLY allowed to modify files within:
 ```
@@ -1384,11 +1294,9 @@ DO NOT modify any files outside this folder. If a fix requires changes outside t
 """
             )
 
-        # Add user notes if provided
         if user_notes:
             task_parts.append(
                 f"""
-## Developer Notes
 
 The developer has provided the following additional context and instructions:
 
@@ -1402,8 +1310,7 @@ The developer has provided the following additional context and instructions:
 """
             )
 
-        for i, issue in enumerate(issues, 1):
-            # Get code snippet with context (marks problematic lines with >>>)
+        for _i, issue in enumerate(issues, 1):
             code_snippet = self._get_code_snippet(issue, context_lines=5)
 
             # Build location info
@@ -1416,22 +1323,18 @@ The developer has provided the following additional context and instructions:
 
             task_parts.append(
                 f"""
-## Issue {i}: {issue.issue_code}
 **Title**: {issue.title}
 **Severity**: {issue.severity}
 **Category**: {issue.category}
 **File**: {issue.file}
 **Location**: {location}
 
-### Description
 {issue.description}
 
-### Problematic Code (lines marked with >>> need fixing)
 ```
 {code_snippet or f"[No snippet available - read {issue.file}]"}
 ```
 
-### Suggested Fix
 {issue.suggested_fix or "Use your best judgment based on the issue description"}
 
 ---
@@ -1440,7 +1343,6 @@ The developer has provided the following additional context and instructions:
 
         task_parts.append(
             """
-## Instructions
 1. Read the files to understand context
 2. Make the fixes - one by one
 3. Keep changes minimal
@@ -1451,7 +1353,6 @@ The developer has provided the following additional context and instructions:
         if feedback and iteration > 1:
             task_parts.append(
                 f"""
-## Feedback from Previous Attempt (Iteration {iteration})
 The reviewer found issues with the previous fix. Address this feedback:
 
 {feedback}
@@ -1460,19 +1361,16 @@ The reviewer found issues with the previous fix. Address this feedback:
 
         task = "\n".join(task_parts)
 
-        # Combine agent prompt with task
         return f"{agent_prompt}\n\n---\n\n{task}"
 
     def _parse_score(self, output: str) -> float:
         """Extract score from Gemini output."""
-        # Look for "SCORE: XX" pattern
         match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
         if match:
             score = float(match.group(1))
             logger.info(f"Parsed SCORE: {score}")
             return score
 
-        # Look for "satisfaction_score": XX in JSON (most direct)
         match = re.search(r'"satisfaction_score"\s*:\s*(\d+)', output)
         if match:
             score = float(match.group(1))
@@ -1486,7 +1384,6 @@ The reviewer found issues with the previous fix. Address this feedback:
             logger.info(f"Parsed XX/100: {score}")
             return score
 
-        # Default to 70 if can't parse
         logger.warning(
             f"Could not parse score from Gemini output, defaulting to 70. Output: {output[:500]}"
         )
@@ -1534,10 +1431,8 @@ The reviewer found issues with the previous fix. Address this feedback:
         if session_context and session_context.needs_compaction():
             await self._compact_context(session_context, on_chunk, parent_session_id)
 
-        # Create ClaudeCLI with appropriate timeout and model
         cli = self._get_claude_cli(timeout, model)
 
-        # Wrap on_chunk to add stderr prefix for stderr streaming
         async def on_stderr(line: str) -> None:
             if on_chunk:
                 print(f"[CLAUDE FIX STDERR] {line}", flush=True)
@@ -1564,16 +1459,11 @@ The reviewer found issues with the previous fix. Address this feedback:
             resume_session_id=session_context.claude_session_id if session_context else None,
         )
 
-        # Update session context with results
         if session_context and result.success:
-            # Store session ID for next batch
             session_context.claude_session_id = result.session_id
-            # Update token stats
             for usage in result.model_usage:
-                # Cumulative for reporting
                 session_context.cumulative_input_tokens += usage.input_tokens
                 session_context.cumulative_output_tokens += usage.output_tokens
-                # Last values for context size (cache_read = how much context Claude loads)
                 session_context.last_cache_read_tokens = usage.cache_read_tokens
                 session_context.last_cache_creation_tokens = usage.cache_creation_tokens
 
@@ -1583,7 +1473,6 @@ The reviewer found issues with the previous fix. Address this feedback:
             )
 
         # NOTE: Operation tracking is now handled atomically by ClaudeCLI.run()
-        # Each CLI call creates its own Operation with parent_session_id linking
 
         if not result.success:
             # Check for billing errors
@@ -1601,10 +1490,8 @@ The reviewer found issues with the previous fix. Address this feedback:
                     raise BillingError(result.error)
 
             logger.error(f"Claude CLI failed: {result.error}")
-            # Return error message instead of None so caller can show specific error
             return f"__ERROR__: {result.error or 'Unknown error'}"
 
-        # Log model usage
         for usage in result.model_usage:
             logger.info(
                 f"  {usage.model}: in={usage.input_tokens}, "
@@ -1639,7 +1526,6 @@ The reviewer found issues with the previous fix. Address this feedback:
                 f"running /compact...\n"
             )
 
-        # Use Claude's built-in /compact command - it knows what it did!
         cli = self._get_claude_cli(timeout=120)  # May take time to compact
 
         result = await cli.run(
@@ -1660,8 +1546,6 @@ The reviewer found issues with the previous fix. Address this feedback:
         )
 
         if result.success:
-            # Don't reset session_id! /compact keeps the same session
-            # Reset counters - next request's cache_read will show the new (smaller) context size
             session_context.cumulative_input_tokens = 0
             session_context.cumulative_output_tokens = 0
             session_context.last_cache_read_tokens = 0  # Will be updated by next request
@@ -1684,7 +1568,6 @@ The reviewer found issues with the previous fix. Address this feedback:
                 await on_chunk(f"⚠️ Compaction failed: {result.error}, continuing anyway\n")
 
     # NOTE: _run_gemini_cli method moved to turbowrap.orchestration.cli_runner.GeminiCLI
-    # Now using self.gemini_cli.run() instead
 
     async def _get_git_info(self) -> tuple[str | None, list[str], str | None]:
         """Get git info after commit.
@@ -1697,7 +1580,6 @@ The reviewer found issues with the previous fix. Address this feedback:
         diff_content = None
 
         try:
-            # Get commit SHA
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "rev-parse",
@@ -1710,7 +1592,6 @@ The reviewer found issues with the previous fix. Address this feedback:
             if proc.returncode == 0:
                 commit_sha = stdout.decode().strip()[:40]
 
-            # Get modified files from last commit
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "diff-tree",
@@ -1728,7 +1609,6 @@ The reviewer found issues with the previous fix. Address this feedback:
                     f.strip() for f in stdout.decode().strip().split("\n") if f.strip()
                 ]
 
-            # Get diff of last commit (limited to 2000 chars)
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "show",
@@ -1775,13 +1655,10 @@ The reviewer found issues with the previous fix. Address this feedback:
                     for line in diff.split("\n")
                     if line.startswith("+") and not line.startswith("+++")
                 ]
-                # Return first 500 chars of added code
                 return "\n".join(added_lines)[:500]
         except Exception as e:
             logger.warning(f"Failed to get diff for {file_path}: {e}")
         return None
-
-    # ============== Workspace Scope Validation ==============
 
     async def _get_uncommitted_files(self) -> list[str]:
         """Get list of all uncommitted files (staged, unstaged, and untracked).
@@ -1792,7 +1669,6 @@ The reviewer found issues with the previous fix. Address this feedback:
         all_files: set[str] = set()
 
         try:
-            # 1. Staged files (git diff --cached --name-only)
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "diff",
@@ -1809,7 +1685,6 @@ The reviewer found issues with the previous fix. Address this feedback:
                 if staged:
                     logger.debug(f"Staged files: {staged}")
 
-            # 2. Unstaged modified files (git diff --name-only)
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "diff",
@@ -1864,7 +1739,6 @@ The reviewer found issues with the previous fix. Address this feedback:
             List of files that are OUTSIDE the workspace scope (violations)
         """
         if not workspace_path:
-            # No workspace restriction
             return []
 
         # Build list of allowed paths
@@ -1875,8 +1749,6 @@ The reviewer found issues with the previous fix. Address this feedback:
         violations: list[str] = []
 
         for file_path in modified_files:
-            # Skip hidden files/directories (dotfiles like .reviews/, .gitignore, etc.)
-            # These are typically metadata created by the system, not agent code changes
             if file_path.startswith("."):
                 continue
 
@@ -1983,7 +1855,6 @@ The reviewer found issues with the previous fix. Address this feedback:
             True if revert succeeded, False otherwise
         """
         try:
-            # 1. Unstage all staged changes
             proc = await asyncio.create_subprocess_exec(
                 "git",
                 "reset",
@@ -2044,16 +1915,13 @@ The reviewer found issues with the previous fix. Address this feedback:
         """
         parts = []
 
-        # List what was fixed
         parts.append("## Changes Made\n")
         for issue in issues:
             parts.append(f"- **{issue.issue_code}**: {issue.title}\n")
 
-        # Add Gemini's review summary if available
         if gemini_output:
             # Extract key points from Gemini output
             parts.append("\n## Review Summary\n")
-            # Take first 500 chars of Gemini output
             summary = gemini_output[:500]
             if len(gemini_output) > 500:
                 summary += "..."
@@ -2069,7 +1937,6 @@ The reviewer found issues with the previous fix. Address this feedback:
         gemini_output: str | None,
         claude_prompts: list[dict[str, Any]] | None = None,
         gemini_prompt: str | None = None,
-        # Incremental save params
         batch_results: dict[str, dict[str, Any]] | None = None,
         current_iteration: int | None = None,
         is_partial: bool = False,
@@ -2109,7 +1976,6 @@ The reviewer found issues with the previous fix. Address this feedback:
                 "repo_path": str(self.repo_path),
                 "max_iterations": self.max_iterations,
                 "satisfaction_threshold": self.satisfaction_threshold,
-                # Incremental save metadata
                 "is_partial": is_partial,
                 "current_iteration": current_iteration,
                 "issues": [
@@ -2135,10 +2001,8 @@ The reviewer found issues with the previous fix. Address this feedback:
                     for r in result.results
                 ],
                 "gemini_review": gemini_output[:2000] if gemini_output else None,
-                # Prompts sent to CLIs (for debugging)
                 "claude_prompts": claude_prompts or [],
                 "gemini_prompt": gemini_prompt,
-                # Batch results for incremental saves (shows per-batch status)
                 "batch_results": (
                     {
                         batch_id: {
@@ -2154,7 +2018,6 @@ The reviewer found issues with the previous fix. Address this feedback:
                 ),
             }
 
-            # Upload to S3
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: self.s3_client.put_object(

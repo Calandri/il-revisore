@@ -19,6 +19,7 @@ from typing import Any, Literal
 from turbowrap.config import get_settings
 from turbowrap.exceptions import GrokError
 from turbowrap.llm.base import AgentResponse, BaseAgent
+from turbowrap.llm.mixins import OperationTrackingMixin
 from turbowrap.utils.aws_secrets import get_grok_api_key
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
@@ -221,7 +222,7 @@ class GrokCLIResult:
     output_tokens: int = 0
 
 
-class GrokCLI:
+class GrokCLI(OperationTrackingMixin):
     """
     Grok CLI runner for autonomous tasks with tool use.
 
@@ -237,6 +238,9 @@ class GrokCLI:
             print(text, end="")
         result = await cli.run("Review...", on_chunk=on_chunk)
     """
+
+    # OperationTrackingMixin config
+    cli_name = "grok"
 
     def __init__(
         self,

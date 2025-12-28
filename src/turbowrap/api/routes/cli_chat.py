@@ -46,15 +46,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cli-chat", tags=["cli-chat"])
 
-# ============================================================================
 # Title Generation Settings
-# ============================================================================
 
-# Refresh title every N messages if still default
 TITLE_REFRESH_INTERVAL = 10
 DEFAULT_TITLES = {"Claude Chat", "Gemini Chat", "", None}
 
-# Prompt suffix to request title generation inline
 TITLE_REQUEST_PROMPT = """
 
 [SYSTEM: This chat needs a title. At the very end of your response, on a new line, output ONLY this JSON (nothing else after it):
@@ -70,22 +66,15 @@ def extract_title_from_response(content: str) -> tuple[str | None, str]:
     """
     import re
 
-    # Look for the JSON pattern at the end of the response
     pattern = r'\s*\{"chat_title":\s*"([^"]+)"\}\s*$'
     match = re.search(pattern, content)
 
     if match:
         title = match.group(1).strip()
-        # Remove the JSON from the content
         cleaned = content[: match.start()].rstrip()
         return title, cleaned
 
     return None, content
-
-
-# ============================================================================
-# Title Generation (Legacy - for first message)
-# ============================================================================
 
 
 async def generate_chat_title(
@@ -105,7 +94,6 @@ async def generate_chat_title(
     Returns:
         Generated title (max 3 words) or None on error
     """
-    # Truncate messages to keep prompt short
     user_summary = user_message[:300]
     assistant_summary = assistant_response[:300]
 
@@ -123,7 +111,6 @@ Respond with ONLY the title, nothing else."""
 
     try:
         if cli_type == "claude":
-            # Use fast model for title generation
             args = [
                 "claude",
                 "--print",
@@ -152,8 +139,6 @@ Respond with ONLY the title, nothing else."""
 
         title = stdout.decode().strip()
 
-        # Clean and limit to 3 words
-        # Remove quotes and extra punctuation
         title = title.strip("\"'`")
         words = title.split()[:3]
         final_title = " ".join(words) if words else None
@@ -167,11 +152,6 @@ Respond with ONLY the title, nothing else."""
     except Exception as e:
         logger.warning(f"[TITLE] Title generation failed: {e}")
         return None
-
-
-# ============================================================================
-# Session CRUD
-# ============================================================================
 
 
 @router.get("/sessions", response_model=list[CLISessionResponse])
@@ -192,7 +172,6 @@ def list_sessions(
 
     sessions = query.order_by(CLIChatSession.updated_at.desc()).limit(limit).all()
 
-    # Add message count to response
     result = []
     for s in sessions:
         response = CLISessionResponse.model_validate(s)
@@ -311,11 +290,9 @@ def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Terminate process if running
     manager = get_process_manager()
     background_tasks.add_task(manager.terminate, session_id)
 
-    # Soft delete
     session.soft_delete()
     db.commit()
 
@@ -371,7 +348,6 @@ def fork_session(
     db.add(forked)
     db.flush()  # Get ID before adding messages
 
-    # Copy all messages
     message_count = 0
     total_tokens_in = 0
     total_tokens_out = 0
@@ -390,7 +366,6 @@ def fork_session(
         db.add(forked_msg)
         message_count += 1
 
-        # Accumulate token counts
         total_tokens_in += cast(int, msg.tokens_in) or 0
         total_tokens_out += cast(int, msg.tokens_out) or 0
 
@@ -401,11 +376,9 @@ def fork_session(
     db.commit()
     db.refresh(forked)
 
-    # For Claude: store shared claude_session_id for --resume
     manager = get_process_manager()
     original_proc = manager.get_process(session_id)
     if original_proc and original_proc.cli_type == CLIType.CLAUDE:
-        # Store in a way that spawn_claude can access
         forked_id = cast(str, forked.id)
         if original_proc.claude_session_id:
             manager.set_shared_resume_id(forked_id, original_proc.claude_session_id)
@@ -417,11 +390,6 @@ def fork_session(
     logger.info(f"[FORK] Created fork {forked.id} from {session_id} with {message_count} messages")
 
     return forked
-
-
-# ============================================================================
-# Branch Management
-# ============================================================================
 
 
 @router.get("/sessions/{session_id}/branches")
@@ -514,7 +482,6 @@ async def change_session_branch(
     db.commit()
     db.refresh(session)
 
-    # Terminate running CLI process (will be restarted with new context on next message)
     manager = get_process_manager()
     proc = manager.get_process(session_id)
     if proc:
@@ -526,11 +493,6 @@ async def change_session_branch(
     logger.info(f"[BRANCH] Session {session_id} switched to branch '{data.branch}'")
 
     return session
-
-
-# ============================================================================
-# Messages
-# ============================================================================
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[CLIMessageResponse])
@@ -556,8 +518,6 @@ def get_messages(
     query = db.query(CLIChatMessage).filter(CLIChatMessage.session_id == session_id)
 
     if not include_thinking:
-        # IMPORTANT: Use SQLAlchemy's == operator, not Python's `not`
-        # `not CLIChatMessage.is_thinking` evaluates to False immediately!
         query = query.filter(CLIChatMessage.is_thinking == False)  # noqa: E712
 
     messages = query.order_by(CLIChatMessage.created_at.asc()).limit(limit).all()
@@ -593,7 +553,6 @@ async def send_message(
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Check if this is the first message (for title generation)
-    # Count actual messages in DB instead of relying on total_messages counter
     actual_message_count = (
         db.query(CLIChatMessage).filter(CLIChatMessage.session_id == session_id).count()
     )
@@ -617,7 +576,6 @@ async def send_message(
     session_repository_id = cast(str | None, session.repository_id)
     session_current_branch = cast(str | None, session.current_branch)
     session_agent_name = cast(str | None, session.agent_name)
-    # Use model_override if provided (e.g., for slash commands)
     session_model = data.model_override or cast(str | None, session.model)
     session_thinking_enabled = cast(bool, session.thinking_enabled)
     session_thinking_budget = cast(int | None, session.thinking_budget)
@@ -634,7 +592,6 @@ async def send_message(
         loader = get_agent_loader()
 
         try:
-            # Start event
             yield {
                 "event": "start",
                 "data": json.dumps({"session_id": session_id}),
@@ -644,10 +601,8 @@ async def send_message(
             proc = manager.get_process(session_id)
 
             if not proc:
-                # Spawn new process
                 cli_type = CLIType(session_cli_type)
 
-                # Generate context for this session
                 context = get_context_for_session(
                     db,
                     repo_id=session_repository_id,
@@ -689,7 +644,6 @@ async def send_message(
                     )
 
             # Check if we should request a title refresh
-            # (every N messages if title is still default)
             should_request_title = (
                 actual_message_count > 0
                 and actual_message_count % TITLE_REFRESH_INTERVAL == 0
@@ -702,7 +656,6 @@ async def send_message(
                 message_to_send = data.content + TITLE_REQUEST_PROMPT
                 logger.info(f"[TITLE] Requesting title refresh at message #{actual_message_count}")
 
-            # Stream response - parse stream-json line by line
             full_content: list[str] = []
             system_events: list[dict[str, Any]] = []
 
@@ -713,20 +666,16 @@ async def send_message(
 
                 logger.debug(f"[STREAM] Line: {line[:100]}...")
 
-                # Try to parse as JSON (stream-json format)
                 try:
                     event = json.loads(line)
                     event_type = event.get("type", "unknown")
 
-                    # Unwrap stream_event (from --include-partial-messages)
                     if event_type == "stream_event":
                         inner_event = event.get("event", {})
                         event = inner_event
                         event_type = event.get("type", "unknown")
 
-                    # Collect system events separately
                     if event_type == "system":
-                        # Skip INIT events after the first message (respawn artifact)
                         if event.get("subtype") == "init" and not is_first_message:
                             logger.debug("[STREAM] Skipping duplicate INIT event")
                             continue
@@ -741,8 +690,6 @@ async def send_message(
                     content: str | None = None
 
                     # NOTE: Skip "assistant" events - they contain the FULL accumulated
-                    # message at the end, which would duplicate all content we already
-                    # streamed via content_block_delta events.
 
                     if event_type == "content_block_delta":
                         # Streaming delta - this is the main streaming event!
@@ -756,11 +703,9 @@ async def send_message(
                             content = block.get("text", "")
 
                     elif event_type == "result":
-                        # Final result (--print mode)
                         if "result" in event:
                             content = event["result"]
 
-                    # Yield content immediately
                     if content:
                         full_content.append(content)
                         yield {
@@ -769,7 +714,6 @@ async def send_message(
                         }
 
                 except json.JSONDecodeError:
-                    # Not JSON - raw text (gemini)
                     if line:
                         full_content.append(line + "\n")
                         yield {
@@ -814,7 +758,6 @@ async def send_message(
 
             db.commit()
 
-            # Done event
             yield {
                 "event": "done",
                 "data": json.dumps(
@@ -834,7 +777,6 @@ async def send_message(
                     "data": json.dumps({"title": extracted_title}),
                 }
             elif is_first_message and session_display_name in DEFAULT_TITLES:
-                # Generate title for first message using separate process
                 logger.info(f"[TITLE] Generating title for session {session_id}")
                 title = await generate_chat_title(
                     cli_type=session_cli_type,
@@ -847,7 +789,6 @@ async def send_message(
                     db.commit()
                     logger.info(f"[TITLE] Session {session_id} title set to: {title}")
 
-                    # Send title update event
                     yield {
                         "event": "title_updated",
                         "data": json.dumps({"title": title}),
@@ -868,17 +809,11 @@ async def send_message(
                 "data": json.dumps({"error": str(e)}),
             }
 
-    # Add headers to prevent buffering in browsers and proxies
     headers = {
         "X-Accel-Buffering": "no",  # Disable Nginx buffering
         "Cache-Control": "no-cache, no-transform",
     }
     return EventSourceResponse(event_generator(), headers=headers, ping=15)
-
-
-# ============================================================================
-# Process Control
-# ============================================================================
 
 
 @router.post("/sessions/{session_id}/start")
@@ -905,7 +840,6 @@ async def start_cli(
     try:
         cli_type = CLIType(cast(str, session.cli_type))
 
-        # Generate context for this session
         context = get_context_for_session(
             db,
             repo_id=cast(str | None, session.repository_id),
@@ -993,11 +927,6 @@ async def stop_cli(
     }
 
 
-# ============================================================================
-# Agents
-# ============================================================================
-
-
 @router.get("/agents", response_model=AgentListResponse)
 def list_agents() -> AgentListResponse:
     """List available Claude agents."""
@@ -1020,11 +949,6 @@ def get_agent(agent_name: str) -> AgentResponse:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
 
     return AgentResponse(**agent.info)
-
-
-# ============================================================================
-# Active Processes
-# ============================================================================
 
 
 @router.get("/active")
@@ -1088,11 +1012,6 @@ async def cleanup_stale_processes(max_age_hours: float = 3.0) -> dict[str, Any]:
         "max_age_hours": max_age_hours,
         "message": f"Terminated {terminated} processes older than {max_age_hours}h",
     }
-
-
-# ============================================================================
-# MCP Servers
-# ============================================================================
 
 
 @router.get("/mcp", response_model=MCPConfigResponse)
@@ -1171,7 +1090,6 @@ def enable_mcp_server(name: str) -> dict[str, str]:
     if server["enabled"]:
         return {"status": "already_enabled", "name": name}
 
-    # Enable (add from defaults)
     success = manager.enable_servers([name])
     if not success:
         raise HTTPException(status_code=500, detail=f"Failed to enable MCP server '{name}'")
@@ -1207,11 +1125,6 @@ def get_default_mcp_servers() -> dict[str, list[str]]:
     return {"defaults": defaults}
 
 
-# ============================================================================
-# Slash Commands
-# ============================================================================
-
-# Directory containing slash command MD files
 COMMANDS_DIR = Path(__file__).parent.parent.parent.parent.parent / "commands"
 
 
@@ -1226,11 +1139,9 @@ def list_slash_commands() -> dict[str, Any]:
     if COMMANDS_DIR.exists():
         for md_file in COMMANDS_DIR.glob("*.md"):
             command_name = md_file.stem
-            # Read first line as description (title)
             try:
                 content = md_file.read_text()
                 first_line = content.split("\n")[0].strip()
-                # Remove markdown header prefix
                 description = first_line.lstrip("# ").strip()
             except Exception:
                 description = command_name
@@ -1256,7 +1167,6 @@ def get_slash_command(command_name: str) -> dict[str, str]:
     Returns:
         Command prompt content from the MD file
     """
-    # Sanitize command name (prevent path traversal)
     safe_name = "".join(c for c in command_name if c.isalnum() or c in "-_")
     md_file = COMMANDS_DIR / f"{safe_name}.md"
 
@@ -1266,7 +1176,6 @@ def get_slash_command(command_name: str) -> dict[str, str]:
     try:
         content = md_file.read_text()
 
-        # Skip the header line (# /command - Description)
         lines = content.split("\n")
         if lines and lines[0].startswith("#"):
             prompt = "\n".join(lines[1:]).strip()
@@ -1281,11 +1190,6 @@ def get_slash_command(command_name: str) -> dict[str, str]:
     except Exception as e:
         logger.error(f"Error reading slash command '{command_name}': {e}")
         raise HTTPException(status_code=500, detail=f"Error reading slash command: {e}") from e
-
-
-# ============================================================================
-# Server Logs Fetching
-# ============================================================================
 
 
 @router.get("/server-logs")

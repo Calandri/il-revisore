@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from abc import abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,11 +14,19 @@ logger = logging.getLogger(__name__)
 class OperationTrackingMixin:
     """Mixin providing operation tracking for CLI runners.
 
-    Subclasses must define:
-        - cli_name: str - The CLI identifier ("claude", "gemini", "grok")
-        - model: str - The model being used
-        - working_dir: Path | None - Working directory
-        - agent_md_path: Path | None (optional) - Agent file path
+    Provides shared implementation for:
+        - _extract_repo_name(): Extract repo name from working_dir
+        - _infer_operation_type(): Infer operation type from context
+        - _register_operation(): Register operation in tracker
+        - _fail_operation(): Mark operation as failed
+        - _update_operation(): Update operation details
+
+    Subclasses must:
+        - Set cli_name: str (e.g., "claude", "gemini", "grok")
+        - Set model: str (the model being used)
+        - Set working_dir: Path | None
+        - Optionally set agent_md_path: Path | None (for Claude)
+        - Implement their own _complete_operation() with CLI-specific stats
 
     Usage:
         class MyCLI(OperationTrackingMixin):
@@ -28,6 +35,10 @@ class OperationTrackingMixin:
             def __init__(self):
                 self.model = "my-model"
                 self.working_dir = Path("/some/path")
+
+            def _complete_operation(self, operation_id, duration_ms, my_stats, ...):
+                # CLI-specific completion logic
+                ...
     """
 
     # Must be set by subclass
@@ -68,6 +79,14 @@ class OperationTrackingMixin:
                 return "review"
             if "commit" in agent_name:
                 return "git_commit"
+            if "merge" in agent_name:
+                return "git_merge"
+            if "push" in agent_name:
+                return "git_push"
+            if "pull" in agent_name:
+                return "git_pull"
+            if "lint" in agent_name or "analyzer" in agent_name:
+                return "review"
 
         # Infer from prompt keywords
         prompt_lower = prompt.lower()[:500]
@@ -81,6 +100,8 @@ class OperationTrackingMixin:
             return "git_commit"
         if "merge" in prompt_lower:
             return "git_merge"
+        if "push" in prompt_lower:
+            return "git_push"
 
         return "cli_task"
 
@@ -160,67 +181,6 @@ class OperationTrackingMixin:
         except Exception as e:
             logger.warning(f"[{self.cli_name.upper()} CLI] Failed to register operation: {e}")
             return None
-
-    @abstractmethod
-    def _build_completion_result(
-        self,
-        duration_ms: int,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Build the result dict for operation completion.
-
-        Must be implemented by subclass as each CLI has different stats.
-
-        Args:
-            duration_ms: Operation duration in milliseconds
-            **kwargs: CLI-specific stats (model_usage, session_stats, etc.)
-
-        Returns:
-            Dict with result data for tracker.complete()
-        """
-        ...
-
-    def _complete_operation(
-        self,
-        operation_id: str,
-        duration_ms: int,
-        **kwargs: Any,
-    ) -> None:
-        """Complete operation in tracker with stats.
-
-        Subclass should call this with their specific stats:
-            self._complete_operation(
-                operation_id,
-                duration_ms,
-                model_usage=my_model_usage,
-                tools_used=my_tools,
-            )
-        """
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            result = self._build_completion_result(duration_ms, **kwargs)
-            tracker.complete(operation_id, result=result)
-
-            # Log with token info if available
-            tokens = result.get("total_tokens", result.get("tokens", 0))
-            tools_count = len(result.get("tools_used", []))
-            cost = result.get("cost_usd", 0)
-
-            log_msg = f"[{self.cli_name.upper()} CLI] Operation completed: {operation_id[:8]}"
-            if tokens:
-                log_msg += f" ({tokens} tokens"
-                if cost:
-                    log_msg += f", ${cost:.4f}"
-                log_msg += f", {tools_count} tools)"
-            else:
-                log_msg += f" ({tools_count} tools)"
-
-            logger.info(log_msg)
-
-        except Exception as e:
-            logger.warning(f"[{self.cli_name.upper()} CLI] Failed to complete operation: {e}")
 
     def _fail_operation(self, operation_id: str, error: str) -> None:
         """Fail operation in tracker."""

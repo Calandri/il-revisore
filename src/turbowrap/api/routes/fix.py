@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fix", tags=["fix"])
 
-# Agent file path
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "agents"
 GIT_MERGER_AGENT = AGENTS_DIR / "git_merger_gemini.md"
 
@@ -36,7 +35,6 @@ def _load_agent(agent_path: Path) -> str:
 
     content = agent_path.read_text(encoding="utf-8")
 
-    # Strip YAML frontmatter (--- ... ---)
     if content.startswith("---"):
         import re
 
@@ -47,11 +45,9 @@ def _load_agent(agent_path: Path) -> str:
     return content.strip()
 
 
-# Store for pending clarifications (session_id -> Question)
 _pending_clarifications: dict[str, ClarificationQuestion] = {}
 _clarification_answers: dict[str, asyncio.Future[ClarificationAnswer]] = {}
 
-# Store for pending scope violation prompts (question_id -> {dirs, repo_id})
 _pending_scope_violations: dict[str, dict[str, Any]] = {}
 _scope_violation_responses: dict[str, asyncio.Future["ScopeViolationResponse"]] = {}
 
@@ -107,7 +103,6 @@ class IdempotencyEntry:
     created_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
-    # Metadata for active sessions display
     repository_id: str | None = None
     repository_name: str | None = None
     task_id: str | None = None
@@ -149,7 +144,6 @@ class IdempotencyStore:
         if client_key:
             return f"client:{client_key}"
 
-        # Generate key from issue IDs
         sorted_ids = sorted(issue_ids)
         data = f"{repository_id}:{task_id}:{','.join(sorted_ids)}"
         return f"auto:{hashlib.sha256(data.encode()).hexdigest()[:16]}"
@@ -177,7 +171,6 @@ class IdempotencyStore:
         metadata = metadata or {}
 
         with self._lock:
-            # Clean up expired entries
             expired_keys = [k for k, v in self._store.items() if v.created_at < cutoff]
             for k in expired_keys:
                 del self._store[k]
@@ -185,7 +178,6 @@ class IdempotencyStore:
             # Check for existing entry
             existing = self._store.get(key)
             if existing:
-                # Only consider it a duplicate if still in progress or recent
                 if existing.status == "in_progress":
                     logger.info(f"Duplicate fix request blocked (in progress): {key}")
                     return True, existing
@@ -193,7 +185,6 @@ class IdempotencyStore:
                     logger.info(f"Duplicate fix request detected (recent): {key}")
                     return True, existing
 
-            # Register new entry with metadata
             self._store[key] = IdempotencyEntry(
                 session_id=session_id,
                 status="in_progress",
@@ -242,7 +233,6 @@ class IdempotencyStore:
             self._store.pop(key, None)
 
 
-# Global idempotency store
 _idempotency_store = IdempotencyStore()
 
 
@@ -253,7 +243,6 @@ class FixStartRequest(BaseModel):
     task_id: str = Field(..., description="Task ID that found the issues")
     issue_ids: list[str] = Field(..., min_length=1, description="Issue IDs to fix")
 
-    # Branch handling - allows continuing on existing branch instead of creating new one
     use_existing_branch: bool = Field(
         default=False,
         description="If True, use existing branch instead of creating new one from main",
@@ -271,7 +260,6 @@ class FixStartRequest(BaseModel):
         ),
     )
 
-    # User notes - additional context/instructions for the fixer
     user_notes: str | None = Field(
         default=None,
         description="Optional user notes with additional context or instructions for the fixer",
@@ -300,7 +288,6 @@ class IssueListResponse(BaseModel):
     status: str
     created_at: datetime
 
-    # Fix result fields (populated when resolved)
     fix_code: str | None = None
     fix_explanation: str | None = None
     fix_files_modified: list[str] | None = None
@@ -365,7 +352,6 @@ def update_issue(
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    # Validate status
     valid_statuses = [s.value for s in IssueStatus]
     if data.status not in valid_statuses:
         raise HTTPException(
@@ -437,9 +423,7 @@ async def start_fix(
         if duplicate_response:
             return duplicate_response
 
-        # session_info is guaranteed to be non-None when duplicate_response is falsy
         assert session_info is not None
-        # Execute fixes and stream progress
         assert session_info is not None  # validated above
         return EventSourceResponse(service.execute_fixes(session_info))
 
@@ -478,7 +462,6 @@ async def submit_clarification(data: ClarificationAnswerRequest) -> dict[str, st
         answer=data.answer,
     )
 
-    # Resolve the future
     future = _clarification_answers[question_id]
     if not future.done():
         future.set_result(answer)
@@ -521,14 +504,11 @@ async def respond_to_scope_violation(
         paths=pending.get("dirs", []),
     )
 
-    # Resolve the future
     future = _scope_violation_responses[question_id]
     if not future.done():
         future.set_result(response)
 
-    # Cleanup
     _pending_scope_violations.pop(question_id, None)
-    # Note: don't pop _scope_violation_responses yet - the orchestrator needs to read it
 
     return {
         "status": "received",
@@ -538,7 +518,6 @@ async def respond_to_scope_violation(
     }
 
 
-# Session timeout for stale detection (30 minutes)
 STALE_SESSION_TIMEOUT_SECONDS = 30 * 60
 
 
@@ -549,7 +528,6 @@ class ActiveSessionInfo(BaseModel):
     status: str
     started_at: datetime
     is_stale: bool  # True if session is older than STALE_SESSION_TIMEOUT
-    # Rich metadata for banner/live tasks display
     repository_id: str | None = None
     repository_name: str | None = None
     task_id: str | None = None
@@ -607,7 +585,6 @@ def cancel_session(session_id: str) -> dict[str, str]:
 
     Use this when a session is stuck in 'in_progress' and needs to be cleared.
     """
-    # Find and remove the session
     removed = False
     with _idempotency_store._lock:
         keys_to_remove = []
@@ -691,7 +668,6 @@ def get_pending_branches(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    # Find issues that are "resolved" with a fix_branch set (not merged yet)
     resolved_issues = (
         db.query(Issue)
         .filter(
@@ -705,7 +681,6 @@ def get_pending_branches(
     if not resolved_issues:
         return PendingBranchesResponse(has_pending=False, branches=[])
 
-    # Group by branch
     branches_map: dict[str, list[Issue]] = {}
     for issue in resolved_issues:
         branch = str(issue.fix_branch)  # Cast Column[str] to str
@@ -717,7 +692,6 @@ def get_pending_branches(
     branches = []
     repo_name = str(repo.name)  # Cast Column[str] to str
     for branch_name, issues in branches_map.items():
-        # Collect fixed_at times, casting to datetime
         fixed_times = [cast(datetime, i.fixed_at) for i in issues if i.fixed_at]
         created_at = min(fixed_times) if fixed_times else datetime.utcnow()
         branches.append(
@@ -759,7 +733,6 @@ async def merge_and_push(
     """
     from ...llm.gemini import GeminiCLI
 
-    # Verify repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -768,7 +741,6 @@ async def merge_and_push(
     if not repo_path.exists():
         raise HTTPException(status_code=400, detail="Repository path not found")
 
-    # Load agent prompt
     merge_prompt = _load_agent(GIT_MERGER_AGENT)
     merge_prompt = merge_prompt.replace("{branch_name}", request.branch_name)
 
@@ -855,7 +827,6 @@ async def open_pull_request(
     """
     from turbowrap.review.integrations.github import GitHubClient
 
-    # Verify repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")

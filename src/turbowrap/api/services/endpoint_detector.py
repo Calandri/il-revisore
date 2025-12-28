@@ -60,7 +60,6 @@ class DetectionResult:
     error: str | None = None
 
 
-# File patterns for different frameworks
 ROUTE_FILE_PATTERNS: dict[str, list[str]] = {
     "fastapi": ["**/routes/*.py", "**/routers/*.py", "**/api/*.py", "**/endpoints/*.py"],
     "flask": ["**/routes/*.py", "**/views/*.py", "**/api/*.py", "**/*_routes.py"],
@@ -159,7 +158,6 @@ def _find_route_files(repo_path: str, framework: str) -> list[str]:
 
     patterns = ROUTE_FILE_PATTERNS.get(framework, [])
 
-    # Add generic patterns if framework unknown
     if framework == "unknown":
         patterns = [
             "**/routes/**/*.py",
@@ -178,7 +176,6 @@ def _find_route_files(repo_path: str, framework: str) -> list[str]:
         matches = glob.glob(os.path.join(repo_path, pattern), recursive=True)
         found_files.extend(matches)
 
-    # Filter out test files and node_modules
     filtered = [
         f
         for f in found_files
@@ -199,7 +196,6 @@ def _extract_routes_with_regex(file_path: str, framework: str) -> list[dict[str,
         content = f.read()
         lines = content.split("\n")
 
-    # Framework-specific patterns
     patterns: dict[str, list[str]] = {
         "fastapi": [
             r'@(router|app)\.(get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']',
@@ -327,7 +323,6 @@ Return ONLY the JSON array, nothing else."""
 
     response_text = ""
     try:
-        # Use GeminiCLI with flash model for fast detection
         cli = GeminiCLI(
             working_dir=Path(repo_path),
             model="flash",  # Use Flash for fast analysis
@@ -356,7 +351,6 @@ Return ONLY the JSON array, nothing else."""
             loop = None
 
         if loop is not None:
-            # Already in async context - create new event loop in thread
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -371,22 +365,18 @@ Return ONLY the JSON array, nothing else."""
 
         response_text = output.strip()
 
-        # Clean up response - remove markdown code blocks if present
         cleaned = response_text
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
 
         # Try to extract JSON from the response
-        # Sometimes Claude adds text before/after the JSON
         json_match = re.search(r"\[[\s\S]*\]", cleaned)
         if json_match:
             cleaned = json_match.group(0)
 
-        # Parse JSON response
         endpoints_data = json.loads(cleaned)
 
-        # Deduplicate by method+path
         seen: set[tuple[str, str]] = set()
         endpoints: list[EndpointInfo] = []
         for ep in endpoints_data:
@@ -501,17 +491,13 @@ Return ONLY the JSON array, no other text."""
         client = GeminiClient()
         response = client.generate(user_prompt, system_prompt)
 
-        # Clean up response - remove markdown code blocks if present
         cleaned = response.strip()
         if cleaned.startswith("```"):
-            # Remove code block markers
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
 
-        # Parse JSON response
         endpoints_data = json.loads(cleaned)
 
-        # Deduplicate by method+path
         seen: set[tuple[str, str]] = set()
         endpoints: list[EndpointInfo] = []
         for ep in endpoints_data:
@@ -585,23 +571,19 @@ def detect_endpoints(
         result.openapi_file = openapi_files[0].replace(repo_path, "").lstrip("/")
         logger.info(f"Found OpenAPI file: {result.openapi_file}")
 
-    # 2. Detect framework
     framework = _detect_framework(repo_path)
     result.framework = framework
     logger.info(f"Detected framework: {framework}")
 
-    # 3. Find route files
     route_files = _find_route_files(repo_path, framework)
     logger.info(f"Found {len(route_files)} route files")
 
     if not route_files:
-        # No route files found
         return result
 
     # 4. Extract routes using AI
     if use_ai:
         if use_claude:
-            # Primary: Use Gemini CLI (flash) for fast autonomous exploration
             logger.info("Using Gemini CLI (flash) for endpoint detection (autonomous exploration)")
             endpoints = _analyze_with_gemini_cli(repo_path, framework, route_files)
             result.routes = endpoints
@@ -685,7 +667,6 @@ def save_endpoints_to_db(
             .first()
         )
 
-        # Prepare parameters as list of dicts
         params_list = [
             {
                 "name": p.name,

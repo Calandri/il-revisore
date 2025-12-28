@@ -10,7 +10,6 @@ Permette di:
 Usage:
     manager = CLIProcessManager()
 
-    # Spawn Claude
     proc = await manager.spawn_claude(
         session_id="abc123",
         working_dir=Path("/path/to/repo"),
@@ -19,11 +18,9 @@ Usage:
         thinking_budget=10000,  # Optional
     )
 
-    # Send message and stream response
     async for chunk in manager.send_message("abc123", "Hello"):
         print(chunk, end="")
 
-    # Terminate
     await manager.terminate("abc123")
 """
 
@@ -51,7 +48,6 @@ DEFAULT_TIMEOUT = 120  # 2 minutes
 CLAUDE_TIMEOUT = 900  # 15 minutes (for complex tasks)
 GEMINI_TIMEOUT = 120  # 2 minutes
 
-# Cleanup settings
 STALE_PROCESS_HOURS = 3  # Kill processes older than 3 hours
 CLEANUP_INTERVAL_SECONDS = 300  # Check every 5 minutes
 
@@ -103,11 +99,9 @@ class CLIProcess:
     started_at: datetime = field(default_factory=datetime.utcnow)
     status: SessionStatus = SessionStatus.RUNNING
     temp_prompt_file: Path | None = None  # Temp file for combined context+agent
-    # Fields for respawning with --resume
     claude_session_id: str | None = None  # Claude CLI's session ID for --resume
     thinking_budget: int | None = None
     mcp_config: Path | None = None
-    # Gemini-specific fields for context injection
     gemini_context: str | None = None  # Context to prepend to first message
     context_used: bool = False  # Whether context has been prepended
 
@@ -147,7 +141,6 @@ class CLIProcessManager:
         self._processes: dict[str, CLIProcess] = {}
         self._lock = asyncio.Lock()
         self._max_processes = max_processes
-        # Shared resume IDs for forked sessions (session_id -> claude_session_id)
         self._shared_resume_ids: dict[str, str] = {}
 
     def set_shared_resume_id(self, session_id: str, claude_session_id: str) -> None:
@@ -226,7 +219,6 @@ class CLIProcessManager:
             RuntimeError: If max processes reached or session already exists
             SecurityError: If working directory is outside allowed paths
         """
-        # Validate working directory before processing
         validated_working_dir = self._validate_working_dir(working_dir)
 
         async with self._lock:
@@ -252,21 +244,17 @@ class CLIProcessManager:
         use_resume = shared_resume_id is not None
 
         if use_resume:
-            # Forked session: use --resume to access original conversation
             claude_session_id = shared_resume_id
             logger.info(f"[CLAUDE] Using shared resume ID: {claude_session_id}")
         else:
-            # New session: generate fresh session ID
             claude_session_id = str(uuid.uuid4())
 
         # Build CLI arguments
-        # Using --print mode for non-interactive chat
         args: list[str] = [
             "claude",
             "--print",
         ]
 
-        # Use --resume for forked sessions, --session-id for new ones
         if use_resume and claude_session_id:
             args.extend(["--resume", claude_session_id])
         elif claude_session_id:
@@ -288,12 +276,10 @@ class CLIProcessManager:
         temp_prompt_file = None
         system_prompt_parts = []
 
-        # Add context if provided
         if context:
             system_prompt_parts.append(context)
             logger.info(f"[CLAUDE] Context added: {len(context)} chars")
 
-        # Add agent prompt if provided
         if agent_path and agent_path.exists():
             agent_content = agent_path.read_text()
             system_prompt_parts.append(f"\n\n---\n\n# Agent Instructions\n\n{agent_content}")
@@ -312,7 +298,6 @@ class CLIProcessManager:
                 f"[CLAUDE] System prompt file: {temp_prompt_file} ({len(combined_prompt)} chars)"
             )
 
-        # Add MCP config if provided
         if mcp_config and mcp_config.exists():
             args.extend(["--mcp-config", str(mcp_config)])
             logger.info(f"[CLAUDE] MCP config: {mcp_config}")
@@ -327,8 +312,6 @@ class CLIProcessManager:
             env=env,
         )
 
-        # Increase readline buffer limit to 1MB (default is 64KB)
-        # Claude CLI can emit very long lines with large code blocks
         if process.stdout:
             process.stdout._limit = 1024 * 1024  # type: ignore[attr-defined]
 
@@ -383,7 +366,6 @@ class CLIProcessManager:
         Raises:
             SecurityError: If working directory is outside allowed paths
         """
-        # Validate working directory before processing
         validated_working_dir = self._validate_working_dir(working_dir)
 
         async with self._lock:
@@ -397,7 +379,6 @@ class CLIProcessManager:
         os.environ.copy()
 
         # Create a placeholder process (Gemini starts fresh per message)
-        # We'll create the actual process in send_message
         cli_proc = CLIProcess(
             session_id=session_id,
             cli_type=CLIType.GEMINI,
@@ -408,7 +389,6 @@ class CLIProcessManager:
             status=SessionStatus.IDLE,
         )
 
-        # Store context for Gemini (will be prepended to first message)
         if context:
             cli_proc.gemini_context = context
             cli_proc.context_used = False
@@ -457,7 +437,6 @@ class CLIProcessManager:
             proc.claude_session_id = new_session_id
             logger.info(f"[CLAUDE] Creating fresh session: {new_session_id}")
         else:
-            # Resume existing conversation
             args.extend(["--resume", proc.claude_session_id])
 
         args.extend(
@@ -472,11 +451,9 @@ class CLIProcessManager:
             ]
         )
 
-        # Add MCP config if available
         if proc.mcp_config and proc.mcp_config.exists():
             args.extend(["--mcp-config", str(proc.mcp_config)])
 
-        # Spawn new process
         new_process = await asyncio.create_subprocess_exec(
             *args,
             stdin=asyncio.subprocess.PIPE,
@@ -486,11 +463,9 @@ class CLIProcessManager:
             env=env,
         )
 
-        # Increase readline buffer limit to 1MB (default is 64KB)
         if new_process.stdout:
             new_process.stdout._limit = 1024 * 1024  # type: ignore[attr-defined]
 
-        # Replace the old process
         proc.process = new_process
         proc.status = SessionStatus.RUNNING
 
@@ -549,8 +524,6 @@ class CLIProcessManager:
         process = proc.process
 
         if not process or process.returncode is not None:
-            # Process ended, respawn with --resume to continue conversation
-            # If retrying, force a new session instead of resuming
             logger.info(
                 f"[CLAUDE] Process ended, respawning "
                 f"(force_new_session={_retry_with_new_session})"
@@ -563,7 +536,6 @@ class CLIProcessManager:
 
         proc.status = SessionStatus.STREAMING
 
-        # Write message to stdin
         prompt_bytes = message.encode()
         try:
             logger.info(f"[CLAUDE] Writing {len(prompt_bytes)} bytes to stdin")
@@ -573,13 +545,11 @@ class CLIProcessManager:
             await process.stdin.wait_closed()
             logger.info("[CLAUDE] Stdin closed (EOF sent)")
         except ConnectionResetError:
-            # Stdin corrupted (user left during streaming), respawn and retry
             logger.warning("[CLAUDE] ConnectionResetError, respawning with --resume")
             await self._respawn_claude_with_resume(proc)
             process = proc.process
             if process is None or process.stdin is None:
                 raise RuntimeError("Failed to respawn Claude process")
-            # Retry write to new process
             process.stdin.write(prompt_bytes)
             await process.stdin.drain()
             process.stdin.close()
@@ -592,13 +562,10 @@ class CLIProcessManager:
         if process.stdout is None:
             raise RuntimeError("Claude process stdout is None")
 
-        # Read stdout LINE BY LINE for proper streaming
-        # stream-json outputs one JSON object per line
         chunks_yielded = False
         try:
             async with asyncio_timeout(timeout_value):
                 while True:
-                    # Read line by line - this is key for streaming!
                     line_bytes = await process.stdout.readline()
                     if not line_bytes:
                         break
@@ -606,7 +573,6 @@ class CLIProcessManager:
                     line = line_bytes.decode("utf-8", errors="replace")
                     logger.debug(f"[CLAUDE] Line: {len(line)} chars")
 
-                    # Yield each line immediately
                     if line:
                         chunks_yielded = True
                         yield line
@@ -617,12 +583,10 @@ class CLIProcessManager:
             proc.status = SessionStatus.ERROR
             raise
 
-        # Wait for process to exit
         await process.wait()
         logger.info(f"[CLAUDE] Process exited with code {process.returncode}")
 
         if process.returncode != 0:
-            # Log stderr for debugging
             stderr_text = ""
             if process.stderr:
                 stderr_content = await process.stderr.read()
@@ -639,7 +603,6 @@ class CLIProcessManager:
                 logger.warning(
                     "[CLAUDE] Session not found in Claude CLI, retrying with fresh session"
                 )
-                # Retry with a fresh session
                 async for chunk in self._send_claude_message(
                     proc, message, timeout, _retry_with_new_session=True
                 ):
@@ -663,7 +626,6 @@ class CLIProcessManager:
         # Build environment
         env = os.environ.copy()
 
-        # Prepend context to first message if available
         full_message = message
         if proc.gemini_context and not proc.context_used:
             context = proc.gemini_context
@@ -677,7 +639,6 @@ class CLIProcessManager:
             proc.context_used = True
             logger.info(f"[GEMINI] Context prepended to message ({len(context)} chars)")
 
-        # Gemini expects prompt as positional argument
         args = [
             "gemini",
             "-m",
@@ -694,7 +655,6 @@ class CLIProcessManager:
             env=env,
         )
 
-        # Increase readline buffer limit to 1MB (default is 64KB)
         if process.stdout:
             process.stdout._limit = 1024 * 1024  # type: ignore[attr-defined]
 
@@ -705,7 +665,6 @@ class CLIProcessManager:
         if process.stdout is None:
             raise RuntimeError("Gemini process stdout is None")
 
-        # Stream stdout
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         try:
@@ -763,7 +722,6 @@ class CLIProcessManager:
                 logger.warning(f"[{proc.cli_type.value.upper()}] Force killing PID={proc.pid}")
                 proc.process.kill()
 
-        # Cleanup temporary files
         proc.cleanup()
 
         return True
@@ -861,7 +819,6 @@ class CLIProcessManager:
         return stats
 
 
-# Singleton instance
 _manager: CLIProcessManager | None = None
 
 

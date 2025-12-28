@@ -244,14 +244,11 @@ def live_status() -> dict[str, Any]:
         "uptime_seconds": (datetime.now() - SERVER_START_TIME).total_seconds(),
     }
 
-    # System metrics
     try:
         import psutil
 
-        # CPU (non-blocking, uses last interval)
         cpu_percent = psutil.cpu_percent(interval=None)
         if cpu_percent == 0.0:
-            # First call returns 0, do a quick measure
             cpu_percent = psutil.cpu_percent(interval=0.1)
 
         memory = psutil.virtual_memory()
@@ -266,7 +263,6 @@ def live_status() -> dict[str, Any]:
     except ImportError:
         result["system"] = {"error": "psutil not installed"}
 
-    # Active reviews
     try:
         manager = get_review_manager()
         sessions = manager.get_active_sessions()
@@ -285,7 +281,6 @@ def live_status() -> dict[str, Any]:
     except Exception as e:
         result["reviews"] = {"error": str(e)[:100]}
 
-    # Task queue
     try:
         queue = get_task_queue()
         q_status = queue.get_status()
@@ -296,7 +291,6 @@ def live_status() -> dict[str, Any]:
     except Exception as e:
         result["queue"] = {"error": str(e)[:100]}
 
-    # CLI processes (claude/gemini)
     try:
         import psutil
 
@@ -338,7 +332,6 @@ def live_status() -> dict[str, Any]:
                         # Extract repo name from cwd
                         repo_name = cwd.rstrip("/").split("/")[-1] if cwd else None
 
-                        # Format elapsed time
                         if elapsed_seconds < 60:
                             elapsed_str = f"{elapsed_seconds}s"
                         elif elapsed_seconds < 3600:
@@ -431,7 +424,6 @@ def live_status() -> dict[str, Any]:
                     except (psutil.AccessDenied, psutil.NoSuchProcess):
                         pass
 
-                    # Determine operation type
                     if "build" in cmdline:
                         op_type = "build"
                     elif "push" in cmdline:
@@ -452,7 +444,6 @@ def live_status() -> dict[str, Any]:
                         parts = cmdline.split("-t ")
                         if len(parts) > 1:
                             image_name = parts[1].split()[0].split(":")[0]
-                    # Or look for Dockerfile context
                     elif "-f " in cmdline:
                         parts = cmdline.split("-f ")
                         if len(parts) > 1:
@@ -461,7 +452,6 @@ def live_status() -> dict[str, Any]:
                     # Extract repo/project name from cwd
                     project_name = cwd.rstrip("/").split("/")[-1] if cwd else None
 
-                    # Format elapsed time
                     if elapsed_seconds < 60:
                         elapsed_str = f"{elapsed_seconds}s"
                     elif elapsed_seconds < 3600:
@@ -560,7 +550,6 @@ def full_status(db: Session = Depends(get_db)) -> FullStatus:
     """Get complete system status with all checks."""
     settings = get_settings()
 
-    # Server info
     uptime = (datetime.now() - SERVER_START_TIME).total_seconds()
     server: dict[str, Any] = {
         "status": "ok",
@@ -576,7 +565,6 @@ def full_status(db: Session = Depends(get_db)) -> FullStatus:
     # Service status (config check, not live ping)
     services: list[ServiceStatus] = []
 
-    # Claude status
     if settings.agents.anthropic_api_key:
         services.append(
             ServiceStatus(
@@ -591,7 +579,6 @@ def full_status(db: Session = Depends(get_db)) -> FullStatus:
             ServiceStatus(name="claude", status="unavailable", message="API key not configured")
         )
 
-    # Gemini status
     if settings.agents.effective_google_key:
         services.append(
             ServiceStatus(
@@ -606,7 +593,6 @@ def full_status(db: Session = Depends(get_db)) -> FullStatus:
             ServiceStatus(name="gemini", status="unavailable", message="API key not configured")
         )
 
-    # Database stats
     database: dict[str, Any]
     try:
         total_repos = db.query(Repository).count()
@@ -624,7 +610,6 @@ def full_status(db: Session = Depends(get_db)) -> FullStatus:
             "message": str(e)[:100],
         }
 
-    # System resources
     system: dict[str, Any]
     try:
         import psutil
@@ -725,11 +710,8 @@ def get_active_development(db: Session = Depends(get_db)) -> list[dict[str, Any]
     return active_issues
 
 
-# =============================================================================
 # Application Logs Streaming
-# =============================================================================
 
-# Global log buffer and subscribers
 _log_buffer: deque[dict[str, Any]] = deque(maxlen=500)  # Keep last 500 logs
 _log_subscribers: WeakSet[asyncio.Queue[dict[str, Any]]] = WeakSet()
 
@@ -747,7 +729,6 @@ class SSELogHandler(logging.Handler):
             }
             _log_buffer.append(log_entry)
 
-            # Notify all subscribers
             for queue in list(_log_subscribers):
                 try:
                     queue.put_nowait(log_entry)
@@ -763,7 +744,6 @@ def setup_sse_logging() -> None:
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
-    # Add to root logger
     root_logger = logging.getLogger()
 
     # Check if already added
@@ -790,7 +770,6 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
     _log_subscribers.add(queue)
 
     try:
-        # Send connected event
         yield {
             "event": "connected",
             "data": json.dumps(
@@ -802,7 +781,6 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
             ),
         }
 
-        # Send buffered logs first (last 100)
         for log_entry in list(_log_buffer)[-100:]:
             if _should_include_log(log_entry, level):
                 yield {
@@ -810,7 +788,6 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
                     "data": json.dumps(log_entry),
                 }
 
-        # Stream new logs
         while True:
             try:
                 log_entry = await asyncio.wait_for(queue.get(), timeout=30.0)
@@ -820,7 +797,6 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
                         "data": json.dumps(log_entry),
                     }
             except asyncio.TimeoutError:
-                # Send keepalive
                 yield {
                     "event": "ping",
                     "data": json.dumps({"timestamp": datetime.utcnow().isoformat()}),

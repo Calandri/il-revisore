@@ -35,9 +35,6 @@ from ..services.operation_tracker import OperationType, get_tracker
 router = APIRouter(prefix="/repos", tags=["repositories"])
 
 
-# --- File Management Schemas ---
-
-
 class FileInfo(BaseModel):
     """File information."""
 
@@ -61,7 +58,6 @@ class TreeNode(BaseModel):
     is_untracked: bool = False
 
 
-# Required for self-referencing model
 TreeNode.model_rebuild()
 
 
@@ -292,11 +288,9 @@ def clone_repo(
             workspace_path=data.workspace_path,
         )
 
-        # If repo already exists and is active, it was synced - return immediately
         if repo.status != "cloning":
             return RepoResponse.model_validate(repo)
 
-        # Start background clone task
         background_tasks.add_task(
             _clone_repo_background,
             str(repo.id),
@@ -445,9 +439,6 @@ def delete_repo(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-# --- Repository Link Endpoints ---
-
-
 @router.post("/{repo_id}/links", response_model=LinkResponse)
 def create_link(
     repo_id: str,
@@ -526,7 +517,6 @@ def delete_link(
     """
     manager = RepoManager(db)
 
-    # Verify the link belongs to this repo
     link = manager.get_link(link_id)
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
@@ -539,9 +529,6 @@ def delete_link(
         return {"status": "deleted", "link_id": link_id}
     except RepositoryError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-# --- External Link Endpoints ---
 
 
 @router.post("/{repo_id}/external-links", response_model=ExternalLinkResponse)
@@ -693,8 +680,6 @@ def delete_external_link(
     return {"status": "deleted", "link_id": link_id}
 
 
-# --- File Management Endpoints ---
-
 ALLOWED_EXTENSIONS = {
     ".md",
     ".txt",
@@ -749,7 +734,6 @@ def list_files(
 
     files: list[FileInfo] = []
     if target_path.is_file():
-        # Single file
         files.append(
             FileInfo(
                 name=target_path.name,
@@ -760,9 +744,7 @@ def list_files(
             )
         )
     else:
-        # Directory listing
         for item in sorted(target_path.glob(pattern)):
-            # Skip hidden files and .git
             if item.name.startswith("."):
                 continue
 
@@ -861,7 +843,6 @@ def _build_tree_from_files(
                 dir_nodes[current_path] = dir_node
                 dir_nodes[parent_path].children.append(dir_node)
 
-        # Add file node
         file_node = TreeNode(
             name=file.name,
             path=file.path,
@@ -875,7 +856,6 @@ def _build_tree_from_files(
         parent_path = "/".join(parts[:-1])
         dir_nodes.get(parent_path, root).children.append(file_node)
 
-    # Sort children: directories first, then alphabetically
     def sort_children(node: TreeNode) -> None:
         node.children.sort(key=lambda n: (n.type == "file", n.name.lower()))
         for child in node.children:
@@ -916,7 +896,6 @@ def get_file_tree_hierarchy(
             if not item.is_file():
                 continue
             rel_path = item.relative_to(repo_path)
-            # Skip hidden and .git directories
             if any(part.startswith(".") for part in rel_path.parts):
                 continue
             rel_path_str = str(rel_path)
@@ -937,7 +916,6 @@ def get_file_tree_hierarchy(
                 ext = "." + ext
             for item in repo_path.rglob(f"*{ext}"):
                 rel_path = item.relative_to(repo_path)
-                # Skip hidden and .git directories
                 if any(part.startswith(".") for part in rel_path.parts):
                     continue
 
@@ -962,7 +940,6 @@ def get_file_tree_hierarchy(
             modified_files = set(git_status.modified)
             untracked_files = set(git_status.untracked)
         except Exception:
-            # If git status fails, just continue without it
             pass
 
     return _build_tree_from_files(files, modified_files, untracked_files)
@@ -1009,7 +986,6 @@ def get_file_diff(
     except Exception:
         is_untracked = False
 
-    # Determine status
     if is_untracked:
         status = "untracked"
     elif staged:
@@ -1047,7 +1023,6 @@ def get_file_diff(
             )
             diff_content = result.stdout
 
-            # Count additions/deletions
             for line in diff_content.split("\n"):
                 if line.startswith("+") and not line.startswith("+++"):
                     additions += 1
@@ -1065,22 +1040,16 @@ def get_file_diff(
     )
 
 
-# --- Symbol Definition / Go to Definition ---
-
-
 def _parse_python_imports(content: str) -> list[dict[str, Any]]:
     """Parse Python import statements and return structured data."""
     imports: list[dict[str, Any]] = []
 
-    # Pattern for: from module import name1, name2
     from_import_pattern = r"^from\s+([\w.]+)\s+import\s+(.+)$"
-    # Pattern for: import module1, module2
     import_pattern = r"^import\s+(.+)$"
 
     for line_num, line in enumerate(content.split("\n"), 1):
         line = line.strip()
 
-        # from X import Y
         match = re.match(from_import_pattern, line)
         if match:
             module = match.group(1)
@@ -1097,7 +1066,6 @@ def _parse_python_imports(content: str) -> list[dict[str, Any]]:
                     )
             continue
 
-        # import X
         match = re.match(import_pattern, line)
         if match:
             modules = [m.strip().split(" as ")[0].strip() for m in match.group(1).split(",")]
@@ -1121,33 +1089,27 @@ def _resolve_python_module(
     """Resolve a Python module path to a file path."""
     parts = module_path.split(".")
 
-    # Try different resolution strategies
     candidates: list[Path] = []
 
-    # 1. Direct path: module.submodule -> module/submodule.py
     direct_path = repo_path / "/".join(parts)
     candidates.append(direct_path.with_suffix(".py"))
     candidates.append(direct_path / "__init__.py")
 
-    # 2. Try with 'src' prefix (common pattern)
     src_path = repo_path / "src" / "/".join(parts)
     candidates.append(src_path.with_suffix(".py"))
     candidates.append(src_path / "__init__.py")
 
-    # 3. If current_file is provided, try relative imports
     if current_file:
         current_dir = (repo_path / current_file).parent
         rel_path = current_dir / "/".join(parts)
         candidates.append(rel_path.with_suffix(".py"))
         candidates.append(rel_path / "__init__.py")
 
-    # 4. Search recursively for the module
     module_file = parts[-1] + ".py"
     for item in repo_path.rglob(module_file):
         if not any(p.startswith(".") for p in item.relative_to(repo_path).parts):
             candidates.append(item)
 
-    # Return first existing candidate
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():
             return candidate
@@ -1166,7 +1128,6 @@ def _find_symbol_definitions(
 
     definitions: list[SymbolDefinition] = []
 
-    # Patterns for different languages
     patterns: dict[str, list[tuple[str, str]]] = {
         ".py": [
             (rf"^def\s+{re.escape(symbol)}\s*\(", "function"),
@@ -1195,7 +1156,6 @@ def _find_symbol_definitions(
             ),
         ],
     }
-    # Apply JS patterns to JSX/TSX too
     patterns[".jsx"] = patterns[".js"]
     patterns[".tsx"] = patterns[".ts"]
 
@@ -1204,7 +1164,6 @@ def _find_symbol_definitions(
             continue
 
         for file_path in repo_path.rglob(f"*{ext}"):
-            # Skip hidden dirs and node_modules
             rel_path = file_path.relative_to(repo_path)
             if any(p.startswith(".") or p == "node_modules" for p in rel_path.parts):
                 continue
@@ -1237,7 +1196,6 @@ def _find_symbol_definitions(
             except (UnicodeDecodeError, OSError):
                 continue
 
-    # Sort by confidence descending
     definitions.sort(key=lambda d: (-d.confidence, d.path, d.line))
     return definitions
 
@@ -1274,14 +1232,11 @@ def find_definition(
 
                 for imp in imports:
                     if imp["name"] == symbol:
-                        # Try to resolve the import
                         if imp["type"] == "from_import":
-                            # from module import symbol -> find symbol in module
                             module_file = _resolve_python_module(
                                 imp["module"], repo_path, current_file
                             )
                             if module_file:
-                                # Search for the symbol in the module file
                                 module_content = module_file.read_text(encoding="utf-8")
                                 for line_num, line in enumerate(module_content.split("\n"), 1):
                                     if re.match(
@@ -1304,7 +1259,6 @@ def find_definition(
                                         break
 
                         elif imp["type"] == "import":
-                            # import module -> go to module file
                             module_file = _resolve_python_module(
                                 imp["module"], repo_path, current_file
                             )
@@ -1322,7 +1276,6 @@ def find_definition(
             except Exception:
                 pass
 
-    # 2. Search for symbol definitions in the codebase
     if not definitions:
         definitions = _find_symbol_definitions(symbol, repo_path)
 
@@ -1380,7 +1333,6 @@ def get_structure_files(
         except (UnicodeDecodeError, OSError):
             continue
 
-    # Sort by path depth (root first) then alphabetically
     structure_files.sort(key=lambda f: (f["path"].count("/"), f["path"]))
 
     return {
@@ -1489,24 +1441,20 @@ def write_file(
             status_code=400, detail=f"Content too large (max {MAX_FILE_SIZE // 1024}KB)"
         )
 
-    # Write file
     is_new = not file_path.exists()
     file_path.write_text(data.content, encoding="utf-8")
 
-    # Optionally commit
     committed = False
     if data.commit_message:
         import subprocess
 
         try:
-            # Stage the file
             subprocess.run(
                 ["git", "add", str(file_path)],
                 cwd=str(repo_path),
                 check=True,
                 capture_output=True,
             )
-            # Commit
             subprocess.run(
                 ["git", "commit", "-m", data.commit_message],
                 cwd=str(repo_path),
@@ -1515,7 +1463,6 @@ def write_file(
             )
             committed = True
         except subprocess.CalledProcessError:
-            # File written but commit failed
             pass
 
     return {

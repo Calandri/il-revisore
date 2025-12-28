@@ -15,14 +15,12 @@ Features:
 import asyncio
 import sys
 
-# Python 3.11+ has asyncio.timeout, older versions need async_timeout
 if sys.version_info >= (3, 11):
     asyncio_timeout = asyncio.timeout
 else:
     try:
         from async_timeout import timeout as asyncio_timeout
     except ImportError:
-        # Fallback: create a no-timeout context manager
         from collections.abc import AsyncIterator
         from contextlib import asynccontextmanager
 
@@ -45,13 +43,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from turbowrap.config import get_settings
-from turbowrap.llm.mixins import parse_token_string
+from turbowrap.llm.mixins import OperationTrackingMixin, parse_token_string
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
-# Model aliases
 ModelType = Literal["opus", "sonnet", "haiku"]
 MODEL_MAP = {
     "opus": "claude-opus-4-5-20251101",
@@ -59,16 +56,11 @@ MODEL_MAP = {
     "haiku": "claude-haiku-4-5-20251001",
 }
 
-# Default timeout
 DEFAULT_TIMEOUT = 180
 
-# Tool presets for different use cases (only works with --print mode)
-# Use preset name or custom comma-separated tool list
 ToolPreset = Literal["fix", "default"]
 TOOL_PRESETS: dict[str, str] = {
-    # Fix: modify code + web search if needed
     "fix": "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,WebFetch,WebSearch",
-    # Default: all tools
     "default": "default",
 }
 
@@ -167,7 +159,6 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
     """
     stats = ClaudeContextStats()
 
-    # Model and main usage: claude-opus-4-5-20251101 · 93k/200k tokens (47%)
     main_match = re.search(
         r"(claude-[\w-]+)\s*[·•]\s*([\d.]+k?)\s*/\s*([\d.]+k?)\s*tokens\s*\(([\d.]+)%\)",
         context_output,
@@ -178,7 +169,6 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         stats.tokens_max = parse_token_string(main_match.group(3))
         stats.usage_percent = float(main_match.group(4))
 
-    # System prompt: 3.4k tokens (1.7%)
     sys_prompt_match = re.search(
         r"System prompt:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
@@ -186,7 +176,6 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         stats.system_prompt_tokens = parse_token_string(sys_prompt_match.group(1))
         stats.system_prompt_percent = float(sys_prompt_match.group(2))
 
-    # System tools: 17.2k tokens (8.6%)
     sys_tools_match = re.search(
         r"System tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
@@ -194,13 +183,11 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         stats.system_tools_tokens = parse_token_string(sys_tools_match.group(1))
         stats.system_tools_percent = float(sys_tools_match.group(2))
 
-    # MCP tools: 26.1k tokens (13.0%)
     mcp_match = re.search(r"MCP tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
     if mcp_match:
         stats.mcp_tools_tokens = parse_token_string(mcp_match.group(1))
         stats.mcp_tools_percent = float(mcp_match.group(2))
 
-    # Custom agents: 1.4k tokens (0.7%)
     agents_match = re.search(
         r"Custom agents:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
@@ -208,19 +195,16 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
         stats.custom_agents_tokens = parse_token_string(agents_match.group(1))
         stats.custom_agents_percent = float(agents_match.group(2))
 
-    # Messages: 317 tokens (0.2%)
     messages_match = re.search(r"Messages:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
     if messages_match:
         stats.messages_tokens = parse_token_string(messages_match.group(1))
         stats.messages_percent = float(messages_match.group(2))
 
-    # Free space: 107k (53.3%)
     free_match = re.search(r"Free space:\s*([\d.]+k?)\s*\(([\d.]+)%\)", context_output)
     if free_match:
         stats.free_space_tokens = parse_token_string(free_match.group(1))
         stats.free_space_percent = float(free_match.group(2))
 
-    # Autocompact buffer: 45.0k tokens (22.5%)
     buffer_match = re.search(
         r"Autocompact buffer:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
     )
@@ -231,7 +215,6 @@ def _parse_context_output(context_output: str) -> ClaudeContextStats:
     return stats
 
 
-# Context output marker to identify where context stats begin
 CONTEXT_MARKER = "Context Usage"
 
 
@@ -254,7 +237,7 @@ class ClaudeCLIResult:
     session_id: str | None = None  # Session ID for --resume
 
 
-class ClaudeCLI:
+class ClaudeCLI(OperationTrackingMixin):
     """Centralized Claude CLI runner with S3 logging.
 
     Usage:
@@ -273,6 +256,9 @@ class ClaudeCLI:
         # Sync wrapper
         result = cli.run_sync("Simple prompt")
     """
+
+    # OperationTrackingMixin config
+    cli_name = "claude"
 
     def __init__(
         self,
@@ -309,15 +295,13 @@ class ClaudeCLI:
         self.skip_permissions = skip_permissions
         self.github_token = github_token
 
-        # Resolve tools: preset name -> tool list, or use as-is
         if tools is None:
-            self.tools = None  # Use all tools (default)
+            self.tools = None
         elif tools in TOOL_PRESETS:
             self.tools = TOOL_PRESETS[tools]
         else:
-            self.tools = tools  # Custom comma-separated list
+            self.tools = tools
 
-        # Resolve model name
         if model is None:
             self.model = self.settings.agents.claude_model
         elif model in MODEL_MAP:
@@ -325,14 +309,12 @@ class ClaudeCLI:
         else:
             self.model = model
 
-        # S3 saver (unified artifact saving)
         self._s3_saver = S3ArtifactSaver(
             bucket=self.settings.thinking.s3_bucket,
             region=self.settings.thinking.s3_region,
             prefix=self.s3_prefix,
         )
 
-        # Agent prompt cache
         self._agent_prompt: str | None = None
 
     def load_agent_prompt(self) -> str | None:
@@ -353,13 +335,9 @@ class ClaudeCLI:
 
         content = self.agent_md_path.read_text()
 
-        # Strip YAML front matter if present (starts with ---)
-        # This is metadata for Claude Code, not part of the prompt
         if content.startswith("---"):
-            # Find closing ---
             end_idx = content.find("---", 3)
             if end_idx != -1:
-                # Skip past the closing --- and any following newlines
                 content = content[end_idx + 3 :].lstrip("\n")
                 logger.info(
                     f"[CLAUDE CLI] Stripped YAML front matter from {self.agent_md_path.name}"
@@ -413,7 +391,6 @@ class ClaudeCLI:
         """
         start_time = time.time()
 
-        # Auto-register operation if tracking enabled
         operation = None
         if track_operation:
             operation = self._register_operation(
@@ -441,7 +418,6 @@ class ClaudeCLI:
                 resume_session_id=resume_session_id,
             )
         except Exception as e:
-            # Ensure operation is always closed on unexpected exceptions
             if operation:
                 self._fail_operation(operation.operation_id, f"Unexpected error: {e!s}"[:200])
             raise
@@ -465,11 +441,8 @@ class ClaudeCLI:
 
         Separated to allow try/except wrapper in run() for guaranteed operation closure.
         """
-        # Build full prompt with agent instructions
         full_prompt = self._build_full_prompt(prompt)
 
-        # Create wrapped chunk callback that publishes to tracker for SSE subscribers
-        # NOTE: Always publish, subscribers can join at any time during the operation
         effective_on_chunk: Callable[[str], Awaitable[None]] | None = on_chunk
         tracker = None
         if operation:
@@ -481,10 +454,8 @@ class ClaudeCLI:
 
                 async def _wrapped_on_chunk(chunk: str) -> None:
                     """Callback that sends chunk to both original callback and SSE subscribers."""
-                    # Call original callback if present
                     if original_on_chunk:
                         await original_on_chunk(chunk)
-                    # Publish to tracker for SSE subscribers (they can join anytime)
                     await tracker.publish_event(operation.operation_id, "chunk", {"content": chunk})
 
                 effective_on_chunk = _wrapped_on_chunk
@@ -494,22 +465,18 @@ class ClaudeCLI:
             except Exception as e:
                 logger.warning(f"[CLAUDE CLI] Failed to setup SSE publishing: {e}")
 
-        # Generate context ID if not provided
         if context_id is None:
             context_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-        # Save prompt to S3 before running
         s3_prompt_url = None
         if save_prompt:
             s3_prompt_url = await self._s3_saver.save_markdown(
                 full_prompt, "prompt", context_id, {"model": self.model}, "Claude CLI"
             )
 
-            # Update operation with S3 URL for live visibility
             if operation and s3_prompt_url:
                 self._update_operation(operation.operation_id, {"s3_prompt_url": s3_prompt_url})
 
-        # Run CLI (use wrapped callback for SSE streaming)
         (
             output,
             model_usage,
@@ -529,19 +496,16 @@ class ClaudeCLI:
 
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # Save output and thinking to S3 (ALWAYS, even on error - for debugging)
         s3_output_url = None
         s3_thinking_url = None
 
         if save_output:
-            # 1. Raw NDJSON with EVERYTHING (primary - for debugging)
             if raw_output:
                 s3_output_url = await self._s3_saver.save_raw(
                     raw_output,
                     "output",
                     context_id,
                 )
-            # 2. Also save readable markdown for humans
             if output:
                 await self._s3_saver.save_markdown(
                     output,
@@ -560,7 +524,6 @@ class ClaudeCLI:
                 "Claude CLI",
             )
 
-        # Save error details to S3 if there's an error
         if error and save_output:
             await self._s3_saver.save_markdown(
                 f"# Error\n\n{error}\n\n# Raw Output\n\n{raw_output or 'None'}",
@@ -571,15 +534,11 @@ class ClaudeCLI:
             )
 
         if error:
-            # Auto-fail operation
             if operation:
                 self._fail_operation(operation.operation_id, error)
-                # Signal SSE subscribers that operation failed
                 if tracker:
                     await tracker.signal_completion(operation.operation_id)
 
-            # For API errors (is_error=true), we still have output with the error message
-            # Return success=False but include the output so caller can inspect error details
             return ClaudeCLIResult(
                 success=False,
                 output=output or "",
@@ -595,7 +554,6 @@ class ClaudeCLI:
                 session_id=session_id,
             )
 
-        # Auto-complete operation
         if operation:
             self._complete_operation(
                 operation.operation_id,
@@ -605,7 +563,6 @@ class ClaudeCLI:
                 s3_prompt_url=s3_prompt_url,
                 s3_output_url=s3_output_url,
             )
-            # Signal SSE subscribers that operation completed
             if tracker:
                 await tracker.signal_completion(operation.operation_id)
 
@@ -650,7 +607,6 @@ class ClaudeCLI:
             loop = None
 
         if loop is not None:
-            # Already in async context - create new event loop in thread
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -714,10 +670,8 @@ class ClaudeCLI:
             Tuple of (output, model_usage, thinking, raw_output, error, session_id, tools_used)
         """
         try:
-            # Build environment
             env = os.environ.copy()
 
-            # GitHub token for git operations (credential helper reads from this)
             if self.github_token:
                 env["GITHUB_TOKEN"] = self.github_token
                 logger.info(
@@ -726,23 +680,19 @@ class ClaudeCLI:
             else:
                 logger.warning("[CLAUDE CLI] No GITHUB_TOKEN provided - git auth may fail")
 
-            # Get API key from AWS Secrets Manager or environment
             api_key = get_anthropic_api_key() or os.environ.get("ANTHROPIC_API_KEY")
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
             else:
                 return None, [], None, None, "ANTHROPIC_API_KEY not found", None, set()
 
-            # Workaround: Bun file watcher bug on macOS /var/folders
             env["TMPDIR"] = "/tmp"
 
-            # Set thinking budget
             if self.settings.thinking.enabled:
                 budget = thinking_budget or self.settings.thinking.budget_tokens
                 env["MAX_THINKING_TOKENS"] = str(budget)
                 logger.info(f"[CLAUDE CLI] Extended thinking: {budget} tokens")
 
-            # Session management: resume existing or create new
             if resume_session_id:
                 session_id = resume_session_id
                 logger.info(f"[CLAUDE CLI] Resuming session: {session_id[:8]}...")
@@ -750,8 +700,6 @@ class ClaudeCLI:
                 session_id = str(uuid.uuid4())
                 logger.info(f"[CLAUDE CLI] New session: {session_id[:8]}...")
 
-            # Build CLI arguments
-            # --include-partial-messages is REQUIRED for real-time streaming!
             args = [
                 "claude",
                 "--print",
@@ -759,15 +707,13 @@ class ClaudeCLI:
                 self.model,
                 "--output-format",
                 "stream-json",
-                "--include-partial-messages",  # CRITICAL for streaming!
+                "--include-partial-messages",
             ]
 
-            # Tools: limit available tools (only works with --print mode)
             if self.tools and self.tools != "default":
                 args.extend(["--tools", self.tools])
                 logger.info(f"[CLAUDE CLI] Tools limited to: {self.tools}")
 
-            # Session: resume existing or start new with specific ID
             if resume_session_id:
                 args.extend(["--resume", session_id])
             else:
@@ -779,13 +725,11 @@ class ClaudeCLI:
             if self.skip_permissions:
                 args.append("--dangerously-skip-permissions")
 
-            # Prompt as last argument
             args.append(prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None
 
-            # Log full command for debugging (all args except prompt)
-            args_display = " ".join(args[:-1])  # All args except last (prompt)
+            args_display = " ".join(args[:-1])
             logger.info(f"[CLAUDE CLI] Command: {args_display} <prompt>")
             logger.info(
                 f"[CLAUDE CLI] Flags: verbose={self.verbose}, "
@@ -805,7 +749,6 @@ class ClaudeCLI:
 
             logger.info(f"[CLAUDE CLI] Process started with PID: {process.pid}")
 
-            # Read stderr
             stderr_chunks = []
 
             async def read_stderr() -> None:
@@ -831,14 +774,13 @@ class ClaudeCLI:
 
             stderr_task = asyncio.create_task(read_stderr())
 
-            # Read stdout with streaming
             output_chunks = []
             decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             chunks_received = 0
             total_bytes = 0
             line_buffer = ""
-            in_thinking_block = False  # Track if we're streaming a thinking block
-            current_block_type = ""  # Track current content block type (thinking, tool_use, text)
+            in_thinking_block = False
+            current_block_type = ""
 
             assert process.stdout is not None
             try:
@@ -865,8 +807,6 @@ class ClaudeCLI:
                         if decoded:
                             output_chunks.append(decoded)
 
-                            # Parse stream-json for streaming callback
-                            # With --include-partial-messages, events are wrapped in stream_event
                             if on_chunk:
                                 line_buffer += decoded
                                 while "\n" in line_buffer:
@@ -877,23 +817,19 @@ class ClaudeCLI:
                                         event = json.loads(line)
                                         event_type = event.get("type", "")
 
-                                        # Unwrap stream_event wrapper
                                         if event_type == "stream_event":
                                             event = event.get("event", {})
                                             event_type = event.get("type", "")
 
-                                        # Track thinking and tool_use block state
                                         if event_type == "content_block_start":
                                             block = event.get("content_block", {})
                                             block_type = block.get("type", "")
                                             if block_type == "thinking":
                                                 in_thinking_block = True
                                                 current_block_type = "thinking"
-                                                # Only add prefix if using on_chunk for thinking
                                                 if not on_thinking:
                                                     await on_chunk("\n🧠 ")
                                             elif block_type == "tool_use":
-                                                # Tool use block: show tool name
                                                 current_block_type = "tool_use"
                                                 tool_name = block.get("name", "unknown")
                                                 await on_chunk(f"\n🔧 **Tool:** `{tool_name}`\n")
@@ -908,7 +844,6 @@ class ClaudeCLI:
                                                 await on_chunk("✅ Tool completed\n")
                                             current_block_type = ""
 
-                                        # Extract text and thinking from content_block_delta
                                         elif event_type == "content_block_delta":
                                             delta = event.get("delta", {})
                                             delta_type = delta.get("type", "")
@@ -917,7 +852,6 @@ class ClaudeCLI:
                                                 if text:
                                                     await on_chunk(text)
                                             elif delta_type == "thinking_delta":
-                                                # Stream thinking to dedicated callback if available
                                                 thinking_chunk = delta.get("thinking", "")
                                                 if thinking_chunk:
                                                     if on_thinking:
@@ -931,7 +865,6 @@ class ClaudeCLI:
                                                 if block.get("type") == "text":
                                                     await on_chunk(block.get("text", ""))
                                                 elif block.get("type") == "thinking":
-                                                    # Stream complete thinking block
                                                     thinking_block = block.get("thinking", "")
                                                     if thinking_block:
                                                         if on_thinking:
@@ -960,14 +893,11 @@ class ClaudeCLI:
                 if process.returncode != 0:
                     logger.error(f"[CLAUDE CLI] STDERR: {stderr_text[:2000]}")
                 else:
-                    # Log as WARNING so it appears in Log Viewer even on success
                     logger.warning(f"[CLAUDE CLI] Output: {stderr_text[:2000]}")
 
-            # Parse stream-json output (ALWAYS - even on error to preserve output for debugging)
             raw_output = "".join(output_chunks) if output_chunks else None
 
             if process.returncode != 0:
-                # Still parse output to extract any useful information
                 output: str | None = None
                 model_usage: list[ModelUsage] = []
                 thinking: str | None = None
@@ -988,7 +918,6 @@ class ClaudeCLI:
 
                 return output, model_usage, thinking, raw_output, error_msg, session_id, tools_used
 
-            # Normal success path
             if not raw_output:
                 logger.warning("[CLAUDE CLI] No output received from CLI")
                 return None, [], None, None, "No output received from CLI", session_id, set()
@@ -997,7 +926,6 @@ class ClaudeCLI:
                 raw_output
             )
 
-            # Return API error as the error field if present
             if api_error:
                 return output, model_usage, thinking, raw_output, api_error, session_id, tools_used
 
@@ -1033,35 +961,28 @@ class ClaudeCLI:
                 event = json.loads(line)
                 event_type = event.get("type")
 
-                # Unwrap stream_event wrapper (from --include-partial-messages)
                 if event_type == "stream_event":
                     event = event.get("event", {})
                     event_type = event.get("type")
 
-                # Capture thinking and tool_use from assistant messages
                 if event_type == "assistant":
                     for block in event.get("message", {}).get("content", []):
                         if block.get("type") == "thinking":
                             thinking_text = block.get("thinking", "")
-                            # Ensure thinking is a string (could be dict/list in malformed response)
                             if thinking_text and isinstance(thinking_text, str):
                                 thinking_chunks.append(thinking_text)
-                        # Track tool usage
                         elif block.get("type") == "tool_use":
                             tool_name = block.get("name")
                             if tool_name:
                                 tools_used.add(tool_name)
 
-                # Extract final result
                 if event_type == "result":
                     output = event.get("result", "")
 
-                    # Check for API errors (billing, rate limits, etc.)
                     if event.get("is_error"):
                         api_error = output
                         logger.error(f"[CLAUDE CLI] API error: {output}")
 
-                    # Extract model usage (handle null explicitly)
                     usage_data = event.get("modelUsage") or {}
                     for model_name, usage in usage_data.items():
                         model_usage_list.append(
@@ -1080,7 +1001,6 @@ class ClaudeCLI:
 
         thinking = "\n\n".join(thinking_chunks) if thinking_chunks else None
 
-        # Fallback if no result found
         if not output and not api_error:
             logger.warning("[CLAUDE CLI] No result in stream-json, using raw output")
             output = raw_output
@@ -1100,7 +1020,6 @@ class ClaudeCLI:
         if explicit_type:
             return explicit_type
 
-        # Infer from agent_md_path
         if self.agent_md_path:
             agent_name = self.agent_md_path.stem.lower()
             if "fix" in agent_name:
@@ -1118,7 +1037,6 @@ class ClaudeCLI:
             if "lint" in agent_name or "analyzer" in agent_name:
                 return "review"
 
-        # Infer from prompt keywords
         prompt_lower = prompt.lower()[:500]
         if "fix" in prompt_lower or "correggi" in prompt_lower:
             return "fix"
@@ -1131,7 +1049,6 @@ class ClaudeCLI:
         if "push" in prompt_lower:
             return "git_push"
 
-        # Default: generic CLI task
         return "cli_task"
 
     def _extract_repo_name(self) -> str | None:
