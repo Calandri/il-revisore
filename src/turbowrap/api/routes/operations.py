@@ -41,6 +41,7 @@ class OperationResponse(BaseModel):
     repository_name: str | None = None
     branch_name: str | None = None
     user_name: str | None = None
+    parent_session_id: str | None = None
     details: dict[str, Any] = {}
     result: dict[str, Any] | None = None
     started_at: str | None = None

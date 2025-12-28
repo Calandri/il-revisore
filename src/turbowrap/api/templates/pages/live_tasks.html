@@ -229,13 +229,30 @@
             </div>
         </template>
 
-        <!-- History Cards -->
+        <!-- History Cards (grouped by parent_session_id) -->
         <template x-if="!historyLoading && historyOperations.length > 0">
             <div class="space-y-2">
-                <template x-for="op in historyOperations" :key="op.operation_id">
-                    <div x-data="{ isLive: false, get expanded() { return $data.expandedOperations.includes(op.operation_id) } }">
-                        {% include "components/operation_card.html" %}
-                    </div>
+                <template x-for="(item, index) in getGroupedHistory()" :key="item.op ? item.op.operation_id : 'sep-' + index">
+                    <!-- Group Separator -->
+                    <template x-if="item.isSeparator">
+                        <div class="flex items-center gap-3 py-2 px-1">
+                            <div class="flex-1 h-px bg-gradient-to-r from-indigo-500/50 to-transparent"></div>
+                            <div class="flex items-center gap-2 text-xs text-indigo-500 dark:text-indigo-400">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                </svg>
+                                <span class="font-mono" x-text="item.parentLabel"></span>
+                                <span class="text-gray-400" x-text="'(' + item.count + ' ops)'"></span>
+                            </div>
+                            <div class="flex-1 h-px bg-gradient-to-l from-indigo-500/50 to-transparent"></div>
+                        </div>
+                    </template>
+                    <!-- Operation Card -->
+                    <template x-if="!item.isSeparator">
+                        <div x-data="{ isLive: false, op: item.op, get expanded() { return $data.expandedOperations.includes(item.op.operation_id) } }">
+                            {% include "components/operation_card.html" %}
+                        </div>
+                    </template>
                 </template>
 
                 <!-- Pagination -->
@@ -427,6 +444,80 @@ function liveTasksApp() {
         // Type label
         getTypeLabel(type) {
             return this.operationLabels[type] || type?.toUpperCase() || 'UNKNOWN';
+        },
+
+        // Model short name for badge display
+        getModelShortName(model) {
+            if (!model) return '?';
+            const m = model.toLowerCase();
+            if (m.includes('opus')) return 'OPUS';
+            if (m.includes('sonnet')) return 'SONNET';
+            if (m.includes('haiku')) return 'HAIKU';
+            if (m.includes('gemini-2.0-flash-thinking')) return 'GEMINI-T';
+            if (m.includes('gemini-2.5')) return 'GEMINI 2.5';
+            if (m.includes('gemini-2')) return 'GEMINI 2';
+            if (m.includes('gemini')) return 'GEMINI';
+            if (m.includes('grok')) return 'GROK';
+            if (m.includes('gpt-4')) return 'GPT-4';
+            if (m.includes('gpt')) return 'GPT';
+            // Fallback: take last part of model name
+            const parts = model.split(/[-_/]/);
+            return parts[parts.length - 1]?.toUpperCase()?.substring(0, 8) || model.substring(0, 8);
+        },
+
+        // Group history operations by parent_session_id
+        getGroupedHistory() {
+            const items = [];
+            let currentParent = null;
+
+            for (const op of this.historyOperations) {
+                const parentId = op.parent_session_id || op.operation_id;
+
+                // Add separator when parent changes
+                if (parentId !== currentParent) {
+                    // Count operations in this group
+                    const count = this.historyOperations.filter(o =>
+                        (o.parent_session_id || o.operation_id) === parentId
+                    ).length;
+
+                    // Create a readable label from parent_session_id
+                    let parentLabel = parentId;
+                    if (parentId && parentId.includes('/')) {
+                        // e.g., "fix/abc123-def456" -> "fix/abc123"
+                        const parts = parentId.split('/');
+                        const type = parts[0];
+                        const id = parts[1]?.substring(0, 8) || '';
+                        parentLabel = `${type}/${id}`;
+                    } else if (parentId) {
+                        parentLabel = parentId.substring(0, 16);
+                    }
+
+                    items.push({
+                        isSeparator: true,
+                        parentId: parentId,
+                        parentLabel: parentLabel,
+                        count: count
+                    });
+                    currentParent = parentId;
+                }
+
+                items.push({ isSeparator: false, op: op });
+            }
+
+            return items;
+        },
+
+        // Model badge styling
+        getModelBadgeClass(model) {
+            if (!model) return 'bg-gray-100 dark:bg-gray-700 text-gray-500';
+            const m = model.toLowerCase();
+            if (m.includes('opus')) return 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300';
+            if (m.includes('sonnet')) return 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300';
+            if (m.includes('haiku')) return 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300';
+            if (m.includes('gemini')) return 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300';
+            if (m.includes('grok')) return 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-300';
+            if (m.includes('gpt')) return 'bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300';
+            return 'bg-gray-100 dark:bg-gray-500/20 text-gray-700 dark:text-gray-300';
         },
 
         // Token extraction from operation data

@@ -47,9 +47,16 @@
                   x-text="getTypeLabel(op.type)"></span>
         </div>
 
+        <!-- Model Badge -->
+        <div class="flex-shrink-0">
+            <span class="px-2 py-0.5 text-xs font-medium rounded"
+                  :class="getModelBadgeClass(op.details?.model || op.result?.model)"
+                  x-text="getModelShortName(op.details?.model || op.result?.model)"></span>
+        </div>
+
         <!-- Agent Name -->
-        <div class="flex-shrink-0 w-24 truncate">
-            <span class="text-sm font-medium text-gray-900 dark:text-white" x-text="op.details?.agent || op.details?.cli || '-'"></span>
+        <div class="flex-shrink-0 w-20 truncate hidden sm:block">
+            <span class="text-xs text-gray-500 dark:text-gray-400" x-text="op.details?.agent || op.details?.cli || '-'"></span>
         </div>
 
         <!-- Repo + Branch -->
@@ -173,33 +180,35 @@
             </div>
         </div>
 
-        <!-- Token Details -->
-        <div class="flex flex-wrap gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-xs">
-            <div class="flex items-center gap-2">
-                <span class="text-emerald-600 dark:text-emerald-400">↓ Input</span>
-                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'input'))"></span>
+        <!-- Token Details (History only) -->
+        <template x-if="!isLive">
+            <div class="flex flex-wrap gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="text-emerald-600 dark:text-emerald-400">↓ Input</span>
+                    <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'input'))"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-amber-600 dark:text-amber-400">⚡ Cached</span>
+                    <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'cached'))"></span>
+                </div>
+                <div class="flex items-center gap-2" x-show="getTokens(op, 'cache_creation') > 0">
+                    <span class="text-orange-600 dark:text-orange-400">+ Cache Create</span>
+                    <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'cache_creation'))"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-blue-600 dark:text-blue-400">↑ Output</span>
+                    <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'output'))"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-500 dark:text-gray-400">Total</span>
+                    <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'input') + getTokens(op, 'output'))"></span>
+                </div>
+                <div class="flex items-center gap-2 ml-auto">
+                    <span class="text-green-600 dark:text-green-400">Cost</span>
+                    <span class="text-gray-900 dark:text-white font-mono" x-text="'$' + getCost(op).toFixed(4)"></span>
+                </div>
             </div>
-            <div class="flex items-center gap-2">
-                <span class="text-amber-600 dark:text-amber-400">⚡ Cached</span>
-                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'cached'))"></span>
-            </div>
-            <div class="flex items-center gap-2" x-show="getTokens(op, 'cache_creation') > 0">
-                <span class="text-orange-600 dark:text-orange-400">+ Cache Create</span>
-                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'cache_creation'))"></span>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-blue-600 dark:text-blue-400">↑ Output</span>
-                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'output'))"></span>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-gray-500 dark:text-gray-400">Total</span>
-                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'input') + getTokens(op, 'output'))"></span>
-            </div>
-            <div class="flex items-center gap-2 ml-auto">
-                <span class="text-green-600 dark:text-green-400">Cost</span>
-                <span class="text-gray-900 dark:text-white font-mono" x-text="'$' + getCost(op).toFixed(4)"></span>
-            </div>
-        </div>
+        </template>
 
         <!-- Tools Used (full list) -->
         <div x-show="getToolsUsed(op).length > 0">

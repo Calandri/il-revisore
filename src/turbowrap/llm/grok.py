@@ -604,18 +604,23 @@ class GrokCLI:
             if len(prompt) > 150:
                 prompt_preview += "..."
 
+            # Extract parent_session_id as first-class field (for hierarchical queries)
+            details_copy = dict(operation_details or {})
+            parent_session_id = details_copy.pop("parent_session_id", None)
+
             operation = tracker.register(
                 op_type=op_type,
                 operation_id=context_id or str(uuid.uuid4()),
                 repo_name=repo_name or self._extract_repo_name(),
                 user=user_name,
+                parent_session_id=parent_session_id,
                 details={
                     "model": self.model,
                     "cli": "grok",
                     "working_dir": str(self.working_dir) if self.working_dir else None,
                     "prompt_preview": prompt_preview,
                     "prompt_length": len(prompt),
-                    **(operation_details or {}),
+                    **details_copy,
                 },
             )
 

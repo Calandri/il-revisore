@@ -997,6 +997,7 @@ class Operation(Base):
             "repository_name": self.repository_name,
             "branch_name": self.branch_name,
             "user_name": self.user_name,
+            "parent_session_id": self.parent_session_id,
             "details": self.details or {},
             "result": self.result,
             "error": self.error,
