@@ -32,7 +32,7 @@ from turbowrap.fix.models import (
     FixStatus,
     IssueFixResult,
 )
-from turbowrap.llm.claude_cli import ClaudeCLI
+from turbowrap.llm.claude_cli import ClaudeCLI, ClaudeCLIResult
 
 # Import GeminiCLI from shared orchestration utilities
 from turbowrap.orchestration.cli_runner import GeminiCLI
@@ -54,9 +54,13 @@ class FixSessionContext:
 
     When context size exceeds MAX_SESSION_TOKENS, /compact is triggered which
     compresses the context within the same session.
+
+    branch_session_id: Initial session from branch creation, propagated through
+    fix and commit phases to reuse cached codebase import (~33% cost savings).
     """
 
     claude_session_id: str | None = None
+    branch_session_id: str | None = None  # Session from branch creation for cache reuse
     cumulative_input_tokens: int = 0
     cumulative_output_tokens: int = 0
     last_cache_read_tokens: int = 0  # Context size = how much Claude reads from cache
@@ -404,23 +408,16 @@ class FixOrchestrator:
                     agent_type="branch_creator",
                 )
 
-                # Check for errors: None, __ERROR__ prefix, or ERROR: in Claude's output
-                is_error = False
-                specific_error = "Unknown error"
+                # Capture branch session ID for later reuse (FASE 3)
+                branch_session_id = branch_result.session_id
+                logger.info(
+                    f"[FIX] Branch created with session: {branch_session_id[:8] if branch_session_id else 'N/A'}... "
+                    f"(will be propagated to fix and commit phases)"
+                )
 
-                if branch_result is None:
-                    is_error = True
-                    specific_error = "No response from Claude"
-                elif branch_result.startswith("__ERROR__:"):
-                    is_error = True
-                    specific_error = branch_result.replace("__ERROR__: ", "")
-                elif "ERROR:" in branch_result:
-                    is_error = True
-                    # Extract error message after "ERROR:"
-                    error_start = branch_result.find("ERROR:")
-                    specific_error = branch_result[error_start:].strip()
-
-                if is_error:
+                # Check for errors
+                if not branch_result.success:
+                    specific_error = branch_result.error or "Unknown error"
                     error_msg = f"Failed to create branch '{branch_name}': {specific_error}"
                     logger.error(f"[FIX] {error_msg}")
                     await safe_emit(
@@ -496,7 +493,21 @@ class FixOrchestrator:
             successful_issues: list[Issue] = []
             failed_issues: list[Issue] = []
 
-            session_context = FixSessionContext()
+            # Initialize session context with branch session if available (FASE 4)
+            if not request.use_existing_branch and branch_session_id:
+                # Unified session mode: propagate branch session to fix and commit phases
+                session_context = FixSessionContext(
+                    branch_session_id=branch_session_id,
+                    claude_session_id=branch_session_id,  # Start with same session
+                )
+                logger.info(
+                    f"[FIX] ✓ Unified session mode enabled: {branch_session_id[:8]}... "
+                    f"(fix and commit will reuse cache from branch creation)"
+                )
+            else:
+                # Fallback to isolated sessions
+                session_context = FixSessionContext()
+                logger.info("[FIX] Using isolated sessions (no branch session to propagate)")
 
             for iteration in range(1, self.max_iterations + 1):
                 if iteration == 1:
@@ -621,8 +632,20 @@ class FixOrchestrator:
                             "INFO", f"Heavy batch: thinking budget {thinking_budget} tokens"
                         )
 
+                    # Log session status before fix phase
+                    if session_context.branch_session_id:
+                        logger.info(
+                            f"[FIX] Fix phase resuming session: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'N/A'}... | "
+                            f"Model: opus | Cache READ expected (reusing branch cache)"
+                        )
+                    else:
+                        logger.info(
+                            "[FIX] Fix phase starting new session | "
+                            "Model: opus | Cache CREATION expected"
+                        )
+
                     try:
-                        output = await self._run_claude_cli(
+                        claude_result: ClaudeCLIResult = await self._run_claude_cli(
                             prompt,
                             on_chunk=on_chunk_claude,
                             thinking_budget=thinking_budget,
@@ -630,10 +653,8 @@ class FixOrchestrator:
                             parent_session_id=session_id,
                             agent_type="fixer",
                         )
-                        if output is None or (output and output.startswith("__ERROR__:")):
-                            error_detail = (
-                                output.replace("__ERROR__: ", "") if output else "returned None"
-                            )
+                        if not claude_result.success:
+                            error_detail = claude_result.error or "Unknown error"
                             logger.error(f"Claude CLI ({batch_id}) failed: {error_detail}")
                             await emit_log(
                                 "ERROR", f"Claude CLI failed for {batch_id}: {error_detail}"
@@ -768,6 +789,18 @@ class FixOrchestrator:
                         commit_prompt = commit_prompt.replace("{commit_message}", batch_commit_msg)
                         commit_prompt = commit_prompt.replace("{issue_codes}", batch_issue_codes)
 
+                        # Log session status before commit phase
+                        if session_context.branch_session_id:
+                            logger.info(
+                                f"[FIX] Commit phase resuming session: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'N/A'}... | "
+                                f"Model: haiku | Cache READ expected (reusing branch cache)"
+                            )
+                        else:
+                            logger.info(
+                                "[FIX] Commit phase starting new session | "
+                                "Model: haiku | Cache CREATION expected"
+                            )
+
                         batch_commit_success = False
 
                         if request.workspace_path:
@@ -802,12 +835,11 @@ class FixOrchestrator:
                                 commit_prompt,
                                 timeout=30,
                                 model="haiku",
+                                session_context=session_context,  # FASE 5: Propagate session
                                 parent_session_id=session_id,
                                 agent_type="committer",
                             )
-                            if commit_result and (
-                                commit_result.startswith("__ERROR__:") or "ERROR:" in commit_result
-                            ):
+                            if not commit_result.success:
                                 await emit_log("ERROR", f"Batch {batch_id} commit failed")
                             else:
                                 (
@@ -1410,7 +1442,7 @@ The reviewer found issues with the previous fix. Address this feedback:
         session_context: FixSessionContext | None = None,
         parent_session_id: str | None = None,
         agent_type: str | None = None,
-    ) -> str | None:
+    ) -> ClaudeCLIResult:
         """Run Claude CLI with prompt and optional streaming callback.
 
         Uses the centralized ClaudeCLI utility for execution.
@@ -1490,7 +1522,7 @@ The reviewer found issues with the previous fix. Address this feedback:
                     raise BillingError(result.error)
 
             logger.error(f"Claude CLI failed: {result.error}")
-            return f"__ERROR__: {result.error or 'Unknown error'}"
+            return result
 
         for usage in result.model_usage:
             logger.info(
@@ -1498,7 +1530,7 @@ The reviewer found issues with the previous fix. Address this feedback:
                 f"out={usage.output_tokens}, cost=${usage.cost_usd:.4f}"
             )
 
-        return result.output
+        return result
 
     async def _compact_context(
         self,
