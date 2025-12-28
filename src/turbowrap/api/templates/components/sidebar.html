@@ -74,31 +74,116 @@
             <div x-show="!sidebarOpen" class="sidebar-tooltip">Repository</div>
         </a>
 
-        <!-- Code Review -->
-        <a href="/review"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'review' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
-           :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-            </svg>
-            <span x-show="sidebarOpen">Code Review</span>
-            <div x-show="!sidebarOpen" class="sidebar-tooltip">Code Review</div>
-        </a>
+        <!-- Repo Tools Section (indented, shows when repo is selected) -->
+        <div x-show="sidebarOpen" class="space-y-1">
+            <!-- Section header with repo name -->
+            <div class="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                <span x-show="$store.globalContext?.selectedRepo" x-text="$store.globalContext?.selectedRepo?.name?.split('/')[1] || $store.globalContext?.selectedRepo?.name" class="truncate text-primary normal-case font-semibold"></span>
+                <span x-show="!$store.globalContext?.selectedRepo">Seleziona repo ↓</span>
+            </div>
 
-        <!-- Issues -->
-        <a href="/issues"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'issues' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
-           :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-            </svg>
-            <span x-show="sidebarOpen">Issues</span>
-            <div x-show="!sidebarOpen" class="sidebar-tooltip">Issues</div>
-        </a>
+            <!-- File Editor -->
+            <a href="/files"
+               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'files' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                <span>Files</span>
+            </a>
+
+            <!-- Code Review -->
+            <a href="/review"
+               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'review' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                </svg>
+                <span>Review</span>
+            </a>
+
+            <!-- Issues -->
+            <a href="/issues"
+               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'issues' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <span>Issues</span>
+            </a>
+
+            <!-- Endpoints -->
+            <a href="/endpoints"
+               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'endpoints' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span>Endpoints</span>
+            </a>
+
+            <!-- Mockups -->
+            <a href="/mockups"
+               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'mockups' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
+                </svg>
+                <span>Mockups</span>
+            </a>
+        </div>
+
+        <!-- Collapsed sidebar: repo tools as icons -->
+        <div x-show="!sidebarOpen" class="hidden md:block space-y-1">
+            <a href="/files"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'files' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                <div class="sidebar-tooltip">Files</div>
+            </a>
+            <a href="/review"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'review' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                </svg>
+                <div class="sidebar-tooltip">Review</div>
+            </a>
+            <a href="/issues"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'issues' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <div class="sidebar-tooltip">Issues</div>
+            </a>
+            <a href="/endpoints"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'endpoints' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <div class="sidebar-tooltip">Endpoints</div>
+            </a>
+            <a href="/mockups"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'mockups' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
+                </svg>
+                <div class="sidebar-tooltip">Mockups</div>
+            </a>
+        </div>
+
+        <!-- Separator -->
+        <div class="my-3 border-t dark:border-gray-700"></div>
 
         <!-- Linear -->
         <a href="/linear"
@@ -113,19 +198,6 @@
             <div x-show="!sidebarOpen" class="sidebar-tooltip">Linear</div>
         </a>
 
-        <!-- File Editor -->
-        <a href="/files"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'files' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
-           :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-            </svg>
-            <span x-show="sidebarOpen">File Editor</span>
-            <div x-show="!sidebarOpen" class="sidebar-tooltip">File Editor</div>
-        </a>
-
         <!-- Databases -->
         <a href="/databases"
            @click="if(window.innerWidth < 768) sidebarOpen = false"
@@ -137,32 +209,6 @@
             </svg>
             <span x-show="sidebarOpen">Database</span>
             <div x-show="!sidebarOpen" class="sidebar-tooltip">Database</div>
-        </a>
-
-        <!-- Endpoints -->
-        <a href="/endpoints"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'endpoints' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
-           :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-            <span x-show="sidebarOpen">Endpoints</span>
-            <div x-show="!sidebarOpen" class="sidebar-tooltip">Endpoints</div>
-        </a>
-
-        <!-- Mockups -->
-        <a href="/mockups"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'mockups' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
-           :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
-            </svg>
-            <span x-show="sidebarOpen">Mockups</span>
-            <div x-show="!sidebarOpen" class="sidebar-tooltip">Mockups</div>
         </a>
 
         <!-- Chat -->
