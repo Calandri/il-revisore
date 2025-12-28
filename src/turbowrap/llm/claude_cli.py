@@ -610,6 +610,8 @@ class ClaudeCLI:
                 duration_ms=duration_ms,
                 model_usage=model_usage,
                 tools_used=tools_used,
+                s3_prompt_url=s3_prompt_url,
+                s3_output_url=s3_output_url,
             )
             # Signal SSE subscribers that operation completed
             if tracker:
@@ -1204,8 +1206,10 @@ class ClaudeCLI:
         duration_ms: int,
         model_usage: list[ModelUsage],
         tools_used: set[str] | None = None,
+        s3_prompt_url: str | None = None,
+        s3_output_url: str | None = None,
     ) -> None:
-        """Complete operation in tracker with model usage stats."""
+        """Complete operation in tracker with model usage stats and S3 URLs."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker
 
@@ -1249,6 +1253,9 @@ class ClaudeCLI:
                     "models_used": list({u.model for u in model_usage}),
                     "model_usage": model_usage_list,
                     "tools_used": sorted(tools_used) if tools_used else [],
+                    # S3 artifact URLs
+                    "s3_prompt_url": s3_prompt_url,
+                    "s3_output_url": s3_output_url,
                 },
             )
             logger.info(

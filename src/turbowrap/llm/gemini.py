@@ -862,6 +862,8 @@ class GeminiCLI:
                     duration_ms=duration_ms,
                     session_stats=session_stats,
                     tools_used=tools_used,
+                    s3_prompt_url=s3_prompt_url,
+                    s3_output_url=s3_output_url,
                 )
                 # Signal SSE subscribers that operation completed
                 if tracker:
@@ -1025,8 +1027,10 @@ class GeminiCLI:
         duration_ms: int,
         session_stats: GeminiSessionStats | None = None,
         tools_used: set[str] | None = None,
+        s3_prompt_url: str | None = None,
+        s3_output_url: str | None = None,
     ) -> None:
-        """Complete operation in tracker with session stats."""
+        """Complete operation in tracker with session stats and S3 URLs."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker
 
@@ -1048,6 +1052,10 @@ class GeminiCLI:
 
             # Add tools used (sorted for consistency)
             result["tools_used"] = sorted(tools_used) if tools_used else []
+
+            # Add S3 artifact URLs
+            result["s3_prompt_url"] = s3_prompt_url
+            result["s3_output_url"] = s3_output_url
 
             tracker.complete(operation_id, result=result)
             logger.info(
