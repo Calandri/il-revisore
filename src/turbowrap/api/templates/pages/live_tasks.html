@@ -232,27 +232,27 @@
         <!-- History Cards (grouped by parent_session_id) -->
         <template x-if="!historyLoading && historyOperations.length > 0">
             <div class="space-y-2">
-                <template x-for="(item, index) in getGroupedHistory()" :key="item.op ? item.op.operation_id : 'sep-' + index">
-                    <!-- Group Separator -->
-                    <template x-if="item.isSeparator">
-                        <div class="flex items-center gap-3 py-2 px-1">
-                            <div class="flex-1 h-px bg-gradient-to-r from-indigo-500/50 to-transparent"></div>
-                            <div class="flex items-center gap-2 text-xs text-indigo-500 dark:text-indigo-400">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-                                </svg>
-                                <span class="font-mono" x-text="item.parentLabel"></span>
-                                <span class="text-gray-400" x-text="'(' + item.count + ' ops)'"></span>
+                <template x-for="(op, index) in historyOperations" :key="op.operation_id">
+                    <div>
+                        <!-- Group Separator (shown when parent changes) -->
+                        <template x-if="shouldShowGroupSeparator(index)">
+                            <div class="flex items-center gap-3 py-2 px-1 mb-2">
+                                <div class="flex-1 h-px bg-gradient-to-r from-indigo-500/50 to-transparent"></div>
+                                <div class="flex items-center gap-2 text-xs text-indigo-500 dark:text-indigo-400">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                    </svg>
+                                    <span class="font-mono" x-text="getParentLabel(op)"></span>
+                                    <span class="text-gray-400" x-text="'(' + getParentGroupCount(op) + ' ops)'"></span>
+                                </div>
+                                <div class="flex-1 h-px bg-gradient-to-l from-indigo-500/50 to-transparent"></div>
                             </div>
-                            <div class="flex-1 h-px bg-gradient-to-l from-indigo-500/50 to-transparent"></div>
-                        </div>
-                    </template>
-                    <!-- Operation Card -->
-                    <template x-if="!item.isSeparator">
-                        <div x-data="{ isLive: false, op: item.op, get expanded() { return $data.expandedOperations.includes(item.op.operation_id) } }">
+                        </template>
+                        <!-- Operation Card -->
+                        <div x-data="{ isLive: false, get expanded() { return $data.expandedOperations.includes(op.operation_id) } }">
                             {% include "components/operation_card.html" %}
                         </div>
-                    </template>
+                    </div>
                 </template>
 
                 <!-- Pagination -->
@@ -465,46 +465,35 @@ function liveTasksApp() {
             return parts[parts.length - 1]?.toUpperCase()?.substring(0, 8) || model.substring(0, 8);
         },
 
-        // Group history operations by parent_session_id
-        getGroupedHistory() {
-            const items = [];
-            let currentParent = null;
+        // Check if we should show a group separator before this operation
+        shouldShowGroupSeparator(index) {
+            if (index === 0) return true; // Always show for first item
+            const currentOp = this.historyOperations[index];
+            const prevOp = this.historyOperations[index - 1];
+            const currentParent = currentOp.parent_session_id || currentOp.operation_id;
+            const prevParent = prevOp.parent_session_id || prevOp.operation_id;
+            return currentParent !== prevParent;
+        },
 
-            for (const op of this.historyOperations) {
-                const parentId = op.parent_session_id || op.operation_id;
-
-                // Add separator when parent changes
-                if (parentId !== currentParent) {
-                    // Count operations in this group
-                    const count = this.historyOperations.filter(o =>
-                        (o.parent_session_id || o.operation_id) === parentId
-                    ).length;
-
-                    // Create a readable label from parent_session_id
-                    let parentLabel = parentId;
-                    if (parentId && parentId.includes('/')) {
-                        // e.g., "fix/abc123-def456" -> "fix/abc123"
-                        const parts = parentId.split('/');
-                        const type = parts[0];
-                        const id = parts[1]?.substring(0, 8) || '';
-                        parentLabel = `${type}/${id}`;
-                    } else if (parentId) {
-                        parentLabel = parentId.substring(0, 16);
-                    }
-
-                    items.push({
-                        isSeparator: true,
-                        parentId: parentId,
-                        parentLabel: parentLabel,
-                        count: count
-                    });
-                    currentParent = parentId;
-                }
-
-                items.push({ isSeparator: false, op: op });
+        // Get readable label for parent session
+        getParentLabel(op) {
+            const parentId = op.parent_session_id || op.operation_id;
+            if (parentId && parentId.includes('/')) {
+                // e.g., "fix/abc123-def456" -> "fix/abc123"
+                const parts = parentId.split('/');
+                const type = parts[0];
+                const id = parts[1]?.substring(0, 8) || '';
+                return `${type}/${id}`;
             }
+            return parentId ? parentId.substring(0, 16) : '-';
+        },
 
-            return items;
+        // Count operations in the same parent group
+        getParentGroupCount(op) {
+            const parentId = op.parent_session_id || op.operation_id;
+            return this.historyOperations.filter(o =>
+                (o.parent_session_id || o.operation_id) === parentId
+            ).length;
         },
 
         // Model badge styling
