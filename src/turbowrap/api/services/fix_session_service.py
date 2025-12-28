@@ -301,14 +301,19 @@ class FixSessionService:
                     continue
 
                 if issue_result.status.value == "completed":
+                    # Safety: Don't mark resolved without a commit
+                    if not issue_result.commit_sha:
+                        logger.warning(
+                            f"Issue {issue_result.issue_code} completed but no commit - keeping OPEN"
+                        )
+                        failed_count += 1
+                        continue
+
                     db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
                     db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
-                    resolution_note_val = (
+                    db_issue.resolution_note = (  # type: ignore[assignment]
                         f"Fixed in commit {issue_result.commit_sha}"
-                        if issue_result.commit_sha
-                        else "Fixed"
                     )
-                    db_issue.resolution_note = resolution_note_val  # type: ignore[assignment]
                     # Save fix result fields
                     db_issue.fix_code = issue_result.fix_code  # type: ignore[assignment]
                     db_issue.fix_explanation = issue_result.fix_explanation  # type: ignore[assignment]

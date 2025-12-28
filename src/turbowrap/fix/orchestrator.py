@@ -721,20 +721,25 @@ class FixOrchestrator:
                         gemini_prompt = review_prompt  # Save first for S3 logging
 
                     # Atomic tracking at leaf level
-                    gemini_result = await self.gemini_cli.run(
-                        review_prompt,
-                        operation_type="review",
-                        repo_name=self.repo_path.name,
-                        on_chunk=on_chunk_gemini,
-                        track_operation=True,  # Atomic tracking at leaf level
-                        operation_details={
-                            "parent_session_id": session_id,
-                            "agent_type": "reviewer",
-                            "batch_id": batch_id,
-                        },
-                    )
-                    gemini_output = gemini_result.output if gemini_result.success else None
-                    last_gemini_output = gemini_output
+                    try:
+                        gemini_result = await self.gemini_cli.run(
+                            review_prompt,
+                            operation_type="review",
+                            repo_name=self.repo_path.name,
+                            on_chunk=on_chunk_gemini,
+                            track_operation=True,  # Atomic tracking at leaf level
+                            operation_details={
+                                "parent_session_id": session_id,
+                                "agent_type": "reviewer",
+                                "batch_id": batch_id,
+                            },
+                        )
+                        gemini_output = gemini_result.output if gemini_result.success else None
+                        last_gemini_output = gemini_output
+                    except Exception as e:
+                        logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
+                        await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
+                        gemini_output = None
 
                     # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
 
@@ -1852,12 +1857,19 @@ The reviewer found issues with the previous fix. Address this feedback:
             SessionLocal = get_session_local()
             db = SessionLocal()
             try:
+                # Safety: Don't mark resolved without a commit
+                if not commit_sha:
+                    logger.warning(
+                        f"Skipping RESOLVED update for {len(issues)} issues: no commit_sha"
+                    )
+                    return
+
                 for issue in issues:
                     db_issue = db.query(IssueModel).filter(IssueModel.id == issue.id).first()
                     if db_issue:
                         db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
                         db_issue.resolution_note = (  # type: ignore[assignment]
-                            f"Fixed in commit {commit_sha[:7]}" if commit_sha else "Fixed"
+                            f"Fixed in commit {commit_sha[:7]}"
                         )
                         db_issue.fix_commit_sha = commit_sha  # type: ignore[assignment]
                         db_issue.fix_branch = branch_name  # type: ignore[assignment]
@@ -1867,7 +1879,7 @@ The reviewer found issues with the previous fix. Address this feedback:
                         db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
                 db.commit()
                 logger.info(
-                    f"Updated {len(issues)} issues to RESOLVED (commit {commit_sha[:7] if commit_sha else 'unknown'})"
+                    f"Updated {len(issues)} issues to RESOLVED (commit {commit_sha[:7]})"
                 )
             finally:
                 db.close()
