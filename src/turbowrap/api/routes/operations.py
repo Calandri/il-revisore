@@ -11,12 +11,16 @@ This provides a unified view of everything happening across the system:
 The frontend polls this single endpoint to show the Live Tasks banner.
 """
 
+import asyncio
+import json
 import logging
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
 from ..services.operation_tracker import OperationType, get_tracker
 
@@ -576,3 +580,123 @@ async def get_operation_output(operation_id: str) -> dict[str, Any]:
         "source": "none",
         "content": "Output not yet available",
     }
+
+
+@router.get("/{operation_id}/stream")
+async def stream_operation_output(operation_id: str) -> EventSourceResponse:
+    """
+    Stream live output for an operation via SSE.
+
+    This endpoint allows the frontend to subscribe to real-time output
+    from an operation (fix, review, etc.) as it runs.
+
+    Events:
+    - connected: Connection established
+    - chunk: Output chunk {content: "..."}
+    - status: Status update {status: "running"|"complete"|"failed"}
+    - complete: Operation finished {success: bool}
+    - thinking: Extended thinking content (Claude)
+    - tool_call: Tool invocation info
+    - ping: Keepalive (every 30s)
+    """
+    tracker = get_tracker()
+
+    async def generate() -> AsyncGenerator[dict[str, str], None]:
+        # Find operation in tracker
+        op = next((o for o in tracker.get_active() if o.operation_id == operation_id), None)
+
+        # Also check for recently completed operations
+        if not op:
+            op = tracker.get(operation_id)
+
+        if not op:
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": "Operation not found", "operation_id": operation_id}),
+            }
+            return
+
+        # Send connected event with operation info
+        yield {
+            "event": "connected",
+            "data": json.dumps(
+                {
+                    "operation_id": operation_id,
+                    "type": op.operation_type.value,
+                    "status": op.status,
+                    "repository_name": op.repository_name,
+                }
+            ),
+        }
+
+        # If operation already completed, send final status and return
+        if op.status in ("completed", "failed", "cancelled"):
+            yield {
+                "event": "complete",
+                "data": json.dumps(
+                    {
+                        "status": op.status,
+                        "result": op.result,
+                        "error": op.error,
+                    }
+                ),
+            }
+            return
+
+        # Subscribe to operation events
+        queue = tracker.subscribe(operation_id)
+
+        try:
+            while True:
+                try:
+                    # Wait for event with timeout for keepalive
+                    event = await asyncio.wait_for(queue.get(), timeout=30)
+
+                    if event is None:
+                        # None signals operation completion
+                        # Get final status
+                        final_op = tracker.get(operation_id)
+                        yield {
+                            "event": "complete",
+                            "data": json.dumps(
+                                {
+                                    "status": final_op.status if final_op else "unknown",
+                                    "result": final_op.result if final_op else None,
+                                    "error": final_op.error if final_op else None,
+                                }
+                            ),
+                        }
+                        break
+
+                    # Forward event to client
+                    yield {
+                        "event": event["type"],
+                        "data": json.dumps(event["data"]),
+                    }
+
+                except asyncio.TimeoutError:
+                    # Send ping to keep connection alive
+                    yield {"event": "ping", "data": "{}"}
+
+                    # Check if operation is still active
+                    current_op = tracker.get(operation_id)
+                    if current_op and current_op.status != "in_progress":
+                        yield {
+                            "event": "complete",
+                            "data": json.dumps(
+                                {
+                                    "status": current_op.status,
+                                    "result": current_op.result,
+                                    "error": current_op.error,
+                                }
+                            ),
+                        }
+                        break
+
+        except asyncio.CancelledError:
+            logger.debug(f"[STREAM] Client disconnected from {operation_id[:8]}")
+        finally:
+            tracker.unsubscribe(operation_id, queue)
+            logger.debug(f"[STREAM] Cleaned up subscription for {operation_id[:8]}")
+
+    return EventSourceResponse(generate(), ping=15)

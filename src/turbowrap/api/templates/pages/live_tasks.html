@@ -355,9 +355,10 @@ function liveTasksApp() {
         pollInterval: null,
         isLive: true,
 
-        // Stream data for live operations
-        streamOutputs: {},
+        // Stream data for live operations (from SharedWorker SSE)
+        streamOutputs: {},        // operationId -> { lines: [], connected: bool, status: string }
         pausedStreams: new Set(),
+        subscribedOperations: new Set(),  // Track which operations we're subscribed to
 
         // History
         historyOperations: [],
@@ -384,12 +385,20 @@ function liveTasksApp() {
         },
 
         // Toggle card expand/collapse
-        toggleExpand(operationId) {
+        toggleExpand(operationId, isLive = false) {
             const idx = this.expandedOperations.indexOf(operationId);
             if (idx >= 0) {
+                // Collapsing - unsubscribe from stream
                 this.expandedOperations.splice(idx, 1);
+                if (isLive) {
+                    this.unsubscribeFromStream(operationId);
+                }
             } else {
+                // Expanding - subscribe to stream for live operations
                 this.expandedOperations.push(operationId);
+                if (isLive) {
+                    this.subscribeToStream(operationId);
+                }
             }
         },
 
@@ -559,9 +568,20 @@ function liveTasksApp() {
         promptModalContent: '',
         promptModalLoading: false,
 
-        // Stream control functions
+        // Stream control functions (using SharedWorker SSE)
         getStreamOutput(operationId) {
-            return this.streamOutputs[operationId] || [];
+            const stream = this.streamOutputs[operationId];
+            return stream ? stream.lines : [];
+        },
+
+        getStreamStatus(operationId) {
+            const stream = this.streamOutputs[operationId];
+            return stream ? stream.status : 'idle';
+        },
+
+        isStreamConnected(operationId) {
+            const stream = this.streamOutputs[operationId];
+            return stream ? stream.connected : false;
         },
 
         isStreamPaused(operationId) {
@@ -571,8 +591,130 @@ function liveTasksApp() {
         toggleStreamPause(operationId) {
             if (this.pausedStreams.has(operationId)) {
                 this.pausedStreams.delete(operationId);
+                // Resume: subscribe again
+                this.subscribeToStream(operationId);
             } else {
                 this.pausedStreams.add(operationId);
+                // Pause: unsubscribe
+                this.unsubscribeFromStream(operationId);
+            }
+        },
+
+        // Subscribe to operation stream via SharedWorker
+        subscribeToStream(operationId) {
+            if (this.subscribedOperations.has(operationId)) {
+                return; // Already subscribed
+            }
+            if (!window.operationWorker) {
+                console.warn('[LiveTasks] Operation worker not available, falling back to polling');
+                this.pollOutputStream(operationId);
+                return;
+            }
+
+            // Initialize stream state
+            if (!this.streamOutputs[operationId]) {
+                this.streamOutputs[operationId] = {
+                    lines: [],
+                    connected: false,
+                    status: 'connecting'
+                };
+            }
+
+            this.subscribedOperations.add(operationId);
+            window.subscribeToOperation(operationId);
+            console.log('[LiveTasks] Subscribed to stream:', operationId);
+        },
+
+        // Unsubscribe from operation stream
+        unsubscribeFromStream(operationId) {
+            if (!this.subscribedOperations.has(operationId)) {
+                return;
+            }
+            if (window.operationWorker) {
+                window.unsubscribeFromOperation(operationId);
+            }
+            this.subscribedOperations.delete(operationId);
+            console.log('[LiveTasks] Unsubscribed from stream:', operationId);
+        },
+
+        // Handle operation worker messages
+        handleWorkerMessage(event) {
+            const { type, operationId, ...data } = event.detail;
+
+            // Ensure stream state exists
+            if (operationId && !this.streamOutputs[operationId]) {
+                this.streamOutputs[operationId] = {
+                    lines: [],
+                    connected: false,
+                    status: 'idle'
+                };
+            }
+
+            const stream = operationId ? this.streamOutputs[operationId] : null;
+
+            switch (type) {
+                case 'CONNECTED':
+                    if (stream) {
+                        stream.connected = true;
+                        stream.status = 'streaming';
+                    }
+                    console.log('[LiveTasks] Stream connected:', operationId);
+                    break;
+
+                case 'CHUNK':
+                    if (stream && data.content) {
+                        // Split content into lines and add to buffer
+                        const newLines = data.content.split('\n').filter(l => l);
+                        stream.lines.push(...newLines);
+                        // Limit buffer to 1000 lines
+                        if (stream.lines.length > 1000) {
+                            stream.lines = stream.lines.slice(-1000);
+                        }
+                    }
+                    break;
+
+                case 'STATUS':
+                    if (stream) {
+                        stream.status = data.status || 'unknown';
+                    }
+                    break;
+
+                case 'COMPLETE':
+                    if (stream) {
+                        stream.status = 'completed';
+                        stream.connected = false;
+                    }
+                    this.subscribedOperations.delete(operationId);
+                    console.log('[LiveTasks] Stream completed:', operationId);
+                    // Refresh to update operation status
+                    this.refresh();
+                    break;
+
+                case 'ERROR':
+                    if (stream) {
+                        stream.status = 'error';
+                        stream.lines.push(`Error: ${data.error || 'Unknown error'}`);
+                    }
+                    console.error('[LiveTasks] Stream error:', operationId, data.error);
+                    break;
+
+                case 'DISCONNECTED':
+                    if (stream) {
+                        stream.connected = false;
+                        stream.status = 'disconnected';
+                    }
+                    this.subscribedOperations.delete(operationId);
+                    console.log('[LiveTasks] Stream disconnected:', operationId);
+                    break;
+
+                case 'STATE_SYNC':
+                    // Sync state from worker (when reconnecting)
+                    if (stream && data.state) {
+                        stream.lines = data.state.output || [];
+                        stream.connected = data.isActive || false;
+                        stream.status = data.state.status || 'synced';
+                    }
+                    break;
             }
         },
 
@@ -798,16 +940,33 @@ function liveTasksApp() {
         },
 
         init() {
+            // Set up operation worker event listener
+            this._workerMessageHandler = (event) => this.handleWorkerMessage(event);
+            window.addEventListener('operation-worker-message', this._workerMessageHandler);
+
             this.refresh();
             this.loadStats();
-            // Poll every 5 seconds
+
+            // Poll every 5 seconds for operation list updates (not streaming)
             this.pollInterval = setInterval(() => {
                 this.refresh();
                 this.loadStats();
             }, 5000);
+
+            console.log('[LiveTasks] Initialized with operation worker support');
         },
 
         destroy() {
+            // Clean up event listener
+            if (this._workerMessageHandler) {
+                window.removeEventListener('operation-worker-message', this._workerMessageHandler);
+            }
+
+            // Unsubscribe from all active streams
+            for (const opId of this.subscribedOperations) {
+                this.unsubscribeFromStream(opId);
+            }
+
             if (this.pollInterval) {
                 clearInterval(this.pollInterval);
             }

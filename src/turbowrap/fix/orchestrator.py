@@ -1573,6 +1573,10 @@ The reviewer found issues with the previous fix. Address this feedback:
 
                 tracker = get_tracker()
 
+                # Get current operation to read existing values
+                current_op = tracker.get(operation_id)
+                current_details = current_op.details if current_op else {}
+
                 # Build update details
                 update_details: dict[str, Any] = {
                     "prompt_preview": prompt[:500].replace("\n", " ").strip(),
@@ -1580,18 +1584,34 @@ The reviewer found issues with the previous fix. Address this feedback:
                     "claude_session_id": result.session_id,
                 }
 
-                # Add S3 URLs if available
+                # Add S3 URLs - keep first prompt URL, always update output URL
                 if hasattr(result, "s3_prompt_url") and result.s3_prompt_url:
-                    update_details["s3_prompt_url"] = result.s3_prompt_url
+                    # Only set if not already present (first call)
+                    if "s3_prompt_url" not in current_details:
+                        update_details["s3_prompt_url"] = result.s3_prompt_url
                 if hasattr(result, "s3_output_url") and result.s3_output_url:
+                    # Always update with latest output
                     update_details["s3_output_url"] = result.s3_output_url
 
-                # Add token totals
+                # Aggregate token totals (add to existing)
                 if result.model_usage:
-                    total_input = sum(u.input_tokens for u in result.model_usage)
-                    total_output = sum(u.output_tokens for u in result.model_usage)
-                    update_details["total_input_tokens"] = total_input
-                    update_details["total_output_tokens"] = total_output
+                    call_input = sum(u.input_tokens for u in result.model_usage)
+                    call_output = sum(u.output_tokens for u in result.model_usage)
+                    call_cache_read = sum(u.cache_read_tokens for u in result.model_usage)
+                    call_cache_create = sum(u.cache_creation_tokens for u in result.model_usage)
+
+                    # Add to previous totals
+                    prev_input = current_details.get("total_input_tokens", 0)
+                    prev_output = current_details.get("total_output_tokens", 0)
+                    prev_cache_read = current_details.get("total_cache_read_tokens", 0)
+                    prev_cache_create = current_details.get("total_cache_creation_tokens", 0)
+
+                    update_details["total_input_tokens"] = prev_input + call_input
+                    update_details["total_output_tokens"] = prev_output + call_output
+                    update_details["total_cache_read_tokens"] = prev_cache_read + call_cache_read
+                    update_details["total_cache_creation_tokens"] = (
+                        prev_cache_create + call_cache_create
+                    )
 
                 tracker.update(operation_id, details=update_details)
                 logger.debug(f"[FIX] Updated operation {operation_id[:8]} with CLI details")

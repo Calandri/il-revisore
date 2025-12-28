@@ -51,8 +51,9 @@
     <script src="/static/js/cli-chat.js?v=0.9.66"></script>
     <script src="/static/js/global-context.js?v=1.0.0"></script>
 
-    <!-- Preload SharedWorker for faster chat initialization -->
+    <!-- Preload SharedWorkers for faster initialization -->
     <link rel="preload" href="/static/js/chat-worker.js" as="worker">
+    <link rel="preload" href="/static/js/operation-worker.js" as="worker">
 
     <!-- Alpine.js Plugins (must load before main Alpine) -->
     <script defer src="https://unpkg.com/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
@@ -185,6 +186,57 @@
     </script>
 
     {% block scripts %}{% endblock %}
+
+    <!-- Global Operation Worker (for streaming operations) -->
+    <script>
+        // Initialize operation worker globally
+        (function() {
+            if (typeof SharedWorker === 'undefined') {
+                console.warn('[OperationWorker] SharedWorker not supported in this browser');
+                return;
+            }
+
+            // Create global worker instance
+            window.operationWorker = new SharedWorker('/static/js/operation-worker.js');
+            window.operationWorker.port.start();
+
+            // Global event handler for operation updates
+            window.operationWorker.port.onmessage = function(e) {
+                const { type, operationId, ...data } = e.data;
+
+                // Dispatch custom events for pages to listen to
+                window.dispatchEvent(new CustomEvent('operation-worker-message', {
+                    detail: { type, operationId, ...data }
+                }));
+
+                // Also dispatch specific events per type for convenience
+                window.dispatchEvent(new CustomEvent(`operation-${type.toLowerCase()}`, {
+                    detail: { operationId, ...data }
+                }));
+            };
+
+            // Helper functions for easy access
+            window.subscribeToOperation = function(operationId) {
+                if (window.operationWorker) {
+                    window.operationWorker.port.postMessage({ type: 'SUBSCRIBE', operationId });
+                }
+            };
+
+            window.unsubscribeFromOperation = function(operationId) {
+                if (window.operationWorker) {
+                    window.operationWorker.port.postMessage({ type: 'UNSUBSCRIBE', operationId });
+                }
+            };
+
+            window.getOperationState = function(operationId) {
+                if (window.operationWorker) {
+                    window.operationWorker.port.postMessage({ type: 'GET_STATE', operationId });
+                }
+            };
+
+            console.log('[OperationWorker] Global worker initialized');
+        })();
+    </script>
 
     <!-- Issue Widget -->
     <script>

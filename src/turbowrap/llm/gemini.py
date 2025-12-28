@@ -613,6 +613,34 @@ class GeminiCLI:
                 operation_details=operation_details,
             )
 
+        # Create wrapped chunk callback that publishes to tracker for SSE subscribers
+        effective_on_chunk: Callable[[str], Awaitable[None]] | None = on_chunk
+        tracker = None
+        if operation:
+            try:
+                from turbowrap.api.services.operation_tracker import get_tracker
+
+                tracker = get_tracker()
+                if tracker.has_subscribers(operation.operation_id):
+                    original_on_chunk = on_chunk
+
+                    async def _wrapped_on_chunk(chunk: str) -> None:
+                        """Callback that sends chunk to both original callback and SSE subscribers."""
+                        # Call original callback if present
+                        if original_on_chunk:
+                            await original_on_chunk(chunk)
+                        # Publish to tracker for SSE subscribers
+                        await tracker.publish_event(
+                            operation.operation_id, "chunk", {"content": chunk}
+                        )
+
+                    effective_on_chunk = _wrapped_on_chunk
+                    logger.debug(
+                        f"[GEMINI CLI] SSE subscribers active for {operation.operation_id[:8]}"
+                    )
+            except Exception as e:
+                logger.warning(f"[GEMINI CLI] Failed to setup SSE publishing: {e}")
+
         # Save prompt to S3 before running
         s3_prompt_url = None
         if save_prompt:
@@ -695,8 +723,8 @@ class GeminiCLI:
                                 content = data.get("content", "")
                                 if content:
                                     output_chunks.append(content)
-                                    if on_chunk:
-                                        await on_chunk(content)
+                                    if effective_on_chunk:
+                                        await effective_on_chunk(content)
 
                             elif msg_type == "result":
                                 # {"type":"result","status":"success","stats":{...}}
@@ -708,8 +736,8 @@ class GeminiCLI:
                                 tool_name = data.get("tool_name", "unknown")
                                 if tool_name and tool_name != "unknown":
                                     tools_used.add(tool_name)
-                                if on_chunk:
-                                    await on_chunk(f"\n🔧 **Tool:** `{tool_name}`\n")
+                                if effective_on_chunk:
+                                    await effective_on_chunk(f"\n🔧 **Tool:** `{tool_name}`\n")
 
                             elif msg_type == "tool_result":
                                 # {"type":"tool_result","tool_id":"...","status":"success|error","output":"..."}
@@ -720,11 +748,11 @@ class GeminiCLI:
                                     if status == "error"
                                     else ""
                                 )
-                                if on_chunk:
+                                if effective_on_chunk:
                                     if error_msg:
-                                        await on_chunk(f"{status_icon} `{error_msg}`\n")
+                                        await effective_on_chunk(f"{status_icon} `{error_msg}`\n")
                                     else:
-                                        await on_chunk(f"{status_icon} Tool completed\n")
+                                        await effective_on_chunk(f"{status_icon} Tool completed\n")
 
                         except json.JSONDecodeError:
                             # Not JSON, could be raw output - skip
@@ -741,6 +769,9 @@ class GeminiCLI:
 
                 if operation:
                     self._fail_operation(operation.operation_id, f"Timeout after {self.timeout}s")
+                    # Signal SSE subscribers that operation failed
+                    if tracker:
+                        await tracker.signal_completion(operation.operation_id)
 
                 return GeminiCLIResult(
                     success=False,
@@ -796,6 +827,9 @@ class GeminiCLI:
 
                 if operation:
                     self._fail_operation(operation.operation_id, error_msg)
+                    # Signal SSE subscribers that operation failed
+                    if tracker:
+                        await tracker.signal_completion(operation.operation_id)
 
                 return GeminiCLIResult(
                     success=False,
@@ -817,6 +851,9 @@ class GeminiCLI:
                     session_stats=session_stats,
                     tools_used=tools_used,
                 )
+                # Signal SSE subscribers that operation completed
+                if tracker:
+                    await tracker.signal_completion(operation.operation_id)
 
             logger.info(f"[GEMINI CLI] Completed in {duration_ms}ms")
             return GeminiCLIResult(
@@ -844,6 +881,9 @@ class GeminiCLI:
             # Auto-fail operation
             if operation:
                 self._fail_operation(operation.operation_id, error_msg)
+                # Signal SSE subscribers that operation failed
+                if tracker:
+                    await tracker.signal_completion(operation.operation_id)
 
             return GeminiCLIResult(
                 success=False,
@@ -867,6 +907,9 @@ class GeminiCLI:
             # Auto-fail operation
             if operation:
                 self._fail_operation(operation.operation_id, str(e)[:200])
+                # Signal SSE subscribers that operation failed
+                if tracker:
+                    await tracker.signal_completion(operation.operation_id)
 
             return GeminiCLIResult(
                 success=False,

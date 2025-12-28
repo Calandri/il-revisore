@@ -216,6 +216,8 @@ class OperationTracker:
         """Initialize the internal store."""
         self._operations: dict[str, Operation] = {}
         self._store_lock = RLock()
+        # Pub/sub for SSE streaming
+        self._subscribers: dict[str, list[Any]] = {}  # operation_id -> list of asyncio.Queue
 
     def _cleanup_expired(self) -> None:
         """Remove expired completed/failed operations."""
@@ -338,7 +340,7 @@ class OperationTracker:
 
         Args:
             operation_id: Operation to complete
-            result: Result data
+            result: Result data (will be merged with token/S3 data from details)
 
         Returns:
             Updated Operation or None if not found
@@ -351,7 +353,32 @@ class OperationTracker:
 
             op.status = "completed"
             op.completed_at = datetime.utcnow()
-            op.result = result
+
+            # Merge token/S3 data from details into result
+            # This ensures data saved via update() is available in result for frontend
+            merged_result = result.copy() if result else {}
+
+            # Copy token fields from details if not already in result
+            token_fields = [
+                "total_input_tokens",
+                "total_output_tokens",
+                "total_cache_read_tokens",
+                "total_cache_creation_tokens",
+                "cost_usd",
+                "models_used",
+                "tools_used",
+            ]
+            for field_name in token_fields:
+                if field_name not in merged_result and field_name in op.details:
+                    merged_result[field_name] = op.details[field_name]
+
+            # Copy S3 URLs from details if not already in result
+            s3_fields = ["s3_prompt_url", "s3_output_url"]
+            for field_name in s3_fields:
+                if field_name not in merged_result and field_name in op.details:
+                    merged_result[field_name] = op.details[field_name]
+
+            op.result = merged_result
 
             logger.info(
                 f"[TRACKER] Completed {op.operation_type.value}: {operation_id} "
@@ -496,6 +523,112 @@ class OperationTracker:
     def has_active(self, op_type: OperationType | None = None) -> bool:
         """Check if there are any active operations."""
         return self.count_active(op_type) > 0
+
+    # =========================================================================
+    # Pub/Sub Methods for SSE Streaming
+    # =========================================================================
+
+    def subscribe(self, operation_id: str) -> Any:
+        """
+        Subscribe to operation events for SSE streaming.
+
+        Args:
+            operation_id: Operation to subscribe to
+
+        Returns:
+            asyncio.Queue to receive events from
+        """
+        import asyncio
+
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        with self._store_lock:
+            if operation_id not in self._subscribers:
+                self._subscribers[operation_id] = []
+            self._subscribers[operation_id].append(queue)
+            logger.debug(
+                f"[TRACKER] Subscribed to {operation_id[:8]}, "
+                f"total subscribers: {len(self._subscribers[operation_id])}"
+            )
+        return queue
+
+    def unsubscribe(self, operation_id: str, queue: Any) -> None:
+        """
+        Unsubscribe from operation events.
+
+        Args:
+            operation_id: Operation to unsubscribe from
+            queue: The queue that was returned from subscribe()
+        """
+        with self._store_lock:
+            if operation_id in self._subscribers:
+                try:
+                    self._subscribers[operation_id].remove(queue)
+                    logger.debug(
+                        f"[TRACKER] Unsubscribed from {operation_id[:8]}, "
+                        f"remaining: {len(self._subscribers[operation_id])}"
+                    )
+                    # Cleanup empty subscriber lists
+                    if not self._subscribers[operation_id]:
+                        del self._subscribers[operation_id]
+                except ValueError:
+                    pass  # Queue not in list
+
+    async def publish_event(
+        self,
+        operation_id: str,
+        event_type: str,
+        data: dict[str, Any],
+    ) -> int:
+        """
+        Publish event to all subscribers of an operation.
+
+        Args:
+            operation_id: Operation to publish to
+            event_type: Event type (e.g., "chunk", "status", "complete")
+            data: Event data
+
+        Returns:
+            Number of subscribers that received the event
+        """
+        with self._store_lock:
+            subscribers = self._subscribers.get(operation_id, [])
+            if not subscribers:
+                return 0
+
+            event = {"type": event_type, "data": data}
+            count = 0
+            for queue in subscribers:
+                try:
+                    await queue.put(event)
+                    count += 1
+                except Exception as e:
+                    logger.warning(f"[TRACKER] Failed to publish to subscriber: {e}")
+
+            return count
+
+    async def signal_completion(self, operation_id: str) -> None:
+        """
+        Signal to all subscribers that the operation has completed.
+
+        Sends None to all subscriber queues to indicate end of stream.
+        """
+        with self._store_lock:
+            subscribers = self._subscribers.get(operation_id, [])
+            for queue in subscribers:
+                try:
+                    await queue.put(None)  # None signals completion
+                except Exception:
+                    pass
+
+    def has_subscribers(self, operation_id: str) -> bool:
+        """Check if an operation has any subscribers."""
+        with self._store_lock:
+            return bool(self._subscribers.get(operation_id))
+
+    def subscriber_count(self, operation_id: str) -> int:
+        """Get number of subscribers for an operation."""
+        with self._store_lock:
+            return len(self._subscribers.get(operation_id, []))
 
     # =========================================================================
     # Database Persistence Methods

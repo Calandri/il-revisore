@@ -476,6 +476,34 @@ class ClaudeCLI:
         # Build full prompt with agent instructions
         full_prompt = self._build_full_prompt(prompt)
 
+        # Create wrapped chunk callback that publishes to tracker for SSE subscribers
+        effective_on_chunk: Callable[[str], Awaitable[None]] | None = on_chunk
+        tracker = None
+        if operation:
+            try:
+                from turbowrap.api.services.operation_tracker import get_tracker
+
+                tracker = get_tracker()
+                if tracker.has_subscribers(operation.operation_id):
+                    original_on_chunk = on_chunk
+
+                    async def _wrapped_on_chunk(chunk: str) -> None:
+                        """Callback that sends chunk to both original callback and SSE subscribers."""
+                        # Call original callback if present
+                        if original_on_chunk:
+                            await original_on_chunk(chunk)
+                        # Publish to tracker for SSE subscribers
+                        await tracker.publish_event(
+                            operation.operation_id, "chunk", {"content": chunk}
+                        )
+
+                    effective_on_chunk = _wrapped_on_chunk
+                    logger.debug(
+                        f"[CLAUDE CLI] SSE subscribers active for {operation.operation_id[:8]}"
+                    )
+            except Exception as e:
+                logger.warning(f"[CLAUDE CLI] Failed to setup SSE publishing: {e}")
+
         # Generate context ID if not provided
         if context_id is None:
             context_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -491,7 +519,7 @@ class ClaudeCLI:
             if operation and s3_prompt_url:
                 self._update_operation(operation.operation_id, {"s3_prompt_url": s3_prompt_url})
 
-        # Run CLI
+        # Run CLI (use wrapped callback for SSE streaming)
         (
             output,
             model_usage,
@@ -501,7 +529,12 @@ class ClaudeCLI:
             session_id,
             tools_used,
         ) = await self._execute_cli(
-            full_prompt, thinking_budget, on_chunk, on_thinking, on_stderr, resume_session_id
+            full_prompt,
+            thinking_budget,
+            effective_on_chunk,
+            on_thinking,
+            on_stderr,
+            resume_session_id,
         )
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -542,6 +575,9 @@ class ClaudeCLI:
             # Auto-fail operation
             if operation:
                 self._fail_operation(operation.operation_id, error)
+                # Signal SSE subscribers that operation failed
+                if tracker:
+                    await tracker.signal_completion(operation.operation_id)
 
             # For API errors (is_error=true), we still have output with the error message
             # Return success=False but include the output so caller can inspect error details
@@ -568,6 +604,9 @@ class ClaudeCLI:
                 model_usage=model_usage,
                 tools_used=tools_used,
             )
+            # Signal SSE subscribers that operation completed
+            if tracker:
+                await tracker.signal_completion(operation.operation_id)
 
         return ClaudeCLIResult(
             success=True,
