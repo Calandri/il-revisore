@@ -43,6 +43,7 @@ from turbowrap.review.models.report import (
 from turbowrap.review.models.review import Issue, ReviewMode, ReviewRequest
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
+from turbowrap.review.sequential_triple_llm_runner import SequentialTripleLLMRunner
 from turbowrap.review.utils.repo_detector import RepoDetector
 from turbowrap.tools.structure_generator import StructureGenerator
 from turbowrap.utils.file_utils import is_text_file, read_file
@@ -329,86 +330,202 @@ class Orchestrator:
                     )
 
         else:
+            # Sequential Triple-LLM mode: 3 CLI processes instead of 15
+            # Each LLM (Claude, Gemini, Grok) runs ALL specialists sequentially
+            # This shares cache within each LLM session, reducing costs by ~80%
 
-            async def run_triple_llm_with_progress(
-                reviewer_name: str,
-            ) -> tuple[str, str, Any]:
-                display_name = get_reviewer_display_name(reviewer_name)
+            started_at = datetime.utcnow()
 
+            # Emit start events for the 3 LLM streams
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STARTED,
+                    reviewer_name="sequential_claude",
+                    reviewer_display_name="Claude (All Specialists)",
+                    message="Starting Claude sequential review...",
+                )
+            )
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STARTED,
+                    reviewer_name="sequential_gemini",
+                    reviewer_display_name="Gemini (All Specialists)",
+                    message="Starting Gemini sequential review...",
+                )
+            )
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STARTED,
+                    reviewer_name="sequential_grok",
+                    reviewer_display_name="Grok (All Specialists)",
+                    message="Starting Grok sequential review...",
+                )
+            )
+
+            # Streaming callbacks for each LLM
+            async def on_claude_chunk(chunk: str) -> None:
                 await emit(
                     ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STARTED,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        message=f"Starting {display_name} (Claude + Gemini + Grok)...",
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name="sequential_claude",
+                        reviewer_display_name="Claude (All Specialists)",
+                        content=chunk,
                     )
                 )
 
-                started_at = datetime.utcnow()
+            async def on_gemini_chunk(chunk: str) -> None:
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name="sequential_gemini",
+                        reviewer_display_name="Gemini (All Specialists)",
+                        content=chunk,
+                    )
+                )
 
-                try:
-                    result = await self._run_triple_llm_review(context, reviewer_name, emit)
+            async def on_grok_chunk(chunk: str) -> None:
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_STREAMING,
+                        reviewer_name="sequential_grok",
+                        reviewer_display_name="Grok (All Specialists)",
+                        content=chunk,
+                    )
+                )
 
-                    status_parts = []
-                    if result.claude_status == "ok":
-                        status_parts.append(f"C:{result.claude_issues_count}")
-                    else:
-                        status_parts.append("C:✗")
-                    if result.gemini_status == "ok":
-                        status_parts.append(f"G:{result.gemini_issues_count}")
-                    else:
-                        status_parts.append("G:✗")
-                    if result.grok_status == "ok":
-                        status_parts.append(f"X:{result.grok_issues_count}")
-                    else:
-                        status_parts.append("X:✗")
-                    status_parts.append(f"Tot:{result.merged_issues_count}")
-                    if result.triple_overlap_count > 0:
-                        status_parts.append(f"3x:{result.triple_overlap_count}")
+            try:
+                # Run the sequential triple-LLM review (3 CLIs, all specialists)
+                runner = SequentialTripleLLMRunner(specialists=reviewers)
+                seq_result = await runner.run(
+                    context=context,
+                    file_list=context.files,
+                    on_claude_chunk=on_claude_chunk,
+                    on_gemini_chunk=on_gemini_chunk,
+                    on_grok_chunk=on_grok_chunk,
+                )
 
-                    await emit(
-                        ProgressEvent(
-                            type=ProgressEventType.REVIEWER_COMPLETED,
-                            reviewer_name=reviewer_name,
-                            reviewer_display_name=display_name,
-                            issues_found=result.merged_issues_count,
-                            message=f"{display_name}: {' | '.join(status_parts)}",
+                # Emit completion events for each LLM
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_COMPLETED,
+                        reviewer_name="sequential_claude",
+                        reviewer_display_name="Claude (All Specialists)",
+                        issues_found=seq_result.claude_issues_count,
+                        message=f"Claude: {seq_result.claude_issues_count} issues",
+                    )
+                )
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_COMPLETED,
+                        reviewer_name="sequential_gemini",
+                        reviewer_display_name="Gemini (All Specialists)",
+                        issues_found=seq_result.gemini_issues_count,
+                        message=f"Gemini: {seq_result.gemini_issues_count} issues",
+                    )
+                )
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_COMPLETED,
+                        reviewer_name="sequential_grok",
+                        reviewer_display_name="Grok (All Specialists)",
+                        issues_found=seq_result.grok_issues_count,
+                        message=f"Grok: {seq_result.grok_issues_count} issues",
+                    )
+                )
+
+                # Log summary
+                await emit_log(
+                    "INFO",
+                    f"✓ Sequential review: {seq_result.merged_issues_count} issues "
+                    f"(C:{seq_result.claude_issues_count} G:{seq_result.gemini_issues_count} "
+                    f"X:{seq_result.grok_issues_count}, overlap={seq_result.overlap_count})",
+                )
+
+                # Build reviewer_results for each specialist from merged data
+                for reviewer_name in reviewers:
+                    # Count issues for this specialist across all LLMs
+                    specialist_issues = 0
+                    if reviewer_name in seq_result.claude_reviews:
+                        specialist_issues += len(seq_result.claude_reviews[reviewer_name].issues)
+                    if reviewer_name in seq_result.gemini_reviews:
+                        specialist_issues += len(seq_result.gemini_reviews[reviewer_name].issues)
+                    if reviewer_name in seq_result.grok_reviews:
+                        specialist_issues += len(seq_result.grok_reviews[reviewer_name].issues)
+
+                    # Count how many LLMs successfully reviewed this specialist
+                    llms_ok = sum(
+                        [
+                            reviewer_name in seq_result.claude_reviews,
+                            reviewer_name in seq_result.gemini_reviews,
+                            reviewer_name in seq_result.grok_reviews,
+                        ]
+                    )
+
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="completed" if llms_ok > 0 else "error",
+                            issues_found=specialist_issues,
+                            duration_seconds=seq_result.total_duration_seconds / len(reviewers),
+                            iterations=1,
+                            final_satisfaction=llms_ok * 33.33,
+                            cost_usd=0.0,  # TODO: Calculate per-specialist cost
                         )
                     )
 
-                    await emit_log(
-                        "INFO",
-                        f"✓ {display_name}: {result.merged_issues_count} issues "
-                        f"(C:{result.claude_issues_count} G:{result.gemini_issues_count} X:{result.grok_issues_count})",
-                    )
+                # Add all merged issues
+                all_issues.extend(seq_result.final_review.issues)
 
-                    if checkpoint_callback:
+                # Checkpoint callback for recovery
+                if checkpoint_callback:
+                    for reviewer_name in reviewers:
+                        # Get issues for this specialist
+                        spec_issues: list[Issue] = []
+                        if reviewer_name in seq_result.claude_reviews:
+                            spec_issues.extend(seq_result.claude_reviews[reviewer_name].issues)
+                        if reviewer_name in seq_result.gemini_reviews:
+                            spec_issues.extend(seq_result.gemini_reviews[reviewer_name].issues)
+                        if reviewer_name in seq_result.grok_reviews:
+                            spec_issues.extend(seq_result.grok_reviews[reviewer_name].issues)
+
                         await checkpoint_callback(
                             reviewer_name,
                             "completed",
-                            result.final_review.issues,
-                            100.0,  # No satisfaction score in triple-LLM mode
-                            1,  # Single iteration (parallel)
-                            [],  # No detailed model usage yet
+                            spec_issues,
+                            100.0,
+                            1,
+                            [],
                             started_at,
                         )
 
-                    return (reviewer_name, "success", result)
+            except Exception as e:
+                logger.exception(f"Sequential triple-LLM review failed: {e}")
 
-                except Exception as e:
-                    logger.error(f"Reviewer {reviewer_name} failed: {e}")
-
+                # Emit error for all LLM streams
+                llm_names = ["sequential_claude", "sequential_gemini", "sequential_grok"]
+                for llm_name in llm_names:
+                    display = f"{llm_name.split('_')[1].title()} (All Specialists)"
                     await emit(
                         ProgressEvent(
                             type=ProgressEventType.REVIEWER_ERROR,
-                            reviewer_name=reviewer_name,
-                            reviewer_display_name=display_name,
+                            reviewer_name=llm_name,
+                            reviewer_display_name=display,
                             error=str(e),
-                            message=f"{display_name} failed: {str(e)[:50]}",
+                            message=f"{llm_name} failed: {str(e)[:50]}",
                         )
                     )
 
-                    await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
+                await emit_log("ERROR", f"✗ Sequential review failed: {str(e)[:60]}")
+
+                # Mark all reviewers as failed
+                for reviewer_name in reviewers:
+                    reviewer_results.append(
+                        ReviewerResult(
+                            name=reviewer_name,
+                            status="error",
+                            error=str(e),
+                        )
+                    )
 
                     if checkpoint_callback:
                         await checkpoint_callback(
@@ -420,52 +537,6 @@ class Orchestrator:
                             [],
                             started_at,
                         )
-
-                    return (reviewer_name, "error", str(e))
-
-            tasks = [run_triple_llm_with_progress(name) for name in reviewers]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for result in results:
-                if isinstance(result, Exception):
-                    continue
-
-                assert isinstance(result, tuple)
-                reviewer_name, status, data = result
-
-                if status == "success":
-                    assert isinstance(data, TripleLLMResult)
-                    llms_ok = sum(
-                        [
-                            data.claude_status == "ok",
-                            data.gemini_status == "ok",
-                            data.grok_status == "ok",
-                        ]
-                    )
-                    # Calculate total cost from model usage
-                    total_cost = sum(m.cost_usd for m in data.final_review.model_usage)
-
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="completed",
-                            issues_found=data.merged_issues_count,
-                            duration_seconds=data.total_duration_seconds,
-                            iterations=1,  # Triple-LLM runs in parallel, not iteratively
-                            final_satisfaction=llms_ok * 33.33,
-                            cost_usd=total_cost,
-                        )
-                    )
-                    all_issues.extend(data.final_review.issues)
-                else:
-                    assert isinstance(data, str)
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="error",
-                            error=data,
-                        )
-                    )
 
         # Step 5: Deduplicate and prioritize issues
         deduplicated_issues = deduplicate_issues(all_issues)

@@ -1699,15 +1699,25 @@ function reviewApp() {
                 'reviewer_fe_architecture': 'FE Architecture',
                 'reviewer_fe_quality': 'FE Quality',
                 'analyst_func': 'Functional Analyst',
+                // Sequential triple-LLM reviewers
+                'sequential_claude': 'Claude (All Specialists)',
+                'sequential_gemini': 'Gemini (All Specialists)',
+                'sequential_grok': 'Grok (All Specialists)',
             };
             return names[name] || name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         },
 
         isClaudeReviewer(name) {
-            // Claude reviewers - match any reviewer_be*, reviewer_fe*, or analyst_func
+            // Claude reviewers - includes sequential_claude
             return name.startsWith('reviewer_be') ||
                    name.startsWith('reviewer_fe') ||
-                   name === 'analyst_func';
+                   name === 'analyst_func' ||
+                   name === 'sequential_claude';
+        },
+
+        isSequentialReviewer(name) {
+            // Sequential triple-LLM reviewers
+            return name.startsWith('sequential_');
         },
 
         async openThinkingModal(agentName) {
