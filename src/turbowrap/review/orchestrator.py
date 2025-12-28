@@ -282,6 +282,10 @@ class Orchestrator:
                     ]
                     all_issues.extend(restored_issues)
 
+                    # Calculate total cost from checkpoint model_usage
+                    model_usage_data = checkpoint.get("model_usage", [])
+                    total_cost = sum(m.get("cost_usd", 0.0) for m in model_usage_data)
+
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
@@ -289,6 +293,7 @@ class Orchestrator:
                             issues_found=len(restored_issues),
                             iterations=checkpoint.get("iterations", 1),
                             final_satisfaction=checkpoint.get("final_satisfaction", 0.0),
+                            cost_usd=total_cost,
                         )
                     )
 
@@ -296,6 +301,9 @@ class Orchestrator:
                     assert isinstance(data, ChallengerLoopResult)
                     loop_result = data
                     loop_results.append(loop_result)
+
+                    # Calculate total cost from model usage
+                    total_cost = sum(m.cost_usd for m in loop_result.final_review.model_usage)
 
                     reviewer_results.append(
                         ReviewerResult(
@@ -305,6 +313,7 @@ class Orchestrator:
                             duration_seconds=loop_result.final_review.duration_seconds,
                             iterations=loop_result.iterations,
                             final_satisfaction=loop_result.final_satisfaction,
+                            cost_usd=total_cost,
                         )
                     )
 
@@ -433,6 +442,9 @@ class Orchestrator:
                             data.grok_status == "ok",
                         ]
                     )
+                    # Calculate total cost from model usage
+                    total_cost = sum(m.cost_usd for m in data.final_review.model_usage)
+
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
@@ -441,6 +453,7 @@ class Orchestrator:
                             duration_seconds=data.total_duration_seconds,
                             iterations=1,  # Triple-LLM runs in parallel, not iteratively
                             final_satisfaction=llms_ok * 33.33,
+                            cost_usd=total_cost,
                         )
                     )
                     all_issues.extend(data.final_review.issues)

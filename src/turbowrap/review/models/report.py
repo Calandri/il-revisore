@@ -52,6 +52,7 @@ class ReviewerResult(BaseModel):
     )
     error: str | None = Field(None, description="Error message if failed")
     reason: str | None = Field(None, description="Reason if skipped")
+    cost_usd: float = Field(0.0, description="Total cost in USD for this reviewer")
 
 
 class IterationHistory(BaseModel):
