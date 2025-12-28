@@ -209,19 +209,6 @@
             </a>
         </div>
 
-        <!-- Tasks History -->
-        <a href="/tasks"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
-           class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'tasks' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
-           :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-            </svg>
-            <span x-show="sidebarOpen">Storico Task</span>
-            <div x-show="!sidebarOpen" class="sidebar-tooltip">Storico Task</div>
-        </a>
-
         <!-- Users (admin only) -->
         {% if current_user and current_user.is_admin %}
         <a href="/users"

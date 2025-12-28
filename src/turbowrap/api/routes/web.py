@@ -113,23 +113,6 @@ async def review_page(request: Request, db: Session = Depends(get_db)) -> Respon
     )
 
 
-@router.get("/tasks", response_class=HTMLResponse)
-async def tasks_page(request: Request) -> Response:
-    """Task history page."""
-    templates = request.app.state.templates
-    return cast(
-        Response,
-        templates.TemplateResponse(
-            "pages/tasks.html",
-            {
-                "request": request,
-                "active_page": "tasks",
-                "current_user": get_current_user(request),
-            },
-        ),
-    )
-
-
 @router.get("/issues", response_class=HTMLResponse)
 async def issues_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Issues tracking page."""

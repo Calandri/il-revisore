@@ -116,6 +116,20 @@ function chatSidebar() {
 
             // Poll for session updates every 10s
             setInterval(() => this.loadSessions(), 10000);
+
+            // Listen for global context changes (repo/branch selection in footer)
+            window.addEventListener('global-context-changed', (e) => {
+                console.log('[chatSidebar] Global context changed:', e.detail);
+                this.onGlobalContextChanged(e.detail.repoId);
+            });
+        },
+
+        /**
+         * Handle global context (repo/branch) changes
+         */
+        async onGlobalContextChanged(repoId) {
+            // Reload sessions filtered by the new repo
+            await this.loadSessions(repoId);
         },
 
         /**
@@ -254,10 +268,20 @@ function chatSidebar() {
         /**
          * Load all chat sessions
          */
-        async loadSessions() {
+        async loadSessions(filterRepoId = undefined) {
             try {
-                console.log('[chatSidebar] Fetching sessions...');
-                const res = await fetch('/api/cli-chat/sessions');
+                // Use global context repo if not explicitly specified
+                const repoId = filterRepoId !== undefined
+                    ? filterRepoId
+                    : (typeof Alpine !== 'undefined' && Alpine.store('globalContext')?.selectedRepoId) || null;
+
+                let url = '/api/cli-chat/sessions';
+                if (repoId) {
+                    url += `?repository_id=${repoId}`;
+                }
+
+                console.log('[chatSidebar] Fetching sessions...', repoId ? `(filtered by repo: ${repoId})` : '(all)');
+                const res = await fetch(url);
                 console.log('[chatSidebar] Sessions response:', res.status);
                 if (res.ok) {
                     this.sessions = await res.json();
@@ -304,7 +328,9 @@ function chatSidebar() {
          */
         startCreateSession(cliType) {
             this.pendingCliType = cliType;
-            this.selectedRepoId = null;
+            // Pre-select repo from global context if available
+            const globalRepoId = typeof Alpine !== 'undefined' && Alpine.store('globalContext')?.selectedRepoId;
+            this.selectedRepoId = globalRepoId || null;
             this.showRepoSelector = true;
         },
 

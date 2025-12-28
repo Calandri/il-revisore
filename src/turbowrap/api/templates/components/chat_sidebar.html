@@ -142,6 +142,24 @@
             </button>
         </div>
 
+        <!-- Filter indicator when global repo is selected -->
+        <div x-show="Alpine.store('globalContext')?.selectedRepoId"
+             x-cloak
+             class="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+            </svg>
+            <span class="text-xs text-indigo-600 dark:text-indigo-400 truncate flex-1"
+                  x-text="Alpine.store('globalContext')?.selectedRepo?.name || 'Repository'"></span>
+            <button @click="Alpine.store('globalContext').clear()"
+                    class="p-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
+                    title="Mostra tutte le chat">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
         <!-- New Chat Buttons -->
         <div class="p-2 space-y-1 border-b border-gray-200 dark:border-gray-700">
             <button @click="startCreateSession('claude'); showHistory = false"
@@ -186,8 +204,21 @@
                     </button>
                 </div>
             </template>
-            <div x-show="sessions.length === 0" class="text-center py-8 text-gray-500 text-xs">
+            <!-- Empty state: no sessions -->
+            <div x-show="sessions.length === 0 && !Alpine.store('globalContext')?.selectedRepoId"
+                 class="text-center py-8 text-gray-500 text-xs">
                 Nessuna chat
+            </div>
+            <!-- Empty state: no sessions for filtered repo -->
+            <div x-show="sessions.length === 0 && Alpine.store('globalContext')?.selectedRepoId"
+                 class="text-center py-6 px-3">
+                <div class="text-gray-500 text-xs mb-3">
+                    Nessuna chat per questa repository
+                </div>
+                <button @click="startCreateSession('claude'); showHistory = false"
+                        class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                    + Crea nuova chat
+                </button>
             </div>
         </div>
     </div>
