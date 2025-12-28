@@ -6,7 +6,8 @@ componenti del sistema chat CLI.
 """
 
 from enum import Enum
-from typing import TypedDict
+
+from typing_extensions import TypedDict
 
 
 class CLIType(str, Enum):

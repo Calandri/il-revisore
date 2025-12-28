@@ -10,7 +10,8 @@ Supporta:
 import json
 import logging
 from pathlib import Path
-from typing import TypedDict
+
+from typing_extensions import TypedDict
 
 logger = logging.getLogger(__name__)
 
