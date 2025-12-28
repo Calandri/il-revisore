@@ -47,15 +47,15 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Deploy to EC2 via SSM (Blue-Green Zero-Downtime)
+      - name: Deploy to EC2 via SSM (Direct Production)
         run: |
-          # Blue-green deployment: start new container, wait for health, then switch
+          # Direct production deployment
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=[
               "set -e",
-              "echo === BLUE-GREEN DEPLOYMENT ===",
+              "echo === PRODUCTION DEPLOYMENT ===",
 
               "echo Step 0: Cleanup old images to free disk space...",
               "docker image prune -af 2>/dev/null || true",
@@ -76,19 +76,19 @@ jobs:
               "GEMINI_KEY=$(echo $SECRETS | jq -r .GEMINI_API_KEY)",
               "GITHUB_TOKEN=$(echo $SECRETS | jq -r .GITHUB_TOKEN)",
 
-              "echo Step 4: Start STAGING container on port 8001...",
-              "docker rm -f turbowrap-staging 2>/dev/null || true",
-              "docker run -d --name turbowrap-staging -p 8001:8000 -v /data:/data -v /mnt/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
+              "echo Step 4: Stop old production container...",
+              "docker rm -f turbowrap-production 2>/dev/null || true",
 
-              "echo Step 5: Wait for STAGING container to be healthy...",
-              "for i in 1 2 3 4 5 6 7 8 9 10; do if curl -sf http://localhost:8001/api/status; then echo OK; break; fi; echo waiting...; sleep 3; done",
-              "curl -sf http://localhost:8001/api/status || { echo FAILED; docker logs turbowrap-staging --tail 20; exit 1; }",
+              "echo Step 5: Start NEW production container on port 8000...",
+              "docker run -d --name turbowrap-production --restart unless-stopped -p 8000:8000 -v /data:/data -v /mnt/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
 
-              "echo Step 6: Staging ready on port 8001!",
+              "echo Step 6: Wait for PRODUCTION container to be healthy...",
+              "for i in 1 2 3 4 5 6 7 8 9 10; do if curl -sf http://localhost:8000/api/status; then echo OK; break; fi; echo waiting...; sleep 3; done",
+              "curl -sf http://localhost:8000/api/status || { echo FAILED; docker logs turbowrap-production --tail 20; exit 1; }",
+
+              "echo Step 7: Production ready!",
               "docker ps | grep turbowrap",
-              "echo === STAGING DEPLOYMENT COMPLETE ===",
-              "echo Staging available at http://localhost:8001",
-              "echo Run the Promote workflow to push to production"
+              "echo === PRODUCTION DEPLOYMENT COMPLETE ==="
             ]' \
             --query 'Command.CommandId' --output text)
 
@@ -126,7 +126,6 @@ jobs:
             exit 1
           fi
 
-      - name: Verify staging deployment
+      - name: Verify production deployment
         run: |
-          echo "✅ Staging deployed successfully on port 8001"
-          echo "👉 Use the 'Promote to Production' workflow to push to production"
+          echo "✅ Production deployed successfully on port 8000"

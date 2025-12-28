@@ -503,6 +503,8 @@ class OperationTracker:
 
     def _persist_register(self, operation: Operation) -> None:
         """Persist a new operation to database."""
+        import traceback
+
         try:
             from turbowrap.db.models import Operation as DBOperation
             from turbowrap.db.session import get_session_local
@@ -523,15 +525,26 @@ class OperationTracker:
                 )
                 db.add(db_op)
                 db.commit()
-                logger.debug(f"[TRACKER-DB] Persisted operation: {operation.operation_id[:8]}")
+                logger.info(f"[TRACKER-DB] Persisted operation: {operation.operation_id}")
+            except Exception as db_error:
+                db.rollback()
+                logger.error(
+                    f"[TRACKER-DB] DB error persisting operation {operation.operation_id}: "
+                    f"{db_error}\n{traceback.format_exc()}"
+                )
             finally:
                 db.close()
         except Exception as e:
             # Don't fail the operation if DB persistence fails
-            logger.warning(f"[TRACKER-DB] Failed to persist operation: {e}")
+            logger.error(
+                f"[TRACKER-DB] Failed to persist operation {operation.operation_id}: "
+                f"{e}\n{traceback.format_exc()}"
+            )
 
     def _persist_update(self, operation_id: str, updates: dict[str, Any]) -> None:
         """Update operation in database."""
+        import traceback
+
         try:
             from turbowrap.db.models import Operation as DBOperation
             from turbowrap.db.session import get_session_local
@@ -546,13 +559,24 @@ class OperationTracker:
                             setattr(db_op, key, value)
                     db.commit()
                     logger.debug(f"[TRACKER-DB] Updated operation: {operation_id[:8]}")
+                else:
+                    logger.warning(
+                        f"[TRACKER-DB] Update failed - operation not found in DB: {operation_id}"
+                    )
+            except Exception as db_error:
+                db.rollback()
+                logger.error(f"[TRACKER-DB] DB error updating {operation_id}: {db_error}")
             finally:
                 db.close()
         except Exception as e:
-            logger.warning(f"[TRACKER-DB] Failed to update operation: {e}")
+            logger.error(
+                f"[TRACKER-DB] Failed to update operation {operation_id}: {e}\n{traceback.format_exc()}"
+            )
 
     def _persist_complete(self, operation: Operation) -> None:
         """Mark operation as completed in database."""
+        import traceback
+
         try:
             from turbowrap.db.models import Operation as DBOperation
             from turbowrap.db.session import get_session_local
@@ -569,14 +593,28 @@ class OperationTracker:
                     db_op.duration_seconds = operation.duration_seconds  # type: ignore[assignment]
                     db_op.result = operation.result  # type: ignore[assignment]
                     db.commit()
-                    logger.debug(f"[TRACKER-DB] Completed operation: {operation.operation_id[:8]}")
+                    logger.info(f"[TRACKER-DB] Completed operation in DB: {operation.operation_id}")
+                else:
+                    logger.error(
+                        f"[TRACKER-DB] Complete failed - operation not found in DB: {operation.operation_id}"
+                    )
+            except Exception as db_error:
+                db.rollback()
+                logger.error(
+                    f"[TRACKER-DB] DB error completing {operation.operation_id}: {db_error}"
+                )
             finally:
                 db.close()
         except Exception as e:
-            logger.warning(f"[TRACKER-DB] Failed to complete operation in DB: {e}")
+            logger.error(
+                f"[TRACKER-DB] Failed to complete operation {operation.operation_id} in DB: "
+                f"{e}\n{traceback.format_exc()}"
+            )
 
     def _persist_fail(self, operation: Operation) -> None:
         """Mark operation as failed in database."""
+        import traceback
+
         try:
             from turbowrap.db.models import Operation as DBOperation
             from turbowrap.db.session import get_session_local
@@ -593,11 +631,21 @@ class OperationTracker:
                     db_op.duration_seconds = operation.duration_seconds  # type: ignore[assignment]
                     db_op.error = operation.error  # type: ignore[assignment]
                     db.commit()
-                    logger.debug(f"[TRACKER-DB] Failed operation: {operation.operation_id[:8]}")
+                    logger.info(f"[TRACKER-DB] Failed operation in DB: {operation.operation_id}")
+                else:
+                    logger.error(
+                        f"[TRACKER-DB] Fail update failed - operation not found in DB: {operation.operation_id}"
+                    )
+            except Exception as db_error:
+                db.rollback()
+                logger.error(f"[TRACKER-DB] DB error failing {operation.operation_id}: {db_error}")
             finally:
                 db.close()
         except Exception as e:
-            logger.warning(f"[TRACKER-DB] Failed to mark operation as failed in DB: {e}")
+            logger.error(
+                f"[TRACKER-DB] Failed to mark operation {operation.operation_id} as failed in DB: "
+                f"{e}\n{traceback.format_exc()}"
+            )
 
     def _persist_cancel(self, operation: Operation) -> None:
         """Mark operation as cancelled in database."""
