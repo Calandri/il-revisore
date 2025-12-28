@@ -1,0 +1,309 @@
+<!-- Operation Card Component - Shared between Live and History -->
+<!-- Required Alpine.js context: { op, isLive, expanded, toggleExpand, formatDuration, formatTokens, ... } -->
+
+<div class="bg-white dark:bg-gray-800 border rounded-lg transition-colors cursor-pointer"
+     :class="{
+         'border-indigo-500/50 shadow-lg shadow-indigo-500/10': expanded,
+         'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600': !expanded,
+         'border-red-500/30 hover:border-red-500/50': op.status === 'failed',
+         'border-amber-500/30': op.status === 'in_progress' && op.is_stale
+     }"
+     @click="toggleExpand(op.operation_id)">
+
+    <!-- Compact Row (Header) -->
+    <div class="px-4 py-3 flex items-center gap-3" :class="expanded && 'border-b border-gray-200 dark:border-gray-700'">
+
+        <!-- Status Indicator -->
+        <div class="flex-shrink-0 w-4">
+            <!-- Live: pulsing dot -->
+            <template x-if="isLive && op.status === 'in_progress'">
+                <div class="w-2 h-2 rounded-full animate-pulse"
+                     :class="op.is_stale ? 'bg-amber-500' : 'bg-green-500'"></div>
+            </template>
+            <!-- Completed: checkmark -->
+            <template x-if="op.status === 'completed'">
+                <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+            </template>
+            <!-- Failed: X -->
+            <template x-if="op.status === 'failed'">
+                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </template>
+            <!-- Cancelled: minus -->
+            <template x-if="op.status === 'cancelled'">
+                <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                </svg>
+            </template>
+        </div>
+
+        <!-- Type Badge -->
+        <div class="flex-shrink-0">
+            <span class="px-2 py-0.5 text-xs font-medium rounded"
+                  :class="getTypeBadgeClass(op.type)"
+                  x-text="getTypeLabel(op.type)"></span>
+        </div>
+
+        <!-- Agent Name -->
+        <div class="flex-shrink-0 w-24 truncate">
+            <span class="text-sm font-medium text-gray-900 dark:text-white" x-text="op.details?.agent || op.details?.cli || '-'"></span>
+        </div>
+
+        <!-- Repo + Branch -->
+        <div class="flex-shrink-0 w-40 truncate hidden md:block">
+            <span class="text-sm text-gray-600 dark:text-gray-400">
+                <span x-text="op.repository_name || '-'"></span>
+                <template x-if="op.branch_name">
+                    <span class="text-gray-400 dark:text-gray-600"> / <span class="text-gray-500" x-text="op.branch_name"></span></span>
+                </template>
+            </span>
+        </div>
+
+        <!-- Tokens (compact) -->
+        <div class="flex-shrink-0 hidden lg:flex items-center gap-1 text-xs">
+            <span class="text-emerald-600 dark:text-emerald-400" x-text="'↓' + formatTokensShort(getTokens(op, 'input'))"></span>
+            <span class="text-amber-600 dark:text-amber-400" x-text="'⚡' + formatTokensShort(getTokens(op, 'cached'))"></span>
+            <span class="text-blue-600 dark:text-blue-400" x-text="'↑' + formatTokensShort(getTokens(op, 'output'))"></span>
+        </div>
+
+        <!-- Tools (compact with tooltip) -->
+        <div class="flex-shrink-0 hidden xl:block group relative" x-show="getToolsUsed(op).length > 0">
+            <div class="flex items-center gap-1 text-xs cursor-help">
+                <span class="text-purple-600 dark:text-purple-400">🔧</span>
+                <template x-for="tool in getToolsUsed(op).slice(0, 2)" :key="tool">
+                    <span class="text-purple-500 dark:text-purple-300" x-text="tool"></span>
+                </template>
+                <span class="text-gray-500" x-show="getToolsUsed(op).length > 2" x-text="'+' + (getToolsUsed(op).length - 2)"></span>
+            </div>
+            <!-- Tooltip on hover -->
+            <div class="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50" @click.stop>
+                <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-xl min-w-48">
+                    <div class="text-xs text-gray-500 dark:text-gray-400 mb-1" x-text="'Tools Used (' + getToolsUsed(op).length + ')'"></div>
+                    <div class="flex flex-wrap gap-1">
+                        <template x-for="tool in getToolsUsed(op)" :key="tool">
+                            <span class="px-1.5 py-0.5 text-xs rounded"
+                                  :class="tool.startsWith('mcp__') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' : 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'"
+                                  x-text="tool"></span>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cost -->
+        <div class="flex-shrink-0 w-14 text-right hidden lg:block">
+            <span class="text-xs text-gray-500 dark:text-gray-400" x-text="'$' + getCost(op).toFixed(3)"></span>
+        </div>
+
+        <!-- Duration -->
+        <div class="flex-shrink-0 w-14 text-right">
+            <span class="text-xs font-mono"
+                  :class="isLive ? 'text-green-600 dark:text-green-400' : 'text-gray-500'"
+                  x-text="formatDurationShort(op.duration_seconds || getElapsedSeconds(op.started_at))"></span>
+        </div>
+
+        <!-- User -->
+        <div class="flex-shrink-0 w-16 truncate hidden md:block">
+            <span class="text-xs text-gray-500" x-text="op.user_name || 'system'"></span>
+        </div>
+
+        <!-- Issue -->
+        <div class="flex-shrink-0 hidden sm:block">
+            <template x-if="op.details?.issue_codes && op.details.issue_codes.length > 0">
+                <span class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline" x-text="op.details.issue_codes[0]"></span>
+            </template>
+            <template x-if="!op.details?.issue_codes || op.details.issue_codes.length === 0">
+                <span class="text-xs text-gray-400 dark:text-gray-600">—</span>
+            </template>
+        </div>
+
+        <!-- Timestamp (history only) -->
+        <template x-if="!isLive">
+            <div class="flex-shrink-0 hidden sm:block text-xs text-gray-500 dark:text-gray-600" x-text="formatTimeAgo(op.completed_at || op.started_at)"></div>
+        </template>
+
+        <!-- Expand Arrow -->
+        <div class="flex-shrink-0 ml-auto">
+            <svg class="w-4 h-4 transition-transform"
+                 :class="expanded ? 'text-gray-600 dark:text-gray-400 rotate-180' : 'text-gray-400 dark:text-gray-600'"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </div>
+    </div>
+
+    <!-- Expanded Details -->
+    <div x-show="expanded" x-collapse @click.stop class="p-4 space-y-4">
+
+        <!-- Error Banner (if failed) -->
+        <template x-if="op.status === 'failed' && op.error">
+            <div class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg p-3">
+                <div class="flex items-start gap-2">
+                    <svg class="w-4 h-4 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <div>
+                        <div class="text-red-700 dark:text-red-400 text-sm font-medium" x-text="op.error.substring(0, 100)"></div>
+                        <div class="text-red-600/70 dark:text-red-300/70 text-xs mt-1" x-show="op.error.length > 100" x-text="op.error.substring(100)"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- Details Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+            <div>
+                <span class="text-gray-500 block mb-1">Session ID</span>
+                <code class="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded" x-text="op.operation_id?.substring(0, 8) || '-'"></code>
+            </div>
+            <div>
+                <span class="text-gray-500 block mb-1">Working Dir</span>
+                <span class="text-gray-700 dark:text-gray-300 truncate block" x-text="op.details?.working_dir || '-'"></span>
+            </div>
+            <div>
+                <span class="text-gray-500 block mb-1">Model</span>
+                <span class="text-gray-700 dark:text-gray-300" x-text="op.details?.model || op.result?.model || '-'"></span>
+            </div>
+            <div>
+                <span class="text-gray-500 block mb-1" x-text="isLive ? 'Started' : 'Completed'"></span>
+                <span class="text-gray-700 dark:text-gray-300" x-text="formatDateTime(isLive ? op.started_at : op.completed_at)"></span>
+            </div>
+        </div>
+
+        <!-- Token Details -->
+        <div class="flex flex-wrap gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-xs">
+            <div class="flex items-center gap-2">
+                <span class="text-emerald-600 dark:text-emerald-400">↓ Input</span>
+                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'input'))"></span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-amber-600 dark:text-amber-400">⚡ Cached</span>
+                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'cached'))"></span>
+            </div>
+            <div class="flex items-center gap-2" x-show="getTokens(op, 'cache_creation') > 0">
+                <span class="text-orange-600 dark:text-orange-400">+ Cache Create</span>
+                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'cache_creation'))"></span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-blue-600 dark:text-blue-400">↑ Output</span>
+                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'output'))"></span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-gray-500 dark:text-gray-400">Total</span>
+                <span class="text-gray-900 dark:text-white font-mono" x-text="formatTokens(getTokens(op, 'input') + getTokens(op, 'output'))"></span>
+            </div>
+            <div class="flex items-center gap-2 ml-auto">
+                <span class="text-green-600 dark:text-green-400">Cost</span>
+                <span class="text-gray-900 dark:text-white font-mono" x-text="'$' + getCost(op).toFixed(4)"></span>
+            </div>
+        </div>
+
+        <!-- Tools Used (full list) -->
+        <div x-show="getToolsUsed(op).length > 0">
+            <span class="text-gray-500 text-xs block mb-2" x-text="'Tools Used (' + getToolsUsed(op).length + ')'"></span>
+            <div class="flex flex-wrap gap-1.5">
+                <template x-for="tool in getToolsUsed(op)" :key="tool">
+                    <span class="px-2 py-0.5 text-xs rounded"
+                          :class="tool.startsWith('mcp__') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' : 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'"
+                          x-text="tool"></span>
+                </template>
+            </div>
+        </div>
+
+        <!-- Links -->
+        <div class="flex flex-wrap gap-4 text-xs">
+            <template x-if="op.details?.s3_prompt_url">
+                <a :href="op.details.s3_prompt_url" target="_blank" @click.stop
+                   class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    S3 Prompt
+                </a>
+            </template>
+            <template x-if="op.result?.s3_output_url || op.details?.s3_output_url">
+                <a :href="op.result?.s3_output_url || op.details?.s3_output_url" target="_blank" @click.stop
+                   class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    S3 Output
+                </a>
+            </template>
+            <template x-if="op.details?.issue_codes && op.details.issue_codes.length > 0">
+                <template x-for="code in op.details.issue_codes" :key="code">
+                    <a :href="'/issues/' + code" @click.stop
+                       class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                        <span x-text="'Issue ' + code"></span>
+                    </a>
+                </template>
+            </template>
+        </div>
+
+        <!-- Live Stream Output (only for live operations) -->
+        <template x-if="isLive && op.status === 'in_progress'">
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-gray-500 text-xs flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                        Live Stream
+                    </span>
+                    <button @click.stop="toggleStreamPause(op.operation_id)" class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                        <span x-text="isStreamPaused(op.operation_id) ? 'Resume' : 'Pause'"></span>
+                    </button>
+                </div>
+                <div class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs"
+                     x-ref="streamOutput"
+                     :id="'stream-' + op.operation_id">
+                    <template x-if="getStreamOutput(op.operation_id).length === 0">
+                        <div class="text-gray-400 dark:text-gray-600 italic">Waiting for output...</div>
+                    </template>
+                    <template x-for="(line, idx) in getStreamOutput(op.operation_id)" :key="idx">
+                        <div :class="{
+                            'text-purple-600 dark:text-purple-400': line.startsWith('🔧'),
+                            'text-gray-400 dark:text-gray-500 italic': line.startsWith('[Thinking]'),
+                            'text-red-600 dark:text-red-400': line.startsWith('[Error]') || line.startsWith('Error'),
+                            'text-gray-700 dark:text-gray-300': !line.startsWith('🔧') && !line.startsWith('[')
+                        }" x-text="line"></div>
+                    </template>
+                </div>
+            </div>
+        </template>
+
+        <!-- Actions (for live operations) -->
+        <template x-if="isLive">
+            <div class="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                <button @click.stop="markComplete(op.operation_id)"
+                        class="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Complete
+                </button>
+                <button @click.stop="cancelOperation(op.operation_id)"
+                        class="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                    Cancel
+                </button>
+            </div>
+        </template>
+
+        <!-- Retry button (for failed operations) -->
+        <template x-if="!isLive && op.status === 'failed'">
+            <div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <button @click.stop="retryOperation(op)"
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors">
+                    Retry Operation
+                </button>
+            </div>
+        </template>
+    </div>
+</div>

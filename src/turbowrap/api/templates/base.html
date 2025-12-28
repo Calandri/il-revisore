@@ -53,6 +53,9 @@
     <!-- Preload SharedWorker for faster chat initialization -->
     <link rel="preload" href="/static/js/chat-worker.js" as="worker">
 
+    <!-- Alpine.js Plugins (must load before main Alpine) -->
+    <script defer src="https://unpkg.com/@alpinejs/collapse@3.x.x/dist/cdn.min.js"></script>
+
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
@@ -196,6 +199,6 @@
             }
         };
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/turbowrap-issue-widget@1.0.1/dist/issue-widget.min.js" async></script>
+    <script src="https://cdn.jsdelivr.net/npm/turbowrap-issue-widget@1.0.2/dist/issue-widget.min.js" async></script>
 </body>
 </html>

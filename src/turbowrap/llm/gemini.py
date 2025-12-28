@@ -656,9 +656,10 @@ class GeminiCLI:
             model_from_init: str | None = None
             result_data: dict[str, Any] | None = None
             line_buffer = ""
+            tools_used: set[str] = set()
 
             async def read_stream() -> None:
-                nonlocal line_buffer, session_id, model_from_init, result_data
+                nonlocal line_buffer, session_id, model_from_init, result_data, tools_used
                 assert process.stdout is not None
 
                 while True:
@@ -703,6 +704,8 @@ class GeminiCLI:
                             elif msg_type == "tool_use":
                                 # {"type":"tool_use","tool_name":"delegate_to_agent","tool_id":"...","parameters":{}}
                                 tool_name = data.get("tool_name", "unknown")
+                                if tool_name and tool_name != "unknown":
+                                    tools_used.add(tool_name)
                                 if on_chunk:
                                     await on_chunk(f"\n🔧 **Tool:** `{tool_name}`\n")
 
@@ -810,6 +813,7 @@ class GeminiCLI:
                     operation.operation_id,
                     duration_ms=duration_ms,
                     session_stats=session_stats,
+                    tools_used=tools_used,
                 )
 
             logger.info(f"[GEMINI CLI] Completed in {duration_ms}ms")
@@ -954,6 +958,7 @@ class GeminiCLI:
         operation_id: str,
         duration_ms: int,
         session_stats: GeminiSessionStats | None = None,
+        tools_used: set[str] | None = None,
     ) -> None:
         """Complete operation in tracker with session stats."""
         try:
@@ -975,10 +980,14 @@ class GeminiCLI:
                 result["tool_calls"] = session_stats.tool_calls_total
                 result["models_used"] = [m.model for m in session_stats.model_usage]
 
+            # Add tools used (sorted for consistency)
+            result["tools_used"] = sorted(tools_used) if tools_used else []
+
             tracker.complete(operation_id, result=result)
             logger.info(
                 f"[GEMINI CLI] Operation completed: {operation_id[:8]} "
-                f"({session_stats.total_tokens if session_stats else 0} tokens)"
+                f"({session_stats.total_tokens if session_stats else 0} tokens, "
+                f"{len(tools_used or [])} tools)"
             )
 
         except Exception as e:

@@ -363,9 +363,10 @@ class GrokCLI:
             messages: list[GrokCLIMessage] = []
             output_chunks: list[str] = []
             line_buffer = ""
+            tools_used: set[str] = set()
 
             async def read_stream() -> None:
-                nonlocal line_buffer
+                nonlocal line_buffer, tools_used
                 assert process.stdout is not None
 
                 while True:
@@ -386,13 +387,22 @@ class GrokCLI:
                             role = data.get("role", "")
                             content = data.get("content", "")
 
+                            tool_calls_data = data.get("tool_calls")
                             msg = GrokCLIMessage(
                                 role=role,
                                 content=content,
-                                tool_calls=data.get("tool_calls"),
+                                tool_calls=tool_calls_data,
                                 tool_call_id=data.get("tool_call_id"),
                             )
                             messages.append(msg)
+
+                            # Extract tool names from tool_calls
+                            if tool_calls_data:
+                                for tc in tool_calls_data:
+                                    # Try common field names for tool name
+                                    tool_name = tc.get("name") or tc.get("function", {}).get("name")
+                                    if tool_name:
+                                        tools_used.add(tool_name)
 
                             if role == "assistant" and content:
                                 output_chunks.append(content)
@@ -487,6 +497,7 @@ class GrokCLI:
                     operation.operation_id,
                     duration_ms=duration_ms,
                     session_stats=session_stats,
+                    tools_used=tools_used,
                 )
 
             logger.info(f"[GROK CLI] Completed in {duration_ms}ms")
@@ -606,6 +617,7 @@ class GrokCLI:
         operation_id: str,
         duration_ms: int,
         session_stats: GrokSessionStats | None = None,
+        tools_used: set[str] | None = None,
     ) -> None:
         """Complete operation in tracker."""
         try:
@@ -618,8 +630,14 @@ class GrokCLI:
                 result["session_stats"] = session_stats.to_dict()
                 result["tool_calls"] = session_stats.tool_calls
 
+            # Add tools used (sorted for consistency)
+            result["tools_used"] = sorted(tools_used) if tools_used else []
+
             tracker.complete(operation_id, result=result)
-            logger.info(f"[GROK CLI] Operation completed: {operation_id[:8]}")
+            logger.info(
+                f"[GROK CLI] Operation completed: {operation_id[:8]} "
+                f"({len(tools_used or [])} tools)"
+            )
 
         except Exception as e:
             logger.warning(f"[GROK CLI] Failed to complete operation: {e}")

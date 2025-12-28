@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operation Cards - Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes stream {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        .streaming-indicator {
+            animation: stream 1.5s ease-in-out infinite;
+        }
+        .stream-output {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .stream-output .tool {
+            color: #a78bfa;
+        }
+        .stream-output .thinking {
+            color: #6b7280;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 p-8 min-h-screen">
+
+    <div class="max-w-6xl mx-auto space-y-8">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <h1 class="text-2xl font-bold text-white">Operation Cards Mockup</h1>
+            <div class="flex gap-2">
+                <button onclick="document.documentElement.classList.toggle('dark')"
+                        class="px-3 py-1 bg-gray-800 rounded text-sm">Toggle Theme</button>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SECTION: LIVE TASKS -->
+        <!-- ========================================== -->
+        <section>
+            <h2 class="text-lg font-semibold text-indigo-400 mb-4 flex items-center gap-2">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Live Tasks (3)
+            </h2>
+
+            <div class="space-y-2">
+
+                <!-- LIVE CARD - CLOSED (Compact) -->
+                <div class="bg-gray-900 border border-gray-800 rounded-lg hover:border-gray-700 transition-colors cursor-pointer">
+                    <div class="px-4 py-3 flex items-center gap-4">
+                        <!-- Status Indicator -->
+                        <div class="flex-shrink-0">
+                            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        </div>
+
+                        <!-- Type Badge -->
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-medium rounded">FIX</span>
+                        </div>
+
+                        <!-- Agent Name -->
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-white truncate block">fixer</span>
+                        </div>
+
+                        <!-- Repo + Branch -->
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-400 truncate block">
+                                lambda-oasi <span class="text-gray-600">/</span> <span class="text-gray-500">fix/LAM-123</span>
+                            </span>
+                        </div>
+
+                        <!-- Tokens (compact) -->
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-500">
+                                <span class="text-emerald-400">↓12.4k</span>
+                                <span class="text-amber-400 ml-1">⚡8.2k</span>
+                                <span class="text-blue-400 ml-1">↑2.1k</span>
+                            </span>
+                        </div>
+
+                        <!-- Tools (compact with tooltip) -->
+                        <div class="flex-shrink-0 group relative">
+                            <div class="flex items-center gap-1 text-xs cursor-help">
+                                <span class="text-purple-400">🔧</span>
+                                <span class="text-purple-300">Read</span>
+                                <span class="text-gray-600">·</span>
+                                <span class="text-purple-300">Edit</span>
+                                <span class="text-gray-500">+6</span>
+                            </div>
+                            <!-- Tooltip on hover -->
+                            <div class="absolute bottom-full left-0 mb-2 hidden group-hover:block z-50">
+                                <div class="bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-xl min-w-48">
+                                    <div class="text-xs text-gray-400 mb-1">Tools Used (8)</div>
+                                    <div class="flex flex-wrap gap-1">
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Read</span>
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Edit</span>
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Glob</span>
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Grep</span>
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Bash</span>
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Write</span>
+                                        <span class="px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Task</span>
+                                        <span class="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded">mcp__linear</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cost -->
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-400">$0.042</span>
+                        </div>
+
+                        <!-- Duration (live counter) -->
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-green-400 font-mono streaming-indicator">2:34</span>
+                        </div>
+
+                        <!-- User -->
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-500 truncate block">niccolo</span>
+                        </div>
+
+                        <!-- Issue -->
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-indigo-400 hover:underline">LAM-123</span>
+                        </div>
+
+                        <!-- Expand Arrow -->
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LIVE CARD - OPEN (Expanded with Stream) -->
+                <div class="bg-gray-900 border border-indigo-500/50 rounded-lg shadow-lg shadow-indigo-500/10">
+                    <!-- Header Row (same as closed) -->
+                    <div class="px-4 py-3 flex items-center gap-4 border-b border-gray-800 cursor-pointer">
+                        <div class="flex-shrink-0">
+                            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs font-medium rounded">REVIEW</span>
+                        </div>
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-white truncate block">reviewer_fe</span>
+                        </div>
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-400 truncate block">
+                                oasi-frontend <span class="text-gray-600">/</span> <span class="text-gray-500">main</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-500">
+                                <span class="text-emerald-400">↓45.2k</span>
+                                <span class="text-amber-400 ml-1">⚡32.1k</span>
+                                <span class="text-blue-400 ml-1">↑8.7k</span>
+                            </span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-400">$0.128</span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-green-400 font-mono streaming-indicator">5:12</span>
+                        </div>
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-500 truncate block">marco</span>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-indigo-400 hover:underline">OAS-456</span>
+                        </div>
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-400 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Expanded Details -->
+                    <div class="p-4 space-y-4">
+                        <!-- Details Grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                            <div>
+                                <span class="text-gray-500 block mb-1">Session ID</span>
+                                <code class="text-gray-300 bg-gray-800 px-1.5 py-0.5 rounded">a7b3c9f2</code>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Working Dir</span>
+                                <span class="text-gray-300">/data/repos/oasi-frontend</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Model</span>
+                                <span class="text-gray-300">claude-sonnet-4-20250514</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Started</span>
+                                <span class="text-gray-300">14:32:18</span>
+                            </div>
+                        </div>
+
+                        <!-- Token Details -->
+                        <div class="flex flex-wrap gap-4 p-3 bg-gray-800/50 rounded-lg text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="text-emerald-400">↓ Input</span>
+                                <span class="text-white font-mono">45,234</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-amber-400">⚡ Cached</span>
+                                <span class="text-white font-mono">32,100</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-orange-400">+ Cache Create</span>
+                                <span class="text-white font-mono">4,521</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-blue-400">↑ Output</span>
+                                <span class="text-white font-mono">8,743</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-gray-400">Total</span>
+                                <span class="text-white font-mono">53,977</span>
+                            </div>
+                        </div>
+
+                        <!-- Tools Used -->
+                        <div>
+                            <span class="text-gray-500 text-xs block mb-2">Tools Used (12)</span>
+                            <div class="flex flex-wrap gap-1.5">
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Read</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Glob</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Grep</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Edit</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Write</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Bash</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Task</span>
+                                <span class="px-2 py-0.5 bg-gray-700 text-gray-400 text-xs rounded">+5 more</span>
+                            </div>
+                        </div>
+
+                        <!-- Links -->
+                        <div class="flex gap-4 text-xs">
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Prompt
+                            </a>
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Output
+                            </a>
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                Issue OAS-456
+                            </a>
+                        </div>
+
+                        <!-- Live Stream Output -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-gray-500 text-xs flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                    Live Stream
+                                </span>
+                                <button class="text-xs text-gray-500 hover:text-gray-300">Pause</button>
+                            </div>
+                            <div class="bg-gray-950 border border-gray-800 rounded-lg p-3 h-48 overflow-y-auto stream-output">
+                                <div class="text-gray-400">Analyzing component structure...</div>
+                                <div class="tool">🔧 Tool: Read src/components/Chart.tsx</div>
+                                <div class="text-gray-300">Found Chart component with 245 lines</div>
+                                <div class="thinking">[Thinking] The component uses useEffect without cleanup...</div>
+                                <div class="tool">🔧 Tool: Grep "useEffect" --type tsx</div>
+                                <div class="text-gray-300">Found 12 useEffect hooks across 8 files</div>
+                                <div class="text-gray-400">Checking for memory leak patterns...</div>
+                                <div class="tool">🔧 Tool: Read src/hooks/useDataFetcher.ts</div>
+                                <div class="text-gray-300 streaming-indicator">Reviewing hook implementation<span class="animate-pulse">▌</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Another LIVE CARD - CLOSED (with error state) -->
+                <div class="bg-gray-900 border border-amber-500/30 rounded-lg hover:border-amber-500/50 transition-colors cursor-pointer">
+                    <div class="px-4 py-3 flex items-center gap-4">
+                        <div class="flex-shrink-0">
+                            <div class="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs font-medium rounded">CLI_TASK</span>
+                        </div>
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-white truncate block">dev-be</span>
+                        </div>
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-400 truncate block">
+                                turbowrap <span class="text-gray-600">/</span> <span class="text-gray-500">main</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-500">
+                                <span class="text-emerald-400">↓8.1k</span>
+                                <span class="text-amber-400 ml-1">⚡0</span>
+                                <span class="text-blue-400 ml-1">↑1.2k</span>
+                            </span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-400">$0.018</span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-amber-400 font-mono">0:45</span>
+                        </div>
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-500 truncate block">system</span>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-gray-600">—</span>
+                        </div>
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- SECTION: HISTORY -->
+        <!-- ========================================== -->
+        <section class="mt-12">
+            <h2 class="text-lg font-semibold text-gray-400 mb-4 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                History
+            </h2>
+
+            <div class="space-y-2">
+
+                <!-- HISTORY CARD - COMPLETED (Closed) -->
+                <div class="bg-gray-900 border border-gray-800 rounded-lg hover:border-gray-700 transition-colors cursor-pointer opacity-90">
+                    <div class="px-4 py-3 flex items-center gap-4">
+                        <div class="flex-shrink-0">
+                            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-medium rounded">FIX</span>
+                        </div>
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-gray-300 truncate block">fixer</span>
+                        </div>
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-500 truncate block">
+                                lambda-oasi <span class="text-gray-700">/</span> <span class="text-gray-600">fix/LAM-100</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-600">
+                                <span class="text-emerald-500/70">↓125.4k</span>
+                                <span class="text-amber-500/70 ml-1">⚡98.2k</span>
+                                <span class="text-blue-500/70 ml-1">↑24.1k</span>
+                            </span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500">$0.342</span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500 font-mono">12:34</span>
+                        </div>
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-600 truncate block">niccolo</span>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-indigo-400/70 hover:underline">LAM-100</span>
+                        </div>
+                        <div class="flex-shrink-0 text-xs text-gray-600">
+                            2h ago
+                        </div>
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HISTORY CARD - FAILED (Closed) -->
+                <div class="bg-gray-900 border border-red-500/30 rounded-lg hover:border-red-500/50 transition-colors cursor-pointer">
+                    <div class="px-4 py-3 flex items-center gap-4">
+                        <div class="flex-shrink-0">
+                            <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-medium rounded">FIX</span>
+                        </div>
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-gray-300 truncate block">fixer</span>
+                        </div>
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-500 truncate block">
+                                lambda-oasi <span class="text-gray-700">/</span> <span class="text-gray-600">fix/LAM-99</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-600">
+                                <span class="text-emerald-500/70">↓45.2k</span>
+                                <span class="text-amber-500/70 ml-1">⚡12.0k</span>
+                                <span class="text-blue-500/70 ml-1">↑8.1k</span>
+                            </span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500">$0.089</span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500 font-mono">3:21</span>
+                        </div>
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-600 truncate block">marco</span>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-indigo-400/70 hover:underline">LAM-99</span>
+                        </div>
+                        <div class="flex-shrink-0 text-xs text-gray-600">
+                            5h ago
+                        </div>
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HISTORY CARD - FAILED (Open with Error) -->
+                <div class="bg-gray-900 border border-red-500/50 rounded-lg shadow-lg shadow-red-500/5">
+                    <div class="px-4 py-3 flex items-center gap-4 border-b border-gray-800 cursor-pointer">
+                        <div class="flex-shrink-0">
+                            <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs font-medium rounded">REVIEW</span>
+                        </div>
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-gray-300 truncate block">reviewer_be</span>
+                        </div>
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-500 truncate block">
+                                turbowrap <span class="text-gray-700">/</span> <span class="text-gray-600">main</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-600">
+                                <span class="text-emerald-500/70">↓12.4k</span>
+                                <span class="text-amber-500/70 ml-1">⚡0</span>
+                                <span class="text-blue-500/70 ml-1">↑0</span>
+                            </span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500">$0.012</span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500 font-mono">0:08</span>
+                        </div>
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-600 truncate block">niccolo</span>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-gray-600">—</span>
+                        </div>
+                        <div class="flex-shrink-0 text-xs text-gray-600">
+                            1d ago
+                        </div>
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-400 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Expanded Details with Error -->
+                    <div class="p-4 space-y-4">
+                        <!-- Error Banner -->
+                        <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                            <div class="flex items-start gap-2">
+                                <svg class="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                <div>
+                                    <div class="text-red-400 text-sm font-medium">API Error: Rate limit exceeded</div>
+                                    <div class="text-red-300/70 text-xs mt-1">Credit balance too low. Please add credits to continue.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Details Grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                            <div>
+                                <span class="text-gray-500 block mb-1">Session ID</span>
+                                <code class="text-gray-300 bg-gray-800 px-1.5 py-0.5 rounded">f8e2d1a4</code>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Working Dir</span>
+                                <span class="text-gray-300">/data/repos/turbowrap</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Model</span>
+                                <span class="text-gray-300">gemini-2.0-flash</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Ended</span>
+                                <span class="text-gray-300">Dec 27, 10:15:32</span>
+                            </div>
+                        </div>
+
+                        <!-- Token Details -->
+                        <div class="flex flex-wrap gap-4 p-3 bg-gray-800/50 rounded-lg text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="text-emerald-400">↓ Input</span>
+                                <span class="text-white font-mono">12,400</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-amber-400">⚡ Cached</span>
+                                <span class="text-gray-500 font-mono">0</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-blue-400">↑ Output</span>
+                                <span class="text-gray-500 font-mono">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Links -->
+                        <div class="flex gap-4 text-xs">
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Prompt
+                            </a>
+                            <a href="#" class="text-gray-600 flex items-center gap-1 cursor-not-allowed">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Output (none)
+                            </a>
+                        </div>
+
+                        <!-- Retry Button -->
+                        <div class="pt-2 border-t border-gray-800">
+                            <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors">
+                                Retry Operation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HISTORY CARD - COMPLETED (Open) -->
+                <div class="bg-gray-900 border border-gray-700 rounded-lg">
+                    <div class="px-4 py-3 flex items-center gap-4 border-b border-gray-800 cursor-pointer">
+                        <div class="flex-shrink-0">
+                            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs font-medium rounded">FIX</span>
+                        </div>
+                        <div class="flex-shrink-0 w-32">
+                            <span class="text-sm font-medium text-gray-300 truncate block">fixer</span>
+                        </div>
+                        <div class="flex-shrink-0 w-48">
+                            <span class="text-sm text-gray-500 truncate block">
+                                lambda-oasi <span class="text-gray-700">/</span> <span class="text-gray-600">fix/LAM-95</span>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3 text-xs">
+                            <span class="text-gray-600">
+                                <span class="text-emerald-500/70">↓245.8k</span>
+                                <span class="text-amber-500/70 ml-1">⚡189.2k</span>
+                                <span class="text-blue-500/70 ml-1">↑42.3k</span>
+                            </span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500">$0.612</span>
+                        </div>
+                        <div class="flex-shrink-0 w-16 text-right">
+                            <span class="text-xs text-gray-500 font-mono">18:45</span>
+                        </div>
+                        <div class="flex-shrink-0 w-20">
+                            <span class="text-xs text-gray-600 truncate block">niccolo</span>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <span class="text-xs text-indigo-400/70 hover:underline">LAM-95</span>
+                        </div>
+                        <div class="flex-shrink-0 text-xs text-gray-600">
+                            2d ago
+                        </div>
+                        <div class="flex-shrink-0 ml-auto">
+                            <svg class="w-4 h-4 text-gray-400 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Expanded Details (Completed) -->
+                    <div class="p-4 space-y-4">
+                        <!-- Details Grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                            <div>
+                                <span class="text-gray-500 block mb-1">Session ID</span>
+                                <code class="text-gray-300 bg-gray-800 px-1.5 py-0.5 rounded">c4b2a8e1</code>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Working Dir</span>
+                                <span class="text-gray-300">/data/repos/lambda-oasi</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Model</span>
+                                <span class="text-gray-300">claude-sonnet-4-20250514</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 block mb-1">Completed</span>
+                                <span class="text-gray-300">Dec 26, 16:42:18</span>
+                            </div>
+                        </div>
+
+                        <!-- Token Details -->
+                        <div class="flex flex-wrap gap-4 p-3 bg-gray-800/50 rounded-lg text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="text-emerald-400">↓ Input</span>
+                                <span class="text-white font-mono">245,821</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-amber-400">⚡ Cached</span>
+                                <span class="text-white font-mono">189,234</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-orange-400">+ Cache Create</span>
+                                <span class="text-white font-mono">18,432</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-blue-400">↑ Output</span>
+                                <span class="text-white font-mono">42,312</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-gray-400">Total</span>
+                                <span class="text-white font-mono">288,133</span>
+                            </div>
+                            <div class="flex items-center gap-2 ml-auto">
+                                <span class="text-green-400">Cost</span>
+                                <span class="text-white font-mono">$0.612</span>
+                            </div>
+                        </div>
+
+                        <!-- Tools Used (Full list for completed) -->
+                        <div>
+                            <span class="text-gray-500 text-xs block mb-2">Tools Used (24)</span>
+                            <div class="flex flex-wrap gap-1.5">
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Read</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Glob</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Grep</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Edit</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Write</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Bash</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">Task</span>
+                                <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">TodoWrite</span>
+                                <span class="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded">mcp__linear__get_issue</span>
+                                <span class="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded">mcp__linear__update_issue</span>
+                                <span class="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded">mcp__linear__create_comment</span>
+                            </div>
+                        </div>
+
+                        <!-- Links -->
+                        <div class="flex gap-4 text-xs">
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Prompt
+                            </a>
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Output
+                            </a>
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                S3 Thinking
+                            </a>
+                            <a href="#" class="text-indigo-400 hover:underline flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                Issue LAM-95
+                            </a>
+                        </div>
+
+                        <!-- Output Preview -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-gray-500 text-xs">Output Preview</span>
+                                <a href="#" class="text-xs text-indigo-400 hover:underline">View Full Output</a>
+                            </div>
+                            <div class="bg-gray-950 border border-gray-800 rounded-lg p-3 text-xs text-gray-400 max-h-32 overflow-hidden relative">
+                                <div class="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-gray-950 to-transparent"></div>
+                                <pre class="whitespace-pre-wrap">## Fix Summary
+
+Fixed the authentication flow issue in `src/services/auth.py`:
+
+1. **Root Cause**: The token refresh was happening after the session expired
+2. **Solution**: Added preemptive token refresh 5 minutes before expiry
+3. **Files Changed**:
+   - `src/services/auth.py` - Added `_should_refresh_token()` method
+   - `src/middleware/auth_middleware.py` - Updated to use new refresh logic
+   - `tests/test_auth.py` - Added tests for preemptive refresh
+
+All tests passing. Ready for review.</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Legend -->
+        <section class="mt-12 p-4 bg-gray-900 border border-gray-800 rounded-lg">
+            <h3 class="text-sm font-semibold text-gray-400 mb-3">Legend</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                <div>
+                    <span class="text-gray-500 block mb-1">Tokens</span>
+                    <div class="flex flex-col gap-1">
+                        <span><span class="text-emerald-400">↓</span> Input tokens</span>
+                        <span><span class="text-amber-400">⚡</span> Cached (read from cache)</span>
+                        <span><span class="text-orange-400">+</span> Cache creation</span>
+                        <span><span class="text-blue-400">↑</span> Output tokens</span>
+                    </div>
+                </div>
+                <div>
+                    <span class="text-gray-500 block mb-1">Status</span>
+                    <div class="flex flex-col gap-1">
+                        <span><span class="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span> Running</span>
+                        <span><span class="w-2 h-2 bg-amber-500 rounded-full inline-block"></span> Warning/Slow</span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-3 h-3 text-green-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Completed
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-3 h-3 text-red-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                            Failed
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <span class="text-gray-500 block mb-1">Operation Types</span>
+                    <div class="flex flex-col gap-1">
+                        <span class="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded inline-block w-fit">FIX</span>
+                        <span class="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded inline-block w-fit">REVIEW</span>
+                        <span class="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded inline-block w-fit">CLI_TASK</span>
+                        <span class="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded inline-block w-fit">GIT_*</span>
+                    </div>
+                </div>
+                <div>
+                    <span class="text-gray-500 block mb-1">Tool Colors</span>
+                    <div class="flex flex-col gap-1">
+                        <span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded inline-block w-fit">Built-in tools</span>
+                        <span class="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded inline-block w-fit">MCP tools</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+</body>
+</html>

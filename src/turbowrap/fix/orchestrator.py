@@ -43,40 +43,47 @@ S3_BUCKET = "turbowrap-thinking"
 logger = logging.getLogger(__name__)
 
 # Session persistence constants
-MAX_SESSION_TOKENS = 180_000  # 180k token limit (20k margin on 200k Opus)
-COMPACTION_MODEL = "flash"  # Gemini Flash for context compaction
+MAX_SESSION_TOKENS = 150_000  # 150k token limit (50k margin on 200k Opus)
 
 
 @dataclass
 class FixSessionContext:
     """Tracking for session persistence in fix flow.
 
-    Maintains Claude session ID across batches and tracks cumulative token usage.
-    When tokens exceed MAX_SESSION_TOKENS, context is compacted with Gemini Flash
-    and a new session is started with the summary injected.
+    Maintains Claude session ID across batches and tracks token usage.
+    Uses cache_read_tokens from the LATEST request to determine context size -
+    this is how much context Claude is loading from session memory.
+
+    When context size exceeds MAX_SESSION_TOKENS, /compact is triggered which
+    compresses the context within the same session.
     """
 
     claude_session_id: str | None = None
+    # Cumulative stats (for reporting)
     cumulative_input_tokens: int = 0
     cumulative_output_tokens: int = 0
-    cumulative_cache_read_tokens: int = 0
-    cumulative_cache_creation_tokens: int = 0
-    context_summary: str | None = None  # Summary after compaction
+    # Last request's cache stats (for context size calculation)
+    last_cache_read_tokens: int = 0  # Context size = how much Claude reads from cache
+    last_cache_creation_tokens: int = 0
     compaction_count: int = 0
 
     @property
     def cumulative_tokens(self) -> int:
-        """Total tokens used in this session."""
+        """Total tokens used in this session (for reporting)."""
         return self.cumulative_input_tokens + self.cumulative_output_tokens
 
     @property
-    def session_tokens(self) -> int:
-        """Tokens representing session context (cached tokens are the session memory)."""
-        return self.cumulative_cache_creation_tokens + self.cumulative_cache_read_tokens
+    def context_size(self) -> int:
+        """Current context size = cache_read_tokens from last request.
+
+        This shows how much context Claude is loading from its session memory.
+        After /compact, this value will decrease.
+        """
+        return self.last_cache_read_tokens
 
     def needs_compaction(self, threshold: int = MAX_SESSION_TOKENS) -> bool:
-        """Check if session needs compaction based on cumulative tokens."""
-        return self.cumulative_tokens >= threshold
+        """Check if context needs compaction based on cache_read_tokens."""
+        return self.last_cache_read_tokens >= threshold
 
 
 class BillingError(Exception):
@@ -1467,6 +1474,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             timeout=timeout,
             s3_prefix="fix",
             github_token=self._get_github_token(),
+            tools="fix",  # Limit tools to reduce system prompt size
         )
 
     async def _run_claude_cli(
@@ -1491,18 +1499,9 @@ The reviewer found issues with the previous fix. Address this feedback:
             model: Model alias (opus, sonnet, haiku)
             session_context: Optional session context for persistence between batches
         """
-        # Check if compaction is needed before this call
+        # Check if compaction is needed before this call (based on context_size = cache_read)
         if session_context and session_context.needs_compaction():
             await self._compact_context(session_context, on_chunk)
-
-        # Inject context summary into prompt if available
-        if session_context and session_context.context_summary:
-            prompt = f"""## Context from Previous Batches
-{session_context.context_summary}
-
----
-
-{prompt}"""
 
         # Create ClaudeCLI with appropriate timeout and model
         cli = self._get_claude_cli(timeout, model)
@@ -1532,16 +1531,18 @@ The reviewer found issues with the previous fix. Address this feedback:
         if session_context and result.success:
             # Store session ID for next batch
             session_context.claude_session_id = result.session_id
-            # Accumulate token usage
+            # Update token stats
             for usage in result.model_usage:
+                # Cumulative for reporting
                 session_context.cumulative_input_tokens += usage.input_tokens
                 session_context.cumulative_output_tokens += usage.output_tokens
-                session_context.cumulative_cache_read_tokens += usage.cache_read_tokens
-                session_context.cumulative_cache_creation_tokens += usage.cache_creation_tokens
+                # Last values for context size (cache_read = how much context Claude loads)
+                session_context.last_cache_read_tokens = usage.cache_read_tokens
+                session_context.last_cache_creation_tokens = usage.cache_creation_tokens
 
             logger.info(
                 f"[FIX] Session {result.session_id[:8] if result.session_id else 'N/A'}... | "
-                f"Cumulative tokens: {session_context.cumulative_tokens:,} / {MAX_SESSION_TOKENS:,}"
+                f"Context size: {session_context.context_size:,} / {MAX_SESSION_TOKENS:,} tokens"
             )
 
         if not result.success:
@@ -1577,65 +1578,58 @@ The reviewer found issues with the previous fix. Address this feedback:
         session_context: FixSessionContext,
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
-        """Compact session context using Gemini Flash when token limit is reached.
+        """Compact session context using Claude's /compact slash command.
 
-        Creates a summary of the work done so far and resets the session.
+        Uses the EXISTING Claude session (with --resume) and sends /compact
+        which triggers Claude's built-in context compaction. The session_id
+        remains the same - only the context gets compressed.
+
+        After compaction, cache_read_tokens in the next request will show
+        the new (smaller) context size.
         """
         logger.info(
-            f"[FIX] Context compaction triggered at {session_context.cumulative_tokens:,} tokens"
+            f"[FIX] Context compaction triggered at context_size={session_context.context_size:,} tokens"
         )
 
         if on_chunk:
             await on_chunk(
                 f"\n🔄 **Context Compaction** | "
-                f"{session_context.cumulative_tokens:,} tokens reached limit, "
-                f"summarizing context...\n"
+                f"context size {session_context.context_size:,} tokens reached limit, "
+                f"running /compact...\n"
             )
 
-        compaction_prompt = f"""Summarize the following fix session context for continuity.
+        # Use Claude's built-in /compact command - it knows what it did!
+        cli = self._get_claude_cli(timeout=120)  # May take time to compact
 
-Previous context summary (if any):
-{session_context.context_summary or "None - this is the first compaction"}
-
-Key information to preserve:
-- Files modified and their purposes
-- Issues fixed and how
-- Patterns/conventions discovered
-- Any pending work or blockers
-
-Output a concise summary (max 2000 chars) that will help the next batch understand what was done."""
-
-        # Use Gemini Flash for compaction (fast + cheap)
-        gemini = GeminiCLI(
-            model=COMPACTION_MODEL,
-            working_dir=self.repo_path,
-            timeout=60,
-        )
-
-        result = await gemini.run(
-            compaction_prompt,
+        result = await cli.run(
+            "/compact",  # Claude's slash command for context compaction
             context_id=f"compaction_{session_context.compaction_count}",
+            save_prompt=False,
+            save_output=True,
+            save_thinking=False,
+            on_chunk=on_chunk,
             track_operation=False,
+            resume_session_id=session_context.claude_session_id,  # Same session!
         )
 
-        if result.success and result.output:
-            session_context.context_summary = result.output[:2000]
-            session_context.claude_session_id = None  # Reset for new session
+        if result.success:
+            # Don't reset session_id! /compact keeps the same session
+            # Reset counters - next request's cache_read will show the new (smaller) context size
             session_context.cumulative_input_tokens = 0
             session_context.cumulative_output_tokens = 0
-            session_context.cumulative_cache_read_tokens = 0
-            session_context.cumulative_cache_creation_tokens = 0
+            session_context.last_cache_read_tokens = 0  # Will be updated by next request
+            session_context.last_cache_creation_tokens = 0
             session_context.compaction_count += 1
 
             logger.info(
                 f"[FIX] Context compacted (#{session_context.compaction_count}), "
-                f"summary: {len(session_context.context_summary)} chars"
+                f"session continues: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'N/A'}..."
             )
 
             if on_chunk:
                 await on_chunk(
-                    f"✅ Context compacted (#{session_context.compaction_count}), "
-                    f"starting new session\n\n"
+                    f"\n✅ Context compacted (#{session_context.compaction_count}), "
+                    f"session continues\n\n"
                 )
         else:
             logger.warning(f"[FIX] Compaction failed: {result.error}")

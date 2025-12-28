@@ -61,6 +61,16 @@ MODEL_MAP = {
 # Default timeout
 DEFAULT_TIMEOUT = 180
 
+# Tool presets for different use cases (only works with --print mode)
+# Use preset name or custom comma-separated tool list
+ToolPreset = Literal["fix", "default"]
+TOOL_PRESETS: dict[str, str] = {
+    # Fix: modify code + web search if needed
+    "fix": "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,WebFetch,WebSearch",
+    # Default: all tools
+    "default": "default",
+}
+
 
 @dataclass
 class ModelUsage:
@@ -283,6 +293,7 @@ class ClaudeCLI:
         verbose: bool = True,
         skip_permissions: bool = True,
         github_token: str | None = None,
+        tools: str | ToolPreset | None = None,
     ):
         """Initialize Claude CLI runner.
 
@@ -295,6 +306,8 @@ class ClaudeCLI:
             verbose: Enable --verbose flag (required for stream-json)
             skip_permissions: Enable --dangerously-skip-permissions flag
             github_token: GitHub token for git operations (passed to subprocess env)
+            tools: Tool preset name ("fix", "default") or custom comma-separated list.
+                   None = all tools (default behavior). Only works with --print mode.
         """
         self.settings = get_settings()
         self.agent_md_path = agent_md_path
@@ -304,6 +317,14 @@ class ClaudeCLI:
         self.verbose = verbose
         self.skip_permissions = skip_permissions
         self.github_token = github_token
+
+        # Resolve tools: preset name -> tool list, or use as-is
+        if tools is None:
+            self.tools = None  # Use all tools (default)
+        elif tools in TOOL_PRESETS:
+            self.tools = TOOL_PRESETS[tools]
+        else:
+            self.tools = tools  # Custom comma-separated list
 
         # Resolve model name
         if model is None:
@@ -471,7 +492,15 @@ class ClaudeCLI:
                 self._update_operation(operation.operation_id, {"s3_prompt_url": s3_prompt_url})
 
         # Run CLI
-        output, model_usage, thinking, raw_output, error, session_id = await self._execute_cli(
+        (
+            output,
+            model_usage,
+            thinking,
+            raw_output,
+            error,
+            session_id,
+            tools_used,
+        ) = await self._execute_cli(
             full_prompt, thinking_budget, on_chunk, on_thinking, on_stderr, resume_session_id
         )
 
@@ -537,6 +566,7 @@ class ClaudeCLI:
                 operation.operation_id,
                 duration_ms=duration_ms,
                 model_usage=model_usage,
+                tools_used=tools_used,
             )
 
         return ClaudeCLIResult(
@@ -616,7 +646,9 @@ class ClaudeCLI:
         on_thinking: Callable[[str], Awaitable[None]] | None,
         on_stderr: Callable[[str], Awaitable[None]] | None,
         resume_session_id: str | None = None,
-    ) -> tuple[str | None, list[ModelUsage], str | None, str | None, str | None, str | None]:
+    ) -> tuple[
+        str | None, list[ModelUsage], str | None, str | None, str | None, str | None, set[str]
+    ]:
         """Execute Claude CLI subprocess.
 
         Args:
@@ -628,7 +660,7 @@ class ClaudeCLI:
             resume_session_id: Session ID to resume (uses --resume instead of --session-id).
 
         Returns:
-            Tuple of (output, model_usage, thinking, raw_output, error, session_id)
+            Tuple of (output, model_usage, thinking, raw_output, error, session_id, tools_used)
         """
         try:
             # Build environment
@@ -648,7 +680,7 @@ class ClaudeCLI:
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
             else:
-                return None, [], None, None, "ANTHROPIC_API_KEY not found", None
+                return None, [], None, None, "ANTHROPIC_API_KEY not found", None, set()
 
             # Workaround: Bun file watcher bug on macOS /var/folders
             env["TMPDIR"] = "/tmp"
@@ -678,6 +710,11 @@ class ClaudeCLI:
                 "stream-json",
                 "--include-partial-messages",  # CRITICAL for streaming!
             ]
+
+            # Tools: limit available tools (only works with --print mode)
+            if self.tools and self.tools != "default":
+                args.extend(["--tools", self.tools])
+                logger.info(f"[CLAUDE CLI] Tools limited to: {self.tools}")
 
             # Session: resume existing or start new with specific ID
             if resume_session_id:
@@ -859,7 +896,7 @@ class ClaudeCLI:
                 logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s!")
                 stderr_task.cancel()
                 process.kill()
-                return None, [], None, None, f"Timeout after {self.timeout}s", session_id
+                return None, [], None, None, f"Timeout after {self.timeout}s", session_id, set()
 
             await stderr_task
 
@@ -884,8 +921,11 @@ class ClaudeCLI:
                 model_usage: list[ModelUsage] = []
                 thinking: str | None = None
                 api_error: str | None = None
+                tools_used: set[str] = set()
                 if raw_output:
-                    output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
+                    (output, model_usage, thinking, api_error, tools_used) = (
+                        self._parse_stream_json(raw_output)
+                    )
                     logger.info(
                         f"[CLAUDE CLI] Exit {process.returncode} "
                         f"got output: {len(raw_output)} bytes"
@@ -895,42 +935,45 @@ class ClaudeCLI:
                 if api_error:
                     error_msg = f"{error_msg}\nAPI Error: {api_error}"
 
-                return output, model_usage, thinking, raw_output, error_msg, session_id
+                return output, model_usage, thinking, raw_output, error_msg, session_id, tools_used
 
             # Normal success path
             if not raw_output:
                 logger.warning("[CLAUDE CLI] No output received from CLI")
-                return None, [], None, None, "No output received from CLI", session_id
+                return None, [], None, None, "No output received from CLI", session_id, set()
 
-            output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
+            (output, model_usage, thinking, api_error, tools_used) = self._parse_stream_json(
+                raw_output
+            )
 
             # Return API error as the error field if present
             if api_error:
-                return output, model_usage, thinking, raw_output, api_error, session_id
+                return output, model_usage, thinking, raw_output, api_error, session_id, tools_used
 
-            return output, model_usage, thinking, raw_output, None, session_id
+            return output, model_usage, thinking, raw_output, None, session_id, tools_used
 
         except FileNotFoundError:
-            return None, [], None, None, "Claude CLI not found", None
+            return None, [], None, None, "Claude CLI not found", None, set()
         except Exception as e:
             logger.exception(f"[CLAUDE CLI] Exception: {e}")
-            return None, [], None, None, str(e), None
+            return None, [], None, None, str(e), None, set()
 
     def _parse_stream_json(
         self, raw_output: str
-    ) -> tuple[str, list[ModelUsage], str | None, str | None]:
+    ) -> tuple[str, list[ModelUsage], str | None, str | None, set[str]]:
         """Parse stream-json NDJSON output.
 
         Handles both regular events and stream_event wrappers
         (from --include-partial-messages).
 
         Returns:
-            Tuple of (output, model_usage, thinking, api_error)
+            Tuple of (output, model_usage, thinking, api_error, tools_used)
         """
         output = ""
         model_usage_list = []
         thinking_chunks = []
         api_error = None
+        tools_used: set[str] = set()
 
         for line in raw_output.strip().split("\n"):
             if not line.strip():
@@ -944,7 +987,7 @@ class ClaudeCLI:
                     event = event.get("event", {})
                     event_type = event.get("type")
 
-                # Capture thinking from assistant messages
+                # Capture thinking and tool_use from assistant messages
                 if event_type == "assistant":
                     for block in event.get("message", {}).get("content", []):
                         if block.get("type") == "thinking":
@@ -952,6 +995,11 @@ class ClaudeCLI:
                             # Ensure thinking is a string (could be dict/list in malformed response)
                             if thinking_text and isinstance(thinking_text, str):
                                 thinking_chunks.append(thinking_text)
+                        # Track tool usage
+                        elif block.get("type") == "tool_use":
+                            tool_name = block.get("name")
+                            if tool_name:
+                                tools_used.add(tool_name)
 
                 # Extract final result
                 if event_type == "result":
@@ -986,7 +1034,7 @@ class ClaudeCLI:
             logger.warning("[CLAUDE CLI] No result in stream-json, using raw output")
             output = raw_output
 
-        return output, model_usage_list, thinking, api_error
+        return output, model_usage_list, thinking, api_error, tools_used
 
     def _infer_operation_type(self, explicit_type: str | None, prompt: str) -> str:
         """Infer operation type from context.
@@ -1104,6 +1152,7 @@ class ClaudeCLI:
         operation_id: str,
         duration_ms: int,
         model_usage: list[ModelUsage],
+        tools_used: set[str] | None = None,
     ) -> None:
         """Complete operation in tracker with model usage stats."""
         try:
@@ -1148,11 +1197,12 @@ class ClaudeCLI:
                     "total_cache_creation_tokens": total_cache_creation,
                     "models_used": list({u.model for u in model_usage}),
                     "model_usage": model_usage_list,
+                    "tools_used": sorted(tools_used) if tools_used else [],
                 },
             )
             logger.info(
                 f"[CLAUDE CLI] Operation completed: {operation_id[:8]} "
-                f"({total_tokens} tokens, ${total_cost:.4f})"
+                f"({total_tokens} tokens, ${total_cost:.4f}, {len(tools_used or [])} tools)"
             )
 
         except Exception as e:
