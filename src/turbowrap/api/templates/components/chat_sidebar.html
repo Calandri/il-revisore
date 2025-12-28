@@ -527,19 +527,6 @@
             </div>
         </div>
 
-        <!-- Fixed Tooltip (positioned with JS) -->
-        <div x-show="activeTooltip" x-cloak
-             class="fixed z-[100] bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none -translate-y-1/2"
-             :style="`top: ${tooltipPosition.top}px; left: ${tooltipPosition.left}px; transform: translateX(-100%) translateY(-50%);`"
-             x-text="tooltipText"
-             x-transition:enter="transition ease-out duration-100"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-75"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0">
-        </div>
-
         <!-- Settings Panel (absolute overlay) -->
         <div x-show="showSettings && activeSession"
              x-cloak
@@ -590,6 +577,19 @@
                 Elimina Chat
             </button>
         </div>
+    </div>
+
+    <!-- Fixed Tooltip (positioned with JS) - OUTSIDE overflow-hidden container -->
+    <div x-show="activeTooltip" x-cloak
+         class="fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none shadow-lg"
+         :style="`top: ${tooltipPosition.top}px; left: ${tooltipPosition.left}px; transform: translateX(-100%) translateY(-50%);`"
+         x-text="tooltipText"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
     </div>
 </aside>
 

@@ -84,25 +84,11 @@ jobs:
               "for i in 1 2 3 4 5 6 7 8 9 10; do if curl -sf http://localhost:8001/api/status; then echo OK; break; fi; echo waiting...; sleep 3; done",
               "curl -sf http://localhost:8001/api/status || { echo FAILED; docker logs turbowrap-staging --tail 20; exit 1; }",
 
-              "echo Step 6: Staging ready!",
+              "echo Step 6: Staging ready on port 8001!",
               "docker ps | grep turbowrap",
-
-              "echo Step 7: AUTO-PROMOTE - Stop old production...",
-              "docker stop turbowrap 2>/dev/null || true",
-              "docker rm turbowrap 2>/dev/null || true",
-
-              "echo Step 8: Start new production on port 8000...",
-              "docker run -d --name turbowrap -p 8000:8000 -v /data:/data -v /mnt/repos:/data/repos -e TURBOWRAP_DB_URL=\"$DB_URL\" -e ANTHROPIC_API_KEY=\"$ANTHROPIC_KEY\" -e GOOGLE_API_KEY=\"$GOOGLE_KEY\" -e GEMINI_API_KEY=\"$GEMINI_KEY\" -e GITHUB_TOKEN=\"$GITHUB_TOKEN\" -e TURBOWRAP_AUTH_COGNITO_REGION=eu-west-3 -e TURBOWRAP_AUTH_COGNITO_USER_POOL_ID=eu-west-3_01f2hPgzp -e TURBOWRAP_AUTH_COGNITO_APP_CLIENT_ID=6k2fu95una3arj8ql4371bkr75 --restart unless-stopped 198584570682.dkr.ecr.eu-west-3.amazonaws.com/turbowrap:latest",
-
-              "echo Step 9: Wait for production to be healthy...",
-              "for i in 1 2 3 4 5 6 7 8 9 10; do if curl -sf http://localhost:8000/api/status; then echo OK; break; fi; echo waiting...; sleep 3; done",
-              "curl -sf http://localhost:8000/api/status || { echo PRODUCTION FAILED; docker logs turbowrap --tail 20; exit 1; }",
-
-              "echo Step 10: Cleanup staging container...",
-              "docker stop turbowrap-staging 2>/dev/null || true",
-              "docker rm turbowrap-staging 2>/dev/null || true",
-
-              "echo === DEPLOYMENT COMPLETE - Production updated ==="
+              "echo === STAGING DEPLOYMENT COMPLETE ===",
+              "echo Staging available at http://localhost:8001",
+              "echo Run the Promote workflow to push to production"
             ]' \
             --query 'Command.CommandId' --output text)
 
@@ -140,6 +126,7 @@ jobs:
             exit 1
           fi
 
-      - name: Verify deployment completed
+      - name: Verify staging deployment
         run: |
-          echo "✅ Production deployed successfully on port 8000"
+          echo "✅ Staging deployed successfully on port 8001"
+          echo "👉 Use the 'Promote to Production' workflow to push to production"

@@ -250,6 +250,7 @@ class ClaudeCLIResult:
     s3_output_url: str | None = None
     s3_thinking_url: str | None = None
     context_stats: ClaudeContextStats | None = None
+    session_id: str | None = None  # Session ID for --resume
 
 
 class ClaudeCLI:
@@ -372,6 +373,8 @@ class ClaudeCLI:
         repo_name: str | None = None,
         user_name: str | None = None,
         operation_details: dict[str, Any] | None = None,
+        # Session persistence
+        resume_session_id: str | None = None,
     ) -> ClaudeCLIResult:
         """Execute Claude CLI and return structured result.
 
@@ -390,9 +393,10 @@ class ClaudeCLI:
             repo_name: Repository name for display in banner
             user_name: User who initiated the operation
             operation_details: Additional metadata for the operation
+            resume_session_id: Session ID to resume (uses --resume instead of --session-id)
 
         Returns:
-            ClaudeCLIResult with output, thinking, usage info, and S3 URLs
+            ClaudeCLIResult with output, thinking, usage info, session_id, and S3 URLs
         """
         start_time = time.time()
 
@@ -421,6 +425,7 @@ class ClaudeCLI:
                 on_stderr=on_stderr,
                 operation=operation,
                 start_time=start_time,
+                resume_session_id=resume_session_id,
             )
         except Exception as e:
             # Ensure operation is always closed on unexpected exceptions
@@ -441,6 +446,7 @@ class ClaudeCLI:
         on_stderr: Callable[[str], Awaitable[None]] | None,
         operation: Any,
         start_time: float,
+        resume_session_id: str | None = None,
     ) -> ClaudeCLIResult:
         """Internal method that runs CLI with operation tracking.
 
@@ -465,8 +471,8 @@ class ClaudeCLI:
                 self._update_operation(operation.operation_id, {"s3_prompt_url": s3_prompt_url})
 
         # Run CLI
-        output, model_usage, thinking, raw_output, error = await self._execute_cli(
-            full_prompt, thinking_budget, on_chunk, on_thinking, on_stderr
+        output, model_usage, thinking, raw_output, error, session_id = await self._execute_cli(
+            full_prompt, thinking_budget, on_chunk, on_thinking, on_stderr, resume_session_id
         )
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -522,6 +528,7 @@ class ClaudeCLI:
                 s3_prompt_url=s3_prompt_url,
                 s3_output_url=s3_output_url,
                 s3_thinking_url=s3_thinking_url,
+                session_id=session_id,
             )
 
         # Auto-complete operation
@@ -543,6 +550,7 @@ class ClaudeCLI:
             s3_prompt_url=s3_prompt_url,
             s3_output_url=s3_output_url,
             s3_thinking_url=s3_thinking_url,
+            session_id=session_id,
         )
 
     def run_sync(
@@ -607,7 +615,8 @@ class ClaudeCLI:
         on_chunk: Callable[[str], Awaitable[None]] | None,
         on_thinking: Callable[[str], Awaitable[None]] | None,
         on_stderr: Callable[[str], Awaitable[None]] | None,
-    ) -> tuple[str | None, list[ModelUsage], str | None, str | None, str | None]:
+        resume_session_id: str | None = None,
+    ) -> tuple[str | None, list[ModelUsage], str | None, str | None, str | None, str | None]:
         """Execute Claude CLI subprocess.
 
         Args:
@@ -616,9 +625,10 @@ class ClaudeCLI:
             on_chunk: Callback for text output chunks.
             on_thinking: Callback for thinking chunks (extended thinking).
             on_stderr: Callback for stderr output.
+            resume_session_id: Session ID to resume (uses --resume instead of --session-id).
 
         Returns:
-            Tuple of (output, model_usage, thinking, raw_output, error)
+            Tuple of (output, model_usage, thinking, raw_output, error, session_id)
         """
         try:
             # Build environment
@@ -638,7 +648,7 @@ class ClaudeCLI:
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
             else:
-                return None, [], None, None, "ANTHROPIC_API_KEY not found"
+                return None, [], None, None, "ANTHROPIC_API_KEY not found", None
 
             # Workaround: Bun file watcher bug on macOS /var/folders
             env["TMPDIR"] = "/tmp"
@@ -648,6 +658,14 @@ class ClaudeCLI:
                 budget = thinking_budget or self.settings.thinking.budget_tokens
                 env["MAX_THINKING_TOKENS"] = str(budget)
                 logger.info(f"[CLAUDE CLI] Extended thinking: {budget} tokens")
+
+            # Session management: resume existing or create new
+            if resume_session_id:
+                session_id = resume_session_id
+                logger.info(f"[CLAUDE CLI] Resuming session: {session_id[:8]}...")
+            else:
+                session_id = str(uuid.uuid4())
+                logger.info(f"[CLAUDE CLI] New session: {session_id[:8]}...")
 
             # Build CLI arguments
             # --include-partial-messages is REQUIRED for real-time streaming!
@@ -660,6 +678,12 @@ class ClaudeCLI:
                 "stream-json",
                 "--include-partial-messages",  # CRITICAL for streaming!
             ]
+
+            # Session: resume existing or start new with specific ID
+            if resume_session_id:
+                args.extend(["--resume", session_id])
+            else:
+                args.extend(["--session-id", session_id])
 
             if self.verbose:
                 args.append("--verbose")
@@ -835,7 +859,7 @@ class ClaudeCLI:
                 logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s!")
                 stderr_task.cancel()
                 process.kill()
-                return None, [], None, None, f"Timeout after {self.timeout}s"
+                return None, [], None, None, f"Timeout after {self.timeout}s", session_id
 
             await stderr_task
 
@@ -871,26 +895,26 @@ class ClaudeCLI:
                 if api_error:
                     error_msg = f"{error_msg}\nAPI Error: {api_error}"
 
-                return output, model_usage, thinking, raw_output, error_msg
+                return output, model_usage, thinking, raw_output, error_msg, session_id
 
             # Normal success path
             if not raw_output:
                 logger.warning("[CLAUDE CLI] No output received from CLI")
-                return None, [], None, None, "No output received from CLI"
+                return None, [], None, None, "No output received from CLI", session_id
 
             output, model_usage, thinking, api_error = self._parse_stream_json(raw_output)
 
             # Return API error as the error field if present
             if api_error:
-                return output, model_usage, thinking, raw_output, api_error
+                return output, model_usage, thinking, raw_output, api_error, session_id
 
-            return output, model_usage, thinking, raw_output, None
+            return output, model_usage, thinking, raw_output, None, session_id
 
         except FileNotFoundError:
-            return None, [], None, None, "Claude CLI not found"
+            return None, [], None, None, "Claude CLI not found", None
         except Exception as e:
             logger.exception(f"[CLAUDE CLI] Exception: {e}")
-            return None, [], None, None, str(e)
+            return None, [], None, None, str(e), None
 
     def _parse_stream_json(
         self, raw_output: str

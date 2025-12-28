@@ -13,6 +13,7 @@ import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,42 @@ from turbowrap.orchestration.cli_runner import GeminiCLI
 S3_BUCKET = "turbowrap-thinking"
 
 logger = logging.getLogger(__name__)
+
+# Session persistence constants
+MAX_SESSION_TOKENS = 180_000  # 180k token limit (20k margin on 200k Opus)
+COMPACTION_MODEL = "flash"  # Gemini Flash for context compaction
+
+
+@dataclass
+class FixSessionContext:
+    """Tracking for session persistence in fix flow.
+
+    Maintains Claude session ID across batches and tracks cumulative token usage.
+    When tokens exceed MAX_SESSION_TOKENS, context is compacted with Gemini Flash
+    and a new session is started with the summary injected.
+    """
+
+    claude_session_id: str | None = None
+    cumulative_input_tokens: int = 0
+    cumulative_output_tokens: int = 0
+    cumulative_cache_read_tokens: int = 0
+    cumulative_cache_creation_tokens: int = 0
+    context_summary: str | None = None  # Summary after compaction
+    compaction_count: int = 0
+
+    @property
+    def cumulative_tokens(self) -> int:
+        """Total tokens used in this session."""
+        return self.cumulative_input_tokens + self.cumulative_output_tokens
+
+    @property
+    def session_tokens(self) -> int:
+        """Tokens representing session context (cached tokens are the session memory)."""
+        return self.cumulative_cache_creation_tokens + self.cumulative_cache_read_tokens
+
+    def needs_compaction(self, threshold: int = MAX_SESSION_TOKENS) -> bool:
+        """Check if session needs compaction based on cumulative tokens."""
+        return self.cumulative_tokens >= threshold
 
 
 class BillingError(Exception):
@@ -470,6 +507,10 @@ class FixOrchestrator:
             successful_issues: list[Issue] = []
             failed_issues: list[Issue] = []
 
+            # Session context for persistence between batches
+            # Single unified session shared between all BE/FE batches
+            session_context = FixSessionContext()
+
             for iteration in range(1, self.max_iterations + 1):
                 # Determine which batches to process this iteration
                 if iteration == 1:
@@ -605,7 +646,10 @@ class FixOrchestrator:
 
                     try:
                         output = await self._run_claude_cli(
-                            prompt, on_chunk=on_chunk_claude, thinking_budget=thinking_budget
+                            prompt,
+                            on_chunk=on_chunk_claude,
+                            thinking_budget=thinking_budget,
+                            session_context=session_context,
                         )
                         if output is None or (output and output.startswith("__ERROR__:")):
                             error_detail = (
@@ -1432,17 +1476,34 @@ The reviewer found issues with the previous fix. Address this feedback:
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
         thinking_budget: int | None = None,
         model: str = "opus",
+        session_context: FixSessionContext | None = None,
     ) -> str | None:
         """Run Claude CLI with prompt and optional streaming callback.
 
         Uses the centralized ClaudeCLI utility for execution.
+        Supports session persistence via session_context.
 
         Args:
             prompt: The prompt to send to Claude
             timeout: Timeout in seconds
             on_chunk: Callback for streaming chunks
             thinking_budget: Override thinking budget (None = use default from config)
+            model: Model alias (opus, sonnet, haiku)
+            session_context: Optional session context for persistence between batches
         """
+        # Check if compaction is needed before this call
+        if session_context and session_context.needs_compaction():
+            await self._compact_context(session_context, on_chunk)
+
+        # Inject context summary into prompt if available
+        if session_context and session_context.context_summary:
+            prompt = f"""## Context from Previous Batches
+{session_context.context_summary}
+
+---
+
+{prompt}"""
+
         # Create ClaudeCLI with appropriate timeout and model
         cli = self._get_claude_cli(timeout, model)
 
@@ -1464,7 +1525,24 @@ The reviewer found issues with the previous fix. Address this feedback:
             on_chunk=on_chunk,
             on_stderr=on_stderr,
             track_operation=False,  # Fix session handles tracking
+            resume_session_id=session_context.claude_session_id if session_context else None,
         )
+
+        # Update session context with results
+        if session_context and result.success:
+            # Store session ID for next batch
+            session_context.claude_session_id = result.session_id
+            # Accumulate token usage
+            for usage in result.model_usage:
+                session_context.cumulative_input_tokens += usage.input_tokens
+                session_context.cumulative_output_tokens += usage.output_tokens
+                session_context.cumulative_cache_read_tokens += usage.cache_read_tokens
+                session_context.cumulative_cache_creation_tokens += usage.cache_creation_tokens
+
+            logger.info(
+                f"[FIX] Session {result.session_id[:8] if result.session_id else 'N/A'}... | "
+                f"Cumulative tokens: {session_context.cumulative_tokens:,} / {MAX_SESSION_TOKENS:,}"
+            )
 
         if not result.success:
             # Check for billing errors
@@ -1493,6 +1571,76 @@ The reviewer found issues with the previous fix. Address this feedback:
             )
 
         return result.output
+
+    async def _compact_context(
+        self,
+        session_context: FixSessionContext,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
+        """Compact session context using Gemini Flash when token limit is reached.
+
+        Creates a summary of the work done so far and resets the session.
+        """
+        logger.info(
+            f"[FIX] Context compaction triggered at {session_context.cumulative_tokens:,} tokens"
+        )
+
+        if on_chunk:
+            await on_chunk(
+                f"\n🔄 **Context Compaction** | "
+                f"{session_context.cumulative_tokens:,} tokens reached limit, "
+                f"summarizing context...\n"
+            )
+
+        compaction_prompt = f"""Summarize the following fix session context for continuity.
+
+Previous context summary (if any):
+{session_context.context_summary or "None - this is the first compaction"}
+
+Key information to preserve:
+- Files modified and their purposes
+- Issues fixed and how
+- Patterns/conventions discovered
+- Any pending work or blockers
+
+Output a concise summary (max 2000 chars) that will help the next batch understand what was done."""
+
+        # Use Gemini Flash for compaction (fast + cheap)
+        gemini = GeminiCLI(
+            model=COMPACTION_MODEL,
+            working_dir=self.repo_path,
+            timeout=60,
+        )
+
+        result = await gemini.run(
+            compaction_prompt,
+            context_id=f"compaction_{session_context.compaction_count}",
+            track_operation=False,
+        )
+
+        if result.success and result.output:
+            session_context.context_summary = result.output[:2000]
+            session_context.claude_session_id = None  # Reset for new session
+            session_context.cumulative_input_tokens = 0
+            session_context.cumulative_output_tokens = 0
+            session_context.cumulative_cache_read_tokens = 0
+            session_context.cumulative_cache_creation_tokens = 0
+            session_context.compaction_count += 1
+
+            logger.info(
+                f"[FIX] Context compacted (#{session_context.compaction_count}), "
+                f"summary: {len(session_context.context_summary)} chars"
+            )
+
+            if on_chunk:
+                await on_chunk(
+                    f"✅ Context compacted (#{session_context.compaction_count}), "
+                    f"starting new session\n\n"
+                )
+        else:
+            logger.warning(f"[FIX] Compaction failed: {result.error}")
+            if on_chunk:
+                await on_chunk(f"⚠️ Compaction failed: {result.error}, continuing anyway\n")
 
     # NOTE: _run_gemini_cli method moved to turbowrap.orchestration.cli_runner.GeminiCLI
     # Now using self.gemini_cli.run() instead
