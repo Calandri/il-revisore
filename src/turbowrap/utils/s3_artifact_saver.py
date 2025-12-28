@@ -23,17 +23,28 @@ class S3ArtifactSaver:
         url = await saver.save_markdown(content, "output", "context_123", {"model": "opus"})
     """
 
-    def __init__(self, bucket: str | None, region: str, prefix: str):
+    # Default expiration for pre-signed URLs (7 days in seconds)
+    DEFAULT_URL_EXPIRATION = 7 * 24 * 60 * 60
+
+    def __init__(
+        self,
+        bucket: str | None,
+        region: str,
+        prefix: str,
+        url_expiration: int | None = None,
+    ):
         """Initialize S3 artifact saver.
 
         Args:
             bucket: S3 bucket name (None to disable saving)
             region: AWS region
             prefix: S3 key prefix for artifacts
+            url_expiration: Pre-signed URL expiration in seconds (default: 7 days)
         """
         self.bucket = bucket
         self.region = region
         self.prefix = prefix
+        self.url_expiration = url_expiration or self.DEFAULT_URL_EXPIRATION
         self._client: Any = None
         self._bucket_region: str | None = None
 
@@ -54,6 +65,21 @@ class S3ArtifactSaver:
             except ClientError:
                 self._bucket_region = self.region
         return self._bucket_region
+
+    def _generate_presigned_url(self, s3_key: str) -> str:
+        """Generate a pre-signed URL for accessing a private S3 object.
+
+        Args:
+            s3_key: The S3 object key
+
+        Returns:
+            Pre-signed HTTPS URL that provides temporary authenticated access
+        """
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": s3_key},
+            ExpiresIn=self.url_expiration,
+        )
 
     async def save_markdown(
         self,
@@ -106,11 +132,10 @@ class S3ArtifactSaver:
                 Body=md_content.encode("utf-8"),
                 ContentType="text/markdown",
             )
-            # Use HTTPS URL for browser access (get actual bucket region from S3)
-            bucket_region = self._get_bucket_region()
-            s3_url = f"https://{self.bucket}.s3.{bucket_region}.amazonaws.com/{s3_key}"
+            # Generate pre-signed URL for authenticated browser access
+            presigned_url = self._generate_presigned_url(s3_key)
             logger.info(f"[S3] Saved {artifact_type} to {s3_key}")
-            return s3_url
+            return presigned_url
         except ClientError as e:
             logger.warning(f"[S3] Upload failed: {e}")
             return None
@@ -145,9 +170,10 @@ class S3ArtifactSaver:
                 Body=content.encode("utf-8"),
                 ContentType="application/x-ndjson",
             )
-            s3_url = f"s3://{self.bucket}/{s3_key}"
+            # Generate pre-signed URL for authenticated browser access
+            presigned_url = self._generate_presigned_url(s3_key)
             logger.info(f"[S3] Saved raw {artifact_type} to {s3_key}")
-            return s3_url
+            return presigned_url
         except ClientError as e:
             logger.warning(f"[S3] Raw upload failed: {e}")
             return None

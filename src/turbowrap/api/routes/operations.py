@@ -459,29 +459,49 @@ async def get_operation_prompt(operation_id: str) -> dict[str, Any]:
                 f"preview_len={len(preview) if preview else 0}"
             )
 
-        # Try to fetch from S3
-        if s3_url and s3_url.startswith("s3://"):
+        # Handle S3 URLs (both legacy s3:// and pre-signed HTTPS)
+        if s3_url:
             try:
-                # Parse s3://bucket/key
-                parts = s3_url.replace("s3://", "").split("/", 1)
-                bucket = parts[0]
-                key = parts[1] if len(parts) > 1 else ""
+                import httpx
 
-                logger.info(f"[PROMPT] Fetching from S3: bucket={bucket}, key={key}")
-                s3 = boto3.client("s3")
-                response = s3.get_object(Bucket=bucket, Key=key)
-                content = response["Body"].read().decode("utf-8")
-                logger.info(f"[PROMPT] S3 fetch successful, content_len={len(content)}")
+                # Pre-signed HTTPS URL - fetch directly
+                if s3_url.startswith("https://"):
+                    logger.info("[PROMPT] Fetching from pre-signed URL")
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(s3_url, timeout=30)
+                        response.raise_for_status()
+                        content = response.text
+                    logger.info(
+                        f"[PROMPT] Pre-signed URL fetch successful, content_len={len(content)}"
+                    )
+                    return {
+                        "status": "ok",
+                        "source": "s3_presigned",
+                        "s3_url": s3_url,
+                        "content": content,
+                    }
 
-                return {
-                    "status": "ok",
-                    "source": "s3",
-                    "s3_url": s3_url,
-                    "content": content,
-                }
+                # Legacy s3:// URL - fetch via boto3
+                if s3_url.startswith("s3://"):
+                    parts = s3_url.replace("s3://", "").split("/", 1)
+                    bucket = parts[0]
+                    key = parts[1] if len(parts) > 1 else ""
+
+                    logger.info(f"[PROMPT] Fetching from S3: bucket={bucket}, key={key}")
+                    s3 = boto3.client("s3")
+                    response = s3.get_object(Bucket=bucket, Key=key)
+                    content = response["Body"].read().decode("utf-8")
+                    logger.info(f"[PROMPT] S3 fetch successful, content_len={len(content)}")
+
+                    return {
+                        "status": "ok",
+                        "source": "s3",
+                        "s3_url": s3_url,
+                        "content": content,
+                    }
+
             except Exception as e:
                 logger.warning(f"Failed to fetch prompt from S3 ({s3_url}): {e}")
-                # Return error with S3 URL for debugging
                 return {
                     "status": "error",
                     "source": "s3",
@@ -556,22 +576,40 @@ async def get_operation_output(operation_id: str) -> dict[str, Any]:
     # Try s3_output_url from result first, then details
     s3_url = result.get("s3_output_url") or details.get("s3_output_url")
 
-    if s3_url and s3_url.startswith("s3://"):
+    if s3_url:
         try:
-            parts = s3_url.replace("s3://", "").split("/", 1)
-            bucket = parts[0]
-            key = parts[1] if len(parts) > 1 else ""
+            import httpx
 
-            s3 = boto3.client("s3")
-            response = s3.get_object(Bucket=bucket, Key=key)
-            content = response["Body"].read().decode("utf-8")
+            # Pre-signed HTTPS URL - fetch directly
+            if s3_url.startswith("https://"):
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(s3_url, timeout=30)
+                    response.raise_for_status()
+                    content = response.text
+                return {
+                    "status": "ok",
+                    "source": "s3_presigned",
+                    "s3_url": s3_url,
+                    "content": content,
+                }
 
-            return {
-                "status": "ok",
-                "source": "s3",
-                "s3_url": s3_url,
-                "content": content,
-            }
+            # Legacy s3:// URL - fetch via boto3
+            if s3_url.startswith("s3://"):
+                parts = s3_url.replace("s3://", "").split("/", 1)
+                bucket = parts[0]
+                key = parts[1] if len(parts) > 1 else ""
+
+                s3 = boto3.client("s3")
+                response = s3.get_object(Bucket=bucket, Key=key)
+                content = response["Body"].read().decode("utf-8")
+
+                return {
+                    "status": "ok",
+                    "source": "s3",
+                    "s3_url": s3_url,
+                    "content": content,
+                }
+
         except Exception as e:
             logger.warning(f"Failed to fetch output from S3: {e}")
 
