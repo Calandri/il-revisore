@@ -1079,6 +1079,13 @@ function chatSidebar() {
         },
 
         /**
+         * Highlight the global context footer to draw attention
+         */
+        highlightFooter() {
+            window.dispatchEvent(new CustomEvent('highlight-footer'));
+        },
+
+        /**
          * Show tooltip at button position
          * @param {string} text - Tooltip text
          * @param {MouseEvent} event - Mouse event from button
