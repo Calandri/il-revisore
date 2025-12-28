@@ -1,5 +1,5 @@
 # TurboWrap - AI-Powered Repository Orchestrator
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Build arguments for commit info
 ARG COMMIT_SHA=unknown
