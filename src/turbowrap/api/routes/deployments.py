@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import time
 import uuid
 from datetime import datetime, timezone
@@ -309,6 +310,13 @@ async def _run_local_command(
         # Ensure PATH includes /usr/local/bin where docker is installed
         env = os.environ.copy()
         env["PATH"] = f"/usr/local/bin:/usr/bin:/bin:{env.get('PATH', '')}"
+
+        # Resolve the executable path - asyncio.create_subprocess_exec doesn't
+        # search the env PATH, it uses the current process PATH
+        executable = command[0]
+        resolved = shutil.which(executable, path=env["PATH"])
+        if resolved:
+            command = [resolved] + command[1:]
 
         process = await asyncio.create_subprocess_exec(
             *command,
