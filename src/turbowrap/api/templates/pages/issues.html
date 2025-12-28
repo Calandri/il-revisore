@@ -94,7 +94,14 @@
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-            <h1 class="text-2xl sm:text-3xl font-bold">Issues</h1>
+            <h1 class="text-2xl sm:text-3xl font-bold flex items-center gap-2 flex-wrap">
+                <span>Issues</span>
+                <template x-if="$store.globalContext?.selectedRepo">
+                    <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
+                        per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
+                    </span>
+                </template>
+            </h1>
             <p class="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">Problemi trovati nelle code review</p>
         </div>
         <div class="flex items-center gap-2">
