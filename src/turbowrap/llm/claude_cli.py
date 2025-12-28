@@ -477,6 +477,7 @@ class ClaudeCLI:
         full_prompt = self._build_full_prompt(prompt)
 
         # Create wrapped chunk callback that publishes to tracker for SSE subscribers
+        # NOTE: Always publish, subscribers can join at any time during the operation
         effective_on_chunk: Callable[[str], Awaitable[None]] | None = on_chunk
         tracker = None
         if operation:
@@ -484,23 +485,20 @@ class ClaudeCLI:
                 from turbowrap.api.services.operation_tracker import get_tracker
 
                 tracker = get_tracker()
-                if tracker.has_subscribers(operation.operation_id):
-                    original_on_chunk = on_chunk
+                original_on_chunk = on_chunk
 
-                    async def _wrapped_on_chunk(chunk: str) -> None:
-                        """Callback that sends chunk to both original callback and SSE subscribers."""
-                        # Call original callback if present
-                        if original_on_chunk:
-                            await original_on_chunk(chunk)
-                        # Publish to tracker for SSE subscribers
-                        await tracker.publish_event(
-                            operation.operation_id, "chunk", {"content": chunk}
-                        )
+                async def _wrapped_on_chunk(chunk: str) -> None:
+                    """Callback that sends chunk to both original callback and SSE subscribers."""
+                    # Call original callback if present
+                    if original_on_chunk:
+                        await original_on_chunk(chunk)
+                    # Publish to tracker for SSE subscribers (they can join anytime)
+                    await tracker.publish_event(operation.operation_id, "chunk", {"content": chunk})
 
-                    effective_on_chunk = _wrapped_on_chunk
-                    logger.debug(
-                        f"[CLAUDE CLI] SSE subscribers active for {operation.operation_id[:8]}"
-                    )
+                effective_on_chunk = _wrapped_on_chunk
+                logger.debug(
+                    f"[CLAUDE CLI] SSE publishing enabled for {operation.operation_id[:8]}"
+                )
             except Exception as e:
                 logger.warning(f"[CLAUDE CLI] Failed to setup SSE publishing: {e}")
 
