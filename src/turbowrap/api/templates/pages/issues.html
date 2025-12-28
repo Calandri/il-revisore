@@ -1853,6 +1853,21 @@ function issuesApp() {
                 console.log(`[FIX] Batch passed, marked ${event.issue_ids.length} issues as completed`);
             }
 
+            // 3c. Log batch commit (atomic commit per-batch)
+            if (eventType === 'fix_batch_committed' && event.commit_sha) {
+                console.log(`[FIX] Batch committed: ${event.commit_sha.slice(0, 7)} (${event.issue_codes?.length || 0} issues)`);
+            }
+
+            // 3d. Handle batch failure (after max retries)
+            if (eventType === 'fix_batch_failed' && event.issue_ids && event.issue_ids.length > 0) {
+                event.issue_ids.forEach(issueId => {
+                    if (this.fixProgress.issueStates[issueId]) {
+                        this.fixProgress.issueStates[issueId].status = 'failed';
+                    }
+                });
+                console.log(`[FIX] Batch failed after retries, marked ${event.issue_ids.length} issues as failed`);
+            }
+
             // 4. Complete issues on session completed
             if (eventType === 'fix_session_completed') {
                 Object.keys(this.fixProgress.issueStates).forEach(id => {
@@ -1952,6 +1967,8 @@ function issuesApp() {
                 'fix_challenger_evaluating': '🧪',
                 'fix_challenger_result': '📊',
                 'fix_challenger_approved': '✅',
+                'fix_batch_committed': '💾',
+                'fix_batch_failed': '⚠️',
                 'fix_regenerating': '🔄',
                 'fix_issue_committing': '💾',
                 'fix_session_completed': '🎉',

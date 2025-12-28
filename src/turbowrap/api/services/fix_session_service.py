@@ -306,6 +306,11 @@ class FixSessionService:
         for issue_result in results:
             db_issue = db.query(Issue).filter(Issue.id == issue_result.issue_id).first()
             if db_issue:
+                # Skip if already resolved (updated per-batch in orchestrator)
+                if db_issue.status == IssueStatus.RESOLVED.value:
+                    completed_count += 1
+                    continue
+
                 if issue_result.status.value == "completed":
                     db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
                     db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]

@@ -79,6 +79,10 @@ class FixEventType(str, Enum):
     # Scope violation events (interactive prompt for user)
     FIX_SCOPE_VIOLATION_PROMPT = "fix_scope_violation_prompt"
 
+    # Batch-level commit events (for atomic per-batch commits)
+    FIX_BATCH_COMMITTED = "fix_batch_committed"
+    FIX_BATCH_FAILED = "fix_batch_failed"
+
 
 class FixChallengerStatus(str, Enum):
     """Status from fix challenger evaluation."""

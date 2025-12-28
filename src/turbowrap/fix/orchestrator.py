@@ -30,7 +30,6 @@ from turbowrap.fix.models import (
     FixSessionResult,
     FixStatus,
     IssueFixResult,
-    ScopeValidationError,
 )
 from turbowrap.llm.claude_cli import ClaudeCLI
 
@@ -733,8 +732,111 @@ class FixOrchestrator:
 
                     if score >= self.satisfaction_threshold:
                         batch_results[batch_id]["passed"] = True
-                        successful_issues.extend(batch)
                         await emit_log("INFO", f"{batch_id} passed with score {score}/100")
+
+                        # === ATOMIC BATCH COMMIT ===
+                        # Commit immediately after batch passes Gemini review
+                        batch_issue_codes = ", ".join(str(i.issue_code) for i in batch)
+                        batch_commit_msg = f"[FIX] {batch_issue_codes}"
+                        commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
+                        commit_prompt = commit_prompt.replace("{commit_message}", batch_commit_msg)
+                        commit_prompt = commit_prompt.replace("{issue_codes}", batch_issue_codes)
+
+                        batch_commit_success = False
+
+                        # Validate workspace scope BEFORE commit (for monorepos)
+                        if request.workspace_path:
+                            uncommitted = await self._get_uncommitted_files()
+                            violations = self._validate_workspace_scope(
+                                uncommitted,
+                                request.workspace_path,
+                                request.allowed_extra_paths,
+                            )
+                            if violations:
+                                await emit_log(
+                                    "ERROR",
+                                    f"Batch {batch_id} scope violation: {violations[:3]}",
+                                )
+                                # Revert changes and skip this batch
+                                await self._revert_uncommitted_changes()
+                                failed_issues.extend(batch)
+                                batch_results[batch_id]["passed"] = False
+                                await safe_emit(
+                                    FixProgressEvent(
+                                        type=FixEventType.FIX_BATCH_FAILED,
+                                        session_id=session_id,
+                                        message=f"   ❌ {batch_id} scope violation",
+                                        issue_ids=[i.id for i in batch],
+                                        issue_codes=[i.issue_code for i in batch],
+                                        error=f"Files outside workspace: {violations[:3]}",
+                                    )
+                                )
+                                continue  # Skip to next batch
+
+                        try:
+                            commit_result = await self._run_claude_cli(
+                                commit_prompt, timeout=30, model="haiku"
+                            )
+                            if commit_result and (
+                                commit_result.startswith("__ERROR__:") or "ERROR:" in commit_result
+                            ):
+                                await emit_log("ERROR", f"Batch {batch_id} commit failed")
+                            else:
+                                # Get commit SHA and update DB
+                                (
+                                    batch_commit_sha,
+                                    batch_modified_files,
+                                    _,
+                                ) = await self._get_git_info()
+                                batch_results[batch_id]["commit_sha"] = batch_commit_sha
+                                batch_results[batch_id]["modified_files"] = batch_modified_files
+
+                                # Update issues in DB to RESOLVED
+                                await self._update_batch_issues_resolved(
+                                    batch, batch_commit_sha, branch_name, session_id
+                                )
+
+                                await emit_log(
+                                    "INFO",
+                                    f"{batch_id} committed: {batch_commit_sha[:7] if batch_commit_sha else 'unknown'}",
+                                )
+
+                                # Emit batch committed event
+                                await safe_emit(
+                                    FixProgressEvent(
+                                        type=FixEventType.FIX_BATCH_COMMITTED,
+                                        session_id=session_id,
+                                        message=f"   💾 {batch_id} COMMITTED ({batch_commit_sha[:7] if batch_commit_sha else 'unknown'})",
+                                        issue_ids=[i.id for i in batch],
+                                        issue_codes=[i.issue_code for i in batch],
+                                        commit_sha=batch_commit_sha,
+                                    )
+                                )
+                                batch_commit_success = True
+                        except Exception as e:
+                            await emit_log(
+                                "ERROR", f"Batch {batch_id} commit error: {str(e)[:100]}"
+                            )
+                        # === END ATOMIC BATCH COMMIT ===
+
+                        # Only add to successful_issues if commit succeeded
+                        if batch_commit_success:
+                            successful_issues.extend(batch)
+                        else:
+                            # Commit failed - add to failed_issues
+                            failed_issues.extend(batch)
+                            batch_results[batch_id]["passed"] = False  # Mark as failed
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_BATCH_FAILED,
+                                    session_id=session_id,
+                                    message=f"   ❌ {batch_id} commit failed",
+                                    issue_ids=[i.id for i in batch],
+                                    issue_codes=[i.issue_code for i in batch],
+                                    error="Git commit failed",
+                                )
+                            )
+
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_CHALLENGER_APPROVED,
@@ -814,155 +916,25 @@ class FixOrchestrator:
             for _batch_id, batch_data in batch_results.items():
                 if not batch_data["passed"]:
                     failed_issues.extend(batch_data["issues"])
-
-            # ============== WORKSPACE SCOPE VALIDATION ==============
-            # Before committing, validate that all modified files are within the workspace scope
-            # This is a CRITICAL safety check for monorepos - prevents Claude from modifying
-            # files outside the designated workspace folder
-            if request.workspace_path:
-                await safe_emit(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_ISSUE_VALIDATING,
-                        session_id=session_id,
-                        message=f"🔒 Validating workspace scope: {request.workspace_path}",
-                    )
-                )
-
-                # Get all uncommitted files (staged, unstaged, untracked)
-                uncommitted_files = await self._get_uncommitted_files()
-                logger.info(f"Uncommitted files: {uncommitted_files}")
-
-                # Check for violations (considering allowed_extra_paths)
-                violations = self._validate_workspace_scope(
-                    uncommitted_files,
-                    request.workspace_path,
-                    request.allowed_extra_paths,
-                )
-
-                if violations:
-                    # Files modified outside workspace - prompt user for approval
-                    logger.warning(
-                        f"Workspace scope violation! Files outside "
-                        f"'{request.workspace_path}': {violations}"
-                    )
-
-                    # Extract unique root directories from violations
-                    violation_dirs: set[str] = set()
-                    for v in violations:
-                        parts = v.split("/")
-                        if len(parts) > 1:
-                            violation_dirs.add(parts[0] + "/")
-                        else:
-                            violation_dirs.add(v)
-
-                    # Emit prompt event for UI
+                    # Emit FIX_BATCH_FAILED for UI
                     await safe_emit(
                         FixProgressEvent(
-                            type=FixEventType.FIX_SCOPE_VIOLATION_PROMPT,
+                            type=FixEventType.FIX_BATCH_FAILED,
                             session_id=session_id,
-                            message=f"⚠️ Modifiche fuori scope: {', '.join(sorted(violation_dirs))}",
-                            scope_violation_dirs=sorted(violation_dirs),
+                            message=f"   ❌ {_batch_id} FAILED after {self.max_iterations} retries",
+                            issue_ids=[i.id for i in batch_data["issues"]],
+                            issue_codes=[i.issue_code for i in batch_data["issues"]],
+                            error=f"Score {batch_data.get('score', 0)} < {self.satisfaction_threshold}",
                         )
                     )
 
-                    # Register question and wait for user response
-                    from turbowrap.api.routes.fix import (
-                        register_scope_question,
-                        wait_for_scope_response,
-                    )
+            # NOTE: Workspace scope validation now happens BEFORE each batch commit (in the loop above)
+            # Each batch is validated and if there are violations, the batch is reverted and skipped
 
-                    question_id = f"scope_{session_id}"
-                    register_scope_question(question_id, violation_dirs, request.repository_id)
+            # Step 3: Commits already done per-batch (atomic commits)
+            # No final commit needed - each batch was committed after passing Gemini review
 
-                    try:
-                        # Wait for user response (5 minute timeout)
-                        response = await asyncio.wait_for(
-                            wait_for_scope_response(question_id),
-                            timeout=300.0,
-                        )
-
-                        if response.allow:
-                            # User approved - add paths to DB and continue
-                            await self._add_allowed_paths(request.repository_id, violation_dirs)
-                            await safe_emit(
-                                FixProgressEvent(
-                                    type=FixEventType.FIX_LOG,
-                                    session_id=session_id,
-                                    message=f"✅ Path aggiunti all'allowlist: {', '.join(sorted(violation_dirs))}",
-                                    log_level="INFO",
-                                )
-                            )
-                        else:
-                            # User rejected - revert and abort
-                            logger.info("User rejected scope violation - reverting changes")
-                            await safe_emit(
-                                FixProgressEvent(
-                                    type=FixEventType.FIX_ISSUE_STREAMING,
-                                    session_id=session_id,
-                                    message="⏪ Reverting all uncommitted changes...",
-                                )
-                            )
-                            await self._revert_uncommitted_changes()
-                            raise ScopeValidationError(violations, request.workspace_path)
-
-                    except asyncio.TimeoutError:
-                        # Timeout - revert and abort
-                        logger.warning("Scope violation prompt timed out - reverting changes")
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_SESSION_ERROR,
-                                session_id=session_id,
-                                error="⏰ Timeout: nessuna risposta al prompt scope violation",
-                            )
-                        )
-                        await self._revert_uncommitted_changes()
-                        raise ScopeValidationError(violations, request.workspace_path)
-
-                await safe_emit(
-                    FixProgressEvent(
-                        type=FixEventType.FIX_ISSUE_STREAMING,
-                        session_id=session_id,
-                        message=f"✅ Workspace scope validated "
-                        f"({len(uncommitted_files)} files in scope)",
-                    )
-                )
-
-            # Step 3: Commit all changes
-            await safe_emit(
-                FixProgressEvent(
-                    type=FixEventType.FIX_ISSUE_COMMITTING,
-                    session_id=session_id,
-                    message="Committing all changes...",
-                )
-            )
-
-            issue_codes = ", ".join(str(i.issue_code) for i in issues[:3])
-            if len(issues) > 3:
-                issue_codes += f" (+{len(issues) - 3} more)"
-
-            # Commit using agent
-            commit_message = f"[FIX] {issue_codes}"
-            commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
-            commit_prompt = commit_prompt.replace("{commit_message}", commit_message)
-            commit_prompt = commit_prompt.replace("{issue_codes}", issue_codes)
-            commit_result = await self._run_claude_cli(commit_prompt, timeout=30, model="haiku")
-
-            # Check commit result - handle both __ERROR__: (from CLI wrapper) and ERROR: (from agent)
-            if commit_result is None or (commit_result and commit_result.startswith("__ERROR__:")):
-                error_msg = (
-                    commit_result.replace("__ERROR__: ", "") if commit_result else "Commit failed"
-                )
-                logger.error(f"[FIX] Git commit failed: {error_msg}")
-                raise RuntimeError(f"Git commit failed: {error_msg}")
-            if commit_result and "ERROR:" in commit_result:
-                # Agent reported an error in its output
-                error_start = commit_result.find("ERROR:")
-                error_msg = commit_result[error_start:].strip()
-                logger.error(f"[FIX] Git commit agent error: {error_msg}")
-                raise RuntimeError(f"Git commit failed: {error_msg}")
-
-            # Step 4: Collect git info and build results
-            commit_sha, modified_files, _ = await self._get_git_info()
+            # Step 4: Collect results from batch commits
             fix_explanation = self._build_fix_explanation(successful_issues, last_gemini_output)
 
             # Count issues based on batch_results (Gemini approval is the source of truth)
@@ -976,24 +948,37 @@ class FixOrchestrator:
                 f"Fix results: {actually_fixed_count} successful, "
                 f"{failed_count} failed (based on batch_results)"
             )
-            logger.info(f"Modified files in commit: {modified_files}")
 
             # Create IssueFixResult for SUCCESSFUL issues (from passed batches)
+            # Each issue gets its batch's commit_sha
             for issue in successful_issues:
                 issue_file = str(issue.file)
                 # Get diff for display (best effort, doesn't affect status)
                 fix_code = await self._get_diff_for_file(issue_file)
 
+                # Find which batch this issue was in to get commit info
+                issue_commit_sha = None
+                issue_modified_files: list[str] = []
+                issue_codes_for_msg = str(issue.issue_code)
+                for _batch_id, data in batch_results.items():
+                    if issue in data.get("issues", []):
+                        issue_commit_sha = data.get("commit_sha")
+                        issue_modified_files = data.get("modified_files", [])
+                        issue_codes_for_msg = ", ".join(
+                            str(i.issue_code) for i in data.get("issues", [])
+                        )
+                        break
+
                 issue_result = IssueFixResult(
                     issue_id=str(issue.id),
                     issue_code=str(issue.issue_code),
                     status=FixStatus.COMPLETED,
-                    commit_sha=commit_sha,
-                    commit_message=f"[FIX] {issue_codes}",
+                    commit_sha=issue_commit_sha,
+                    commit_message=f"[FIX] {issue_codes_for_msg}",
                     changes_made=f"Fixed {issue.title}",
                     fix_code=fix_code,
                     fix_explanation=fix_explanation,
-                    fix_files_modified=modified_files,
+                    fix_files_modified=issue_modified_files,
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                 )
@@ -1737,6 +1722,57 @@ The reviewer found issues with the previous fix. Address this feedback:
 
         # Run in thread pool to avoid blocking async loop
         import asyncio
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, update_db)
+
+    async def _update_batch_issues_resolved(
+        self,
+        issues: list[Issue],
+        commit_sha: str | None,
+        branch_name: str,
+        session_id: str,
+    ) -> None:
+        """Update issues to RESOLVED after successful batch commit.
+
+        Uses same pattern as _update_allowed_extra_paths - runs DB update
+        in thread pool to avoid blocking async loop.
+
+        Args:
+            issues: Issues in this batch
+            commit_sha: Git commit SHA
+            branch_name: Branch name for the fix
+            session_id: Fix session ID
+        """
+        from datetime import datetime
+
+        from turbowrap.db.models import Issue as IssueModel
+        from turbowrap.db.models import IssueStatus
+        from turbowrap.db.session import get_session_local
+
+        def update_db() -> None:
+            SessionLocal = get_session_local()
+            db = SessionLocal()
+            try:
+                for issue in issues:
+                    db_issue = db.query(IssueModel).filter(IssueModel.id == issue.id).first()
+                    if db_issue:
+                        db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
+                        db_issue.resolution_note = (  # type: ignore[assignment]
+                            f"Fixed in commit {commit_sha[:7]}" if commit_sha else "Fixed"
+                        )
+                        db_issue.fix_commit_sha = commit_sha  # type: ignore[assignment]
+                        db_issue.fix_branch = branch_name  # type: ignore[assignment]
+                        db_issue.fix_session_id = session_id  # type: ignore[assignment]
+                        db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+                        db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
+                        db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
+                db.commit()
+                logger.info(
+                    f"Updated {len(issues)} issues to RESOLVED (commit {commit_sha[:7] if commit_sha else 'unknown'})"
+                )
+            finally:
+                db.close()
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, update_db)
