@@ -416,83 +416,100 @@ async def get_operation_prompt(operation_id: str) -> dict[str, Any]:
 
     Fetches from S3 if s3_prompt_url is available, otherwise returns prompt_preview.
     """
+    import traceback
+
     import boto3
 
-    tracker = get_tracker()
-    s3_url = None
-    preview = None
+    try:
+        tracker = get_tracker()
+        s3_url = None
+        preview = None
 
-    # Check active operations
-    op = next((o for o in tracker.get_active() if o.operation_id == operation_id), None)
+        # Check active operations
+        op = next((o for o in tracker.get_active() if o.operation_id == operation_id), None)
 
-    # If not active, check history
-    if not op:
-        from ...db.models import Operation as DBOperation
-        from ...db.session import get_session_local
+        # If not active, check history
+        if not op:
+            from ...db.models import Operation as DBOperation
+            from ...db.session import get_session_local
 
-        SessionLocal = get_session_local()
-        db = SessionLocal()
-        try:
-            db_op = db.query(DBOperation).filter(DBOperation.operation_id == operation_id).first()
-            if db_op and db_op.details:
-                details = db_op.details if isinstance(db_op.details, dict) else {}
-                s3_url = details.get("s3_prompt_url")
-                preview = details.get("prompt_preview")
-            else:
-                return {"status": "not_found", "content": f"Operation {operation_id} not found"}
-        finally:
-            db.close()
-    else:
-        details = op.details or {}
-        s3_url = details.get("s3_prompt_url")
-        preview = details.get("prompt_preview")
-        logger.debug(
-            f"[PROMPT] Operation {operation_id[:8]} details: s3_url={s3_url}, preview_len={len(preview) if preview else 0}"
-        )
+            SessionLocal = get_session_local()
+            db = SessionLocal()
+            try:
+                db_op = (
+                    db.query(DBOperation).filter(DBOperation.operation_id == operation_id).first()
+                )
+                if db_op and db_op.details:
+                    details = db_op.details if isinstance(db_op.details, dict) else {}
+                    s3_url = details.get("s3_prompt_url")
+                    preview = details.get("prompt_preview")
+                else:
+                    return {"status": "not_found", "content": f"Operation {operation_id} not found"}
+            finally:
+                db.close()
+        else:
+            details = op.details or {}
+            s3_url = details.get("s3_prompt_url")
+            preview = details.get("prompt_preview")
+            logger.debug(
+                f"[PROMPT] Operation {operation_id[:8]} details: s3_url={s3_url}, "
+                f"preview_len={len(preview) if preview else 0}"
+            )
 
-    # Try to fetch from S3
-    if s3_url and s3_url.startswith("s3://"):
-        try:
-            # Parse s3://bucket/key
-            parts = s3_url.replace("s3://", "").split("/", 1)
-            bucket = parts[0]
-            key = parts[1] if len(parts) > 1 else ""
+        # Try to fetch from S3
+        if s3_url and s3_url.startswith("s3://"):
+            try:
+                # Parse s3://bucket/key
+                parts = s3_url.replace("s3://", "").split("/", 1)
+                bucket = parts[0]
+                key = parts[1] if len(parts) > 1 else ""
 
-            s3 = boto3.client("s3")
-            response = s3.get_object(Bucket=bucket, Key=key)
-            content = response["Body"].read().decode("utf-8")
+                logger.info(f"[PROMPT] Fetching from S3: bucket={bucket}, key={key}")
+                s3 = boto3.client("s3")
+                response = s3.get_object(Bucket=bucket, Key=key)
+                content = response["Body"].read().decode("utf-8")
+                logger.info(f"[PROMPT] S3 fetch successful, content_len={len(content)}")
 
+                return {
+                    "status": "ok",
+                    "source": "s3",
+                    "s3_url": s3_url,
+                    "content": content,
+                }
+            except Exception as e:
+                logger.warning(f"Failed to fetch prompt from S3 ({s3_url}): {e}")
+                # Return error with S3 URL for debugging
+                return {
+                    "status": "error",
+                    "source": "s3",
+                    "s3_url": s3_url,
+                    "error": str(e),
+                    "content": preview or f"S3 fetch failed: {e}",
+                }
+
+        # Fallback to preview
+        if preview:
             return {
                 "status": "ok",
-                "source": "s3",
-                "s3_url": s3_url,
-                "content": content,
-            }
-        except Exception as e:
-            logger.warning(f"Failed to fetch prompt from S3 ({s3_url}): {e}")
-            # Return error with S3 URL for debugging
-            return {
-                "status": "error",
-                "source": "s3",
-                "s3_url": s3_url,
-                "error": str(e),
-                "content": preview or f"S3 fetch failed: {e}",
+                "source": "preview",
+                "content": preview,
             }
 
-    # Fallback to preview
-    if preview:
+        # No prompt available
         return {
-            "status": "ok",
-            "source": "preview",
-            "content": preview,
+            "status": "no_prompt",
+            "source": "none",
+            "content": f"No prompt available for operation {operation_id[:8]}. S3 URL not set.",
         }
 
-    # No prompt available
-    return {
-        "status": "no_prompt",
-        "source": "none",
-        "content": f"No prompt available for operation {operation_id[:8]}. S3 URL not set.",
-    }
+    except Exception as e:
+        logger.error(f"[PROMPT] Unhandled error for {operation_id}: {e}\n{traceback.format_exc()}")
+        return {
+            "status": "error",
+            "source": "exception",
+            "error": str(e),
+            "content": f"Error: {e}",
+        }
 
 
 @router.get("/{operation_id}/output")
