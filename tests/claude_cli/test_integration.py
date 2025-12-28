@@ -39,11 +39,13 @@ class TestResultStructure:
                 "Thinking content",
                 '{"type":"result"}',
                 None,  # No error
+                "test-session-id",
+                set(),  # tools_used
             )
             with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
                 mock_s3.return_value = "s3://bucket/key"
                 cli = ClaudeCLI(model="opus")
-                result = await cli.run("Test prompt")
+                result = await cli.run("Test prompt", operation_type="test", repo_name="test-repo")
 
         assert result.success is True
         assert result.output == "Output text"
@@ -62,11 +64,13 @@ class TestResultStructure:
                 None,
                 None,
                 "API Error: Billing issue",
+                None,  # session_id
+                set(),  # tools_used
             )
             with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
                 mock_s3.return_value = None
                 cli = ClaudeCLI(model="opus")
-                result = await cli.run("Test prompt")
+                result = await cli.run("Test prompt", operation_type="test", repo_name="test-repo")
 
         assert result.success is False
         assert result.error == "API Error: Billing issue"
@@ -82,11 +86,13 @@ class TestResultStructure:
                 None,
                 None,
                 "Timeout after 180s",
+                None,  # session_id
+                set(),  # tools_used
             )
             with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
                 mock_s3.return_value = None
                 cli = ClaudeCLI(model="opus", timeout=180)
-                result = await cli.run("Test prompt")
+                result = await cli.run("Test prompt", operation_type="test", repo_name="test-repo")
 
         assert result.success is False
         assert "Timeout" in result.error
@@ -107,14 +113,14 @@ class TestSyncWrapper:
         with patch.object(ClaudeCLI, "_execute_cli") as mock_execute:
 
             async def mock_execute_cli(*args, **kwargs):
-                return ("Sync output", [], None, None, None)
+                return ("Sync output", [], None, None, None, "test-session", set())
 
             mock_execute.side_effect = mock_execute_cli
             with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
                 mock_s3.return_value = "s3://bucket/key"
 
                 cli = ClaudeCLI(model="opus")
-                result = cli.run_sync("Test prompt")
+                result = cli.run_sync("Test prompt", operation_type="test", repo_name="test-repo")
 
         assert result.success is True
         assert result.output == "Sync output"
@@ -130,6 +136,8 @@ class TestSyncWrapper:
         params = list(sig.parameters.keys())
 
         assert "prompt" in params
+        assert "operation_type" in params
+        assert "repo_name" in params
         assert "context_id" in params
         assert "thinking_budget" in params
         assert "save_prompt" in params
@@ -237,7 +245,7 @@ class TestConcurrencyScenarios:
 
                 async def mock_exec(*args, **kwargs):
                     await asyncio.sleep(0.01)  # Simulate work
-                    return (f"Output {index}", [], None, None, None)
+                    return (f"Output {index}", [], None, None, None, "test-session", set())
 
                 mock_execute.side_effect = mock_exec
 
@@ -246,7 +254,9 @@ class TestConcurrencyScenarios:
                 ) as mock_s3:
                     mock_s3.return_value = None
                     cli = ClaudeCLI(model="opus")
-                    result = await cli.run(f"Prompt {index}")
+                    result = await cli.run(
+                        f"Prompt {index}", operation_type="test", repo_name="test-repo"
+                    )
                     return (index, result.output)
 
         # Run 5 concurrent executions
@@ -282,12 +292,12 @@ class TestTimeoutScenarios:
     async def test_timeout_returns_proper_error(self):
         """Timeout returns structured error result."""
         with patch.object(ClaudeCLI, "_execute_cli") as mock_execute:
-            mock_execute.return_value = (None, [], None, None, "Timeout after 5s")
+            mock_execute.return_value = (None, [], None, None, "Timeout after 5s", None, set())
 
             with patch.object(S3ArtifactSaver, "save_markdown", new_callable=AsyncMock) as mock_s3:
                 mock_s3.return_value = None
                 cli = ClaudeCLI(model="opus", timeout=5)
-                result = await cli.run("Test")
+                result = await cli.run("Test", operation_type="test", repo_name="test-repo")
 
         assert result.success is False
         assert "Timeout" in result.error

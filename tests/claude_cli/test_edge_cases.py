@@ -34,7 +34,7 @@ class TestUnicodeAndSpecialCharacters:
             '"分析结果：代码质量很好！🎉 Résumé: très bien!","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert "分析结果" in output
         assert "🎉" in output
@@ -55,7 +55,7 @@ class TestUnicodeAndSpecialCharacters:
             '{"type":"result","result":"Done","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert "🤔" in thinking
         assert "Punti chiave" in thinking
@@ -68,7 +68,7 @@ class TestUnicodeAndSpecialCharacters:
             '{"type":"result","result":"Code: `def foo():\\n    return \\"bar\\"`","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert "def foo():" in output
         assert api_error is None
@@ -82,7 +82,7 @@ class TestUnicodeAndSpecialCharacters:
         )
         raw_output = '{"type":"result","result":"' + code_content + '","modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert "```python" in output
         assert "def hello():" in output
@@ -103,7 +103,7 @@ class TestMalformedResponses:
         cli = ClaudeCLI(model="opus")
         raw_output = """{"type":"result","result":"Partial outpu"""  # Truncated
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         # Should fallback to raw output
         assert output == raw_output
@@ -118,7 +118,7 @@ INVALID LINE HERE
 {"another": "invalid
 {"type":"result","result":"Success","modelUsage":{}}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Success"
         assert api_error is None
@@ -128,7 +128,7 @@ INVALID LINE HERE
         cli = ClaudeCLI(model="opus")
         raw_output = """{"type":"result","result":"","modelUsage":{}}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         # Empty string is falsy, so current impl falls back to raw
         assert output is not None
@@ -141,7 +141,7 @@ INVALID LINE HERE
 {"type":"content_block_delta","delta":{"text":"Some output"}}
 {"type":"message_stop"}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         # Should fallback to raw
         assert output == raw_output
@@ -151,7 +151,7 @@ INVALID LINE HERE
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":null,"modelUsage":null,"is_error":null}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         # Should handle gracefully
         assert output == raw_output or output == ""
@@ -174,7 +174,7 @@ class TestLargeOutputs:
         large_content = "x" * 100000
         raw_output = f'{{"type":"result","result":"{large_content}","modelUsage":{{}}}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert len(output) == 100000
         assert api_error is None
@@ -195,7 +195,7 @@ class TestLargeOutputs:
         chunks.append('{"type":"result","result":"Final answer","modelUsage":{}}')
         raw_output = "\n".join(chunks)
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Final answer"
         assert thinking is not None
@@ -215,7 +215,7 @@ class TestLargeOutputs:
         )
         raw_output = f'{{"type":"result","result":"Done","modelUsage":{{{model_usage_json}}}}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert len(model_usage) == 3
         total_input = sum(m.input_tokens for m in model_usage)
@@ -297,7 +297,7 @@ class TestModelUsageParsing:
             '"claude-opus":{"inputTokens":0,"outputTokens":0,"costUSD":0}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert len(model_usage) == 1
         assert model_usage[0].input_tokens == 0
@@ -311,7 +311,7 @@ class TestModelUsageParsing:
             '"claude-opus":{"inputTokens":100,"outputTokens":50}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert len(model_usage) == 1
         assert model_usage[0].cost_usd == 0.0  # Default
@@ -325,7 +325,7 @@ class TestModelUsageParsing:
             '"costUSD":15.50}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert model_usage[0].input_tokens == 199999
         assert model_usage[0].output_tokens == 100000
@@ -346,7 +346,7 @@ class TestExtremeEdgeCases:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Hello\\u0000World","modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
         assert api_error is None
@@ -359,7 +359,7 @@ class TestExtremeEdgeCases:
             'Not really an error","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
         assert api_error is None  # Should NOT be detected as error
@@ -369,7 +369,7 @@ class TestExtremeEdgeCases:
         cli = ClaudeCLI(model="opus")
         raw_output = '\ufeff{"type":"result","result":"BOM test","modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
 
@@ -381,7 +381,7 @@ class TestExtremeEdgeCases:
             '{"type":"result","result":"Done","modelUsage":{}}\r\n'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Done"
         assert api_error is None
@@ -396,7 +396,7 @@ class TestExtremeEdgeCases:
             '{"type":"result","result":"ABC","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
 
@@ -406,7 +406,7 @@ class TestExtremeEdgeCases:
         nested = '{"a":' * 50 + '"deep"' + "}" * 50
         raw_output = f'{{"type":"result","result":{nested},"modelUsage":{{}}}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is None
 
@@ -417,7 +417,7 @@ class TestExtremeEdgeCases:
             '{"type":"result","result":"oops",}\n{"type":"result","result":"valid","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "valid"
 
@@ -427,7 +427,7 @@ class TestExtremeEdgeCases:
         result_text = "The function handles error cases correctly. No billing issues found."
         raw_output = f'{{"type":"result","result":"{result_text}","modelUsage":{{}}}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is None
         assert "error" in output.lower()
@@ -440,7 +440,7 @@ class TestExtremeEdgeCases:
             '"model":{"inputTokens":-100,"outputTokens":-50,"costUSD":-5.00}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert len(model_usage) == 1
         assert model_usage[0].input_tokens == -100
@@ -457,7 +457,7 @@ class TestExtremeEdgeCases:
             '"modelUsage":{"m3":{"inputTokens":300,"outputTokens":150}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Third result"
         assert len(model_usage) == 3
@@ -598,7 +598,7 @@ class TestOutputParsingRobustness:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":["item1","item2"],"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
 
@@ -607,7 +607,7 @@ class TestOutputParsingRobustness:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":{"key":"value"},"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
 
@@ -616,7 +616,7 @@ class TestOutputParsingRobustness:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":42,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
 
@@ -625,7 +625,7 @@ class TestOutputParsingRobustness:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output is not None
 
@@ -638,7 +638,7 @@ class TestOutputParsingRobustness:
             '{"type":"result","result":"Done","modelUsage":{}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Done"
 
@@ -650,7 +650,7 @@ class TestOutputParsingRobustness:
             '"model":{"inputTokens":"100","outputTokens":"50"}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Done"
 
@@ -662,7 +662,7 @@ class TestOutputParsingRobustness:
             '"model":{"inputTokens":100,"outputTokens":50,"costUSD":"0.005"}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Done"
 
@@ -674,7 +674,7 @@ class TestOutputParsingRobustness:
             '"":{"inputTokens":100,"outputTokens":50}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Done"
         assert len(model_usage) == 1
@@ -703,7 +703,7 @@ class TestRealWorldStreamJson:
 {"type":"message_stop"}
 {"type":"result","result":"Here is my analysis","modelUsage":{"claude-opus-4-5-20251101":{"inputTokens":1234,"outputTokens":567,"cacheReadInputTokens":100,"cacheCreationInputTokens":50,"costUSD":0.0523}},"is_error":false}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Here is my analysis"
         assert api_error is None
@@ -732,7 +732,7 @@ class TestRealWorldStreamJson:
             '"inputTokens":500,"outputTokens":200}}}'
         )
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert "Based on my analysis" in output
         assert thinking is not None
@@ -750,7 +750,7 @@ class TestRealWorldStreamJson:
 "text":"After reading the file, I found"}}
 {"type":"result","result":"After reading the file, I found the issue.","modelUsage":{}}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert "After reading the file" in output
         assert api_error is None

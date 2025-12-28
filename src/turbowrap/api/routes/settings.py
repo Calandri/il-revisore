@@ -1,8 +1,15 @@
 """Settings routes."""
 
-from fastapi import APIRouter, Depends
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml  # type: ignore[import-untyped]
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ...chat_cli import AgentInfo, get_agent_loader
 from ...config import get_settings as get_config
 from ...db.models import Setting
 from ..deps import get_db
@@ -228,3 +235,103 @@ def get_model_setting(db: Session, key: str, default: str) -> str:
     """
     setting = _get_setting(db, key)
     return str(setting.value) if setting and setting.value else default
+
+
+# =============================================================================
+# AGENTS ENDPOINTS
+# =============================================================================
+
+
+class AgentContentResponse(BaseModel):
+    """Agent content with full details."""
+
+    name: str
+    description: str
+    model: str
+    version: str
+    color: str
+    tokens: int
+    path: str
+    raw_content: str  # Full file content (frontmatter + body)
+    instructions: str  # Body only (markdown after frontmatter)
+
+
+class AgentUpdateRequest(BaseModel):
+    """Request to update an agent."""
+
+    content: str  # Full file content to save
+
+
+@router.get("/agents", response_model=list[AgentInfo])
+def list_agents() -> list[AgentInfo]:
+    """List all available agents."""
+    loader = get_agent_loader()
+    return loader.list_agents(reload=True)
+
+
+@router.get("/agents/{name}", response_model=AgentContentResponse)
+def get_agent(name: str) -> AgentContentResponse:
+    """Get agent details including full content."""
+    loader = get_agent_loader()
+    agent = loader.get_agent(name)
+
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+    # Read raw content from file
+    path = Path(agent.info["path"])
+    raw_content = path.read_text(encoding="utf-8")
+
+    return AgentContentResponse(
+        name=agent.info["name"],
+        description=agent.info["description"],
+        model=agent.info["model"],
+        version=agent.info["version"],
+        color=agent.info["color"],
+        tokens=agent.info["tokens"],
+        path=agent.info["path"],
+        raw_content=raw_content,
+        instructions=agent.instructions,
+    )
+
+
+@router.put("/agents/{name}")
+def update_agent(name: str, data: AgentUpdateRequest) -> dict[str, str]:
+    """Update an agent's content."""
+    loader = get_agent_loader()
+    path = loader.get_agent_path(name)
+
+    if not path:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+    # Validate content has proper frontmatter
+    pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
+    match = re.match(pattern, data.content, re.DOTALL)
+
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid format: content must have YAML frontmatter between --- delimiters",
+        )
+
+    # Validate YAML frontmatter
+    try:
+        metadata: dict[str, Any] = yaml.safe_load(match.group(1)) or {}
+        if not metadata.get("name"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid frontmatter: 'name' field is required",
+            )
+    except yaml.YAMLError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid YAML frontmatter: {e}",
+        )
+
+    # Write content to file
+    path.write_text(data.content, encoding="utf-8")
+
+    # Clear cache to reload
+    loader._cache.pop(name, None)
+
+    return {"status": "ok", "message": f"Agent '{name}' updated successfully"}

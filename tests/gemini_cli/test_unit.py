@@ -4,15 +4,14 @@ Unit tests for GeminiCLI utility.
 Run with: uv run pytest tests/gemini_cli/test_unit.py -v
 
 These tests verify isolated components of GeminiCLI with mocked dependencies:
-1. Time string parsing (_parse_time_string)
-2. Token count parsing (_parse_token_count)
-3. Stats output parsing (_parse_stats_output)
-4. GeminiModelUsage dataclass
-5. GeminiSessionStats dataclass and properties
-6. GeminiCLIResult dataclass
-7. Model alias resolution
-8. Configuration properties
-9. Edge cases and error handling
+1. Time string parsing (parse_time_string from mixins)
+2. Token count parsing (parse_token_count from mixins)
+3. GeminiModelUsage dataclass
+4. GeminiSessionStats dataclass and properties
+5. GeminiCLIResult dataclass
+6. Model alias resolution
+7. Configuration properties
+8. Edge cases and error handling
 """
 
 from dataclasses import asdict
@@ -26,11 +25,9 @@ from turbowrap.llm.gemini import (
     GeminiCLIResult,
     GeminiModelUsage,
     GeminiSessionStats,
-    _parse_stats_output,
     _parse_stream_json_stats,
-    _parse_time_string,
-    _parse_token_count,
 )
+from turbowrap.llm.mixins import parse_time_string, parse_token_count
 
 # =============================================================================
 # Time String Parsing
@@ -43,36 +40,36 @@ class TestParseTimeString:
 
     def test_seconds_only(self):
         """Parse seconds only format."""
-        assert _parse_time_string("6.2s") == 6.2
+        assert parse_time_string("6.2s") == 6.2
 
     def test_minutes_and_seconds(self):
         """Parse minutes and seconds format."""
-        result = _parse_time_string("2m 54s")
+        result = parse_time_string("2m 54s")
         assert result == 174.0  # 2*60 + 54
 
     def test_minutes_only(self):
         """Parse minutes only format."""
-        assert _parse_time_string("5m") == 300.0
+        assert parse_time_string("5m") == 300.0
 
     def test_zero_seconds(self):
         """Parse 0s format."""
-        assert _parse_time_string("0s") == 0.0
+        assert parse_time_string("0s") == 0.0
 
     def test_decimal_seconds(self):
         """Parse decimal seconds."""
-        assert _parse_time_string("3.14s") == 3.14
+        assert parse_time_string("3.14s") == 3.14
 
     def test_empty_string(self):
         """Empty string should return 0."""
-        assert _parse_time_string("") == 0.0
+        assert parse_time_string("") == 0.0
 
     def test_no_unit(self):
         """String without unit should return 0."""
-        assert _parse_time_string("42") == 0.0
+        assert parse_time_string("42") == 0.0
 
     def test_large_time(self):
         """Parse large time values."""
-        result = _parse_time_string("10m 30s")
+        result = parse_time_string("10m 30s")
         assert result == 630.0
 
 
@@ -87,135 +84,27 @@ class TestParseTokenCount:
 
     def test_simple_number(self):
         """Parse simple number."""
-        assert _parse_token_count("1234") == 1234
+        assert parse_token_count("1234") == 1234
 
     def test_comma_separated(self):
         """Parse comma-separated number."""
-        assert _parse_token_count("1,435") == 1435
+        assert parse_token_count("1,435") == 1435
 
     def test_large_comma_number(self):
         """Parse large comma-separated number."""
-        assert _parse_token_count("10,449") == 10449
+        assert parse_token_count("10,449") == 10449
 
     def test_empty_string(self):
         """Empty string should return 0."""
-        assert _parse_token_count("") == 0
+        assert parse_token_count("") == 0
 
     def test_with_whitespace(self):
         """Handle whitespace."""
-        assert _parse_token_count("  1234  ") == 1234
+        assert parse_token_count("  1234  ") == 1234
 
     def test_zero(self):
         """Parse zero."""
-        assert _parse_token_count("0") == 0
-
-
-# =============================================================================
-# Stats Output Parsing
-# =============================================================================
-
-
-@pytest.mark.unit
-class TestParseStatsOutput:
-    """Unit tests for _parse_stats_output function."""
-
-    def test_parse_session_id(self):
-        """Parse session ID from stats."""
-        stats_output = "Session Stats\nSession ID: 5023644b-f81c-4fc7-8d0d-f61906c4a4d5"
-        stats = _parse_stats_output(stats_output)
-        assert stats.session_id == "5023644b-f81c-4fc7-8d0d-f61906c4a4d5"
-
-    def test_parse_tool_calls(self):
-        """Parse tool calls from stats."""
-        stats_output = "Tool Calls: 5 ( \u2713 4 x 1 )"
-        stats = _parse_stats_output(stats_output)
-        assert stats.tool_calls_total == 5
-        assert stats.tool_calls_success == 4
-        assert stats.tool_calls_failed == 1
-
-    def test_parse_success_rate(self):
-        """Parse success rate from stats."""
-        stats_output = "Success Rate: 80.0%"
-        stats = _parse_stats_output(stats_output)
-        assert stats.success_rate == 80.0
-
-    def test_parse_wall_time(self):
-        """Parse wall time from stats."""
-        stats_output = "Wall Time: 2m 54s"
-        stats = _parse_stats_output(stats_output)
-        assert stats.wall_time_seconds == 174.0
-
-    def test_parse_agent_active(self):
-        """Parse agent active time from stats."""
-        stats_output = "Agent Active: 6.2s"
-        stats = _parse_stats_output(stats_output)
-        assert stats.agent_active_seconds == 6.2
-
-    def test_parse_api_time(self):
-        """Parse API time from stats."""
-        stats_output = "API Time: 6.2s (100.0%)"
-        stats = _parse_stats_output(stats_output)
-        assert stats.api_time_seconds == 6.2
-        assert stats.api_time_percent == 100.0
-
-    def test_parse_tool_time(self):
-        """Parse tool time from stats."""
-        stats_output = "Tool Time: 0s (0.0%)"
-        stats = _parse_stats_output(stats_output)
-        assert stats.tool_time_seconds == 0.0
-        assert stats.tool_time_percent == 0.0
-
-    def test_parse_model_usage_single(self):
-        """Parse single model usage line."""
-        stats_output = """Model Usage                 Reqs   Input Tokens   Cache Reads  Output Tokens
-────────────────────────────────────────────────────────────────────────────
-gemini-2.5-flash-lite          1          1,435             0             12"""
-        stats = _parse_stats_output(stats_output)
-        assert len(stats.model_usage) == 1
-        assert stats.model_usage[0].model == "gemini-2.5-flash-lite"
-        assert stats.model_usage[0].requests == 1
-        assert stats.model_usage[0].input_tokens == 1435
-        assert stats.model_usage[0].cache_reads == 0
-        assert stats.model_usage[0].output_tokens == 12
-
-    def test_parse_model_usage_multiple(self):
-        """Parse multiple model usage lines."""
-        stats_output = """Model Usage                 Reqs   Input Tokens   Cache Reads  Output Tokens
-────────────────────────────────────────────────────────────────────────────
-gemini-2.5-flash-lite          1          1,435             0             12
-gemini-3-flash-preview         1         10,449             0             50"""
-        stats = _parse_stats_output(stats_output)
-        assert len(stats.model_usage) == 2
-        assert stats.model_usage[0].model == "gemini-2.5-flash-lite"
-        assert stats.model_usage[1].model == "gemini-3-flash-preview"
-        assert stats.model_usage[1].input_tokens == 10449
-
-    def test_parse_full_stats_output(self):
-        """Parse complete stats output."""
-        stats_output = """Session Stats
-Session ID: 5023644b-f81c-4fc7-8d0d-f61906c4a4d5
-Tool Calls: 5 ( \u2713 4 x 1 )
-Success Rate: 80.0%
-Performance
-Wall Time: 2m 54s
-Agent Active: 6.2s
-  \u00bb API Time: 6.2s (100.0%)
-  \u00bb Tool Time: 0s (0.0%)
-Model Usage                 Reqs   Input Tokens   Cache Reads  Output Tokens
-────────────────────────────────────────────────────────────────────────────
-gemini-2.5-flash-lite          1          1,435             0             12
-gemini-3-flash-preview         1         10,449             0             50"""
-
-        stats = _parse_stats_output(stats_output)
-
-        assert stats.session_id == "5023644b-f81c-4fc7-8d0d-f61906c4a4d5"
-        assert stats.tool_calls_total == 5
-        assert stats.tool_calls_success == 4
-        assert stats.tool_calls_failed == 1
-        assert stats.success_rate == 80.0
-        assert stats.wall_time_seconds == 174.0
-        assert stats.agent_active_seconds == 6.2
-        assert len(stats.model_usage) == 2
+        assert parse_token_count("0") == 0
 
 
 # =============================================================================
@@ -474,32 +363,11 @@ class TestCLIConfigurationProperties:
 class TestEdgeCases:
     """Unit tests for edge cases."""
 
-    def test_parse_stats_empty_output(self):
-        """Empty stats output should return empty stats."""
-        stats = _parse_stats_output("")
-        assert stats.session_id is None
-        assert stats.tool_calls_total == 0
-        assert len(stats.model_usage) == 0
-
-    def test_parse_stats_partial_output(self):
-        """Partial stats output should parse what's available."""
-        stats_output = "Session ID: abc-123"
-        stats = _parse_stats_output(stats_output)
-        assert stats.session_id == "abc-123"
-        assert stats.tool_calls_total == 0
-
     def test_parse_time_string_edge_cases(self):
         """Edge cases for time parsing."""
-        assert _parse_time_string("0m 0s") == 0.0
-        assert _parse_time_string("1m 0s") == 60.0
-        assert _parse_time_string("0m 1s") == 1.0
-
-    def test_large_token_counts(self):
-        """Large token counts should be handled."""
-        stats_output = "gemini-flash          1      1,000,000             0        500,000"
-        stats = _parse_stats_output(stats_output)
-        if stats.model_usage:
-            assert stats.model_usage[0].input_tokens == 1000000
+        assert parse_time_string("0m 0s") == 0.0
+        assert parse_time_string("1m 0s") == 60.0
+        assert parse_time_string("0m 1s") == 1.0
 
 
 # =============================================================================

@@ -33,7 +33,6 @@ import codecs
 import json
 import logging
 import os
-import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -43,7 +42,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from turbowrap.config import get_settings
-from turbowrap.llm.mixins import OperationTrackingMixin, parse_token_string
+from turbowrap.llm.mixins import OperationTrackingMixin
 from turbowrap.utils.aws_secrets import get_anthropic_api_key
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
@@ -78,147 +77,6 @@ class ModelUsage:
 
 
 @dataclass
-class ClaudeContextStats:
-    """Context usage statistics from Claude CLI /context command."""
-
-    model: str = ""
-    tokens_used: int = 0
-    tokens_max: int = 0
-    usage_percent: float = 0.0
-    system_prompt_tokens: int = 0
-    system_prompt_percent: float = 0.0
-    system_tools_tokens: int = 0
-    system_tools_percent: float = 0.0
-    mcp_tools_tokens: int = 0
-    mcp_tools_percent: float = 0.0
-    custom_agents_tokens: int = 0
-    custom_agents_percent: float = 0.0
-    messages_tokens: int = 0
-    messages_percent: float = 0.0
-    free_space_tokens: int = 0
-    free_space_percent: float = 0.0
-    autocompact_buffer_tokens: int = 0
-    autocompact_buffer_percent: float = 0.0
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "model": self.model,
-            "context": {
-                "tokens_used": self.tokens_used,
-                "tokens_max": self.tokens_max,
-                "usage_percent": self.usage_percent,
-            },
-            "breakdown": {
-                "system_prompt": {
-                    "tokens": self.system_prompt_tokens,
-                    "percent": self.system_prompt_percent,
-                },
-                "system_tools": {
-                    "tokens": self.system_tools_tokens,
-                    "percent": self.system_tools_percent,
-                },
-                "mcp_tools": {
-                    "tokens": self.mcp_tools_tokens,
-                    "percent": self.mcp_tools_percent,
-                },
-                "custom_agents": {
-                    "tokens": self.custom_agents_tokens,
-                    "percent": self.custom_agents_percent,
-                },
-                "messages": {
-                    "tokens": self.messages_tokens,
-                    "percent": self.messages_percent,
-                },
-                "free_space": {
-                    "tokens": self.free_space_tokens,
-                    "percent": self.free_space_percent,
-                },
-                "autocompact_buffer": {
-                    "tokens": self.autocompact_buffer_tokens,
-                    "percent": self.autocompact_buffer_percent,
-                },
-            },
-        }
-
-
-def _parse_context_output(context_output: str) -> ClaudeContextStats:
-    """Parse the output of Claude CLI /context command.
-
-    Example input:
-        Context Usage
-        ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   claude-opus-4-5-20251101 · 93k/200k tokens (47%)
-        ...
-        ⛁ System prompt: 3.4k tokens (1.7%)
-        ⛁ System tools: 17.2k tokens (8.6%)
-        ⛁ MCP tools: 26.1k tokens (13.0%)
-        ⛁ Custom agents: 1.4k tokens (0.7%)
-        ⛁ Messages: 317 tokens (0.2%)
-        ⛶ Free space: 107k (53.3%)
-        ⛝ Autocompact buffer: 45.0k tokens (22.5%)
-    """
-    stats = ClaudeContextStats()
-
-    main_match = re.search(
-        r"(claude-[\w-]+)\s*[·•]\s*([\d.]+k?)\s*/\s*([\d.]+k?)\s*tokens\s*\(([\d.]+)%\)",
-        context_output,
-    )
-    if main_match:
-        stats.model = main_match.group(1)
-        stats.tokens_used = parse_token_string(main_match.group(2))
-        stats.tokens_max = parse_token_string(main_match.group(3))
-        stats.usage_percent = float(main_match.group(4))
-
-    sys_prompt_match = re.search(
-        r"System prompt:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
-    )
-    if sys_prompt_match:
-        stats.system_prompt_tokens = parse_token_string(sys_prompt_match.group(1))
-        stats.system_prompt_percent = float(sys_prompt_match.group(2))
-
-    sys_tools_match = re.search(
-        r"System tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
-    )
-    if sys_tools_match:
-        stats.system_tools_tokens = parse_token_string(sys_tools_match.group(1))
-        stats.system_tools_percent = float(sys_tools_match.group(2))
-
-    mcp_match = re.search(r"MCP tools:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
-    if mcp_match:
-        stats.mcp_tools_tokens = parse_token_string(mcp_match.group(1))
-        stats.mcp_tools_percent = float(mcp_match.group(2))
-
-    agents_match = re.search(
-        r"Custom agents:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
-    )
-    if agents_match:
-        stats.custom_agents_tokens = parse_token_string(agents_match.group(1))
-        stats.custom_agents_percent = float(agents_match.group(2))
-
-    messages_match = re.search(r"Messages:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output)
-    if messages_match:
-        stats.messages_tokens = parse_token_string(messages_match.group(1))
-        stats.messages_percent = float(messages_match.group(2))
-
-    free_match = re.search(r"Free space:\s*([\d.]+k?)\s*\(([\d.]+)%\)", context_output)
-    if free_match:
-        stats.free_space_tokens = parse_token_string(free_match.group(1))
-        stats.free_space_percent = float(free_match.group(2))
-
-    buffer_match = re.search(
-        r"Autocompact buffer:\s*([\d.]+k?)\s*tokens?\s*\(([\d.]+)%\)", context_output
-    )
-    if buffer_match:
-        stats.autocompact_buffer_tokens = parse_token_string(buffer_match.group(1))
-        stats.autocompact_buffer_percent = float(buffer_match.group(2))
-
-    return stats
-
-
-CONTEXT_MARKER = "Context Usage"
-
-
-@dataclass
 class ClaudeCLIResult:
     """Result from Claude CLI execution."""
 
@@ -233,7 +91,6 @@ class ClaudeCLIResult:
     s3_prompt_url: str | None = None
     s3_output_url: str | None = None
     s3_thinking_url: str | None = None
-    context_stats: ClaudeContextStats | None = None
     session_id: str | None = None  # Session ID for --resume
 
 
@@ -1007,119 +864,6 @@ class ClaudeCLI(OperationTrackingMixin):
 
         return output, model_usage_list, thinking, api_error, tools_used
 
-    def _infer_operation_type(self, explicit_type: str | None, prompt: str) -> str:
-        """Infer operation type from context.
-
-        Args:
-            explicit_type: Explicitly provided type
-            prompt: The prompt being executed
-
-        Returns:
-            OperationType value string
-        """
-        if explicit_type:
-            return explicit_type
-
-        if self.agent_md_path:
-            agent_name = self.agent_md_path.stem.lower()
-            if "fix" in agent_name:
-                return "fix"
-            if "review" in agent_name:
-                return "review"
-            if "commit" in agent_name:
-                return "git_commit"
-            if "merge" in agent_name:
-                return "git_merge"
-            if "push" in agent_name:
-                return "git_push"
-            if "pull" in agent_name:
-                return "git_pull"
-            if "lint" in agent_name or "analyzer" in agent_name:
-                return "review"
-
-        prompt_lower = prompt.lower()[:500]
-        if "fix" in prompt_lower or "correggi" in prompt_lower:
-            return "fix"
-        if "review" in prompt_lower or "analizza" in prompt_lower:
-            return "review"
-        if "commit" in prompt_lower:
-            return "git_commit"
-        if "merge" in prompt_lower:
-            return "git_merge"
-        if "push" in prompt_lower:
-            return "git_push"
-
-        return "cli_task"
-
-    def _extract_repo_name(self) -> str | None:
-        """Extract repository name from working_dir."""
-        if self.working_dir:
-            return self.working_dir.name
-        return None
-
-    def _register_operation(
-        self,
-        context_id: str | None,
-        prompt: str,
-        operation_type: str | None,
-        repo_name: str | None,
-        user_name: str | None,
-        operation_details: dict[str, Any] | None,
-    ) -> Any:
-        """Register operation in tracker.
-
-        Returns:
-            Operation instance or None if registration fails
-        """
-        try:
-            from turbowrap.api.services.operation_tracker import OperationType, get_tracker
-
-            tracker = get_tracker()
-            op_type_str = self._infer_operation_type(operation_type, prompt)
-
-            # Convert string to OperationType enum
-            try:
-                op_type = OperationType(op_type_str)
-            except ValueError:
-                op_type = OperationType.CLI_TASK
-
-            # Extract prompt preview (first 150 chars, cleaned)
-            prompt_preview = prompt[:150].replace("\n", " ").strip()
-            if len(prompt) > 150:
-                prompt_preview += "..."
-
-            # Extract parent_session_id as first-class field (for hierarchical queries)
-            details_copy = dict(operation_details or {})
-            parent_session_id = details_copy.pop("parent_session_id", None)
-
-            operation = tracker.register(
-                op_type=op_type,
-                operation_id=context_id or str(uuid.uuid4()),
-                repo_name=repo_name or self._extract_repo_name(),
-                user=user_name,
-                parent_session_id=parent_session_id,
-                details={
-                    "model": self.model,
-                    "cli": "claude",
-                    "agent": self.agent_md_path.stem if self.agent_md_path else None,
-                    "working_dir": str(self.working_dir) if self.working_dir else None,
-                    "prompt_preview": prompt_preview,
-                    "prompt_length": len(prompt),
-                    **details_copy,
-                },
-            )
-
-            logger.info(
-                f"[CLAUDE CLI] Operation registered: {operation.operation_id[:8]} "
-                f"({op_type.value})"
-            )
-            return operation
-
-        except Exception as e:
-            # Don't fail the CLI execution if tracking fails
-            logger.warning(f"[CLAUDE CLI] Failed to register operation: {e}")
-            return None
-
     def _complete_operation(
         self,
         operation_id: str,
@@ -1185,26 +929,3 @@ class ClaudeCLI(OperationTrackingMixin):
 
         except Exception as e:
             logger.warning(f"[CLAUDE CLI] Failed to complete operation: {e}")
-
-    def _fail_operation(self, operation_id: str, error: str) -> None:
-        """Fail operation in tracker."""
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            tracker.fail(operation_id, error=error[:200])
-            logger.info(f"[CLAUDE CLI] Operation failed: {operation_id[:8]}")
-
-        except Exception as e:
-            logger.warning(f"[CLAUDE CLI] Failed to mark operation as failed: {e}")
-
-    def _update_operation(self, operation_id: str, details: dict[str, Any]) -> None:
-        """Update operation details in tracker (e.g., add S3 URLs)."""
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            tracker.update(operation_id, details=details)
-
-        except Exception as e:
-            logger.warning(f"[CLAUDE CLI] Failed to update operation: {e}")

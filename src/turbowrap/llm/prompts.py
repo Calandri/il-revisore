@@ -97,52 +97,6 @@ class PromptCache:
             logger.info(f"Cleared {count} prompts from cache")
             return count
 
-    def invalidate(self, name: str) -> bool:
-        """Invalidate a specific cached prompt.
-
-        Args:
-            name: Prompt name to invalidate.
-
-        Returns:
-            True if the prompt was in cache, False otherwise.
-        """
-        with self._lock:
-            if name in self._cache:
-                del self._cache[name]
-                logger.info(f"Invalidated prompt cache: {name}")
-                return True
-            return False
-
-    def get_stats(self) -> dict[str, int | list[str]]:
-        """Get cache statistics.
-
-        Returns:
-            Dict with cache stats.
-        """
-        with self._lock:
-            return {
-                "size": len(self._cache),
-                "max_size": self._max_size,
-                "cached_prompts": list(self._cache.keys()),
-            }
-
-    def check_stale(self) -> list[str]:
-        """Check for stale cache entries.
-
-        Returns:
-            List of prompt names that need reloading.
-        """
-        stale = []
-        with self._lock:
-            for name, cached in self._cache.items():
-                if cached.path.exists():
-                    current_mtime = cached.path.stat().st_mtime
-                    if current_mtime > cached.mtime:
-                        stale.append(name)
-                else:
-                    stale.append(name)  # File deleted
-        return stale
-
 
 # Global cache instance
 _prompt_cache = PromptCache()
@@ -188,33 +142,3 @@ def reload_prompts() -> int:
         Number of prompts that were cleared from cache.
     """
     return _prompt_cache.clear()
-
-
-def invalidate_prompt(name: str) -> bool:
-    """Invalidate a specific prompt in the cache.
-
-    Args:
-        name: Prompt name to invalidate.
-
-    Returns:
-        True if the prompt was in cache, False otherwise.
-    """
-    return _prompt_cache.invalidate(name)
-
-
-def get_cache_stats() -> dict[str, int | list[str]]:
-    """Get prompt cache statistics.
-
-    Returns:
-        Dict with cache info (size, max_size, cached_prompts).
-    """
-    return _prompt_cache.get_stats()
-
-
-def check_stale_prompts() -> list[str]:
-    """Check for prompts that have been modified on disk.
-
-    Returns:
-        List of prompt names that will be reloaded on next access.
-    """
-    return _prompt_cache.check_stale()

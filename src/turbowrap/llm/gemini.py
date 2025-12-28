@@ -10,8 +10,6 @@ import asyncio
 import json
 import logging
 import os
-import re
-import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -336,104 +334,6 @@ class GeminiCLIResult:
     session_stats: GeminiSessionStats | None = None
     input_tokens: int = 0
     output_tokens: int = 0
-
-
-def _parse_time_string(time_str: str) -> float:
-    """Parse time string like '2m 54s' or '6.2s' to seconds."""
-    if not time_str:
-        return 0.0
-
-    total_seconds = 0.0
-    m_match = re.search(r"(\d+)m", time_str)
-    if m_match:
-        total_seconds += int(m_match.group(1)) * 60
-    s_match = re.search(r"([\d.]+)s", time_str)
-    if s_match:
-        total_seconds += float(s_match.group(1))
-    return total_seconds
-
-
-def _parse_token_count(token_str: str) -> int:
-    """Parse token count string like '1,435' or '10449' to int."""
-    if not token_str:
-        return 0
-    # Remove commas and convert
-    return int(token_str.replace(",", "").strip())
-
-
-def _parse_stats_output(stats_output: str) -> GeminiSessionStats:
-    """Parse the output of Gemini CLI /stats command.
-
-    Example input:
-        Session Stats
-        Session ID: 5023644b-f81c-4fc7-8d0d-f61906c4a4d5
-        Tool Calls: 5 ( ✓ 4 x 1 )
-        Success Rate: 80.0%
-        Performance
-        Wall Time: 2m 54s
-        Agent Active: 6.2s
-          » API Time: 6.2s (100.0%)
-          » Tool Time: 0s (0.0%)
-        Model Usage                 Reqs   Input Tokens   Cache Reads  Output Tokens
-        ────────────────────────────────────────────────────────────────────────────
-        gemini-2.5-flash-lite          1          1,435             0             12
-        gemini-3-flash-preview         1         10,449             0             50
-    """
-    stats = GeminiSessionStats()
-
-    session_match = re.search(r"Session ID:\s*([\w-]+)", stats_output)
-    if session_match:
-        stats.session_id = session_match.group(1)
-
-    tool_match = re.search(r"Tool Calls:\s*(\d+)\s*\(\s*✓\s*(\d+)\s*x\s*(\d+)\s*\)", stats_output)
-    if tool_match:
-        stats.tool_calls_total = int(tool_match.group(1))
-        stats.tool_calls_success = int(tool_match.group(2))
-        stats.tool_calls_failed = int(tool_match.group(3))
-
-    success_match = re.search(r"Success Rate:\s*([\d.]+)%", stats_output)
-    if success_match:
-        stats.success_rate = float(success_match.group(1))
-
-    wall_match = re.search(r"Wall Time:\s*([\dm\s.]+s)", stats_output)
-    if wall_match:
-        stats.wall_time_seconds = _parse_time_string(wall_match.group(1))
-
-    active_match = re.search(r"Agent Active:\s*([\dm\s.]+s)", stats_output)
-    if active_match:
-        stats.agent_active_seconds = _parse_time_string(active_match.group(1))
-
-    # API Time: 6.2s (100.0%)
-    api_match = re.search(r"API Time:\s*([\dm\s.]+s)\s*\(([\d.]+)%\)", stats_output)
-    if api_match:
-        stats.api_time_seconds = _parse_time_string(api_match.group(1))
-        stats.api_time_percent = float(api_match.group(2))
-
-    tool_time_match = re.search(r"Tool Time:\s*([\dm\s.]+s)\s*\(([\d.]+)%\)", stats_output)
-    if tool_time_match:
-        stats.tool_time_seconds = _parse_time_string(tool_time_match.group(1))
-        stats.tool_time_percent = float(tool_time_match.group(2))
-
-    model_lines = re.findall(
-        r"^\s*([\w.-]+)\s+(\d+)\s+([\d,]+)\s+(\d+)\s+([\d,]+)\s*$",
-        stats_output,
-        re.MULTILINE,
-    )
-    for match in model_lines:
-        model_name, reqs, input_tokens, cache_reads, output_tokens = match
-        if model_name.lower() in ("model", "usage", "reqs"):
-            continue
-        stats.model_usage.append(
-            GeminiModelUsage(
-                model=model_name,
-                requests=int(reqs),
-                input_tokens=_parse_token_count(input_tokens),
-                cache_reads=int(cache_reads),
-                output_tokens=_parse_token_count(output_tokens),
-            )
-        )
-
-    return stats
 
 
 STATS_MARKER = "Session Stats"
@@ -888,91 +788,6 @@ class GeminiCLI(OperationTrackingMixin):
                 s3_prompt_url=s3_prompt_url,
             )
 
-    def _infer_operation_type(self, explicit_type: str | None, prompt: str) -> str:
-        """Infer operation type from context."""
-        if explicit_type:
-            return explicit_type
-
-        prompt_lower = prompt.lower()[:500]
-        if "fix" in prompt_lower or "correggi" in prompt_lower:
-            return "fix"
-        if "review" in prompt_lower or "analizza" in prompt_lower:
-            return "review"
-        if "lint" in prompt_lower or "mypy" in prompt_lower or "ruff" in prompt_lower:
-            return "review"
-        if "commit" in prompt_lower:
-            return "git_commit"
-        if "merge" in prompt_lower:
-            return "git_merge"
-
-        return "cli_task"
-
-    def _extract_repo_name(self) -> str | None:
-        """Extract repository name from working_dir."""
-        if self.working_dir:
-            return self.working_dir.name
-        return None
-
-    def _register_operation(
-        self,
-        context_id: str | None,
-        prompt: str,
-        operation_type: str | None,
-        repo_name: str | None,
-        user_name: str | None,
-        operation_details: dict[str, Any] | None,
-    ) -> Any:
-        """Register operation in tracker."""
-        try:
-            from turbowrap.api.services.operation_tracker import OperationType, get_tracker
-
-            tracker = get_tracker()
-            op_type_str = self._infer_operation_type(operation_type, prompt)
-
-            try:
-                op_type = OperationType(op_type_str)
-            except ValueError:
-                op_type = OperationType.CLI_TASK
-
-            # Extract prompt preview (first 150 chars, cleaned)
-            prompt_preview = prompt[:150].replace("\n", " ").strip()
-            if len(prompt) > 150:
-                prompt_preview += "..."
-
-            # Extract parent_session_id as first-class field (for hierarchical queries)
-            details_copy = dict(operation_details or {})
-            parent_session_id = details_copy.pop("parent_session_id", None)
-
-            operation = tracker.register(
-                op_type=op_type,
-                operation_id=context_id or str(uuid.uuid4()),
-                repo_name=repo_name or self._extract_repo_name(),
-                user=user_name,
-                parent_session_id=parent_session_id,
-                details={
-                    "model": self.model,
-                    "cli": "gemini",
-                    "working_dir": str(self.working_dir) if self.working_dir else None,
-                    "prompt_preview": prompt_preview,
-                    "prompt_length": len(prompt),
-                    **details_copy,
-                },
-            )
-
-            logger.info(
-                f"[GEMINI CLI] Operation registered: {operation.operation_id[:8]} "
-                f"({op_type.value})"
-            )
-            return operation
-
-        except Exception as e:
-            import traceback
-
-            logger.error(
-                f"[GEMINI CLI] Failed to register operation: {e}\n{traceback.format_exc()}"
-            )
-            return None
-
     def _complete_operation(
         self,
         operation_id: str,
@@ -1020,32 +835,3 @@ class GeminiCLI(OperationTrackingMixin):
             logger.error(
                 f"[GEMINI CLI] Failed to complete operation: {e}\n{traceback.format_exc()}"
             )
-
-    def _fail_operation(self, operation_id: str, error: str) -> None:
-        """Fail operation in tracker."""
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            tracker.fail(operation_id, error=error[:200])
-            logger.info(f"[GEMINI CLI] Operation failed: {operation_id[:8]}")
-
-        except Exception as e:
-            import traceback
-
-            logger.error(
-                f"[GEMINI CLI] Failed to mark operation as failed: {e}\n{traceback.format_exc()}"
-            )
-
-    def _update_operation(self, operation_id: str, details: dict[str, Any]) -> None:
-        """Update operation details in tracker (e.g., add S3 URLs)."""
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            tracker.update(operation_id, details=details)
-
-        except Exception as e:
-            import traceback
-
-            logger.error(f"[GEMINI CLI] Failed to update operation: {e}\n{traceback.format_exc()}")

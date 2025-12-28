@@ -9,16 +9,13 @@ import asyncio
 import json
 import logging
 import os
-import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from turbowrap.config import get_settings
-from turbowrap.exceptions import GrokError
-from turbowrap.llm.base import AgentResponse, BaseAgent
 from turbowrap.llm.mixins import OperationTrackingMixin
 from turbowrap.utils.aws_secrets import get_grok_api_key
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
@@ -28,142 +25,6 @@ logger = logging.getLogger(__name__)
 # Default settings
 DEFAULT_GROK_MODEL = "grok-4-1-fast-reasoning"
 DEFAULT_GROK_TIMEOUT = 120
-
-
-class GrokClient(BaseAgent):
-    """Client for xAI Grok API using official SDK.
-
-    Supports:
-    - Text generation with streaming
-    - Multi-turn chat
-    - Tool/function calling
-    """
-
-    def __init__(self, model: str | None = None):
-        """Initialize Grok client.
-
-        Args:
-            model: Model name. Defaults to grok-4-1-fast-reasoning.
-        """
-        try:
-            from xai_sdk import Client
-        except ImportError as e:
-            raise GrokError("xai-sdk not installed. Run: uv add xai-sdk") from e
-
-        # Get API key from env or AWS Secrets
-        api_key = os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY")
-        if not api_key:
-            api_key = get_grok_api_key()
-
-        if not api_key:
-            raise GrokError(
-                "GROK_API_KEY not found! "
-                "Checked: 1) env var GROK_API_KEY, 2) env var XAI_API_KEY, "
-                "3) AWS Secrets 'agent-zero/global/api-keys'"
-            )
-
-        # Set env var for SDK auto-discovery
-        os.environ["XAI_API_KEY"] = api_key
-
-        self._client = Client()
-        self._model = model or DEFAULT_GROK_MODEL
-
-    @property
-    def name(self) -> str:
-        return "grok"
-
-    @property
-    def model(self) -> str:
-        return self._model
-
-    @property
-    def agent_type(self) -> Literal["grok", "gemini", "claude"]:
-        return "grok"
-
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
-        """Generate content using Grok.
-
-        Args:
-            prompt: The user prompt.
-            system_prompt: Optional system instructions.
-
-        Returns:
-            Generated text content.
-        """
-        from xai_sdk.chat import system, user
-
-        messages = []
-        if system_prompt:
-            messages.append(system(system_prompt))
-        messages.append(user(prompt))
-
-        try:
-            chat = self._client.chat.create(model=self._model, messages=messages)
-            response = chat.sample()
-            return response.content or ""
-        except Exception as e:
-            raise GrokError(f"Grok API error: {e}") from e
-
-    def generate_with_metadata(self, prompt: str, system_prompt: str = "") -> AgentResponse:
-        """Generate content with token metadata.
-
-        Args:
-            prompt: The user prompt.
-            system_prompt: Optional system instructions.
-
-        Returns:
-            AgentResponse with content and metadata.
-        """
-        from xai_sdk.chat import system, user
-
-        messages = []
-        if system_prompt:
-            messages.append(system(system_prompt))
-        messages.append(user(prompt))
-
-        try:
-            chat = self._client.chat.create(model=self._model, messages=messages)
-            response = chat.sample()
-
-            # Extract usage if available
-            usage = getattr(response, "usage", None)
-            prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
-            completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
-
-            return AgentResponse(
-                content=response.content or "",
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                model=self._model,
-                agent_type=self.agent_type,
-            )
-        except Exception as e:
-            raise GrokError(f"Grok API error: {e}") from e
-
-    def stream(self, prompt: str, system_prompt: str = "") -> AsyncIterator[str]:
-        """Stream response chunks.
-
-        Args:
-            prompt: The user prompt.
-            system_prompt: Optional system instructions.
-
-        Yields:
-            Text chunks as they arrive.
-        """
-        from xai_sdk.chat import system, user
-
-        messages = []
-        if system_prompt:
-            messages.append(system(system_prompt))
-        messages.append(user(prompt))
-
-        try:
-            chat = self._client.chat.create(model=self._model, messages=messages)
-            for _response, chunk in chat.stream():
-                if chunk.content:
-                    yield chunk.content
-        except Exception as e:
-            raise GrokError(f"Grok streaming error: {e}") from e
 
 
 # =============================================================================
@@ -564,81 +425,6 @@ class GrokCLI(OperationTrackingMixin):
                 s3_prompt_url=s3_prompt_url,
             )
 
-    def _infer_operation_type(self, explicit_type: str | None, prompt: str) -> str:
-        """Infer operation type from context."""
-        if explicit_type:
-            return explicit_type
-
-        prompt_lower = prompt.lower()[:500]
-        if "fix" in prompt_lower or "correggi" in prompt_lower:
-            return "fix"
-        if "review" in prompt_lower or "analizza" in prompt_lower:
-            return "review"
-        if "lint" in prompt_lower or "ruff" in prompt_lower:
-            return "review"
-
-        return "cli_task"
-
-    def _extract_repo_name(self) -> str | None:
-        """Extract repository name from working_dir."""
-        if self.working_dir:
-            return self.working_dir.name
-        return None
-
-    def _register_operation(
-        self,
-        context_id: str | None,
-        prompt: str,
-        operation_type: str | None,
-        repo_name: str | None,
-        user_name: str | None,
-        operation_details: dict[str, Any] | None,
-    ) -> Any:
-        """Register operation in tracker."""
-        try:
-            from turbowrap.api.services.operation_tracker import OperationType, get_tracker
-
-            tracker = get_tracker()
-            op_type_str = self._infer_operation_type(operation_type, prompt)
-
-            try:
-                op_type = OperationType(op_type_str)
-            except ValueError:
-                op_type = OperationType.CLI_TASK
-
-            prompt_preview = prompt[:150].replace("\n", " ").strip()
-            if len(prompt) > 150:
-                prompt_preview += "..."
-
-            # Extract parent_session_id as first-class field (for hierarchical queries)
-            details_copy = dict(operation_details or {})
-            parent_session_id = details_copy.pop("parent_session_id", None)
-
-            operation = tracker.register(
-                op_type=op_type,
-                operation_id=context_id or str(uuid.uuid4()),
-                repo_name=repo_name or self._extract_repo_name(),
-                user=user_name,
-                parent_session_id=parent_session_id,
-                details={
-                    "model": self.model,
-                    "cli": "grok",
-                    "working_dir": str(self.working_dir) if self.working_dir else None,
-                    "prompt_preview": prompt_preview,
-                    "prompt_length": len(prompt),
-                    **details_copy,
-                },
-            )
-
-            logger.info(
-                f"[GROK CLI] Operation registered: {operation.operation_id[:8]} ({op_type.value})"
-            )
-            return operation
-
-        except Exception as e:
-            logger.warning(f"[GROK CLI] Failed to register operation: {e}")
-            return None
-
     def _complete_operation(
         self,
         operation_id: str,
@@ -668,26 +454,3 @@ class GrokCLI(OperationTrackingMixin):
 
         except Exception as e:
             logger.warning(f"[GROK CLI] Failed to complete operation: {e}")
-
-    def _fail_operation(self, operation_id: str, error: str) -> None:
-        """Fail operation in tracker."""
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            tracker.fail(operation_id, error=error[:200])
-            logger.info(f"[GROK CLI] Operation failed: {operation_id[:8]}")
-
-        except Exception as e:
-            logger.warning(f"[GROK CLI] Failed to mark operation as failed: {e}")
-
-    def _update_operation(self, operation_id: str, details: dict[str, Any]) -> None:
-        """Update operation details in tracker."""
-        try:
-            from turbowrap.api.services.operation_tracker import get_tracker
-
-            tracker = get_tracker()
-            tracker.update(operation_id, details=details)
-
-        except Exception as e:
-            logger.warning(f"[GROK CLI] Failed to update operation: {e}")

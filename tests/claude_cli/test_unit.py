@@ -106,7 +106,7 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Hello world","modelUsage":{"claude-opus-4-5-20251101":{"inputTokens":100,"outputTokens":50,"costUSD":0.005}}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Hello world"
         assert len(model_usage) == 1
@@ -121,7 +121,7 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Your credit balance is too low","is_error":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error == "Your credit balance is too low"
         assert output == "Your credit balance is too low"
@@ -132,7 +132,7 @@ class TestStreamJsonParsing:
         raw_output = """{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me analyze this..."}]}}
 {"type":"result","result":"Analysis complete","modelUsage":{}}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert thinking == "Let me analyze this..."
         assert output == "Analysis complete"
@@ -143,7 +143,7 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"other","data":"some data"}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == raw_output
         assert api_error is None
@@ -154,7 +154,7 @@ class TestStreamJsonParsing:
         raw_output = """invalid json here
 {"type":"result","result":"Success","modelUsage":{}}"""
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert output == "Success"
         assert api_error is None
@@ -164,7 +164,7 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw = '{"type":"content_block_delta","delta":{"text":"Hello"}}\n{"type":"result","result":"Hello","modelUsage":{}}'
 
-        output, _, _, _ = cli._parse_stream_json(raw)
+        output, _, _, _, _ = cli._parse_stream_json(raw)
         assert output == "Hello"
 
     def test_thinking_concatenation_order(self):
@@ -175,7 +175,7 @@ class TestStreamJsonParsing:
 {"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Third"}]}}
 {"type":"result","result":"Done","modelUsage":{}}"""
 
-        _, _, thinking, _ = cli._parse_stream_json(raw)
+        _, _, thinking, _, _ = cli._parse_stream_json(raw)
 
         first_pos = thinking.find("First")
         second_pos = thinking.find("Second")
@@ -188,7 +188,7 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw = '{"type":"result","result":"Done","modelUsage":{"model-a":{"inputTokens":100,"outputTokens":50},"model-b":{"inputTokens":200,"outputTokens":100}}}'
 
-        _, usages, _, _ = cli._parse_stream_json(raw)
+        _, usages, _, _, _ = cli._parse_stream_json(raw)
 
         assert len(usages) == 2
         total_input = sum(u.input_tokens for u in usages)
@@ -199,7 +199,7 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw = '{"type":"result","result":"Error message","is_error":true,"modelUsage":{}}'
 
-        _, _, _, api_error = cli._parse_stream_json(raw)
+        _, _, _, api_error, _ = cli._parse_stream_json(raw)
         assert api_error == "Error message"
 
     def test_is_error_false_no_api_error(self):
@@ -207,13 +207,13 @@ class TestStreamJsonParsing:
         cli = ClaudeCLI(model="opus")
         raw = '{"type":"result","result":"Success","is_error":false,"modelUsage":{}}'
 
-        _, _, _, api_error = cli._parse_stream_json(raw)
+        _, _, _, api_error, _ = cli._parse_stream_json(raw)
         assert api_error is None
 
     def test_empty_raw_output(self):
         """Empty output should be handled gracefully."""
         cli = ClaudeCLI(model="opus")
-        output, model_usage, thinking, api_error = cli._parse_stream_json("")
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json("")
 
         assert output == ""
         assert model_usage == []
@@ -234,7 +234,7 @@ class TestBillingErrorDetection:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Your credit balance is too low to access Claude claude-opus-4-5-20251101. Please go to Plans & Billing to upgrade or purchase credits.","is_error":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is not None
         assert "credit balance" in api_error.lower()
@@ -244,7 +244,7 @@ class TestBillingErrorDetection:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Rate limit exceeded. Please try again later.","is_error":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is not None
         assert "rate limit" in api_error.lower()
@@ -254,7 +254,7 @@ class TestBillingErrorDetection:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"The API is temporarily overloaded. Please try again in a few moments.","is_error":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is not None
         assert "overloaded" in api_error.lower()
@@ -264,7 +264,7 @@ class TestBillingErrorDetection:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.","is_error":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is not None
         assert "api key" in api_error.lower() or "invalid" in api_error.lower()
@@ -274,7 +274,7 @@ class TestBillingErrorDetection:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"This request would exceed the model\'s maximum context length of 200000 tokens. Your request used 250000 tokens.","is_error":true,"modelUsage":{}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is not None
         assert "context length" in api_error.lower() or "tokens" in api_error.lower()
@@ -284,7 +284,7 @@ class TestBillingErrorDetection:
         cli = ClaudeCLI(model="opus")
         raw_output = '{"type":"result","result":"Task completed successfully","modelUsage":{"opus":{"inputTokens":100,"outputTokens":50}}}'
 
-        output, model_usage, thinking, api_error = cli._parse_stream_json(raw_output)
+        output, model_usage, thinking, api_error, _tools_used = cli._parse_stream_json(raw_output)
 
         assert api_error is None
         assert output == "Task completed successfully"
@@ -745,7 +745,7 @@ class TestTokenCountEdgeCases:
         cli = ClaudeCLI(model="opus")
         raw = '{"type":"result","result":"Done","modelUsage":{"model":{"inputTokens":999999999,"outputTokens":888888888}}}'
 
-        _, usages, _, _ = cli._parse_stream_json(raw)
+        _, usages, _, _, _ = cli._parse_stream_json(raw)
         assert usages[0].input_tokens == 999999999
         assert usages[0].output_tokens == 888888888
 
@@ -754,7 +754,7 @@ class TestTokenCountEdgeCases:
         cli = ClaudeCLI(model="opus")
         raw = '{"type":"result","result":"Done","modelUsage":{"model":{}}}'
 
-        _, usages, _, _ = cli._parse_stream_json(raw)
+        _, usages, _, _, _ = cli._parse_stream_json(raw)
         assert usages[0].input_tokens == 0
         assert usages[0].output_tokens == 0
 
