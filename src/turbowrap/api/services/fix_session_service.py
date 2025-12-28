@@ -255,7 +255,7 @@ class FixSessionService:
         from turbowrap.config import get_settings
 
         settings = get_settings()
-        model_name = settings.agents.default_model or "claude-opus-4-5-20251101"
+        model_name = settings.agents.claude_model or "claude-opus-4-5-20251101"
 
         tracker.register(
             op_type=OperationType.FIX,
