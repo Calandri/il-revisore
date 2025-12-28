@@ -543,13 +543,12 @@ class ClaudeCLI:
         s3_output_url = None
         s3_thinking_url = None
 
-        if save_output and output:
-            s3_output_url = await self._s3_saver.save_markdown(
-                output,
+        if save_output and raw_output:
+            # Save RAW NDJSON output - contains everything (messages, tokens, stats)
+            s3_output_url = await self._s3_saver.save_raw(
+                raw_output,
                 "output",
                 context_id,
-                {"model": self.model, "duration_ms": duration_ms, "error": bool(error)},
-                "Claude CLI",
             )
 
         if save_thinking and thinking:

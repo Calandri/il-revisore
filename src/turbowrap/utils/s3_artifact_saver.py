@@ -114,3 +114,40 @@ class S3ArtifactSaver:
         except ClientError as e:
             logger.warning(f"[S3] Upload failed: {e}")
             return None
+
+    async def save_raw(
+        self,
+        content: str,
+        artifact_type: str,
+        context_id: str,
+    ) -> str | None:
+        """Save raw content to S3 without any processing.
+
+        Args:
+            content: Raw content to save (no wrapping/formatting)
+            artifact_type: Type of artifact (prompt, output, error)
+            context_id: Identifier for grouping artifacts
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        if not self.bucket:
+            return None
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+        s3_key = f"{self.prefix}/{timestamp}/{context_id}_{artifact_type}.jsonl"
+
+        try:
+            await asyncio.to_thread(
+                self.client.put_object,
+                Bucket=self.bucket,
+                Key=s3_key,
+                Body=content.encode("utf-8"),
+                ContentType="application/x-ndjson",
+            )
+            s3_url = f"s3://{self.bucket}/{s3_key}"
+            logger.info(f"[S3] Saved raw {artifact_type} to {s3_key}")
+            return s3_url
+        except ClientError as e:
+            logger.warning(f"[S3] Raw upload failed: {e}")
+            return None

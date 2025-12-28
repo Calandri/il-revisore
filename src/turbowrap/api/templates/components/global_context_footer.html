@@ -108,11 +108,12 @@
         <!-- Sync Status (ahead/behind) -->
         <div x-show="$store.globalContext.selectedRepoId && syncStatus"
              class="h-full px-2 flex items-center gap-2">
-            <!-- Sync indicator -->
-            <button @click="refreshSyncStatus()"
+            <!-- Sync indicator - Click to pull if behind -->
+            <button @click="pullIfBehind()"
                     :disabled="syncLoading"
                     class="flex items-center gap-1 hover:bg-white/10 px-1 rounded transition-colors"
-                    :class="{ 'animate-pulse': syncLoading }">
+                    :class="{ 'animate-pulse': syncLoading }"
+                    :title="syncStatus?.behind > 0 ? 'Click to pull ' + syncStatus.behind + ' commits' : 'Up to date'">
                 <!-- Sync icon -->
                 <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': syncLoading }" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>

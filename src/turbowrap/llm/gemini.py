@@ -682,6 +682,7 @@ class GeminiCLI:
 
             # Parse stream-json output
             output_chunks: list[str] = []
+            raw_output_lines: list[str] = []  # ALL raw JSON lines for S3
             session_id: str | None = None
             model_from_init: str | None = None
             result_data: dict[str, Any] | None = None
@@ -705,6 +706,9 @@ class GeminiCLI:
                         line = line.strip()
                         if not line:
                             continue
+
+                        # Capture ALL raw lines for S3
+                        raw_output_lines.append(line)
 
                         try:
                             data = json.loads(line)
@@ -805,15 +809,14 @@ class GeminiCLI:
                 except Exception as e:
                     logger.warning(f"[GEMINI CLI] Failed to parse stats: {e}")
 
-            # Save output to S3
+            # Save ALL raw output to S3 (includes stats JSON)
             s3_output_url = None
-            if save_output and output:
-                s3_output_url = await self._s3_saver.save_markdown(
-                    output,
+            if save_output and raw_output_lines:
+                raw_content = "\n".join(raw_output_lines)
+                s3_output_url = await self._s3_saver.save_raw(
+                    raw_content,
                     "output",
                     context_id,
-                    {"model": self.model, "duration_ms": duration_ms},
-                    "Gemini CLI",
                 )
 
             # Check result status
