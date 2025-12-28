@@ -38,6 +38,7 @@ class OperationResponse(BaseModel):
     branch_name: str | None = None
     user_name: str | None = None
     details: dict[str, Any] = {}
+    result: dict[str, Any] | None = None
     started_at: str | None = None
     completed_at: str | None = None
     duration_seconds: float | None = None

@@ -155,6 +155,7 @@ class Operation:
             "branch_name": self.branch_name,
             "user_name": self.user_name,
             "details": self.details,
+            "result": self.result,
             "started_at": (self.created_at.isoformat() + "Z") if self.created_at else None,
             "completed_at": (self.completed_at.isoformat() + "Z") if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
