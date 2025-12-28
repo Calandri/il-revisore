@@ -23,8 +23,8 @@ class S3ArtifactSaver:
         url = await saver.save_markdown(content, "output", "context_123", {"model": "opus"})
     """
 
-    # Default expiration for pre-signed URLs (7 days in seconds)
-    DEFAULT_URL_EXPIRATION = 7 * 24 * 60 * 60
+    # Default expiration for pre-signed URLs (30 days in seconds)
+    DEFAULT_URL_EXPIRATION = 30 * 24 * 60 * 60
 
     def __init__(
         self,
