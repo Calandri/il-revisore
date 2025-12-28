@@ -82,6 +82,7 @@ class Orchestrator:
         progress_callback: ProgressCallback | None = None,
         completed_checkpoints: CheckpointData | None = None,
         checkpoint_callback: CheckpointCallback | None = None,
+        parent_session_id: str | None = None,
     ) -> FinalReport:
         """Perform a complete code review.
 
@@ -94,6 +95,7 @@ class Orchestrator:
                 - final_satisfaction: float
                 - iterations: int
             checkpoint_callback: Optional callback to save checkpoint after each reviewer
+            parent_session_id: Optional parent session ID for operation tracking
 
         Returns:
             FinalReport with all findings
@@ -126,7 +128,7 @@ class Orchestrator:
             )
         )
 
-        context = await self._prepare_context(request, emit, report_id)
+        context = await self._prepare_context(request, emit, report_id, parent_session_id)
 
         repo_type = self._detect_repo_type(context.files, context.structure_docs)
         logger.info(f"Detected repository type: {repo_type.value}")
@@ -551,6 +553,7 @@ class Orchestrator:
         request: ReviewRequest,
         emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
         report_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ReviewContext:
         """Prepare the review context from the request.
 
@@ -558,6 +561,7 @@ class Orchestrator:
             request: Review request
             emit: Optional callback for progress events
             report_id: Review ID for logging
+            parent_session_id: Optional parent session ID for operation tracking
 
         Returns:
             ReviewContext with loaded files/structure docs
@@ -583,7 +587,7 @@ class Orchestrator:
 
         if not context.structure_docs:
             logger.info("No .llms/structure.xml found - auto-generating with Gemini Flash...")
-            await self._auto_generate_structure(context, emit)
+            await self._auto_generate_structure(context, emit, parent_session_id)
             self._load_structure_docs(context)
 
             if not context.structure_docs:
@@ -737,6 +741,7 @@ class Orchestrator:
         self,
         context: ReviewContext,
         emit: Callable[[ProgressEvent], Awaitable[None]] | None = None,
+        parent_session_id: str | None = None,
     ) -> None:
         """
         Auto-generate structure documentation using Gemini Flash.
@@ -747,6 +752,7 @@ class Orchestrator:
         Args:
             context: Review context with repo_path set
             emit: Optional callback for progress events
+            parent_session_id: Optional parent session ID for operation tracking
         """
         if not context.repo_path:
             logger.error("Cannot generate structure: no repo_path set")
@@ -765,6 +771,27 @@ class Orchestrator:
                     message=f"Generating structure documentation for {display_name}...",
                 )
             )
+
+        # Register operation for tracking in live-tasks (import deferred to avoid circular)
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        tracker = get_tracker()
+        operation_id = f"structure_{uuid.uuid4().hex[:12]}"
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
+
+        tracker.register(
+            op_type=OperationType.REVIEW,
+            operation_id=operation_id,
+            repo_name=repo_name,
+            user="system",
+            details={
+                "agent": "flash_analyzer",
+                "model": "gemini-3-flash-preview",
+                "parent_session_id": parent_session_id,
+                "workspace_path": context.workspace_path,
+                "task": "structure_generation",
+            },
+        )
 
         try:
             # GeminiClient is REQUIRED for structure generation
@@ -793,9 +820,11 @@ class Orchestrator:
                 )
 
             loop = asyncio.get_event_loop()
+            start_time = time.time()
             generated_files = await loop.run_in_executor(
                 None, lambda: generator.generate(verbose=True, formats=["xml"])
             )
+            duration = time.time() - start_time
 
             if not generated_files:
                 raise RuntimeError(
@@ -815,12 +844,26 @@ class Orchestrator:
                 f"structure files: {generated_files}"
             )
 
+            # Complete operation tracking
+            tracker.complete(
+                operation_id,
+                result={
+                    "files_generated": len(generated_files),
+                    "files": generated_files,
+                    "duration_seconds": duration,
+                },
+            )
+
         except Exception as e:
             import traceback
 
             logger.error("[ORCHESTRATOR] !!!! STRUCTURE.XML GENERATION FAILED !!!!")
             logger.error(f"[ORCHESTRATOR] Error: {e}")
             logger.error(f"[ORCHESTRATOR] Traceback:\n{traceback.format_exc()}")
+
+            # Fail operation tracking
+            tracker.fail(operation_id, str(e))
+
             if emit:
                 await emit(
                     ProgressEvent(

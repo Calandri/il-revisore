@@ -150,6 +150,12 @@ class ClaudeCLIReviewer(BaseReviewer):
             save_output=True,
             save_thinking=True,
             on_chunk=on_chunk,
+            track_operation=True,
+            user_name="system",
+            operation_details={
+                "reviewer": self.name,
+                "workspace_path": context.workspace_path,
+            },
         )
 
         # Check if CLI failed

@@ -3,9 +3,12 @@
     {% for repo in repos %}
     <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
         <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
+            <!-- Clickable area to select repo in global context -->
+            <div class="flex items-center gap-4 cursor-pointer flex-1 min-w-0"
+                 @click="Alpine.store('globalContext')?.selectRepo('{{ repo.id }}'); window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Repository selezionata', type: 'success' } }))"
+                 title="Clicca per selezionare questa repository">
                 <!-- Icon -->
-                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
@@ -13,8 +16,8 @@
                 </div>
 
                 <!-- Info -->
-                <div>
-                    <h3 class="font-medium">{{ repo.name or repo.url.split('/')[-1] }}</h3>
+                <div class="min-w-0">
+                    <h3 class="font-medium truncate">{{ repo.name or repo.url.split('/')[-1] }}</h3>
                     <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                         <span>{{ repo.default_branch }}</span>
                         <span>•</span>

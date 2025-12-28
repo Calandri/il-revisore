@@ -260,6 +260,7 @@ class ReviewStreamService:
                     progress_callback,
                     completed_checkpoints=checkpoints_for_closure,
                     checkpoint_callback=checkpoint_callback,
+                    parent_session_id=task_id,
                 )
 
                 # Save results

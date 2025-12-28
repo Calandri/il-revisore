@@ -9,19 +9,15 @@ Mirrors the ClaudeCLIReviewer pattern but with Gemini CLI execution.
 
 from __future__ import annotations
 
-import asyncio
-import codecs
 import contextlib
-import json
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from turbowrap.config import get_settings
+from turbowrap.llm.gemini import GeminiCLI
 from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
@@ -64,6 +60,15 @@ class GeminiCLIReviewer(BaseReviewer):
         self.timeout = timeout
         self.cli_path = cli_path
 
+    def _get_gemini_cli(self, context: ReviewContext) -> GeminiCLI:
+        """Create GeminiCLI instance for this review context."""
+        return GeminiCLI(
+            working_dir=context.repo_path,
+            model="pro",  # Use Pro for comprehensive reviews
+            timeout=self.timeout,
+            s3_prefix=f"reviews/{self.name}",
+        )
+
     def _get_output_file_path(self, context: ReviewContext) -> Path:
         """
         Get the output file path for review JSON.
@@ -95,7 +100,7 @@ class GeminiCLIReviewer(BaseReviewer):
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[str | None, str | None]:
         """
-        Run Gemini CLI and capture output.
+        Run Gemini CLI using centralized GeminiCLI class (with operation tracking).
 
         Args:
             prompt: The prompt to send to Gemini CLI
@@ -105,104 +110,33 @@ class GeminiCLIReviewer(BaseReviewer):
         Returns:
             Tuple of (output content or None, error message or None)
         """
-        from turbowrap.utils.aws_secrets import get_google_api_key
-
-        cwd = str(context.repo_path) if context.repo_path else None
-
         try:
-            # Build environment with API key
-            env = os.environ.copy()
-            api_key = get_google_api_key()
-            if api_key:
-                env["GOOGLE_API_KEY"] = api_key
-                env["GEMINI_API_KEY"] = api_key
-
-            # Build CLI arguments
-            args = [
-                self.cli_path,
-                "-m",
-                self.settings.agents.gemini_model,
-                "--yolo",
-                "--output-format",
-                "json",
-            ]
-
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
+            cli = self._get_gemini_cli(context)
+            repo_name = context.repo_path.name if context.repo_path else "unknown"
+            review_id = (
+                context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
             )
 
-            # Write prompt to stdin
-            if process.stdin is None:
-                logger.error("[GEMINI CLI] stdin is not available")
-                return None, "stdin not available"
-            process.stdin.write(prompt.encode())
-            await process.stdin.drain()
-            process.stdin.close()
+            result = await cli.run(
+                prompt,
+                operation_type="review",
+                repo_name=repo_name,
+                context_id=f"{review_id}_{self.name}",
+                save_prompt=True,
+                save_output=True,
+                on_chunk=on_chunk,
+                track_operation=True,
+                user_name="system",
+                operation_details={
+                    "reviewer": self.name,
+                    "workspace_path": context.workspace_path,
+                },
+            )
 
-            # Guard against None stdout
-            if process.stdout is None:
-                logger.error("[GEMINI CLI] stdout is not available")
-                return None, "stdout not available"
+            if not result.success:
+                return None, result.error or "GeminiCLI failed"
 
-            # Read stdout with streaming and incremental UTF-8 decoder
-            output_chunks: list[str] = []
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-
-            try:
-                async with asyncio.timeout(self.timeout):  # type: ignore[attr-defined]
-                    while True:
-                        chunk = await process.stdout.read(1024)
-                        if not chunk:
-                            # Flush remaining bytes
-                            decoded = decoder.decode(b"", final=True)
-                            if decoded:
-                                output_chunks.append(decoded)
-                                if on_chunk:
-                                    await on_chunk(decoded)
-                            break
-                        # Incremental decode - handles partial multi-byte chars
-                        decoded = decoder.decode(chunk)
-                        if decoded:
-                            output_chunks.append(decoded)
-                            if on_chunk:
-                                await on_chunk(decoded)
-            except asyncio.TimeoutError:
-                logger.error(f"[GEMINI CLI] Timeout after {self.timeout}s")
-                process.kill()
-                return None, f"Timeout after {self.timeout}s"
-
-            await process.wait()
-
-            if process.returncode != 0:
-                if process.stderr is not None:
-                    stderr = await process.stderr.read()
-                    error_msg = stderr.decode()[:500]
-                    logger.error(f"[GEMINI CLI] Failed: {error_msg}")
-                    return None, f"CLI failed: {error_msg}"
-                logger.error("[GEMINI CLI] Failed with no stderr")
-                return None, "CLI failed with no stderr"
-
-            raw_output = "".join(output_chunks)
-
-            # Parse CLI JSON wrapper
-            try:
-                cli_response: dict[str, Any] = json.loads(raw_output)
-                if "error" in cli_response:
-                    logger.error(f"[GEMINI CLI] Error: {cli_response['error']}")
-                    return None, f"CLI error: {cli_response['error']}"
-                result_value = cli_response.get("result") or cli_response.get(
-                    "response", raw_output
-                )
-                if isinstance(result_value, str):
-                    return result_value, None
-                return raw_output, None
-            except json.JSONDecodeError:
-                return raw_output, None
+            return result.output, None
 
         except FileNotFoundError:
             logger.error(f"[GEMINI CLI] Not found at: {self.cli_path}")

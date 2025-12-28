@@ -9,24 +9,19 @@ Mirrors the GeminiCLIReviewer pattern but with Grok CLI execution.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
-import json
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from turbowrap.config import get_settings
-from turbowrap.llm.grok import DEFAULT_GROK_MODEL
+from turbowrap.llm.grok import DEFAULT_GROK_MODEL, GrokCLI
 from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.models.review import ReviewOutput
 from turbowrap.review.reviewers.base import BaseReviewer, ReviewContext
 from turbowrap.review.reviewers.utils import parse_review_output
-from turbowrap.utils.aws_secrets import get_grok_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +63,15 @@ class GrokCLIReviewer(BaseReviewer):
         self.cli_path = cli_path
         self.grok_model = model or DEFAULT_GROK_MODEL
 
+    def _get_grok_cli(self, context: ReviewContext) -> GrokCLI:
+        """Create GrokCLI instance for this review context."""
+        return GrokCLI(
+            working_dir=context.repo_path,
+            model=self.grok_model,
+            timeout=self.timeout,
+            s3_prefix=f"reviews/{self.name}",
+        )
+
     def _get_output_file_path(self, context: ReviewContext) -> Path:
         """
         Get the output file path for review JSON.
@@ -99,7 +103,7 @@ class GrokCLIReviewer(BaseReviewer):
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[str | None, str | None]:
         """
-        Run Grok CLI and capture output.
+        Run Grok CLI using centralized GrokCLI class (with operation tracking).
 
         Args:
             prompt: The prompt to send to Grok CLI
@@ -109,93 +113,33 @@ class GrokCLIReviewer(BaseReviewer):
         Returns:
             Tuple of (output content or None, error message or None)
         """
-        cwd = str(context.repo_path) if context.repo_path else None
-
         try:
-            # Build environment with API key
-            env = os.environ.copy()
-            api_key = os.environ.get("GROK_API_KEY") or get_grok_api_key()
-            if api_key:
-                env["GROK_API_KEY"] = api_key
-
-            # Build CLI arguments - use -p for headless mode with prompt
-            args = [
-                self.cli_path,
-                "-m",
-                self.grok_model,
-                "--max-tool-rounds",
-                "400",
-                "-p",
-                prompt,
-            ]
-
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
+            cli = self._get_grok_cli(context)
+            repo_name = context.repo_path.name if context.repo_path else "unknown"
+            review_id = (
+                context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
             )
 
-            # Guard against None stdout
-            if process.stdout is None:
-                logger.error("[GROK CLI] stdout is not available")
-                return None, "stdout not available"
+            result = await cli.run(
+                prompt,
+                operation_type="review",
+                repo_name=repo_name,
+                context_id=f"{review_id}_{self.name}",
+                save_prompt=True,
+                save_output=True,
+                on_chunk=on_chunk,
+                track_operation=True,
+                user_name="system",
+                operation_details={
+                    "reviewer": self.name,
+                    "workspace_path": context.workspace_path,
+                },
+            )
 
-            # Read stdout with streaming and JSONL parsing
-            output_chunks: list[str] = []
-            line_buffer = ""
+            if not result.success:
+                return None, result.error or "GrokCLI failed"
 
-            try:
-                async with asyncio.timeout(self.timeout):  # type: ignore[attr-defined]
-                    while True:
-                        chunk = await process.stdout.read(4096)
-                        if not chunk:
-                            break
-
-                        line_buffer += chunk.decode("utf-8", errors="replace")
-
-                        # Parse JSONL lines
-                        while "\n" in line_buffer:
-                            line, line_buffer = line_buffer.split("\n", 1)
-                            line = line.strip()
-                            if not line:
-                                continue
-
-                            try:
-                                data: dict[str, Any] = json.loads(line)
-                                role = data.get("role", "")
-                                content = data.get("content", "")
-
-                                if role == "assistant" and content:
-                                    output_chunks.append(content)
-                                    if on_chunk:
-                                        await on_chunk(content)
-
-                            except json.JSONDecodeError:
-                                # Not JSON - raw output
-                                output_chunks.append(line)
-                                if on_chunk:
-                                    await on_chunk(line + "\n")
-
-            except asyncio.TimeoutError:
-                logger.error(f"[GROK CLI] Timeout after {self.timeout}s")
-                process.kill()
-                return None, f"Timeout after {self.timeout}s"
-
-            await process.wait()
-
-            if process.returncode != 0:
-                if process.stderr is not None:
-                    stderr = await process.stderr.read()
-                    error_msg = stderr.decode()[:500]
-                    logger.error(f"[GROK CLI] Failed: {error_msg}")
-                    return None, f"CLI failed: {error_msg}"
-                logger.error("[GROK CLI] Failed with no stderr")
-                return None, "CLI failed with no stderr"
-
-            raw_output = "\n".join(output_chunks)
-            return raw_output, None
+            return result.output, None
 
         except FileNotFoundError:
             logger.error(f"[GROK CLI] Not found at: {self.cli_path}")
