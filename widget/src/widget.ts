@@ -452,15 +452,21 @@ export class IssueWidget {
 
   private async handleScreenshotCapture(): Promise<void> {
     try {
+      // Hide widget during screenshot capture so it doesn't appear in the screenshot
+      this.container.style.display = 'none';
+
       const blob = await captureScreen(this.config.screenshotMethod);
       const compressed = await compressImage(blob);
       const dataUrl = await blobToDataUrl(compressed);
 
       this.state.screenshots = [compressed];
       this.state.screenshotPreviews = [dataUrl];
-      this.update();
     } catch (error) {
       console.error('Screenshot capture failed:', error);
+    } finally {
+      // Always show widget again
+      this.container.style.display = '';
+      this.update();
     }
   }
 
