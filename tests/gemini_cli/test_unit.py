@@ -119,14 +119,14 @@ class TestGeminiModelUsageDataclass:
     def test_all_fields_stored(self):
         """All fields should be stored correctly."""
         usage = GeminiModelUsage(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             requests=5,
             input_tokens=1000,
             cache_reads=100,
             output_tokens=500,
         )
 
-        assert usage.model == "gemini-2.5-flash"
+        assert usage.model == "gemini-3-flash-preview"
         assert usage.requests == 5
         assert usage.input_tokens == 1000
         assert usage.cache_reads == 100
@@ -235,7 +235,7 @@ class TestGeminiCLIResultDataclass:
             output="Task completed",
             raw_output="raw...",
             duration_ms=1500,
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
         )
 
         assert result.success is True
@@ -304,7 +304,7 @@ class TestModelResolution:
 
     def test_full_model_name_passthrough(self):
         """Full model names should pass through unchanged."""
-        full_name = "gemini-2.5-flash-preview-05-20"
+        full_name = "gemini-3-flash-preview"
         cli = GeminiCLI(model=full_name)
         assert cli.model == full_name
 

@@ -29,8 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude CLI and Gemini CLI globally
-RUN npm install -g @anthropic-ai/claude-code @google/gemini-cli
+# Install Claude CLI, Gemini CLI, and Grok CLI globally
+RUN npm install -g @anthropic-ai/claude-code @google/gemini-cli @vibe-kit/grok-cli
 
 # Create non-root user (Claude CLI requires non-root for --dangerously-skip-permissions)
 RUN useradd -m -s /bin/bash appuser

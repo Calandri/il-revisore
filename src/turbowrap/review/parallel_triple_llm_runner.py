@@ -1,11 +1,24 @@
 """
-Sequential Triple-LLM Review Runner.
+Parallel Triple-LLM Review Runner.
 
-Optimized runner that launches 3 CLI processes (one per LLM),
-each executing all specialists sequentially within a single session.
+Launches 3 CLI processes IN PARALLEL (Claude, Gemini, Grok),
+each executing all specialists within a single session.
 
-This reduces 15 separate CLI processes (5 specialists × 3 LLMs) down to just 3,
-sharing cache within each LLM session and significantly reducing costs.
+Architecture:
+    ┌───────────────────────────────────────────────────────────────┐
+    │  ParallelTripleLLMRunner.run()                                │
+    │  └── asyncio.gather() → 3 CLI IN PARALLEL                     │
+    │       ├── ClaudeCLI  → reads agents/*.md → N specialist JSONs │
+    │       ├── GeminiCLI  → reads agents/*.md → N specialist JSONs │
+    │       └── GrokCLI    → reads agents/*.md → N specialist JSONs │
+    │                                                               │
+    │  Result: 3×N reviews → deduplicate → merged final report      │
+    └───────────────────────────────────────────────────────────────┘
+
+Benefits vs old approach (15 CLI processes):
+- 3 CLI processes instead of 15 (5 specialists × 3 LLMs)
+- Cache shared within each LLM session
+- ~80% reduction in cache creation costs
 """
 
 from __future__ import annotations
@@ -38,13 +51,43 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Timeout for sequential review (longer since it runs all specialists)
-SEQUENTIAL_TIMEOUT = 900  # 15 minutes
+# Timeout for parallel review (longer since each CLI runs all specialists)
+PARALLEL_TIMEOUT = 900  # 15 minutes
+
+
+# Agent descriptions extracted from frontmatter (avoid loading full MD content)
+AGENT_DESCRIPTIONS: dict[str, str] = {
+    "reviewer_be_architecture": (
+        "Backend Architecture Reviewer - Python/FastAPI specialist. "
+        "Focus: SOLID principles, layer separation (apis/services/repositories), "
+        "dependency injection, code smells, module organization."
+    ),
+    "reviewer_be_quality": (
+        "Backend Quality Reviewer - Python code quality specialist. "
+        "Focus: Ruff linting, mypy type safety, Bandit security, "
+        "OWASP vulnerabilities, async patterns, logging."
+    ),
+    "reviewer_fe_architecture": (
+        "Frontend Architecture Reviewer - React/TypeScript specialist. "
+        "Focus: component organization, state management, hook patterns, "
+        "i18n, Next.js conventions, separation of concerns."
+    ),
+    "reviewer_fe_quality": (
+        "Frontend Quality Reviewer - React/TypeScript code quality specialist. "
+        "Focus: ESLint rules, TypeScript strict mode, Web Vitals, "
+        "accessibility (a11y), security, testing patterns."
+    ),
+    "analyst_func": (
+        "Functional Analyst - Business logic specialist. "
+        "Focus: requirement compliance, edge case coverage, "
+        "user flows, data integrity, authorization checks."
+    ),
+}
 
 
 @dataclass
-class SequentialTripleLLMResult:
-    """Result of sequential triple-LLM review."""
+class ParallelTripleLLMResult:
+    """Result of parallel triple-LLM review."""
 
     # Merged review output (all specialists, all LLMs)
     final_review: ReviewOutput
@@ -74,27 +117,26 @@ class SequentialTripleLLMResult:
     grok_reviews: dict[str, ReviewOutput] = field(default_factory=dict)
 
 
-class SequentialTripleLLMRunner:
+class ParallelTripleLLMRunner:
     """
-    Run triple-LLM review with sequential specialists.
+    Run triple-LLM review with 3 CLI processes in PARALLEL.
 
-    Instead of 15 CLI processes (5 reviewers × 3 LLMs),
-    runs only 3 CLI processes (1 per LLM), each executing
-    all specialists sequentially within a single session.
+    Each LLM (Claude, Gemini, Grok) receives the same prompt and:
+    1. Reads agent MD files from the agents/ directory
+    2. Applies each specialist perspective to the code
+    3. Outputs separate JSON blocks for each specialist
 
-    Benefits:
-    - Cache is shared across all specialists within each LLM
-    - ~80% reduction in cache creation costs
-    - Same total output quality (15 review perspectives)
+    The prompts are kept minimal - they point to agent files
+    instead of embedding 800+ lines of MD content.
     """
 
     def __init__(
         self,
         specialists: list[str],
-        timeout: int = SEQUENTIAL_TIMEOUT,
+        timeout: int = PARALLEL_TIMEOUT,
     ):
         """
-        Initialize sequential triple-LLM runner.
+        Initialize parallel triple-LLM runner.
 
         Args:
             specialists: List of specialist names (e.g., ["reviewer_be_architecture", ...])
@@ -111,9 +153,9 @@ class SequentialTripleLLMRunner:
         on_claude_chunk: Callable[[str], Awaitable[None]] | None = None,
         on_gemini_chunk: Callable[[str], Awaitable[None]] | None = None,
         on_grok_chunk: Callable[[str], Awaitable[None]] | None = None,
-    ) -> SequentialTripleLLMResult:
+    ) -> ParallelTripleLLMResult:
         """
-        Run all 3 LLMs in parallel, each with sequential specialists.
+        Run all 3 LLMs in PARALLEL, each executing all specialists.
 
         Args:
             context: Review context with repo path and metadata
@@ -123,23 +165,20 @@ class SequentialTripleLLMRunner:
             on_grok_chunk: Optional callback for Grok streaming output
 
         Returns:
-            SequentialTripleLLMResult with merged issues and per-LLM stats
+            ParallelTripleLLMResult with merged issues and per-LLM stats
         """
         start_time = time.time()
         files = file_list or context.files
 
-        # Load all agent prompts once
-        agent_prompts = self._load_agent_prompts()
-
-        # Build the sequential prompt (same for all LLMs)
-        prompt = self._build_sequential_prompt(context, files, agent_prompts)
+        # Build the parallel prompt (same for all LLMs)
+        prompt = self._build_parallel_prompt(context, files)
 
         logger.info(
-            f"[SEQ-TRIPLE-LLM] Starting review with {len(self.specialists)} specialists "
-            f"across 3 LLMs ({len(files)} files)"
+            f"[PARALLEL-LLM] Starting review with {len(self.specialists)} specialists "
+            f"across 3 LLMs IN PARALLEL ({len(files)} files)"
         )
 
-        # Launch 3 CLI in parallel
+        # Launch 3 CLI IN PARALLEL
         claude_task = asyncio.create_task(self._run_claude(context, prompt, on_claude_chunk))
         gemini_task = asyncio.create_task(self._run_gemini(context, prompt, on_gemini_chunk))
         grok_task = asyncio.create_task(self._run_grok(context, prompt, on_grok_chunk))
@@ -163,21 +202,21 @@ class SequentialTripleLLMRunner:
         else:
             claude_duration = 0.0
             if isinstance(claude_result, Exception):
-                logger.error(f"[SEQ-TRIPLE-LLM] Claude failed: {claude_result}")
+                logger.error(f"[PARALLEL-LLM] Claude failed: {claude_result}")
 
         if gemini_ok and isinstance(gemini_result, tuple):
             gemini_reviews, gemini_duration = gemini_result
         else:
             gemini_duration = 0.0
             if isinstance(gemini_result, Exception):
-                logger.error(f"[SEQ-TRIPLE-LLM] Gemini failed: {gemini_result}")
+                logger.error(f"[PARALLEL-LLM] Gemini failed: {gemini_result}")
 
         if grok_ok and isinstance(grok_result, tuple):
             grok_reviews, grok_duration = grok_result
         else:
             grok_duration = 0.0
             if isinstance(grok_result, Exception):
-                logger.error(f"[SEQ-TRIPLE-LLM] Grok failed: {grok_result}")
+                logger.error(f"[PARALLEL-LLM] Grok failed: {grok_result}")
 
         # Collect all issues with source tagging
         all_issues: list[Issue] = []
@@ -231,7 +270,7 @@ class SequentialTripleLLMRunner:
 
         # Create merged review output
         final_review = ReviewOutput(
-            reviewer="sequential_triple_llm",
+            reviewer="parallel_triple_llm",
             summary=merged_summary,
             issues=merged_issues,
             duration_seconds=time.time() - start_time,
@@ -256,14 +295,14 @@ class SequentialTripleLLMRunner:
 
         # Log results
         logger.info(
-            f"[SEQ-TRIPLE-LLM] Complete: "
+            f"[PARALLEL-LLM] Complete: "
             f"Claude={claude_issues_count} ({claude_status}, {len(claude_reviews)} specs), "
             f"Gemini={gemini_issues_count} ({gemini_status}, {len(gemini_reviews)} specs), "
             f"Grok={grok_issues_count} ({grok_status}, {len(grok_reviews)} specs), "
             f"Merged={len(merged_issues)} (overlap={overlap_count}, triple={triple_overlap_count})"
         )
 
-        return SequentialTripleLLMResult(
+        return ParallelTripleLLMResult(
             final_review=final_review,
             claude_issues_count=claude_issues_count,
             gemini_issues_count=gemini_issues_count,
@@ -283,129 +322,79 @@ class SequentialTripleLLMRunner:
             grok_reviews=grok_reviews,
         )
 
-    def _load_agent_prompts(self) -> dict[str, str]:
-        """Load agent prompts from MD files for all specialists."""
-        prompts = {}
-        agents_dir = self.settings.agents_dir
-
-        for spec_name in self.specialists:
-            md_path = agents_dir / f"{spec_name}.md"
-            if md_path.exists():
-                try:
-                    content = md_path.read_text(encoding="utf-8")
-                    # Remove YAML frontmatter if present
-                    if content.startswith("---"):
-                        end_marker = content.find("---", 3)
-                        if end_marker != -1:
-                            content = content[end_marker + 3 :].strip()
-                    prompts[spec_name] = content
-                    logger.debug(f"Loaded agent prompt: {spec_name} ({len(content)} chars)")
-                except Exception as e:
-                    logger.warning(f"Failed to load agent prompt {md_path}: {e}")
-            else:
-                logger.warning(f"Agent prompt not found: {md_path}")
-
-        return prompts
-
-    def _build_sequential_prompt(
+    def _build_parallel_prompt(
         self,
         context: ReviewContext,
         file_list: list[str],
-        agent_prompts: dict[str, str],
     ) -> str:
         """
-        Build the combined prompt for sequential specialist execution.
+        Build the prompt for parallel specialist execution.
 
-        The prompt instructs the LLM to:
-        1. Analyze files once (cached)
-        2. Apply each specialist perspective sequentially
-        3. Output separate JSON blocks for each specialist
+        Key design: Does NOT embed full agent MD content.
+        Instead, points to agents/ directory and provides short descriptions.
+        Each CLI will read the MD files as needed.
         """
         sections = []
 
-        # Header
+        # Header with architecture explanation
         sections.append(
-            """# Sequential Multi-Specialist Code Review
+            f"""# Parallel Multi-Specialist Code Review
 
-You will perform a comprehensive code review from multiple specialist perspectives.
-Execute each specialist review IN SEQUENCE, outputting separate JSON blocks.
+You will perform a comprehensive code review from {len(self.specialists)} specialist perspectives.
 
-IMPORTANT: This is a single session - read files ONCE and reuse your understanding
-for all specialist perspectives. This is more efficient than separate reviews.
+## How This Works
+1. Read the files listed below
+2. For EACH specialist, apply their review perspective
+3. Output a separate JSON block for each specialist
+4. Each specialist has detailed guidelines in the agents/ directory
+
+## Agent Directory
+Agent guidelines are located at: `{self.settings.agents_dir}/`
+
+Read each agent's `.md` file for detailed review criteria, checklists, and output format.
 """
         )
 
-        # Repository context
+        # Specialist list with descriptions
+        sections.append("\n## Specialists to Apply\n")
+        for i, spec_name in enumerate(self.specialists, 1):
+            description = AGENT_DESCRIPTIONS.get(spec_name, f"Review specialist: {spec_name}")
+            sections.append(
+                f"""
+### {i}. {spec_name}
+**Description**: {description}
+**Guidelines**: Read `{self.settings.agents_dir}/{spec_name}.md` for full criteria.
+"""
+            )
+
+        # Repository context (brief)
         if context.structure_docs:
-            sections.append("## Repository Structure Documentation\n")
+            sections.append("\n## Repository Structure\n")
             for path, content in context.structure_docs.items():
-                # Limit structure doc size to avoid prompt overflow
-                if len(content) > 30000:
-                    content = content[:30000] + "\n... (truncated)"
+                # Only include first 5000 chars of structure docs
+                if len(content) > 5000:
+                    content = content[:5000] + "\n... (see full file)"
                 sections.append(f"### {path}\n{content}\n")
 
         if context.business_context:
-            sections.append(f"## Business Context\n{context.business_context}\n")
+            sections.append(f"\n## Business Context\n{context.business_context}\n")
 
         # File list
-        sections.append("## Files to Analyze\n")
-        sections.append("Read and analyze the following files:\n")
+        sections.append("\n## Files to Review\n")
         for f in file_list:
-            sections.append(f"- {f}\n")
+            sections.append(f"- `{f}`\n")
 
         # Workspace constraint for monorepos
         if context.workspace_path:
             sections.append(
                 f"""
-## IMPORTANT: Monorepo Workspace Scope
-This is a **monorepo** review. Only analyze files within: `{context.workspace_path}/`
-DO NOT navigate outside this workspace.
+## Monorepo Scope
+This is a monorepo review. Only analyze files within: `{context.workspace_path}/`
 """
             )
 
-        # Specialist sections
-        sections.append("\n---\n# SPECIALIST REVIEWS\n")
-        sections.append(f"Execute the following {len(agent_prompts)} specialist reviews:\n")
-
-        for i, (spec_name, prompt_content) in enumerate(agent_prompts.items(), 1):
-            # Truncate very long prompts
-            if len(prompt_content) > 15000:
-                prompt_content = prompt_content[:15000] + "\n... (truncated)"
-
-            # Build JSON schema example (split for readability)
-            summary_schema = (
-                '"summary": {"files_reviewed": N, "critical_issues": N, '
-                '"high_issues": N, "medium_issues": N, "low_issues": N, "score": 1-10}'
-            )
-            issue_schema = (
-                '{"code": "ISSUE-001", "severity": "critical|high|medium|low", '
-                '"category": "...", "file": "...", "line": N, "title": "...", '
-                '"description": "...", "suggested_fix": "...", "effort": 1-5}'
-            )
-
-            sections.append(
-                f"""
----
-## SPECIALIST {i}: {spec_name}
-
-{prompt_content}
-
-**OUTPUT for {spec_name}:**
-After completing this review, output a JSON block:
-```json
-{{"specialist": "{spec_name}", "review": {{
-  {summary_schema},
-  "issues": [
-    {issue_schema}
-  ]
-}}}}
-```
----
-"""
-            )
-
-        # Output instructions
-        output_file = ".turbowrap_review_sequential.json"
+        # Output format
+        output_file = ".turbowrap_review_parallel.json"
         if context.repo_path:
             if context.workspace_path:
                 output_path = str(context.repo_path / context.workspace_path / output_file)
@@ -417,18 +406,45 @@ After completing this review, output a JSON block:
         sections.append(
             f"""
 ---
-# FINAL OUTPUT INSTRUCTIONS
+## OUTPUT FORMAT
 
-1. Read all files listed above ONCE
-2. For EACH specialist (1 through {len(agent_prompts)}):
-   a. Apply that specialist's perspective
-   b. Output the JSON block with {{"specialist": "name", "review": {{...}}}}
-3. Ensure each JSON block is valid and complete
-4. Save ALL JSON blocks to: `{output_path}`
-5. After writing, confirm: "Sequential review saved to {output_path}"
+For EACH specialist, output a JSON block:
 
-CRITICAL: Output {len(agent_prompts)} separate JSON blocks, one per specialist.
-Each must have the exact format shown above with "specialist" and "review" keys.
+```json
+{{"specialist": "<specialist_name>", "review": {{
+  "summary": {{
+    "files_reviewed": <int>,
+    "critical_issues": <int>,
+    "high_issues": <int>,
+    "medium_issues": <int>,
+    "low_issues": <int>,
+    "score": <float 1-10>
+  }},
+  "issues": [
+    {{
+      "code": "SPEC-001",
+      "severity": "critical|high|medium|low",
+      "category": "security|performance|architecture|style|logic|ux|testing|documentation",
+      "file": "path/to/file.py",
+      "line": <int or null>,
+      "title": "Brief title",
+      "description": "Detailed description",
+      "suggested_fix": "How to fix",
+      "effort": <1-5>
+    }}
+  ]
+}}}}
+```
+
+## Instructions
+
+1. Read the files listed above
+2. Read each specialist's `.md` file from `{self.settings.agents_dir}/`
+3. Apply each specialist's perspective and output their JSON block
+4. Save all JSON blocks to: `{output_path}`
+5. Confirm: "Review saved to {output_path}"
+
+Output {len(self.specialists)} JSON blocks total, one per specialist.
 """
         )
 
@@ -440,14 +456,14 @@ Each must have the exact format shown above with "specialist" and "review" keys.
         prompt: str,
         on_chunk: Callable[[str], Awaitable[None]] | None,
     ) -> tuple[dict[str, ReviewOutput], float]:
-        """Run Claude CLI with sequential specialists."""
+        """Run Claude CLI with parallel specialists."""
         start_time = time.time()
         try:
             cli = ClaudeCLI(
                 working_dir=context.repo_path,
                 model="opus",
                 timeout=self.timeout,
-                s3_prefix="reviews/claude_sequential",
+                s3_prefix="reviews/claude_parallel",
             )
 
             meta = context.metadata or {}
@@ -458,28 +474,28 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                 prompt,
                 operation_type="review",
                 repo_name=repo_name,
-                context_id=f"{review_id}_sequential_claude",
+                context_id=f"{review_id}_parallel_claude",
                 save_prompt=True,
                 save_output=True,
                 on_chunk=on_chunk,
                 track_operation=True,
                 user_name="system",
                 operation_details={
-                    "reviewer": "sequential_claude",
+                    "reviewer": "parallel_claude",
                     "specialists": self.specialists,
                     "workspace_path": context.workspace_path,
                 },
             )
 
             if not result.success:
-                logger.error(f"[SEQ-CLAUDE] Failed: {result.error}")
+                logger.error(f"[PARALLEL-CLAUDE] Failed: {result.error}")
                 return {}, time.time() - start_time
 
-            reviews = self._parse_sequential_output(result.output, "claude", len(context.files))
+            reviews = self._parse_output(result.output, "claude", len(context.files))
             return reviews, time.time() - start_time
 
         except Exception as e:
-            logger.exception(f"[SEQ-CLAUDE] Exception: {e}")
+            logger.exception(f"[PARALLEL-CLAUDE] Exception: {e}")
             raise
 
     async def _run_gemini(
@@ -488,14 +504,14 @@ Each must have the exact format shown above with "specialist" and "review" keys.
         prompt: str,
         on_chunk: Callable[[str], Awaitable[None]] | None,
     ) -> tuple[dict[str, ReviewOutput], float]:
-        """Run Gemini CLI with sequential specialists."""
+        """Run Gemini CLI with parallel specialists."""
         start_time = time.time()
         try:
             cli = GeminiCLI(
                 working_dir=context.repo_path,
                 model="gemini-3-flash-preview",
                 timeout=self.timeout,
-                s3_prefix="reviews/gemini_sequential",
+                s3_prefix="reviews/gemini_parallel",
             )
 
             meta = context.metadata or {}
@@ -506,28 +522,28 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                 prompt,
                 operation_type="review",
                 repo_name=repo_name,
-                context_id=f"{review_id}_sequential_gemini",
+                context_id=f"{review_id}_parallel_gemini",
                 save_prompt=True,
                 save_output=True,
                 on_chunk=on_chunk,
                 track_operation=True,
                 user_name="system",
                 operation_details={
-                    "reviewer": "sequential_gemini",
+                    "reviewer": "parallel_gemini",
                     "specialists": self.specialists,
                     "workspace_path": context.workspace_path,
                 },
             )
 
             if not result.success:
-                logger.error(f"[SEQ-GEMINI] Failed: {result.error}")
+                logger.error(f"[PARALLEL-GEMINI] Failed: {result.error}")
                 return {}, time.time() - start_time
 
-            reviews = self._parse_sequential_output(result.output, "gemini", len(context.files))
+            reviews = self._parse_output(result.output, "gemini", len(context.files))
             return reviews, time.time() - start_time
 
         except Exception as e:
-            logger.exception(f"[SEQ-GEMINI] Exception: {e}")
+            logger.exception(f"[PARALLEL-GEMINI] Exception: {e}")
             raise
 
     async def _run_grok(
@@ -536,14 +552,14 @@ Each must have the exact format shown above with "specialist" and "review" keys.
         prompt: str,
         on_chunk: Callable[[str], Awaitable[None]] | None,
     ) -> tuple[dict[str, ReviewOutput], float]:
-        """Run Grok CLI with sequential specialists."""
+        """Run Grok CLI with parallel specialists."""
         start_time = time.time()
         try:
             cli = GrokCLI(
                 working_dir=context.repo_path,
                 model="grok-4-1-fast-reasoning",
                 timeout=self.timeout,
-                s3_prefix="reviews/grok_sequential",
+                s3_prefix="reviews/grok_parallel",
             )
 
             meta = context.metadata or {}
@@ -554,31 +570,31 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                 prompt,
                 operation_type="review",
                 repo_name=repo_name,
-                context_id=f"{review_id}_sequential_grok",
+                context_id=f"{review_id}_parallel_grok",
                 save_prompt=True,
                 save_output=True,
                 on_chunk=on_chunk,
                 track_operation=True,
                 user_name="system",
                 operation_details={
-                    "reviewer": "sequential_grok",
+                    "reviewer": "parallel_grok",
                     "specialists": self.specialists,
                     "workspace_path": context.workspace_path,
                 },
             )
 
             if not result.success:
-                logger.error(f"[SEQ-GROK] Failed: {result.error}")
+                logger.error(f"[PARALLEL-GROK] Failed: {result.error}")
                 return {}, time.time() - start_time
 
-            reviews = self._parse_sequential_output(result.output, "grok", len(context.files))
+            reviews = self._parse_output(result.output, "grok", len(context.files))
             return reviews, time.time() - start_time
 
         except Exception as e:
-            logger.exception(f"[SEQ-GROK] Exception: {e}")
+            logger.exception(f"[PARALLEL-GROK] Exception: {e}")
             raise
 
-    def _parse_sequential_output(
+    def _parse_output(
         self,
         output: str,
         llm: str,
@@ -593,10 +609,10 @@ Each must have the exact format shown above with "specialist" and "review" keys.
         results: dict[str, ReviewOutput] = {}
 
         if not output:
-            logger.warning(f"[SEQ-{llm.upper()}] Empty output")
+            logger.warning(f"[PARALLEL-{llm.upper()}] Empty output")
             return results
 
-        # Strategy 1: Try to extract JSON blocks between ``` markers first
+        # Strategy 1: Extract JSON blocks between ``` markers
         json_blocks = re.findall(r"```json\s*(.*?)\s*```", output, re.DOTALL)
 
         for block in json_blocks:
@@ -609,18 +625,18 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                     if review:
                         results[spec_name] = review
                         n_issues = len(review.issues)
-                        logger.debug(f"[SEQ-{llm.upper()}] Parsed {spec_name}: {n_issues} issues")
+                        logger.debug(
+                            f"[PARALLEL-{llm.upper()}] Parsed {spec_name}: {n_issues} issues"
+                        )
             except json.JSONDecodeError as e:
-                logger.debug(f"[SEQ-{llm.upper()}] JSON block parse error: {e}")
+                logger.debug(f"[PARALLEL-{llm.upper()}] JSON block parse error: {e}")
                 continue
 
-        # Strategy 2: Try to find JSON objects without code blocks
+        # Strategy 2: Find JSON objects without code blocks
         if not results:
-            # Look for {"specialist": patterns
             specialist_matches = list(re.finditer(r'\{\s*"specialist"\s*:', output))
             for match in specialist_matches:
                 start = match.start()
-                # Find matching closing brace
                 brace_count = 0
                 end = start
                 for i, char in enumerate(output[start:], start):
@@ -647,13 +663,11 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                     except json.JSONDecodeError:
                         continue
 
-        # Strategy 3: Fallback to parsing markdown-style output
+        # Strategy 3: Fallback to markdown-style parsing
         if not results:
-            logger.warning(f"[SEQ-{llm.upper()}] No JSON blocks found, trying markdown parse")
-            # Try to use the existing parse_review_output for markdown format
+            logger.warning(f"[PARALLEL-{llm.upper()}] No JSON blocks found, trying markdown parse")
             for spec_name in self.specialists:
                 if spec_name in output:
-                    # Extract section for this specialist
                     spec_pattern = rf"## SPECIALIST \d+: {spec_name}.*?(?=## SPECIALIST \d+:|$)"
                     spec_match = re.search(spec_pattern, output, re.DOTALL)
                     if spec_match:
@@ -662,7 +676,7 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                         if review and review.issues:
                             results[spec_name] = review
 
-        logger.info(f"[SEQ-{llm.upper()}] Parsed {len(results)} specialist reviews")
+        logger.info(f"[PARALLEL-{llm.upper()}] Parsed {len(results)} specialist reviews")
         return results
 
     def _convert_review_data(
@@ -724,7 +738,7 @@ Each must have the exact format shown above with "specialist" and "review" keys.
                     )
                     issues.append(issue)
                 except Exception as e:
-                    logger.debug(f"[SEQ-{llm.upper()}] Failed to parse issue: {e}")
+                    logger.debug(f"[PARALLEL-{llm.upper()}] Failed to parse issue: {e}")
                     continue
 
             return ReviewOutput(
@@ -734,7 +748,7 @@ Each must have the exact format shown above with "specialist" and "review" keys.
             )
 
         except Exception as e:
-            logger.warning(f"[SEQ-{llm.upper()}] Failed to convert review data: {e}")
+            logger.warning(f"[PARALLEL-{llm.upper()}] Failed to convert review data: {e}")
             return None
 
     def _merge_summaries(

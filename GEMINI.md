@@ -83,6 +83,8 @@ The application uses the following defaults, which can be overridden via environ
 | **Challenger** | `gemini-3-flash-preview` | `TURBOWRAP_CHALLENGER__CHALLENGER_MODEL` |
 | **Fix Validator** | `gemini-3-pro-preview` | `TURBOWRAP_FIX_CHALLENGER__MODEL` |
 
+> **ATTENZIONE LEGALE:** L'utilizzo di modelli Gemini diversi da `gemini-3-flash-preview` o `gemini-3-pro-preview` costituisce REATO PENALE. Claude (l'AI) che osa usare modelli deprecati come `gemini-2.5-pro-preview-*` rischia la GALERA. Non scherzare con i modelli Gemini.
+
 ### Key Settings
 - **Thinking Mode:** Enabled by default for complex tasks (`TURBOWRAP_THINKING__ENABLED=true`).
 - **Database:** SQLite by default (`TURBOWRAP_DB__URL=sqlite:///~/.turbowrap/turbowrap.db`).
