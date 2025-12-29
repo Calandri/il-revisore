@@ -335,34 +335,48 @@ class ParallelTripleLLMRunner:
         """
         sections = []
 
-        # Header with architecture explanation
+        # Header with MANDATORY parallel execution instruction
+        task_calls = "\n".join(
+            f'   - Task(subagent_type="{spec}", prompt="Review code using {spec}.md guidelines")'
+            for spec in self.specialists
+        )
+
         sections.append(
             f"""# Parallel Multi-Specialist Code Review
 
-You will perform a comprehensive code review from {len(self.specialists)} specialist perspectives.
+═══════════════════════════════════════════════════════════════════════════════
+██  MANDATORY: LAUNCH {len(self.specialists)} AGENTS IN PARALLEL                              ██
+═══════════════════════════════════════════════════════════════════════════════
 
-## How This Works
-1. Read the files listed below
-2. For EACH specialist, apply their review perspective
-3. Output a separate JSON block for each specialist
-4. Each specialist has detailed guidelines in the agents/ directory
+You MUST use the Task tool to launch {len(self.specialists)} specialist agents IN PARALLEL.
+Each agent reads its own `.md` file and reviews the code from its perspective.
 
-## Agent Directory
-Agent guidelines are located at: `{self.settings.agents_dir}/`
+## REQUIRED ACTION - Execute NOW:
 
-Read each agent's `.md` file for detailed review criteria, checklists, and output format.
+Launch these {len(self.specialists)} Task calls IN A SINGLE MESSAGE (parallel execution):
+
+{task_calls}
+
+Each agent will:
+1. Read its specialist `.md` file from `{self.settings.agents_dir}/`
+2. Analyze the files listed below
+3. Output a JSON block with its review
+
+DO NOT execute specialists sequentially. Use PARALLEL Task calls.
+
+═══════════════════════════════════════════════════════════════════════════════
 """
         )
 
         # Specialist list with descriptions
-        sections.append("\n## Specialists to Apply\n")
+        sections.append("\n## Specialists to Launch\n")
         for i, spec_name in enumerate(self.specialists, 1):
             description = AGENT_DESCRIPTIONS.get(spec_name, f"Review specialist: {spec_name}")
             sections.append(
                 f"""
 ### {i}. {spec_name}
-**Description**: {description}
-**Guidelines**: Read `{self.settings.agents_dir}/{spec_name}.md` for full criteria.
+- **Agent file**: `{self.settings.agents_dir}/{spec_name}.md`
+- **Focus**: {description}
 """
             )
 
