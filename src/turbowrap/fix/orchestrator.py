@@ -738,6 +738,10 @@ class FixOrchestrator:
                     "issue": issue,
                 }
 
+            # Store Claude fixer's per-issue output data (changes_summary, file_modified, etc.)
+            # Key: issue_code, Value: {"changes_summary": str, "file_modified": str, ...}
+            claude_fix_data: dict[str, dict[str, Any]] = {}
+
             # Initialize session context for fix operations
             # Note: Branch creation is now handled internally by Opus orchestrator via Task tool
             # so we don't have a branch_session_id to propagate. Each Opus CLI call manages
@@ -1002,6 +1006,15 @@ class FixOrchestrator:
                                 )
                             )
                             continue
+
+                        # Parse Claude fixer's output to extract per-issue data
+                        # (changes_summary, file_modified, etc.)
+                        parsed_fix_data = self._parse_claude_fix_output(
+                            getattr(claude_result, "output", None)
+                        )
+                        # Merge into global claude_fix_data for later use in IssueFixResult
+                        for code, data in parsed_fix_data.items():
+                            claude_fix_data[code] = data
 
                         # CHECK: Verify there are actual uncommitted changes
                         # If fixer identified a false positive, there will be no changes to commit
@@ -1470,7 +1483,8 @@ class FixOrchestrator:
             # Step 3: Commits already done per-batch (atomic commits)
 
             # Step 4: Collect results from batch commits
-            fix_explanation = self._build_fix_explanation(successful_issues, last_gemini_output)
+            # NOTE: fix_explanation is now per-issue from claude_fix_data["changes_summary"]
+            # The old _build_fix_explanation combined all issues into one text.
 
             actually_fixed_count = len(successful_issues)
             failed_count = len(failed_issues)
@@ -1482,25 +1496,38 @@ class FixOrchestrator:
 
             for issue in successful_issues:
                 issue_file = str(issue.file)
+                issue_code = str(issue.issue_code)
                 fix_code = await self._get_diff_for_file(issue_file)
 
                 issue_commit_sha = None
-                issue_modified_files: list[str] = []
-                issue_codes_for_msg = str(issue.issue_code)
+                issue_codes_for_msg = issue_code
                 is_false_positive = False
                 for _batch_id, data in batch_results.items():
                     if issue in data.get("issues", []):
                         issue_commit_sha = data.get("commit_sha")
-                        issue_modified_files = data.get("modified_files", [])
                         is_false_positive = data.get("false_positive", False)
                         issue_codes_for_msg = ", ".join(
                             str(i.issue_code) for i in data.get("issues", [])
                         )
                         break
 
+                # Use per-issue data from Claude fixer if available
+                issue_fix_data = claude_fix_data.get(issue_code, {})
+                per_issue_explanation = issue_fix_data.get("changes_summary")
+                if not per_issue_explanation:
+                    # Fallback to generic message
+                    per_issue_explanation = (
+                        "False positive - issue does not exist in code"
+                        if is_false_positive
+                        else f"Fixed {issue.title}"
+                    )
+
+                # Use issue's own file, not batch's modified_files
+                per_issue_files = [issue_file] if issue_file else []
+
                 issue_result = IssueFixResult(
                     issue_id=str(issue.id),
-                    issue_code=str(issue.issue_code),
+                    issue_code=issue_code,
                     status=FixStatus.COMPLETED,
                     commit_sha=issue_commit_sha,
                     commit_message=f"[FIX] {issue_codes_for_msg}",
@@ -1510,8 +1537,8 @@ class FixOrchestrator:
                         else f"Fixed {issue.title}"
                     ),
                     fix_code=fix_code,
-                    fix_explanation=fix_explanation,
-                    fix_files_modified=issue_modified_files,
+                    fix_explanation=per_issue_explanation,
+                    fix_files_modified=per_issue_files,
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                     false_positive=is_false_positive,
@@ -1802,6 +1829,78 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
                 logger.info(f"Derived IN_PROGRESS from scores: {in_progress_issues}")
 
         return batch_score, in_progress_issues, per_issue_scores, per_issue_data
+
+    def _parse_claude_fix_output(self, output: str | None) -> dict[str, dict[str, Any]]:
+        """Parse Claude fixer's JSON output to extract per-issue data.
+
+        Claude fixer returns JSON like:
+        {
+            "issues": {
+                "FUNC-001": {
+                    "status": "fixed",
+                    "file_modified": "src/services.py",
+                    "changes_summary": "Added null check",
+                    "self_evaluation": {...}
+                }
+            }
+        }
+
+        Args:
+            output: Claude's raw output text
+
+        Returns:
+            Dict mapping issue_code to issue data (changes_summary, file_modified, etc.)
+        """
+        if not output:
+            return {}
+
+        per_issue_data: dict[str, dict[str, Any]] = {}
+
+        # Try to find JSON block in output
+        json_match = re.search(r"```json\s*([\s\S]*?)```", output)
+        if json_match:
+            try:
+                fix_data = json.loads(json_match.group(1))
+                if "issues" in fix_data and isinstance(fix_data["issues"], dict):
+                    for code, issue_data in fix_data["issues"].items():
+                        per_issue_data[code] = issue_data
+                        logger.debug(
+                            f"Parsed Claude fix data for {code}: "
+                            f"changes_summary={issue_data.get('changes_summary', 'N/A')[:50]}"
+                        )
+                    logger.info(f"Parsed Claude fix output: {len(per_issue_data)} issues")
+            except json.JSONDecodeError as e:
+                logger.debug(f"Failed to parse Claude fix JSON: {e}")
+
+        # Fallback: try to find raw JSON (no markdown code block)
+        if not per_issue_data:
+            try:
+                # Look for JSON starting with {
+                json_start = output.find('{"issues"')
+                if json_start >= 0:
+                    # Find matching closing brace
+                    brace_count = 0
+                    json_end = json_start
+                    for i, char in enumerate(output[json_start:]):
+                        if char == "{":
+                            brace_count += 1
+                        elif char == "}":
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = json_start + i + 1
+                                break
+                    if json_end > json_start:
+                        fix_data = json.loads(output[json_start:json_end])
+                        if "issues" in fix_data and isinstance(fix_data["issues"], dict):
+                            for code, issue_data in fix_data["issues"].items():
+                                per_issue_data[code] = issue_data
+                            logger.info(
+                                f"Parsed Claude fix output (raw JSON): {len(per_issue_data)} issues"
+                            )
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.debug(f"Failed to parse raw Claude fix JSON: {e}")
+
+        return per_issue_data
 
     def _load_structure_doc(self, workspace_path: str | None = None) -> str | None:
         """Load structure documentation for context.
