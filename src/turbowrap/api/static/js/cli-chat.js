@@ -143,6 +143,15 @@ function chatSidebar() {
                         console.log('[chatSidebar] Creating new session');
                         const repoId = Alpine.store('globalContext')?.selectedRepoId;
                         await this.createSession('claude', repoId);
+                    } else if (e.detail?.reuseSession) {
+                        // Reuse active session if exists, otherwise create new
+                        if (!this.activeSession) {
+                            console.log('[chatSidebar] No active session, creating new one');
+                            const repoId = Alpine.store('globalContext')?.selectedRepoId;
+                            await this.createSession('claude', repoId);
+                        } else {
+                            console.log('[chatSidebar] Reusing active session:', this.activeSession.id);
+                        }
                     } else if (e.detail?.sessionId) {
                         // Switch to existing session
                         console.log('[chatSidebar] Switching to session:', e.detail.sessionId);

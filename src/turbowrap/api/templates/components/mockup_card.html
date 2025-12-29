@@ -4,9 +4,9 @@
 
     <!-- Preview Thumbnail -->
     <div class="aspect-video bg-white dark:bg-gray-800 relative overflow-hidden">
-        <!-- Live Preview iframe (scaled down) - links directly to S3 -->
+        <!-- Live Preview iframe (scaled down) - uses backend proxy to fetch from S3 -->
         <template x-if="mockup.s3_html_url">
-            <iframe :src="mockup.s3_html_url"
+            <iframe :src="'/mockups/' + mockup.id + '/preview'"
                     class="absolute inset-0 w-[400%] h-[400%] origin-top-left pointer-events-none"
                     style="transform: scale(0.25);"
                     loading="lazy"
@@ -65,7 +65,7 @@
 
         <!-- Actions -->
         <div class="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity" @click.stop>
-            <button @click="window.open(mockup.s3_html_url, '_blank')"
+            <button @click="window.open('/mockups/' + mockup.id + '/preview', '_blank')"
                     class="flex-1 px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary/90 transition-colors"
                     :disabled="!mockup.s3_html_url">
                 Preview
@@ -74,7 +74,7 @@
                     class="flex-1 px-2 py-1 text-xs bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors">
                 Modifica
             </button>
-            <button @click="deleteMockup(mockup.id)"
+            <button @click="deleteMockup(mockup)"
                     class="px-2 py-1 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>

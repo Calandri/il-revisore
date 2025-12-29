@@ -14,18 +14,7 @@
 
 <!-- Right Chat Sidebar - Minimal Tab Design -->
 <aside x-cloak x-show="chatMode !== 'hidden'"
-       x-effect="
-           // Lock body scroll on mobile when chat is open
-           if (window.innerWidth < 768 && chatMode !== 'hidden') {
-               document.body.style.overflow = 'hidden';
-               document.body.style.position = 'fixed';
-               document.body.style.width = '100%';
-           } else if (window.innerWidth < 768) {
-               document.body.style.overflow = '';
-               document.body.style.position = '';
-               document.body.style.width = '';
-           }
-       "
+       x-effect="(() => { const isMobile = window.innerWidth < 768; const isOpen = chatMode !== 'hidden'; if (isMobile && isOpen) { document.body.style.overflow = 'hidden'; document.body.style.position = 'fixed'; document.body.style.width = '100%'; } else if (isMobile) { document.body.style.overflow = ''; document.body.style.position = ''; document.body.style.width = ''; } })()"
        class="fixed right-0 top-0 h-full bg-white dark:bg-gray-900 shadow-2xl transition-all duration-300 z-40 flex flex-col border-l border-gray-200 dark:border-gray-700"
        :class="{
            'w-full md:w-[calc(100vw-4rem)]': chatMode === 'page',
@@ -571,9 +560,8 @@
         </div>
 
         <!-- Settings Panel (absolute overlay) -->
-        <div x-show="showSettings && activeSession"
-             x-cloak
-             @click.outside="showSettings = false"
+        <template x-if="showSettings && activeSession">
+        <div @click.outside="showSettings = false"
              x-transition
              class="absolute top-2 right-2 left-2 sm:left-auto sm:w-72 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 z-50">
             <div class="text-sm font-semibold text-gray-900 dark:text-white mb-4">Impostazioni Chat</div>
@@ -620,6 +608,7 @@
                 Elimina Chat
             </button>
         </div>
+        </template>
     </div>
 
 </aside>

@@ -13,6 +13,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -108,7 +109,7 @@ def init_mockup(
     description: str | None = None,
     component_type: str = "page",
     llm_type: str = "claude",
-) -> dict:
+) -> dict[str, Any]:
     """Initialize a mockup with 'generating' status and upload placeholder to S3."""
     SessionLocal = get_session_local()
     db = SessionLocal()
@@ -167,7 +168,7 @@ def save_mockup(
     mockup_id: str,
     html_file: str,
     llm_model: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Save HTML content to mockup - overwrites S3 placeholder with real content."""
     SessionLocal = get_session_local()
     db = SessionLocal()
@@ -218,7 +219,7 @@ def save_mockup(
         db.close()
 
 
-def fail_mockup(mockup_id: str, error: str) -> dict:
+def fail_mockup(mockup_id: str, error: str) -> dict[str, Any]:
     """Mark mockup as failed."""
     SessionLocal = get_session_local()
     db = SessionLocal()
@@ -251,7 +252,7 @@ def fail_mockup(mockup_id: str, error: str) -> dict:
         db.close()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Mockup CLI tool")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

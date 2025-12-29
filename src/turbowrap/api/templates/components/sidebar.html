@@ -13,7 +13,7 @@
     <div class="relative p-4 border-b dark:border-gray-700">
         <!-- Expanded state -->
         <div x-show="sidebarOpen" class="flex items-center justify-between">
-            <a href="/" class="flex items-center gap-2" @click="if(window.innerWidth < 768) sidebarOpen = false">
+            <a href="/" class="flex items-center gap-2" @click="window.innerWidth < 768 && (sidebarOpen = false)">
                 <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold">T</div>
                 <span class="font-bold text-lg">TurboWrap</span>
             </a>
@@ -50,7 +50,7 @@
         <nav class="p-4 space-y-2">
         <!-- Dashboard -->
         <a href="/"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'dashboard' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -63,7 +63,7 @@
 
         <!-- Repository -->
         <a href="/repos"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'repos' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,7 +84,7 @@
 
             <!-- File Editor -->
             <a href="/files"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'files' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -95,7 +95,7 @@
 
             <!-- Code Review -->
             <a href="/review"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'review' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -106,7 +106,7 @@
 
             <!-- Issues -->
             <a href="/issues"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'issues' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -117,7 +117,7 @@
 
             <!-- Endpoints -->
             <a href="/endpoints"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'endpoints' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -128,7 +128,7 @@
 
             <!-- Mockups -->
             <a href="/mockups"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'mockups' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -139,7 +139,7 @@
 
             <!-- Chat AI -->
             <a href="/chat"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'chat' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -206,7 +206,7 @@
 
         <!-- Linear -->
         <a href="/linear"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'linear' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -219,7 +219,7 @@
 
         <!-- Databases -->
         <a href="/databases"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'databases' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,7 +233,7 @@
         <!-- Live Tasks -->
         <div x-data="liveTasksBadge()" x-init="startPolling()">
             <a href="/live-tasks"
-               @click="if(window.innerWidth < 768) sidebarOpen = false"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
                class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'live_tasks' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
                :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
                 <!-- Gear icon with animation when active -->
@@ -264,7 +264,7 @@
         <!-- Users (admin only) -->
         {% if current_user and current_user.is_admin %}
         <a href="/users"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'users' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -278,7 +278,7 @@
 
         <!-- System Status -->
         <a href="/system-status"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'status' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -291,7 +291,7 @@
 
         <!-- Settings -->
         <a href="/settings"
-           @click="if(window.innerWidth < 768) sidebarOpen = false"
+           @click="window.innerWidth < 768 && (sidebarOpen = false)"
            class="group relative flex items-center rounded-lg transition-colors {% if active_page == 'settings' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
            :class="sidebarOpen ? 'gap-3 px-3 py-2' : 'justify-center w-10 h-10 mx-auto'">
             <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

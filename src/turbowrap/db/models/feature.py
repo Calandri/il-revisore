@@ -1,6 +1,9 @@
 """Feature model for development workflow."""
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     JSON,
@@ -18,6 +21,9 @@ from sqlalchemy.orm import relationship
 from turbowrap.db.base import Base
 
 from .base import FeatureRepositoryRole, FeatureStatus, SoftDeleteMixin, generate_uuid
+
+if TYPE_CHECKING:
+    from .repository import Repository
 
 
 class Feature(Base, SoftDeleteMixin):
@@ -96,7 +102,7 @@ class Feature(Base, SoftDeleteMixin):
         return f"<Feature {identifier} ({self.status})>"
 
     @property
-    def primary_repository(self) -> "FeatureRepository | None":
+    def primary_repository(self) -> FeatureRepository | None:
         """Get the primary repository for this feature."""
         for link in self.repository_links:
             if link.role == FeatureRepositoryRole.PRIMARY.value:
@@ -104,7 +110,7 @@ class Feature(Base, SoftDeleteMixin):
         return None
 
     @property
-    def repositories(self) -> list:
+    def repositories(self) -> list[Repository]:
         """Get all linked repositories."""
         return [link.repository for link in self.repository_links]
 

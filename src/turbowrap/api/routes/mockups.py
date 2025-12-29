@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import AsyncGenerator
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -36,7 +37,7 @@ router = APIRouter(prefix="/mockups", tags=["mockups"])
 logger = logging.getLogger(__name__)
 
 # SSE clients for real-time updates
-_sse_clients: list[asyncio.Queue] = []
+_sse_clients: list[asyncio.Queue[str]] = []
 
 
 # =========================================================================
@@ -44,7 +45,7 @@ _sse_clients: list[asyncio.Queue] = []
 # =========================================================================
 
 
-async def _broadcast_event(event_type: str, data: dict) -> None:
+async def _broadcast_event(event_type: str, data: dict[str, str | None]) -> None:
     """Broadcast event to all connected SSE clients."""
     message = json.dumps({"type": event_type, **data})
     dead_clients = []
@@ -59,11 +60,11 @@ async def _broadcast_event(event_type: str, data: dict) -> None:
 
 
 @router.get("/events")
-async def mockup_events(request: Request):
+async def mockup_events(request: Request) -> StreamingResponse:
     """SSE endpoint for real-time mockup updates."""
 
-    async def event_generator():
-        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    async def event_generator() -> AsyncGenerator[str, None]:
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
         _sse_clients.append(queue)
         try:
             # Send initial connection message
@@ -101,7 +102,7 @@ async def notify_mockup_change(
     event_type: str,
     mockup_id: str,
     project_id: str | None = None,
-) -> dict:
+) -> dict[str, bool | int]:
     """Notify all clients of a mockup change (called by mockup_tool)."""
     await _broadcast_event(
         event_type,

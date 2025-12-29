@@ -369,7 +369,7 @@ async def mockup_preview_page(
     mockup_id: str,
     db: Session = Depends(get_db),
 ) -> Response:
-    """Full-page preview of a mockup (fetches HTML from S3)."""
+    """Full-page preview of a mockup (fetches HTML from S3 via boto3)."""
     from ...db.models import Mockup
 
     mockup = db.query(Mockup).filter(Mockup.id == mockup_id, Mockup.deleted_at.is_(None)).first()
@@ -381,8 +381,36 @@ async def mockup_preview_page(
             media_type="text/html",
         )
 
-    # TODO: Fetch actual content from S3
-    # For now, return a placeholder with mockup info
+    # If we have an S3 URL, fetch content from S3 using boto3
+    if mockup.s3_html_url:
+        try:
+            import re
+
+            import boto3
+
+            from ...config import get_settings
+
+            settings = get_settings()
+
+            # Extract S3 key from URL
+            # URL format: https://bucket.s3.region.amazonaws.com/key
+            match = re.search(r"\.amazonaws\.com/(.+)$", mockup.s3_html_url)
+            if match and settings.thinking.s3_bucket:
+                s3_key = match.group(1)
+                client = boto3.client("s3", region_name=settings.thinking.s3_region)
+                response = client.get_object(
+                    Bucket=settings.thinking.s3_bucket,
+                    Key=s3_key,
+                )
+                html_content = response["Body"].read().decode("utf-8")
+                return Response(content=html_content, media_type="text/html")
+        except Exception as e:
+            # Log error but fall through to placeholder
+            import logging
+
+            logging.getLogger(__name__).warning(f"Failed to fetch mockup from S3: {e}")
+
+    # Fallback: placeholder for mockups still generating or with errors
     html_content = f"""<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -391,23 +419,17 @@ async def mockup_preview_page(
     <title>{mockup.name} - Preview</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
-    <div class="flex items-center justify-center min-h-screen">
-        <div class="text-center p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg max-w-md">
-            <div class="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
-                <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
-                </svg>
-            </div>
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{mockup.name}</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-2">{mockup.component_type or 'component'} - v{mockup.version}</p>
-            <p class="text-gray-400 dark:text-gray-500 text-sm mt-4">
-                Generato con {mockup.llm_type}
-            </p>
-            <p class="text-gray-300 dark:text-gray-600 text-xs mt-2">
-                Il contenuto sara' disponibile dopo la generazione
-            </p>
+<body class="bg-gradient-to-br from-indigo-50 to-violet-100 min-h-screen flex items-center justify-center">
+    <div class="text-center p-8">
+        <div class="w-20 h-20 mx-auto mb-6 bg-white rounded-2xl shadow-lg flex items-center justify-center">
+            <svg class="w-10 h-10 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
         </div>
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">{mockup.name}</h1>
+        <p class="text-indigo-600 font-medium">Generazione in corso...</p>
+        <p class="text-gray-500 text-sm mt-4">{mockup.component_type or 'component'} • {mockup.llm_type}</p>
     </div>
 </body>
 </html>"""

@@ -40,11 +40,125 @@
         </div>
     </div>
 
-    <!-- Main Content: 3-column layout -->
+    <!-- Main Content -->
     <div class="flex-1 flex gap-4 min-h-0">
 
-        <!-- Left: Projects Panel (for selected repo from global context) -->
-        <div class="w-64 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col shrink-0">
+        <!-- ============================================ -->
+        <!-- FULL-SCREEN PREVIEW MODE (when mockup selected) -->
+        <!-- ============================================ -->
+        <template x-if="selectedMockup">
+            <div class="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <!-- Preview Header -->
+                <div class="p-3 border-b dark:border-gray-700 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-900">
+                    <div class="flex items-center gap-3">
+                        <button @click="selectedMockup = null; selectedElement = null; previewHtml = ''"
+                                class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                title="Torna alla lista">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                            <h3 class="font-semibold flex items-center gap-2">
+                                <span x-text="selectedMockup.name"></span>
+                                <span x-show="selectedMockup.version > 1"
+                                      class="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
+                                    v<span x-text="selectedMockup.version"></span>
+                                </span>
+                            </h3>
+                            <p class="text-xs text-gray-500" x-text="selectedMockup.component_type + ' • ' + selectedMockup.llm_type"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 rounded text-xs"
+                              :class="{
+                                  'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300': selectedMockup.llm_type === 'claude',
+                                  'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300': selectedMockup.llm_type === 'gemini',
+                                  'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300': selectedMockup.llm_type === 'grok'
+                              }"
+                              x-text="selectedMockup.llm_type"></span>
+                        <button @click="window.open('/mockups/' + selectedMockup.id + '/preview', '_blank')"
+                                class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                title="Apri in nuova tab">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                        </button>
+                        <button @click="downloadMockup(selectedMockup)"
+                                class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                title="Download HTML">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview iframe (full width) -->
+                <div class="flex-1 bg-white dark:bg-gray-900 overflow-hidden relative">
+                    <iframe
+                        x-ref="previewFrame"
+                        class="w-full h-full bg-white"
+                        :srcdoc="previewHtml || '<div class=&quot;flex items-center justify-center h-full text-gray-400&quot;>Caricamento preview...</div>'"
+                        sandbox="allow-scripts"
+                        @load="setupPreviewClickHandler()"></iframe>
+
+                    <!-- Overlay hint -->
+                    <div x-show="!selectedElement"
+                         class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/70 text-white text-sm rounded-full backdrop-blur-sm pointer-events-none">
+                        Clicca su un elemento per modificarlo
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="p-3 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shrink-0">
+                    <div class="flex items-center justify-between">
+                        <!-- Selected element info -->
+                        <div class="flex items-center gap-3 flex-1 min-w-0">
+                            <template x-if="selectedElement">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <div class="px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg text-sm font-mono truncate max-w-md"
+                                         x-text="selectedElement"></div>
+                                    <button @click="showEditComponentModal = true"
+                                            class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 shrink-0">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                        </svg>
+                                        Modifica Componente
+                                    </button>
+                                </div>
+                            </template>
+                            <template x-if="!selectedElement">
+                                <span class="text-gray-400 text-sm">Seleziona un elemento nel preview per modificarlo</span>
+                            </template>
+                        </div>
+
+                        <!-- Quick actions -->
+                        <div class="flex items-center gap-2 ml-4">
+                            <button @click="modifyMockup(selectedMockup.id)"
+                                    class="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors text-sm">
+                                Modifica Pagina Intera
+                            </button>
+                            <button @click="deleteMockup(selectedMockup)"
+                                    class="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                    title="Elimina mockup">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- ============================================ -->
+        <!-- NORMAL 3-COLUMN LAYOUT (no mockup selected) -->
+        <!-- ============================================ -->
+        <template x-if="!selectedMockup">
+            <div class="flex-1 flex gap-4">
+                <!-- Left: Projects Panel (for selected repo from global context) -->
+                <div class="w-64 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col shrink-0">
             <div class="p-3 border-b dark:border-gray-700">
                 <h3 class="font-semibold text-sm">Progetti</h3>
             </div>
@@ -160,14 +274,93 @@
                         {% include "components/mockup_row.html" %}
                     </template>
                 </div>
+                </div>
             </div>
         </div>
+        </template>
+    </div>
 
-        <!-- Right: Preview Panel -->
-        <div x-show="selectedMockup"
-             x-transition
-             class="w-96 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col shrink-0">
-            {% include "components/mockup_preview.html" %}
+    <!-- Edit Component Modal -->
+    <div x-show="showEditComponentModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+         @click.self="showEditComponentModal = false"
+         @keydown.escape.window="showEditComponentModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             @click.stop>
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-purple-500">
+                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                    Modifica Componente
+                </h3>
+            </div>
+
+            <!-- Content -->
+            <div class="p-5 space-y-4">
+                <!-- Selected Element -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Elemento selezionato</label>
+                    <div class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg font-mono text-sm text-indigo-600 dark:text-indigo-400 truncate"
+                         x-text="selectedElement"></div>
+                </div>
+
+                <!-- Mockup Info -->
+                <div class="flex gap-4 text-sm">
+                    <div class="flex-1">
+                        <span class="text-gray-500">Mockup:</span>
+                        <span class="ml-1 font-medium" x-text="selectedMockup?.name"></span>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Pagina:</span>
+                        <span class="ml-1 font-medium" x-text="selectedMockup?.component_type"></span>
+                    </div>
+                </div>
+
+                <!-- Description textarea -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Descrivi la modifica
+                    </label>
+                    <textarea x-model="editComponentDescription"
+                              x-ref="editTextarea"
+                              @keydown.enter.meta="sendComponentEdit()"
+                              @keydown.enter.ctrl="sendComponentEdit()"
+                              rows="4"
+                              class="w-full px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                              placeholder="Es: Cambia il colore del bottone in verde, aumenta il font size del titolo..."></textarea>
+                    <p class="text-xs text-gray-400 mt-1">Premi Cmd+Enter (Mac) o Ctrl+Enter (Win) per inviare</p>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="px-5 pb-5 flex gap-3">
+                <button @click="showEditComponentModal = false; editComponentDescription = ''"
+                        class="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Annulla
+                </button>
+                <button @click="sendComponentEdit()"
+                        :disabled="!editComponentDescription.trim()"
+                        class="flex-1 px-4 py-2.5 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                    </svg>
+                    Invia alla Chat
+                </button>
+            </div>
         </div>
     </div>
 
@@ -222,6 +415,60 @@
         </div>
     </div>
 
+    <!-- Delete Confirmation Modal -->
+    <div x-show="showDeleteModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+         @click.self="showDeleteModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             @click.stop>
+            <!-- Icon -->
+            <div class="pt-6 pb-2 flex justify-center">
+                <div class="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                    <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                </div>
+            </div>
+            <!-- Content -->
+            <div class="px-6 pb-4 text-center">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Elimina Mockup</h3>
+                <p class="mt-2 text-gray-500 dark:text-gray-400">
+                    Stai per eliminare <span class="font-medium text-gray-700 dark:text-gray-300" x-text="mockupToDelete?.name"></span>.
+                    Questa azione non può essere annullata.
+                </p>
+            </div>
+            <!-- Actions -->
+            <div class="px-6 pb-6 flex gap-3">
+                <button @click="showDeleteModal = false; mockupToDelete = null"
+                        :disabled="deleting"
+                        class="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50">
+                    Annulla
+                </button>
+                <button @click="confirmDeleteMockup()"
+                        :disabled="deleting"
+                        class="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg x-show="deleting" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span x-text="deleting ? 'Eliminando...' : 'Elimina'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -239,8 +486,15 @@ function mockupsPage() {
         newProjectDescription: '',
         newProjectDesignSystem: 'tailwind',
         creatingProject: false,
+        // Delete confirmation modal
+        showDeleteModal: false,
+        mockupToDelete: null,
+        deleting: false,
         // Preview state
         previewHtml: '',
+        // Edit component modal
+        showEditComponentModal: false,
+        editComponentDescription: '',
         // Project selection modal
         showSelectProjectModal: false,
         projectSearchQuery: '',
@@ -280,8 +534,19 @@ function mockupsPage() {
                     console.log('[mockupsPage] SSE event:', data);
 
                     if (data.type === 'init' || data.type === 'save') {
-                        // Reload mockups when a mockup is created or saved
+                        // Reload mockups list
                         await this.loadMockups();
+
+                        // Auto-refresh preview if the modified mockup is currently selected
+                        if (data.type === 'save' && this.selectedMockup && data.mockup_id === this.selectedMockup.id) {
+                            console.log('[mockupsPage] Refreshing preview for modified mockup:', data.mockup_id);
+                            // Re-select to reload preview HTML
+                            await this.selectMockup(this.selectedMockup);
+                            // Show toast notification
+                            window.dispatchEvent(new CustomEvent('show-toast', {
+                                detail: { message: 'Preview aggiornato!', type: 'success' }
+                            }));
+                        }
                     }
                 } catch (e) {
                     console.error('[mockupsPage] SSE parse error:', e);
@@ -358,7 +623,76 @@ function mockupsPage() {
             try {
                 const res = await fetch(`/api/mockups/${mockup.id}/content`);
                 const content = await res.json();
-                this.previewHtml = content.html_content;
+                let html = content.html || '';
+
+                // Inject click handler script directly into HTML
+                const clickHandlerScript = `
+<script>
+document.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Remove previous highlight
+    document.querySelectorAll('[data-tw-selected]').forEach(el => {
+        el.style.outline = '';
+        el.removeAttribute('data-tw-selected');
+    });
+
+    // Highlight clicked element
+    e.target.style.outline = '3px solid #6366f1';
+    e.target.style.outlineOffset = '2px';
+    e.target.setAttribute('data-tw-selected', 'true');
+
+    // Get unique selector
+    const selector = getUniqueSelector(e.target);
+    parent.postMessage({ type: 'element-selected', selector }, '*');
+}, true);
+
+function getUniqueSelector(el) {
+    if (el.id) return '#' + el.id;
+
+    const path = [];
+    while (el && el.nodeType === Node.ELEMENT_NODE) {
+        let selector = el.tagName.toLowerCase();
+
+        if (el.className && typeof el.className === 'string') {
+            const classes = el.className.split(' ')
+                .filter(c => c && !c.startsWith('hover:') && !c.startsWith('dark:'))
+                .slice(0, 2)
+                .join('.');
+            if (classes) selector += '.' + classes;
+        }
+
+        path.unshift(selector);
+        if (path.length >= 3) break;
+        el = el.parentElement;
+    }
+
+    return path.join(' > ');
+}
+
+// Add hover effect
+document.addEventListener('mouseover', (e) => {
+    if (!e.target.hasAttribute('data-tw-selected')) {
+        e.target.style.outline = '2px dashed #a5b4fc';
+    }
+}, true);
+document.addEventListener('mouseout', (e) => {
+    if (!e.target.hasAttribute('data-tw-selected')) {
+        e.target.style.outline = '';
+    }
+}, true);
+<\/script>`;
+
+                // Inject before </body> or at the end
+                if (html.includes('</body>')) {
+                    html = html.replace('</body>', clickHandlerScript + '</body>');
+                } else {
+                    html += clickHandlerScript;
+                }
+
+                this.previewHtml = html;
+                console.log('[mockups] Loaded preview HTML with click handler, length:', html.length);
             } catch (e) {
                 console.error('Failed to load mockup content:', e);
                 this.previewHtml = '<div class="flex items-center justify-center h-full text-red-500">Errore nel caricamento</div>';
@@ -464,14 +798,21 @@ function mockupsPage() {
             }
         },
 
-        async deleteMockup(mockupId) {
-            if (!confirm('Eliminare questo mockup?')) return;
+        deleteMockup(mockup) {
+            // Open delete confirmation modal
+            this.mockupToDelete = mockup;
+            this.showDeleteModal = true;
+        },
 
+        async confirmDeleteMockup() {
+            if (!this.mockupToDelete) return;
+
+            this.deleting = true;
             try {
-                const res = await fetch(`/api/mockups/${mockupId}`, { method: 'DELETE' });
+                const res = await fetch(`/api/mockups/${this.mockupToDelete.id}`, { method: 'DELETE' });
                 if (res.ok) {
-                    this.mockups = this.mockups.filter(m => m.id !== mockupId);
-                    if (this.selectedMockup?.id === mockupId) {
+                    this.mockups = this.mockups.filter(m => m.id !== this.mockupToDelete.id);
+                    if (this.selectedMockup?.id === this.mockupToDelete.id) {
                         this.selectedMockup = null;
                     }
                     window.dispatchEvent(new CustomEvent('show-toast', {
@@ -480,6 +821,13 @@ function mockupsPage() {
                 }
             } catch (e) {
                 console.error('Failed to delete mockup:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Errore durante l\'eliminazione', type: 'error' }
+                }));
+            } finally {
+                this.deleting = false;
+                this.showDeleteModal = false;
+                this.mockupToDelete = null;
             }
         },
 
@@ -521,12 +869,39 @@ function mockupsPage() {
         },
 
         modifyMockup(mockupId) {
-            // Open chat with modify context
+            // Open chat with modify context (full page modification)
             window.dispatchEvent(new CustomEvent('open-chat-with-command', {
                 detail: {
-                    command: `/mockup modify ${mockupId}`,
-                    mockupId: mockupId
+                    command: `/mockup_modify --mockup-id ${mockupId} --selector "body" --description "Modifica la pagina intera secondo le istruzioni che seguono:"`,
+                    reuseSession: true
                 }
+            }));
+        },
+
+        sendComponentEdit() {
+            if (!this.editComponentDescription.trim() || !this.selectedMockup || !this.selectedElement) return;
+
+            const mockupId = this.selectedMockup.id;
+            const selector = this.selectedElement;
+            const description = this.editComponentDescription.trim();
+
+            // Comando semplice con argomenti strutturati
+            const message = `/mockup_modify --mockup-id ${mockupId} --selector "${selector}" --description "${description}"`;
+
+            // Dispatch event to chat
+            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+                detail: {
+                    command: message,
+                    reuseSession: true
+                }
+            }));
+
+            // Close modal and reset
+            this.showEditComponentModal = false;
+            this.editComponentDescription = '';
+
+            window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: { message: 'Richiesta inviata alla chat', type: 'success' }
             }));
         },
 
