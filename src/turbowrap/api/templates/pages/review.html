@@ -302,7 +302,7 @@
 <div x-data="{ ...reviewApp(), configOpen: true }" x-init="init()">
 
     <!-- Toast Notifications (fixed top-right) -->
-    <div class="fixed top-4 right-4 z-50 space-y-2" x-show="toasts.length > 0">
+    <div class="fixed top-4 right-4 z-[65] space-y-2" x-show="toasts.length > 0">
         <template x-for="toast in toasts" :key="toast.id">
             <div class="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in"
                  :class="{

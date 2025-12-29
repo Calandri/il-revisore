@@ -15,7 +15,7 @@
 <!-- Right Chat Sidebar - Minimal Tab Design -->
 <aside x-cloak x-show="chatMode !== 'hidden'"
        x-effect="(() => { const isMobile = window.innerWidth < 768; const isOpen = chatMode !== 'hidden'; if (isMobile && isOpen) { document.body.style.overflow = 'hidden'; document.body.style.position = 'fixed'; document.body.style.width = '100%'; } else if (isMobile) { document.body.style.overflow = ''; document.body.style.position = ''; document.body.style.width = ''; } })()"
-       class="fixed right-0 top-0 h-full bg-white dark:bg-gray-900 shadow-2xl transition-all duration-300 z-40 flex flex-col border-l border-gray-200 dark:border-gray-700"
+       class="fixed right-0 top-0 h-full bg-white dark:bg-gray-900 shadow-2xl transition-all duration-300 z-[60] flex flex-col border-l border-gray-200 dark:border-gray-700"
        :class="{
            'w-full md:w-[calc(100vw-4rem)]': chatMode === 'page',
            'w-full md:w-[520px]': chatMode === 'full',
