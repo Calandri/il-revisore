@@ -312,7 +312,7 @@ function mockupsPage() {
                 }
                 const res = await fetch(url);
                 const data = await res.json();
-                this.mockups = data.mockups || [];
+                this.mockups = data.items || [];
             } catch (e) {
                 console.error('Failed to load mockups:', e);
                 this.mockups = [];
