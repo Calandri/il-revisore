@@ -98,12 +98,15 @@ class FinalizeIssueRequest(BaseModel):
     figma_link: str | None = None
     website_link: str | None = None
     gemini_insights: str
-    user_answers: dict[int, str] = Field(..., description="User answers keyed by question ID")
+    user_answers: dict[str, str] = Field(..., description="User answers keyed by question ID")
     temp_session_id: str
     team_id: str
     priority: int = Field(default=0, ge=0, le=4)
     assignee_id: str | None = None
     due_date: str | None = None  # ISO format date
+    selected_element: dict[str, Any] | None = None  # Element selector info from widget
+
+    model_config = {"extra": "ignore"}
 
 
 # --- Helper Functions ---
@@ -830,7 +833,7 @@ async def analyze_for_creation(
             }
             issue_type_label = issue_type_labels.get(issue_type, issue_type)
 
-            prompt_content = f"""Genera 5-10 domande per chiarire questa issue Linear.
+            prompt_content = f"""Genera 3-4 domande (massimo 4) per chiarire questa issue Linear. Sii conciso e fai solo domande essenziali.
 
 Tipo: {issue_type_label}
 Titolo: {title}
