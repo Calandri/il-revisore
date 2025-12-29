@@ -1195,6 +1195,21 @@ function issuesApp() {
                 }
             });
             await this.refresh();
+
+            // Handle ?fix= parameter from issue detail page
+            const urlParams = new URLSearchParams(window.location.search);
+            const fixIssueId = urlParams.get('fix');
+            if (fixIssueId) {
+                // Clean URL without reload
+                window.history.replaceState({}, '', '/issues');
+                // Select the issue and open notes modal
+                const issueToFix = this.issues.find(i => i.id === fixIssueId);
+                if (issueToFix && (issueToFix.status === 'open' || issueToFix.status === 'in_progress')) {
+                    this.selectedIssues = [fixIssueId];
+                    this.fixNotes = '';
+                    this.showNotesModal = true;
+                }
+            }
         },
 
         // Build URL params from current filters for navigation preservation
