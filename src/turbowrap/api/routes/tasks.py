@@ -931,3 +931,67 @@ def check_resumable(
             for cp in checkpoints
         ],
     }
+
+
+class RecoverReviewRequest(BaseModel):
+    """Request to recover issues from S3 artifacts."""
+
+    review_id: str = Field(..., description="Review ID (e.g., rev_2b82a20306cf)")
+    repository_id: str = Field(..., description="Repository UUID")
+    task_id: str | None = Field(None, description="Optional task ID (will create if missing)")
+
+
+class RecoveryResultResponse(BaseModel):
+    """Response from review recovery."""
+
+    success: bool
+    review_id: str
+    task_id: str | None
+    issues_found: int
+    issues_saved: int
+    errors: list[str]
+    s3_files_processed: list[str]
+
+
+@router.post("/recover", response_model=RecoveryResultResponse)
+async def recover_review_from_s3(
+    data: RecoverReviewRequest,
+    db: Session = Depends(get_db),
+) -> RecoveryResultResponse:
+    """
+    Recover issues from S3 artifacts when review fails mid-way.
+
+    Use this endpoint when:
+    - LLM calls completed successfully (outputs saved to S3)
+    - But parsing or DB save failed
+
+    This will:
+    1. Find JSONL files in S3 for the review_id
+    2. Parse issues from Claude/Gemini/Grok outputs
+    3. Save them to the database
+
+    Example:
+        POST /tasks/recover
+        {
+            "review_id": "rev_2b82a20306cf",
+            "repository_id": "uuid-of-repo"
+        }
+    """
+    from ..services.review_recovery_service import ReviewRecoveryService
+
+    service = ReviewRecoveryService(db)
+    result = await service.recover_review(
+        review_id=data.review_id,
+        repository_id=data.repository_id,
+        task_id=data.task_id,
+    )
+
+    return RecoveryResultResponse(
+        success=result.success,
+        review_id=result.review_id,
+        task_id=result.task_id,
+        issues_found=result.issues_found,
+        issues_saved=result.issues_saved,
+        errors=result.errors,
+        s3_files_processed=result.s3_files_processed,
+    )
