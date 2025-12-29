@@ -601,6 +601,33 @@
             </button>
             {% endif %}
 
+            <!-- DANGER ZONE -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-300 dark:border-red-500/30 p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-red-600 dark:text-red-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    Zona Pericolosa
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-500 mb-2">Forza cambio stato</label>
+                        <select x-model="forceStatus" @change="forceChangeStatus()"
+                                class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm">
+                            <option value="">-- Seleziona stato --</option>
+                            <option value="open">Open</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="in_review">In Review</option>
+                            <option value="merged">Merged</option>
+                            <option value="ignored">Ignored</option>
+                            <option value="duplicate">Duplicate</option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">Usa solo se la issue è bloccata in uno stato errato</p>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -734,6 +761,7 @@ function issueDetailApp() {
         linkingLinear: false,
         newComment: '',
         addingComment: false,
+        forceStatus: '',
         // Navigation
         prevIssue: null,
         nextIssue: null,
@@ -952,6 +980,34 @@ function issueDetailApp() {
             } catch (e) {
                 console.error('Failed to toggle viewed:', e);
             }
+        },
+
+        async forceChangeStatus() {
+            if (!this.forceStatus) return;
+            if (!confirm(`Sei sicuro di voler forzare lo stato a "${this.forceStatus}"? Questa azione è pericolosa.`)) {
+                this.forceStatus = '';
+                return;
+            }
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}?force=true`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: this.forceStatus })
+                });
+                if (res.ok) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Stato cambiato a ${this.forceStatus}`, type: 'success' }
+                    }));
+                    // Reload page to reflect changes
+                    window.location.reload();
+                } else {
+                    const error = await res.json();
+                    alert('Errore: ' + (error.detail || 'Failed to change status'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
+            this.forceStatus = '';
         }
     }
 }

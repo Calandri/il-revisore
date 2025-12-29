@@ -290,6 +290,7 @@ def get_issue(
 def update_issue(
     issue_id: str,
     data: IssueUpdateRequest,
+    force: bool = Query(default=False, description="Force status change, bypass validation"),
     db: Session = Depends(get_db),
 ) -> Issue:
     """
@@ -300,6 +301,8 @@ def update_issue(
     - in_progress -> resolved, ignored, open
     - resolved -> open (reopen)
     - ignored -> open (reopen)
+
+    Use force=true to bypass transition validation (dangerous).
     """
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
@@ -312,14 +315,15 @@ def update_issue(
                 status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}"
             )
 
-        # Validate state transition
-        current_status = IssueStatus(str(issue.status))
-        new_status = IssueStatus(data.status)
-        if not is_valid_issue_transition(current_status, new_status):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid status transition: {current_status.value} → {new_status.value}",
-            )
+        # Validate state transition (skip if force=true)
+        if not force:
+            current_status = IssueStatus(str(issue.status))
+            new_status = IssueStatus(data.status)
+            if not is_valid_issue_transition(current_status, new_status):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid status transition: {current_status.value} → {new_status.value}",
+                )
 
         issue.status = data.status  # type: ignore[assignment]
 

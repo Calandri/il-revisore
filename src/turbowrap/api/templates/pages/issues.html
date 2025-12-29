@@ -1194,11 +1194,17 @@ function issuesApp() {
                     this.refresh();
                 }
             });
-            await this.refresh();
 
-            // Handle ?fix= parameter from issue detail page
+            // Handle ?fix= parameter from issue detail page - check BEFORE refresh
             const urlParams = new URLSearchParams(window.location.search);
             const fixIssueId = urlParams.get('fix');
+            if (fixIssueId) {
+                // Clear status filter to ensure we can find in_progress issues
+                this.filters.status = '';
+            }
+
+            await this.refresh();
+
             if (fixIssueId) {
                 // Clean URL without reload
                 window.history.replaceState({}, '', '/issues');
@@ -1208,6 +1214,9 @@ function issuesApp() {
                     this.selectedIssues = [fixIssueId];
                     this.fixNotes = '';
                     this.showNotesModal = true;
+                } else if (!issueToFix) {
+                    // Issue not found - maybe it was already resolved or doesn't exist
+                    console.warn('Issue not found for fix:', fixIssueId);
                 }
             }
         },
