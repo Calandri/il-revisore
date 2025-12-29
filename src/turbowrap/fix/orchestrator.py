@@ -92,6 +92,18 @@ class BillingError(Exception):
     pass
 
 
+@dataclass
+class BatchGroupResult:
+    """Results from processing a group of batches (BE or FE) in parallel."""
+
+    batch_updates: dict[str, dict[str, Any]]  # batch_id -> updates to batch_results
+    successful_issues: list[Issue]
+    failed_issues: list[Issue]
+    issue_status_updates: dict[str, dict[str, Any]]  # issue_code -> status updates
+    feedback: str  # Gemini feedback for retries
+    all_passed: bool
+
+
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 FIXER_AGENT = AGENTS_DIR / "fixer.md"
 RE_FIXER_AGENT = AGENTS_DIR / "re_fixer.md"
@@ -723,434 +735,535 @@ class FixOrchestrator:
                         )
                     )
 
-                completed_batches = 0
-                all_passed_this_iteration = True
+                # Split batches into BE and FE groups for parallel execution
+                be_batch_ids = [b for b in batches_to_process if b.startswith("BE")]
+                fe_batch_ids = [b for b in batches_to_process if b.startswith("FE")]
 
-                for batch_id in batches_to_process:
-                    batch_type = "BE" if batch_id.startswith("BE") else "FE"
-                    batch_idx = int(batch_id.split("-")[1])
-                    batch = batch_results[batch_id]["issues"]
-                    completed_batches += 1
-
-                    feedback = feedback_be if batch_type == "BE" else feedback_fe
-
-                    async def on_chunk_claude(chunk: str, bt: str = batch_type) -> None:
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_ISSUE_STREAMING,
-                                session_id=session_id,
-                                content=chunk,
-                                batch_type=bt,
-                            )
-                        )
-
-                    batch_workload = sum(get_issue_workload(i) for i in batch)
-                    issue_codes = ", ".join(str(i.issue_code) for i in batch)
+                # Log parallel execution plan
+                if be_batch_ids and fe_batch_ids:
                     await safe_emit(
                         FixProgressEvent(
                             type=FixEventType.FIX_ISSUE_STREAMING,
                             session_id=session_id,
-                            message=f"🔧 {batch_id} "
-                            f"[{completed_batches}/{len(batches_to_process)}] "
-                            f"| {len(batch)} issues, workload={batch_workload}\n"
-                            f"   Issues: {issue_codes}",
+                            message=f"🚀 Running BE and FE in PARALLEL\n"
+                            f"   BE: {len(be_batch_ids)} batch(es) | FE: {len(fe_batch_ids)} batch(es)",
                         )
                     )
 
-                    # Step 1: Run Claude CLI for this batch
-                    prompt = self._build_fix_prompt(
-                        batch,
-                        batch_type.lower(),
-                        feedback,
-                        iteration,
-                        request.workspace_path,
-                        request.user_notes,
-                        todo_list_path=todo_list_path if iteration == 1 else None,
-                    )
-                    if iteration == 1:
-                        claude_prompts.append(
-                            {
-                                "type": batch_type.lower(),
-                                "batch": batch_idx,
-                                "issues": [i.issue_code for i in batch],
-                                "prompt": prompt,
-                            }
-                        )
+                # Inner async function to process a batch group sequentially
+                async def process_batch_group(
+                    group_batch_ids: list[str],
+                    group_type: str,  # "BE" or "FE"
+                    group_feedback: str,
+                    group_session_ctx: FixSessionContext,
+                    current_iteration: int,  # Bind loop variable to avoid B023
+                ) -> BatchGroupResult:
+                    """Process a group of batches (BE or FE) sequentially within the group."""
+                    group_batch_updates: dict[str, dict[str, Any]] = {}
+                    group_successful: list[Issue] = []
+                    group_failed: list[Issue] = []
+                    group_issue_updates: dict[str, dict[str, Any]] = {}
+                    group_all_passed = True
+                    current_feedback = group_feedback
 
-                    thinking_budget = None
-                    if batch_workload > 10:
-                        base_budget = self.settings.thinking.budget_tokens
-                        thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
-                        logger.info(
-                            f"Heavy batch (workload={batch_workload}), "
-                            f"thinking budget: {thinking_budget}"
-                        )
-                        await emit_log(
-                            "INFO", f"Heavy batch: thinking budget {thinking_budget} tokens"
-                        )
-
-                    # Log session status before fix phase
-                    if session_context.branch_session_id:
-                        logger.info(
-                            f"[FIX] Fix phase resuming session: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'N/A'}... | "
-                            f"Model: opus | Cache READ expected (reusing branch cache)"
-                        )
-                    else:
-                        logger.info(
-                            "[FIX] Fix phase starting new session | "
-                            "Model: opus | Cache CREATION expected"
-                        )
-
-                    try:
-                        claude_result: ClaudeCLIResult = await self._run_claude_cli(
-                            prompt,
-                            on_chunk=on_chunk_claude,
-                            thinking_budget=thinking_budget,
-                            session_context=session_context,
-                            parent_session_id=session_id,
-                            agent_type="fixer",
-                        )
-                        if not claude_result.success:
-                            error_detail = claude_result.error or "Unknown error"
-                            logger.error(f"Claude CLI ({batch_id}) failed: {error_detail}")
-                            await emit_log(
-                                "ERROR", f"Claude CLI failed for {batch_id}: {error_detail}"
+                    # Streaming callback for Gemini review
+                    async def on_chunk_gemini_group(chunk: str) -> None:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                                session_id=session_id,
+                                content=chunk,
                             )
-                            batch_results[batch_id]["passed"] = False
-                            batch_results[batch_id]["score"] = 0.0
-                            all_passed_this_iteration = False
+                        )
+
+                    for idx, batch_id in enumerate(group_batch_ids, 1):
+                        batch_type = group_type
+                        batch_idx = int(batch_id.split("-")[1])
+                        batch = batch_results[batch_id]["issues"]
+
+                        async def on_chunk_claude_group(chunk: str, bt: str = batch_type) -> None:
                             await safe_emit(
                                 FixProgressEvent(
                                     type=FixEventType.FIX_ISSUE_STREAMING,
                                     session_id=session_id,
-                                    message=f"   ❌ {batch_id} Claude CLI FAILED",
+                                    content=chunk,
+                                    batch_type=bt,
                                 )
                             )
-                            continue
-                    except BillingError as e:
-                        await emit_log("ERROR", f"Billing error: {str(e)[:100]}")
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_BILLING_ERROR,
-                                session_id=session_id,
-                                error=str(e),
-                                message=f"💳 BILLING ERROR: {e}\n\n"
-                                f"Ricarica il credito su console.anthropic.com",
-                            )
-                        )
-                        raise
-                    except Exception as e:
-                        logger.error(f"Claude CLI ({batch_id}) failed with exception: {e}")
-                        await emit_log("ERROR", f"Claude CLI exception: {str(e)[:100]}")
-                        batch_results[batch_id]["passed"] = False
-                        all_passed_this_iteration = False
+
+                        batch_workload = sum(get_issue_workload(i) for i in batch)
+                        issue_codes = ", ".join(str(i.issue_code) for i in batch)
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_ISSUE_STREAMING,
                                 session_id=session_id,
-                                message=f"   ❌ {batch_id} Claude CLI FAILED: {str(e)[:100]}",
-                            )
-                        )
-                        continue
-
-                    # CHECK: Verify there are actual uncommitted changes
-                    # If fixer identified a false positive, there will be no changes to commit
-                    # FALSE POSITIVE = issue doesn't exist = SOLVED (nothing to fix)
-                    uncommitted_files = await self._get_uncommitted_files()
-                    if not uncommitted_files:
-                        logger.info(
-                            f"{batch_id}: No uncommitted changes found - "
-                            f"false positive detected, marking as SOLVED"
-                        )
-                        await emit_log(
-                            "INFO",
-                            f"{batch_id}: False positive - issue doesn't exist, marking SOLVED",
-                        )
-                        # False positive = SOLVED (nothing to fix means issue is resolved)
-                        batch_results[batch_id]["passed"] = True
-                        batch_results[batch_id]["score"] = 100.0
-                        batch_results[batch_id]["false_positive"] = True
-                        successful_issues.extend(batch)
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_ISSUE_STREAMING,
-                                session_id=session_id,
-                                message=f"   ✅ {batch_id} false positive - no fix needed (SOLVED)",
-                            )
-                        )
-                        continue
-
-                    # ALWAYS run Gemini review (even after re-fix in iteration 2+)
-                    # This ensures proper per-issue evaluation with SOLVED/IN_PROGRESS status
-                    review_label = "Re-fix" if iteration > 1 else "Fix"
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
-                            session_id=session_id,
-                            message=f"   ✅ {batch_id} Claude {review_label.lower()} complete, "
-                            f"running Gemini review...",
-                        )
-                    )
-
-                    # Step 2: Run Gemini review for THIS BATCH immediately
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_CHALLENGER_EVALUATING,
-                            session_id=session_id,
-                            message=f"🔍 Gemini reviewing {batch_id}...",
-                        )
-                    )
-
-                    review_prompt = self._build_review_prompt_per_batch(
-                        batch, batch_type, batch_idx, request.workspace_path
-                    )
-                    if completed_batches == 1:
-                        gemini_prompt = review_prompt  # Save first for S3 logging
-
-                    # Atomic tracking at leaf level
-                    try:
-                        gemini_result = await self.gemini_cli.run(
-                            review_prompt,
-                            operation_type="review",
-                            repo_name=self.repo_path.name,
-                            on_chunk=on_chunk_gemini,
-                            track_operation=True,  # Atomic tracking at leaf level
-                            operation_details={
-                                "parent_session_id": session_id,
-                                "session_id": session_id,  # For UI display
-                                "agent_type": "reviewer",
-                                "batch_id": batch_id,
-                                "iteration": iteration,
-                            },
-                        )
-                        gemini_output = gemini_result.output if gemini_result.success else None
-                        last_gemini_output = gemini_output
-                    except Exception as e:
-                        logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
-                        await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
-                        gemini_output = None
-
-                    # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
-
-                    if gemini_output is None:
-                        logger.warning(
-                            f"Gemini CLI failed for {batch_id}, accepting fix without review"
-                        )
-                        await emit_log(
-                            "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
-                        )
-                        batch_results[batch_id]["passed"] = True
-                        batch_results[batch_id]["score"] = 100.0
-                        successful_issues.extend(batch)
-                        continue
-
-                    score, failed_issue_codes, per_issue_scores, per_issue_data = (
-                        self._parse_batch_review(gemini_output, batch)
-                    )
-                    batch_results[batch_id]["score"] = score
-                    batch_results[batch_id]["failed_issues"] = failed_issue_codes
-                    batch_results[batch_id]["per_issue_data"] = per_issue_data
-
-                    # Update per-issue status map based on Gemini review (90% threshold)
-                    SOLVED_THRESHOLD = 90.0
-                    solved_in_batch = []
-                    in_progress_in_batch = []
-                    for issue in batch:
-                        code = str(issue.issue_code)
-                        issue_score = per_issue_scores.get(code, score)  # Fallback to batch score
-                        if issue_score >= SOLVED_THRESHOLD:
-                            issue_status_map[code]["status"] = "SOLVED"
-                            issue_status_map[code]["score"] = issue_score
-                            solved_in_batch.append(code)
-                        else:
-                            issue_status_map[code]["status"] = "IN_PROGRESS"
-                            issue_status_map[code]["score"] = issue_score
-                            in_progress_in_batch.append(code)
-
-                    if solved_in_batch:
-                        logger.info(f"[FIX] {batch_id} SOLVED issues: {', '.join(solved_in_batch)}")
-                    if in_progress_in_batch:
-                        logger.info(
-                            f"[FIX] {batch_id} IN_PROGRESS issues: {', '.join(in_progress_in_batch)}"
-                        )
-
-                    if per_issue_scores:
-                        scores_summary = " | ".join(
-                            [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
-                        )
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_CHALLENGER_RESULT,
-                                session_id=session_id,
-                                message=f"   📊 {batch_id} score: {score}/100 | "
-                                f"Per-issue: {scores_summary}",
-                                quality_scores=per_issue_data if per_issue_data else None,
-                            )
-                        )
-                    else:
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_CHALLENGER_RESULT,
-                                session_id=session_id,
-                                message=f"   📊 {batch_id} score: {score}/100",
-                                quality_scores=per_issue_data if per_issue_data else None,
+                                message=f"🔧 {batch_id} [{idx}/{len(group_batch_ids)}] "
+                                f"| {len(batch)} issues, workload={batch_workload}\n"
+                                f"   Issues: {issue_codes}",
                             )
                         )
 
-                    if score >= self.satisfaction_threshold:
-                        batch_results[batch_id]["passed"] = True
-                        await emit_log("INFO", f"{batch_id} passed with score {score}/100")
+                        # Step 1: Run Claude CLI for this batch
+                        prompt = self._build_fix_prompt(
+                            batch,
+                            batch_type.lower(),
+                            current_feedback,
+                            current_iteration,
+                            request.workspace_path,
+                            request.user_notes,
+                            todo_list_path=todo_list_path if current_iteration == 1 else None,
+                        )
 
-                        # Get uncommitted files for the commit
-                        uncommitted = await self._get_uncommitted_files()
-                        if not uncommitted:
-                            logger.warning(f"{batch_id}: No files to commit after passing review")
+                        thinking_budget = None
+                        if batch_workload > 10:
+                            base_budget = self.settings.thinking.budget_tokens
+                            thinking_budget = min(16000, base_budget + (batch_workload - 10) * 1000)
+                            logger.info(
+                                f"Heavy batch (workload={batch_workload}), "
+                                f"thinking budget: {thinking_budget}"
+                            )
                             await emit_log(
-                                "WARNING",
-                                f"{batch_id}: No files to commit",
+                                "INFO", f"Heavy batch: thinking budget {thinking_budget} tokens"
+                            )
+
+                        # Log session status before fix phase
+                        if group_session_ctx.branch_session_id:
+                            logger.info(
+                                f"[FIX] Fix phase resuming session: {group_session_ctx.claude_session_id[:8] if group_session_ctx.claude_session_id else 'N/A'}... | "
+                                f"Model: opus | Cache READ expected (reusing branch cache)"
+                            )
+                        else:
+                            logger.info(
+                                "[FIX] Fix phase starting new session | "
+                                "Model: opus | Cache CREATION expected"
+                            )
+
+                        try:
+                            claude_result: ClaudeCLIResult = await self._run_claude_cli(
+                                prompt,
+                                on_chunk=on_chunk_claude_group,
+                                thinking_budget=thinking_budget,
+                                session_context=group_session_ctx,
+                                parent_session_id=session_id,
+                                agent_type="fixer",
+                            )
+                            if not claude_result.success:
+                                error_detail = claude_result.error or "Unknown error"
+                                logger.error(f"Claude CLI ({batch_id}) failed: {error_detail}")
+                                await emit_log(
+                                    "ERROR", f"Claude CLI failed for {batch_id}: {error_detail}"
+                                )
+                                group_batch_updates[batch_id] = {"passed": False, "score": 0.0}
+                                group_all_passed = False
+                                await safe_emit(
+                                    FixProgressEvent(
+                                        type=FixEventType.FIX_ISSUE_STREAMING,
+                                        session_id=session_id,
+                                        message=f"   ❌ {batch_id} Claude CLI FAILED",
+                                    )
+                                )
+                                continue
+                        except BillingError as e:
+                            await emit_log("ERROR", f"Billing error: {str(e)[:100]}")
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_BILLING_ERROR,
+                                    session_id=session_id,
+                                    error=str(e),
+                                    message=f"💳 BILLING ERROR: {e}\n\n"
+                                    f"Ricarica il credito su console.anthropic.com",
+                                )
+                            )
+                            raise
+                        except Exception as e:
+                            logger.error(f"Claude CLI ({batch_id}) failed with exception: {e}")
+                            await emit_log("ERROR", f"Claude CLI exception: {str(e)[:100]}")
+                            group_batch_updates[batch_id] = {"passed": False}
+                            group_all_passed = False
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_ISSUE_STREAMING,
+                                    session_id=session_id,
+                                    message=f"   ❌ {batch_id} Claude CLI FAILED: {str(e)[:100]}",
+                                )
                             )
                             continue
 
-                        batch_issue_codes = ", ".join(str(i.issue_code) for i in batch)
-                        batch_commit_msg = f"[FIX] {batch_issue_codes}"
-                        commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
-                        commit_prompt = commit_prompt.replace("{commit_message}", batch_commit_msg)
-                        commit_prompt = commit_prompt.replace("{issue_codes}", batch_issue_codes)
-                        # Pass specific files to commit (avoid --add-all)
-                        files_to_commit = " ".join(uncommitted)
-                        commit_prompt = commit_prompt.replace("{files}", files_to_commit)
+                        # CHECK: Verify there are actual uncommitted changes
+                        # If fixer identified a false positive, there will be no changes to commit
+                        # FALSE POSITIVE = issue doesn't exist = SOLVED (nothing to fix)
+                        uncommitted_files = await self._get_uncommitted_files()
+                        if not uncommitted_files:
+                            logger.info(
+                                f"{batch_id}: No uncommitted changes found - "
+                                f"false positive detected, marking as SOLVED"
+                            )
+                            await emit_log(
+                                "INFO",
+                                f"{batch_id}: False positive - issue doesn't exist, marking SOLVED",
+                            )
+                            # False positive = SOLVED (nothing to fix means issue is resolved)
+                            group_batch_updates[batch_id] = {
+                                "passed": True,
+                                "score": 100.0,
+                                "false_positive": True,
+                            }
+                            group_successful.extend(batch)
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_ISSUE_STREAMING,
+                                    session_id=session_id,
+                                    message=f"   ✅ {batch_id} false positive - no fix needed (SOLVED)",
+                                )
+                            )
+                            continue
 
-                        # Log session status before commit phase
-                        logger.info(
-                            f"[FIX] Commit phase | Session: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'new'}... | "
-                            f"Model: haiku | Files: {uncommitted}"
+                        # ALWAYS run Gemini review (even after re-fix in iteration 2+)
+                        # This ensures proper per-issue evaluation with SOLVED/IN_PROGRESS status
+                        review_label = "Re-fix" if current_iteration > 1 else "Fix"
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_ISSUE_STREAMING,
+                                session_id=session_id,
+                                message=f"   ✅ {batch_id} Claude {review_label.lower()} complete, "
+                                f"running Gemini review...",
+                            )
                         )
 
-                        batch_commit_success = False
-
-                        if request.workspace_path:
-                            violations = self._validate_workspace_scope(
-                                uncommitted,
-                                request.workspace_path,
-                                request.allowed_extra_paths,
+                        # Step 2: Run Gemini review for THIS BATCH immediately
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                                session_id=session_id,
+                                message=f"🔍 Gemini reviewing {batch_id}...",
                             )
-                            if violations:
-                                await emit_log(
-                                    "ERROR",
-                                    f"Batch {batch_id} scope violation: {violations[:3]}",
+                        )
+
+                        review_prompt = self._build_review_prompt_per_batch(
+                            batch, batch_type, batch_idx, request.workspace_path
+                        )
+
+                        # Atomic tracking at leaf level
+                        try:
+                            gemini_result = await self.gemini_cli.run(
+                                review_prompt,
+                                operation_type="review",
+                                repo_name=self.repo_path.name,
+                                on_chunk=on_chunk_gemini_group,
+                                track_operation=True,  # Atomic tracking at leaf level
+                                operation_details={
+                                    "parent_session_id": session_id,
+                                    "session_id": session_id,  # For UI display
+                                    "agent_type": "reviewer",
+                                    "batch_id": batch_id,
+                                    "iteration": current_iteration,
+                                },
+                            )
+                            gemini_output = gemini_result.output if gemini_result.success else None
+                        except Exception as e:
+                            logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
+                            await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
+                            gemini_output = None
+
+                        # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
+
+                        if gemini_output is None:
+                            logger.warning(
+                                f"Gemini CLI failed for {batch_id}, accepting fix without review"
+                            )
+                            await emit_log(
+                                "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
+                            )
+                            group_batch_updates[batch_id] = {"passed": True, "score": 100.0}
+                            group_successful.extend(batch)
+                            continue
+
+                        score, failed_issue_codes, per_issue_scores, per_issue_data = (
+                            self._parse_batch_review(gemini_output, batch)
+                        )
+                        if batch_id not in group_batch_updates:
+                            group_batch_updates[batch_id] = {}
+                        group_batch_updates[batch_id]["score"] = score
+                        group_batch_updates[batch_id]["failed_issues"] = failed_issue_codes
+                        group_batch_updates[batch_id]["per_issue_data"] = per_issue_data
+
+                        # Update per-issue status map based on Gemini review (90% threshold)
+                        SOLVED_THRESHOLD = 90.0
+                        solved_in_batch = []
+                        in_progress_in_batch = []
+                        for issue in batch:
+                            code = str(issue.issue_code)
+                            issue_score = per_issue_scores.get(
+                                code, score
+                            )  # Fallback to batch score
+                            if issue_score >= SOLVED_THRESHOLD:
+                                group_issue_updates[code] = {
+                                    "status": "SOLVED",
+                                    "score": issue_score,
+                                }
+                                solved_in_batch.append(code)
+                            else:
+                                group_issue_updates[code] = {
+                                    "status": "IN_PROGRESS",
+                                    "score": issue_score,
+                                }
+                                in_progress_in_batch.append(code)
+
+                        if solved_in_batch:
+                            logger.info(
+                                f"[FIX] {batch_id} SOLVED issues: {', '.join(solved_in_batch)}"
+                            )
+                        if in_progress_in_batch:
+                            logger.info(
+                                f"[FIX] {batch_id} IN_PROGRESS issues: {', '.join(in_progress_in_batch)}"
+                            )
+
+                        if per_issue_scores:
+                            scores_summary = " | ".join(
+                                [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
+                            )
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_CHALLENGER_RESULT,
+                                    session_id=session_id,
+                                    message=f"   📊 {batch_id} score: {score}/100 | "
+                                    f"Per-issue: {scores_summary}",
+                                    quality_scores=per_issue_data if per_issue_data else None,
                                 )
-                                await self._revert_uncommitted_changes()
-                                failed_issues.extend(batch)
-                                batch_results[batch_id]["passed"] = False
+                            )
+                        else:
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_CHALLENGER_RESULT,
+                                    session_id=session_id,
+                                    message=f"   📊 {batch_id} score: {score}/100",
+                                    quality_scores=per_issue_data if per_issue_data else None,
+                                )
+                            )
+
+                        if score >= self.satisfaction_threshold:
+                            group_batch_updates[batch_id]["passed"] = True
+                            await emit_log("INFO", f"{batch_id} passed with score {score}/100")
+
+                            # Get uncommitted files for the commit
+                            uncommitted = await self._get_uncommitted_files()
+                            if not uncommitted:
+                                logger.warning(
+                                    f"{batch_id}: No files to commit after passing review"
+                                )
+                                await emit_log(
+                                    "WARNING",
+                                    f"{batch_id}: No files to commit",
+                                )
+                                continue
+
+                            batch_issue_codes = ", ".join(str(i.issue_code) for i in batch)
+                            batch_commit_msg = f"[FIX] {batch_issue_codes}"
+                            commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
+                            commit_prompt = commit_prompt.replace(
+                                "{commit_message}", batch_commit_msg
+                            )
+                            commit_prompt = commit_prompt.replace(
+                                "{issue_codes}", batch_issue_codes
+                            )
+                            # Pass specific files to commit (avoid --add-all)
+                            files_to_commit = " ".join(uncommitted)
+                            commit_prompt = commit_prompt.replace("{files}", files_to_commit)
+
+                            # Log session status before commit phase
+                            logger.info(
+                                f"[FIX] Commit phase | Session: {group_session_ctx.claude_session_id[:8] if group_session_ctx.claude_session_id else 'new'}... | "
+                                f"Model: haiku | Files: {uncommitted}"
+                            )
+
+                            batch_commit_success = False
+
+                            if request.workspace_path:
+                                violations = self._validate_workspace_scope(
+                                    uncommitted,
+                                    request.workspace_path,
+                                    request.allowed_extra_paths,
+                                )
+                                if violations:
+                                    await emit_log(
+                                        "ERROR",
+                                        f"Batch {batch_id} scope violation: {violations[:3]}",
+                                    )
+                                    await self._revert_uncommitted_changes()
+                                    group_failed.extend(batch)
+                                    group_batch_updates[batch_id]["passed"] = False
+                                    await safe_emit(
+                                        FixProgressEvent(
+                                            type=FixEventType.FIX_BATCH_FAILED,
+                                            session_id=session_id,
+                                            message=f"   ❌ {batch_id} scope violation",
+                                            issue_ids=[i.id for i in batch],
+                                            issue_codes=[i.issue_code for i in batch],
+                                            error=f"Files outside workspace: {violations[:3]}",
+                                        )
+                                    )
+                                    continue  # Skip to next batch
+
+                            try:
+                                commit_result = await self._run_claude_cli(
+                                    commit_prompt,
+                                    timeout=120,
+                                    model="haiku",
+                                    session_context=group_session_ctx,
+                                    parent_session_id=session_id,
+                                    agent_type="committer",
+                                )
+                                if not commit_result.success:
+                                    await emit_log("ERROR", f"Batch {batch_id} commit failed")
+                                else:
+                                    (
+                                        batch_commit_sha,
+                                        batch_modified_files,
+                                        _,
+                                    ) = await self._get_git_info()
+                                    group_batch_updates[batch_id]["commit_sha"] = batch_commit_sha
+                                    group_batch_updates[batch_id][
+                                        "modified_files"
+                                    ] = batch_modified_files
+
+                                    # NOTE: Per-batch issue updates removed to prevent race condition
+                                    # with fix_session_service.update_issue_statuses()
+                                    # All issue status updates now happen atomically at the end
+                                    # via update_issue_statuses() in fix_session_service.py
+
+                                    await emit_log(
+                                        "INFO",
+                                        f"{batch_id} committed: {batch_commit_sha[:7] if batch_commit_sha else 'unknown'}",
+                                    )
+
+                                    # Emit batch committed event
+                                    await safe_emit(
+                                        FixProgressEvent(
+                                            type=FixEventType.FIX_BATCH_COMMITTED,
+                                            session_id=session_id,
+                                            message=f"   💾 {batch_id} COMMITTED ({batch_commit_sha[:7] if batch_commit_sha else 'unknown'})",
+                                            issue_ids=[i.id for i in batch],
+                                            issue_codes=[i.issue_code for i in batch],
+                                            commit_sha=batch_commit_sha,
+                                        )
+                                    )
+                                    batch_commit_success = True
+                            except Exception as e:
+                                await emit_log(
+                                    "ERROR", f"Batch {batch_id} commit error: {str(e)[:100]}"
+                                )
+
+                            if batch_commit_success:
+                                group_successful.extend(batch)
+                            else:
+                                group_failed.extend(batch)
+                                group_batch_updates[batch_id]["passed"] = False  # Mark as failed
                                 await safe_emit(
                                     FixProgressEvent(
                                         type=FixEventType.FIX_BATCH_FAILED,
                                         session_id=session_id,
-                                        message=f"   ❌ {batch_id} scope violation",
+                                        message=f"   ❌ {batch_id} commit failed",
                                         issue_ids=[i.id for i in batch],
                                         issue_codes=[i.issue_code for i in batch],
-                                        error=f"Files outside workspace: {violations[:3]}",
+                                        error="Git commit failed",
                                     )
                                 )
-                                continue  # Skip to next batch
 
-                        try:
-                            commit_result = await self._run_claude_cli(
-                                commit_prompt,
-                                timeout=30,
-                                model="haiku",
-                                session_context=session_context,  # FASE 5: Propagate session
-                                parent_session_id=session_id,
-                                agent_type="committer",
-                            )
-                            if not commit_result.success:
-                                await emit_log("ERROR", f"Batch {batch_id} commit failed")
-                            else:
-                                (
-                                    batch_commit_sha,
-                                    batch_modified_files,
-                                    _,
-                                ) = await self._get_git_info()
-                                batch_results[batch_id]["commit_sha"] = batch_commit_sha
-                                batch_results[batch_id]["modified_files"] = batch_modified_files
-
-                                # NOTE: Per-batch issue updates removed to prevent race condition
-                                # with fix_session_service.update_issue_statuses()
-                                # All issue status updates now happen atomically at the end
-                                # via update_issue_statuses() in fix_session_service.py
-
-                                await emit_log(
-                                    "INFO",
-                                    f"{batch_id} committed: {batch_commit_sha[:7] if batch_commit_sha else 'unknown'}",
-                                )
-
-                                # Emit batch committed event
-                                await safe_emit(
-                                    FixProgressEvent(
-                                        type=FixEventType.FIX_BATCH_COMMITTED,
-                                        session_id=session_id,
-                                        message=f"   💾 {batch_id} COMMITTED ({batch_commit_sha[:7] if batch_commit_sha else 'unknown'})",
-                                        issue_ids=[i.id for i in batch],
-                                        issue_codes=[i.issue_code for i in batch],
-                                        commit_sha=batch_commit_sha,
-                                    )
-                                )
-                                batch_commit_success = True
-                        except Exception as e:
-                            await emit_log(
-                                "ERROR", f"Batch {batch_id} commit error: {str(e)[:100]}"
-                            )
-
-                        if batch_commit_success:
-                            successful_issues.extend(batch)
-                        else:
-                            failed_issues.extend(batch)
-                            batch_results[batch_id]["passed"] = False  # Mark as failed
                             await safe_emit(
                                 FixProgressEvent(
-                                    type=FixEventType.FIX_BATCH_FAILED,
+                                    type=FixEventType.FIX_CHALLENGER_APPROVED,
                                     session_id=session_id,
-                                    message=f"   ❌ {batch_id} commit failed",
+                                    message=f"   ✅ {batch_id} PASSED ({score}/100)",
                                     issue_ids=[i.id for i in batch],
                                     issue_codes=[i.issue_code for i in batch],
-                                    error="Git commit failed",
+                                )
+                            )
+                        else:
+                            group_batch_updates[batch_id]["passed"] = False
+                            group_all_passed = False
+                            await emit_log(
+                                "WARNING",
+                                f"{batch_id} needs retry "
+                                f"(score {score} < {self.satisfaction_threshold})",
+                            )
+                            # Update feedback for this group
+                            current_feedback = gemini_output or ""
+                            failed_msg = (
+                                f", failed issues: {', '.join(failed_issue_codes)}"
+                                if failed_issue_codes
+                                else ""
+                            )
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_REGENERATING,
+                                    session_id=session_id,
+                                    message=f"   ⚠️ {batch_id} NEEDS RETRY "
+                                    f"({score} < {self.satisfaction_threshold}){failed_msg}",
                                 )
                             )
 
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_CHALLENGER_APPROVED,
-                                session_id=session_id,
-                                message=f"   ✅ {batch_id} PASSED ({score}/100)",
-                                issue_ids=[i.id for i in batch],
-                                issue_codes=[i.issue_code for i in batch],
-                            )
-                        )
-                    else:
-                        batch_results[batch_id]["passed"] = False
+                    # End of inner for loop - return BatchGroupResult
+                    return BatchGroupResult(
+                        batch_updates=group_batch_updates,
+                        successful_issues=group_successful,
+                        failed_issues=group_failed,
+                        issue_status_updates=group_issue_updates,
+                        feedback=current_feedback,
+                        all_passed=group_all_passed,
+                    )
+
+                # Run BE and FE groups in parallel using asyncio.gather
+                # Each group processes batches sequentially within the group
+                be_session = FixSessionContext(
+                    branch_session_id=session_context.branch_session_id,
+                    claude_session_id=session_context.claude_session_id,
+                )
+                fe_session = FixSessionContext(
+                    branch_session_id=session_context.branch_session_id,
+                    claude_session_id=session_context.claude_session_id,
+                )
+
+                tasks = []
+                if be_batch_ids:
+                    tasks.append(
+                        process_batch_group(be_batch_ids, "BE", feedback_be, be_session, iteration)
+                    )
+                if fe_batch_ids:
+                    tasks.append(
+                        process_batch_group(fe_batch_ids, "FE", feedback_fe, fe_session, iteration)
+                    )
+
+                # Run tasks in parallel
+                results: list[BatchGroupResult] = await asyncio.gather(*tasks)
+
+                # Merge results from parallel execution
+                all_passed_this_iteration = True
+                for group_result in results:
+                    # Merge batch updates
+                    for batch_id, updates in group_result.batch_updates.items():
+                        batch_results[batch_id].update(updates)
+
+                    # Merge successful/failed issues
+                    successful_issues.extend(group_result.successful_issues)
+                    failed_issues.extend(group_result.failed_issues)
+
+                    # Merge issue status updates
+                    for code, status_update in group_result.issue_status_updates.items():
+                        issue_status_map[code].update(status_update)
+
+                    # Update feedback for retries
+                    if group_result.feedback:
+                        # Determine which group this was from
+                        for batch_id in group_result.batch_updates:
+                            if batch_id.startswith("BE"):
+                                feedback_be = group_result.feedback
+                            else:
+                                feedback_fe = group_result.feedback
+                            break
+
+                    # Track if all passed
+                    if not group_result.all_passed:
                         all_passed_this_iteration = False
-                        await emit_log(
-                            "WARNING",
-                            f"{batch_id} needs retry "
-                            f"(score {score} < {self.satisfaction_threshold})",
-                        )
-                        if batch_type == "BE":
-                            feedback_be = gemini_output or ""
-                        else:
-                            feedback_fe = gemini_output or ""
-                        failed_msg = (
-                            f", failed issues: {', '.join(failed_issue_codes)}"
-                            if failed_issue_codes
-                            else ""
-                        )
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_REGENERATING,
-                                session_id=session_id,
-                                message=f"   ⚠️ {batch_id} NEEDS RETRY "
-                                f"({score} < {self.satisfaction_threshold}){failed_msg}",
-                            )
-                        )
 
                 passed_batches = [b for b, r in batch_results.items() if r["passed"]]
                 failed_batches = [b for b, r in batch_results.items() if not r["passed"]]

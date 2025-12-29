@@ -59,7 +59,8 @@ DEFAULT_TIMEOUT = 180
 
 ToolPreset = Literal["fix", "default"]
 TOOL_PRESETS: dict[str, str] = {
-    "fix": "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,WebFetch,WebSearch",
+    # Task tool needed for Opus orchestrator to launch sub-agents (git-branch-creator, fixer-single)
+    "fix": "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,WebFetch,WebSearch,Task",
     "default": "default",
 }
 
