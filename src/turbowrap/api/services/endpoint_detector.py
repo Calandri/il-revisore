@@ -244,66 +244,39 @@ def _extract_routes_with_regex(file_path: str, framework: str) -> list[dict[str,
 def _analyze_with_gemini_cli(
     repo_path: str,
     framework: str,
-    route_files: list[str],
 ) -> list[EndpointInfo]:
-    """Use Gemini CLI to analyze route files and extract endpoint details.
+    """Use Gemini CLI to analyze repository and extract endpoint details.
 
-    Gemini CLI can explore the repository autonomously, reading files as needed.
+    Gemini CLI explores the repository autonomously using .llms/structure.xml as context.
     Uses Gemini Flash for fast endpoint detection.
     """
     import asyncio
 
-    # Build the prompt for Gemini CLI
-    files_list = "\n".join([f"- {f}" for f in route_files[:20]])  # Limit to 20 files
+    prompt = f"""You are a senior backend architect. Your task is to thoroughly and completely document ALL REST API endpoints in this {framework} repository.
 
-    prompt = f"""You are analyzing a {framework} backend repository to extract ALL API endpoints.
+First, read .llms/structure.xml to get an overview of the project structure. Then explore each route/API file, analyze the source code, and document every single endpoint.
 
-TASK: Find and document every API endpoint in this repository.
+For each endpoint, you must identify:
+- The HTTP method and complete path (including router prefixes)
+- A clear description of what it does
+- Parameters (path, query, body, header) with type and whether required
+- The response type
+- Whether it requires authentication and what type (Bearer, API-Key, Basic, OAuth2)
+- Visibility: "public" (no auth), "private" (user auth), "internal" (admin/system)
 
-INSTRUCTIONS:
-1. First, explore the route/api files to understand the structure
-2. Look for router prefix declarations (e.g., `router = APIRouter(prefix="/api/v1/tickets")`)
-3. For each endpoint, extract the FULL path (prefix + route path)
-4. Read docstrings and function bodies to understand what each endpoint does
-5. Check for authentication requirements (Depends, decorators, middleware)
-6. Extract parameter details from function signatures
-7. Determine VISIBILITY and AUTH TYPE for each endpoint
+Be meticulous: do not skip any endpoints, do not invent endpoints that don't exist, always verify in the code.
 
-Key files to analyze:
-{files_list}
-
-Also look for:
-- Main app file that registers routers (to find prefixes)
-- Any OpenAPI/Swagger configuration (note the swagger/docs URL if found!)
-- Authentication middleware or decorators
-- Security dependencies (OAuth2, JWT, API keys)
-- Swagger UI endpoint (usually /docs, /swagger, /api-docs, /openapi.json)
-
-AUTHENTICATION & VISIBILITY DETECTION:
-- auth_required: True if endpoint has auth dependency (Depends(get_current_user), @login_required, etc.)
-- visibility:
-  - "public" = No auth required, accessible by anyone (login, register, health, public APIs)
-  - "private" = Auth required, accessible by authenticated users
-  - "internal" = Auth required + admin-only or internal service endpoints
-- auth_type: The type of authentication used:
-  - "Bearer" = JWT/OAuth2 bearer tokens
-  - "Basic" = HTTP Basic Auth
-  - "API-Key" = API key in header/query
-  - "Cookie" = Session-based auth
-  - "OAuth2" = OAuth2 flows
-  - "" = No auth (for public endpoints)
-
-OUTPUT FORMAT - Return ONLY a valid JSON array (no markdown, no explanation):
+Respond ONLY with a valid JSON array (no markdown, no explanations):
 [
   {{
     "method": "GET",
     "path": "/api/v1/users",
     "file": "src/routes/users.py",
     "line": 45,
-    "description": "Detailed description of what this endpoint does",
+    "description": "Returns paginated list of users",
     "parameters": [
-      {{"name": "page", "param_type": "query", "data_type": "int", \
-       "required": false, "description": "Page number"}}
+      {{"name": "page", "param_type": "query", "data_type": "int", "required": false, "description": "Page number"}},
+      {{"name": "limit", "param_type": "query", "data_type": "int", "required": false, "description": "Items per page"}}
     ],
     "response_type": "List[User]",
     "auth_required": true,
@@ -311,15 +284,7 @@ OUTPUT FORMAT - Return ONLY a valid JSON array (no markdown, no explanation):
     "auth_type": "Bearer",
     "tags": ["users"]
   }}
-]
-
-CRITICAL:
-- Each method+path combination must appear exactly ONCE
-- Include the FULL path with all prefixes
-- Do not invent endpoints that don't exist in the code
-- Carefully analyze each endpoint for auth requirements
-
-Return ONLY the JSON array, nothing else."""
+]"""
 
     response_text = ""
     try:
@@ -585,7 +550,7 @@ def detect_endpoints(
     if use_ai:
         if use_claude:
             logger.info("Using Gemini CLI (flash) for endpoint detection (autonomous exploration)")
-            endpoints = _analyze_with_gemini_cli(repo_path, framework, route_files)
+            endpoints = _analyze_with_gemini_cli(repo_path, framework)
             result.routes = endpoints
         else:
             # Fallback: Use Gemini Flash (requires passing file contents)

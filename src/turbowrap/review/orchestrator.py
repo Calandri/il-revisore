@@ -991,27 +991,43 @@ class Orchestrator:
         structure_docs: dict[str, str] | None = None,
     ) -> RepoType:
         """
-        Detect repository type from files or STRUCTURE.md.
+        Detect repository type from structure.xml or file patterns.
 
-        For INITIAL mode (no files), parses repo type from root STRUCTURE.md.
-        For DIFF mode, uses file extensions.
+        Priority:
+        1. Parse `type` attribute from structure.xml (most reliable)
+        2. Fallback to file pattern detection
 
         Args:
             files: List of file paths to analyze
-            structure_docs: STRUCTURE.md contents for fallback detection
+            structure_docs: structure.xml contents
 
         Returns:
             RepoType enum value
         """
-        if files:
-            return self.repo_detector.detect(files)
+        import re
 
-        # In INITIAL mode, try to extract from STRUCTURE.md
+        # Priority 1: Parse type from structure.xml (authoritative source)
         if structure_docs:
-            for _path, content in structure_docs.items():
-                if "## Metadata" in content and "Repository Type" in content:
-                    import re
+            for path, content in structure_docs.items():
+                # XML format: <repository ... type="backend" ...>
+                if "structure.xml" in path or content.strip().startswith("<?xml"):
+                    match = re.search(
+                        r'<repository[^>]+type=["\'](\w+)["\']',
+                        content,
+                        re.IGNORECASE,
+                    )
+                    if match:
+                        type_str = match.group(1).lower()
+                        logger.info(f"Detected repo type from structure.xml: {type_str}")
+                        if type_str == "backend":
+                            return RepoType.BACKEND
+                        if type_str == "frontend":
+                            return RepoType.FRONTEND
+                        if type_str == "fullstack":
+                            return RepoType.FULLSTACK
 
+                # Legacy: STRUCTURE.md format
+                elif "## Metadata" in content and "Repository Type" in content:
                     match = re.search(
                         r"\*\*Repository Type\*\*:\s*`?(\w+)`?",
                         content,
@@ -1027,11 +1043,16 @@ class Orchestrator:
                         if type_str == "fullstack":
                             return RepoType.FULLSTACK
 
-            logger.warning(
-                "No repo type found in STRUCTURE.md. "
-                "Run `python -m turbowrap.tools.structure_generator` to generate updated docs."
-            )
+        # Priority 2: File pattern detection (fallback)
+        if files:
+            detected = self.repo_detector.detect(files)
+            logger.info(f"Detected repo type from file patterns: {detected.value}")
+            return detected
 
+        logger.warning(
+            "No repo type found in structure docs. "
+            "Run structure generator to create structure.xml."
+        )
         return RepoType.UNKNOWN
 
     def _get_reviewers(self, repo_type: RepoType, include_functional: bool) -> list[str]:
