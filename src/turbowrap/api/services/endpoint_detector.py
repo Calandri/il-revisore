@@ -61,7 +61,15 @@ class DetectionResult:
 
 
 ROUTE_FILE_PATTERNS: dict[str, list[str]] = {
-    "fastapi": ["**/routes/*.py", "**/routers/*.py", "**/api/*.py", "**/endpoints/*.py"],
+    "fastapi": [
+        "**/routes/*.py",
+        "**/routers/*.py",
+        "**/api/*.py",
+        "**/endpoints/*.py",
+        "**/apis.py",
+        "**/*_api.py",
+        "**/*_apis.py",
+    ],
     "flask": ["**/routes/*.py", "**/views/*.py", "**/api/*.py", "**/*_routes.py"],
     "express": ["**/routes/*.js", "**/routes/*.ts", "**/api/*.js", "**/api/*.ts"],
     "django": ["**/urls.py", "**/views.py"],
