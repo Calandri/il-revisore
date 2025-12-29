@@ -246,6 +246,25 @@ function chatSidebar() {
         async onGlobalContextChanged(repoId) {
             // Reload sessions filtered by the new repo
             await this.loadSessions(repoId);
+
+            // Check if active session still belongs to the new repo filter
+            if (this.activeSession) {
+                const sessionRepoId = this.activeSession.repository_id;
+
+                // If filtering by repo and active session doesn't match, clear it
+                if (repoId && sessionRepoId !== repoId) {
+                    console.log('[chatSidebar] Active session repo mismatch, clearing');
+                    this.activeSession = null;
+                    this.messages = [];
+                    localStorage.removeItem('chatActiveSessionId');
+
+                    // Auto-select first session of new repo if available
+                    if (this.sessions.length > 0) {
+                        await this.selectSession(this.sessions[0]);
+                    }
+                }
+                // If no filter (null repo), keep current session
+            }
         },
 
         /**
