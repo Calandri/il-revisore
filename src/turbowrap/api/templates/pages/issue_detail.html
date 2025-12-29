@@ -81,7 +81,7 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
-                Resolve
+                Merged
             </button>
             <button @click="ignoreIssue()"
                     :disabled="actionLoading"
@@ -477,7 +477,7 @@ function issueDetailApp() {
         },
 
         async resolveIssue() {
-            if (!confirm('Sei sicuro di voler risolvere questa issue?')) return;
+            if (!confirm('Sei sicuro di voler segnare questa issue come MERGED?')) return;
             await this.updateStatus('resolve');
         },
 
@@ -495,14 +495,18 @@ function issueDetailApp() {
             this.actionLoading = true;
             try {
                 const url = `/api/issues/${this.issueId}/${action}${note ? '?note=' + encodeURIComponent(note) : ''}`;
+                console.log('[Issue] Calling:', url);
                 const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                console.log('[Issue] Response:', res.status, data);
                 if (res.ok) {
+                    console.log('[Issue] Success, reloading page...');
                     window.location.reload();
                 } else {
-                    const error = await res.json();
-                    alert('Errore: ' + (error.detail || 'Unknown error'));
+                    alert('Errore: ' + (data.detail || 'Unknown error'));
                 }
             } catch (e) {
+                console.error('[Issue] Error:', e);
                 alert('Errore di rete: ' + e.message);
             }
             this.actionLoading = false;

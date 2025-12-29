@@ -108,6 +108,7 @@ class IdempotencyEntry:
     task_id: str | None = None
     issue_count: int = 0
     issue_codes: list[str] = field(default_factory=list)
+    issue_ids: list[str] = field(default_factory=list)
     user_name: str | None = None
     branch_name: str | None = None
 
@@ -193,6 +194,7 @@ class IdempotencyStore:
                 task_id=metadata.get("task_id"),
                 issue_count=metadata.get("issue_count", 0),
                 issue_codes=metadata.get("issue_codes", []),
+                issue_ids=metadata.get("issue_ids", []),
                 user_name=metadata.get("user_name"),
             )
             return False, None
@@ -535,6 +537,7 @@ class ActiveSessionInfo(BaseModel):
     user_name: str | None = None
     issue_count: int = 0
     issue_codes: list[str] = []
+    issue_ids: list[str] = []
 
 
 class ActiveSessionsResponse(BaseModel):
@@ -572,6 +575,7 @@ def list_active_sessions() -> ActiveSessionsResponse:
                         user_name=entry.user_name,
                         issue_count=entry.issue_count,
                         issue_codes=entry.issue_codes,
+                        issue_ids=entry.issue_ids,
                     )
                 )
 

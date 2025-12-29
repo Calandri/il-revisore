@@ -184,6 +184,7 @@ class FixSessionService:
             "task_id": task_id,
             "issue_count": len(issues),
             "issue_codes": [cast(str, i.issue_code) for i in issues],
+            "issue_ids": [cast(str, i.id) for i in issues],
             "user_name": user_name,
         }
 

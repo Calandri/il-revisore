@@ -268,12 +268,12 @@ def resolve_issue(
     note: str = Query(default="", description="Resolution note"),
     db: Session = Depends(get_db),
 ) -> Issue:
-    """Quick action to mark an issue as resolved."""
+    """Quick action to mark an issue as merged (closed)."""
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
+    issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
     issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
     if note:
         issue.resolution_note = note  # type: ignore[assignment]
