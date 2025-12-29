@@ -1,0 +1,155 @@
+<!-- Test Suite Details Drawer -->
+<div class="space-y-4">
+    <!-- Header -->
+    <div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4">
+        <div class="flex items-center gap-3">
+            {% if suite.framework == 'pytest' %}
+            <div class="w-10 h-10 rounded-lg bg-yellow-500 flex items-center justify-center text-white font-bold text-sm">PY</div>
+            {% elif suite.framework == 'vitest' %}
+            <div class="w-10 h-10 rounded-lg bg-purple-500 flex items-center justify-center text-white font-bold text-sm">VT</div>
+            {% elif suite.framework == 'jest' %}
+            <div class="w-10 h-10 rounded-lg bg-red-500 flex items-center justify-center text-white font-bold text-sm">JS</div>
+            {% elif suite.framework == 'playwright' %}
+            <div class="w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center text-white font-bold text-sm">PW</div>
+            {% else %}
+            <div class="w-10 h-10 rounded-lg bg-gray-500 flex items-center justify-center text-white font-bold text-sm">TS</div>
+            {% endif %}
+            <div>
+                <h3 class="font-semibold text-lg">{{ suite.name }}</h3>
+                <p class="text-sm text-gray-500">{{ suite.path }}</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+            <span class="px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                {{ scan_result.total_files }} file
+            </span>
+            <span class="px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                {{ scan_result.total_tests }} test
+            </span>
+        </div>
+    </div>
+
+    {% if scan_result.error %}
+    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-700 dark:text-red-300">
+        {{ scan_result.error }}
+    </div>
+    {% endif %}
+
+    <!-- File List -->
+    <div class="space-y-3" x-data="{ expandedFile: null, showCode: false, codeContent: '' }">
+        {% for file in scan_result.files %}
+        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <!-- File Header -->
+            <button
+                @click="expandedFile = expandedFile === '{{ file.path }}' ? null : '{{ file.path }}'"
+                class="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+            >
+                <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-gray-400 transition-transform"
+                         :class="{ 'rotate-90': expandedFile === '{{ file.path }}' }"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                    <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <span class="font-medium text-sm">{{ file.filename }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-500">{{ file.test_count }} test</span>
+                    {% if file.error %}
+                    <span class="px-2 py-0.5 rounded text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">errore</span>
+                    {% endif %}
+                </div>
+            </button>
+
+            <!-- Test List (expanded) -->
+            <div x-show="expandedFile === '{{ file.path }}'" x-collapse class="border-t border-gray-200 dark:border-gray-700">
+                {% if file.error %}
+                <div class="p-3 text-sm text-red-600 dark:text-red-400">{{ file.error }}</div>
+                {% elif file.tests %}
+                <div class="divide-y divide-gray-100 dark:divide-gray-800">
+                    {% for test in file.tests %}
+                    <div class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 group">
+                        <div class="flex items-center gap-3">
+                            <!-- Status icon (placeholder - will show last run status) -->
+                            <div class="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    {% if test.class_name %}
+                                    <span class="text-xs text-gray-400">{{ test.class_name }}.</span>
+                                    {% endif %}
+                                    <span class="font-mono text-sm">{{ test.name }}</span>
+                                    {% if test.is_async %}
+                                    <span class="px-1.5 py-0.5 rounded text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">async</span>
+                                    {% endif %}
+                                </div>
+                                {% if test.docstring %}
+                                <p class="text-xs text-gray-500 mt-0.5 truncate max-w-md">{{ test.docstring[:100] }}{% if test.docstring|length > 100 %}...{% endif %}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span class="text-xs text-gray-400">line {{ test.line }}</span>
+                            <button
+                                hx-get="/htmx/tests/file/{{ suite.id }}?file_path={{ file.path }}&line={{ test.line }}"
+                                hx-target="#test-code-panel"
+                                hx-swap="innerHTML"
+                                class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                title="Vedi codice"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-3 text-sm text-gray-500 italic">Nessun test trovato in questo file</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not scan_result.files %}
+        <div class="text-center py-8 text-gray-500">
+            <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <p>Nessun file test trovato in {{ suite.path }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Code Panel (initially hidden) -->
+    <div id="test-code-panel" class="mt-4">
+        <!-- Will be populated via HTMX when clicking on a test -->
+    </div>
+
+    <!-- AI Analysis Button -->
+    <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <button
+            hx-post="/htmx/tests/analyze/{{ suite.id }}"
+            hx-target="#ai-analysis-result"
+            hx-swap="innerHTML"
+            hx-indicator="#ai-loading"
+            class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 font-medium"
+        >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+            Analizza con AI
+            <span id="ai-loading" class="htmx-indicator">
+                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </span>
+        </button>
+        <div id="ai-analysis-result" class="mt-4">
+            <!-- Will be populated via HTMX after AI analysis -->
+        </div>
+    </div>
+</div>

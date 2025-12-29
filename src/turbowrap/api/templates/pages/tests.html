@@ -36,7 +36,7 @@
     },
 
     get repositoryId() {
-        return Alpine.store('globalContext')?.selectedRepo || null;
+        return Alpine.store('globalContext')?.selectedRepoId || null;
     },
 
     get hasRepo() {
@@ -69,26 +69,18 @@
     }
 }"
 x-init="
-    // Initial load when repo is already selected
-    $nextTick(() => {
-        if (repositoryId) {
-            refreshSuites();
-            refreshStats();
+    // Watch for repo changes - fires when store initializes and when user changes repo
+    this.$watch('$store.globalContext.selectedRepoId', (repoId) => {
+        if (repoId) {
+            this.refreshSuites();
+            this.refreshStats();
         }
     });
 
-    // Listen for global context changes
-    window.addEventListener('globalContext:changed', () => {
-        $nextTick(() => {
-            refreshSuites();
-            refreshStats();
-        });
-    });
-
     // Listen for HTMX triggers from server
-    document.body.addEventListener('refreshSuites', () => refreshSuites());
-    document.body.addEventListener('refreshRuns', () => refreshStats());
-    document.body.addEventListener('closeModal', () => { showNewTestModal = false; showRunModal = false; });
+    document.body.addEventListener('refreshSuites', () => this.refreshSuites());
+    document.body.addEventListener('refreshRuns', () => this.refreshStats());
+    document.body.addEventListener('closeModal', () => { this.showNewTestModal = false; this.showRunModal = false; });
 ">
 
     <!-- No Repository Selected Warning -->
@@ -126,6 +118,15 @@ x-init="
                         </svg>
                         Run All
                     </button>
+                    <button hx-post=""
+                            :hx-post="'/htmx/tests/discover/' + repositoryId"
+                            hx-swap="none"
+                            class="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 flex items-center gap-2 font-medium">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        Auto-Discovery
+                    </button>
                     <button @click="showNewTestModal = true"
                             class="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 font-medium">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,7 +163,7 @@ x-init="
                 <button @click="testType = 'ai'; refreshSuites()"
                         :class="testType === 'ai' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
                         class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    Wrapper AI
+                    TurboWrapperAI
                 </button>
             </div>
 
@@ -237,7 +238,7 @@ x-init="
                                    :class="newSuite.type === 'ai_analysis' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'dark:border-gray-600'">
                                 <input type="radio" value="ai_analysis" x-model="newSuite.type" class="text-purple-600">
                                 <div>
-                                    <div class="font-medium">Wrapper AI</div>
+                                    <div class="font-medium">TurboWrapperAI</div>
                                     <div class="text-xs text-gray-500">Analisi AI</div>
                                 </div>
                             </label>
@@ -289,7 +290,7 @@ x-init="
                     Vuoi eseguire tutti i test suite per questa repository?
                 </p>
                 <div class="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg text-sm text-yellow-700 dark:text-yellow-300">
-                    I test AI vengono lanciati dalla chat e analizzati con AI.
+                    I test TurboWrapperAI vengono lanciati dalla chat e analizzati con AI.
                 </div>
                 <div class="flex justify-end gap-3 pt-4">
                     <button @click="showRunModal = false" class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>

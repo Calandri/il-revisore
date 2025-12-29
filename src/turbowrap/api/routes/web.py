@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from starlette.responses import Response
@@ -984,21 +984,118 @@ async def htmx_delete_test_suite(
     return response
 
 
+@router.get("/htmx/tests/suites/{suite_id}/details", response_class=HTMLResponse)
+async def htmx_get_suite_details(
+    request: Request,
+    suite_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: get test suite details with scanned tests."""
+    from pathlib import Path
+
+    from ...db.models import Repository, TestSuite
+    from ...tasks.test_scanner import scan_test_suite
+
+    suite = (
+        db.query(TestSuite)
+        .filter(TestSuite.id == suite_id, TestSuite.deleted_at.is_(None))
+        .first()
+    )
+    if not suite:
+        return Response(content="<div class='text-red-500'>Suite non trovata</div>", status_code=404)
+
+    repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
+    if not repo or not repo.local_path:
+        return Response(
+            content="<div class='text-red-500'>Repository non trovata</div>", status_code=404
+        )
+
+    # Scan the test files
+    scan_result = scan_test_suite(
+        repo_path=Path(repo.local_path),
+        suite_path=suite.path,
+        framework=suite.framework,
+    )
+
+    return templates.TemplateResponse(
+        "components/test_suite_details.html",
+        {
+            "request": request,
+            "suite": suite,
+            "scan_result": scan_result,
+            "repo_path": repo.local_path,
+        },
+    )
+
+
+@router.get("/htmx/tests/file/{suite_id}", response_class=HTMLResponse)
+async def htmx_get_test_file_code(
+    request: Request,
+    suite_id: str,
+    file_path: str,
+    line: int = 1,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: get source code for a test file."""
+    from pathlib import Path
+
+    from ...db.models import Repository, TestSuite
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(content="<div class='text-red-500'>Suite non trovata</div>", status_code=404)
+
+    repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
+    if not repo or not repo.local_path:
+        return Response(content="<div class='text-red-500'>Repository non trovata</div>", status_code=404)
+
+    full_path = Path(repo.local_path) / file_path
+    if not full_path.exists():
+        return Response(content="<div class='text-red-500'>File non trovato</div>", status_code=404)
+
+    try:
+        content = full_path.read_text(encoding="utf-8")
+        lines = content.split("\n")
+        total_lines = len(lines)
+    except Exception as e:
+        return Response(content=f"<div class='text-red-500'>Errore: {e}</div>", status_code=500)
+
+    return templates.TemplateResponse(
+        "components/test_file_code.html",
+        {
+            "request": request,
+            "file_path": file_path,
+            "content": content,
+            "lines": lines,
+            "total_lines": total_lines,
+            "highlight_line": line,
+            "framework": suite.framework,
+        },
+    )
+
+
 @router.post("/htmx/tests/run/{suite_id}", response_class=HTMLResponse)
 async def htmx_run_test_suite(
     request: Request,
     suite_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> Response:
     """HTMX: trigger a test run for a suite."""
     import json
 
-    from ...db.models import TestRun, TestSuite
+    from ...db.models import Repository, TestRun, TestSuite
 
     suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
     if not suite:
         return Response(
             content="<div class='text-red-500'>Suite non trovata</div>", status_code=404
+        )
+
+    repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
+    if not repo:
+        return Response(
+            content="<div class='text-red-500'>Repository non trovata</div>", status_code=404
         )
 
     # Create pending run
@@ -1011,7 +1108,12 @@ async def htmx_run_test_suite(
     db.commit()
     db.refresh(run)
 
-    # TODO: Queue TestTask for actual execution
+    # Queue TestTask for background execution
+    background_tasks.add_task(
+        _execute_test_run,
+        run_id=str(run.id),
+        repo_path=repo.local_path,
+    )
 
     response = Response(content="")
     response.headers["HX-Trigger"] = json.dumps(
@@ -1024,16 +1126,53 @@ async def htmx_run_test_suite(
     return response
 
 
+async def _execute_test_run(run_id: str, repo_path: str) -> None:
+    """Background task to execute a test run."""
+    import logging
+    from pathlib import Path
+
+    from ...db.session import get_session_local
+    from ...tasks import TestTask, TaskContext
+
+    logger = logging.getLogger(__name__)
+
+    SessionLocal = get_session_local()
+    db = SessionLocal()
+
+    try:
+        task = TestTask()
+        context = TaskContext(
+            db=db,
+            repo_path=Path(repo_path),
+            config={"run_id": run_id, "repository_id": ""},
+        )
+        result = await task.execute_async(context)
+        logger.info(f"Test run {run_id} completed: {result.status}")
+    except Exception as e:
+        logger.exception(f"Test run {run_id} failed: {e}")
+    finally:
+        db.close()
+
+
 @router.post("/htmx/tests/run-all/{repository_id}", response_class=HTMLResponse)
 async def htmx_run_all_tests(
     request: Request,
     repository_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> Response:
     """HTMX: run all test suites for a repository."""
     import json
 
-    from ...db.models import TestRun, TestSuite
+    from ...db.models import Repository, TestRun, TestSuite
+
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo:
+        response = Response(content="")
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": "Repository non trovata", "type": "error"}}
+        )
+        return response
 
     suites = (
         db.query(TestSuite)
@@ -1047,13 +1186,12 @@ async def htmx_run_all_tests(
     if not suites:
         response = Response(content="")
         response.headers["HX-Trigger"] = json.dumps(
-            {
-                "showToast": {"message": "Nessun test suite trovato", "type": "warning"},
-            }
+            {"showToast": {"message": "Nessun test suite trovato", "type": "warning"}}
         )
         return response
 
-    # Create runs for all suites
+    # Create runs for all suites and queue execution
+    run_ids = []
     for suite in suites:
         run = TestRun(
             suite_id=suite.id,
@@ -1061,8 +1199,18 @@ async def htmx_run_all_tests(
             status="pending",
         )
         db.add(run)
+        db.flush()  # Get the ID
+        run_ids.append(str(run.id))
 
     db.commit()
+
+    # Queue all test runs for background execution
+    for run_id in run_ids:
+        background_tasks.add_task(
+            _execute_test_run,
+            run_id=run_id,
+            repo_path=repo.local_path,
+        )
 
     response = Response(content="")
     response.headers["HX-Trigger"] = json.dumps(
@@ -1074,6 +1222,78 @@ async def htmx_run_all_tests(
         }
     )
     return response
+
+
+@router.post("/htmx/tests/discover/{repository_id}", response_class=HTMLResponse)
+async def htmx_discover_tests(
+    request: Request,
+    repository_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: auto-discover test suites in a repository using Gemini CLI."""
+    import json
+
+    from ...db.models import Repository
+
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo:
+        response = Response(content="")
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": "Repository non trovata", "type": "error"}}
+        )
+        return response
+
+    if not repo.local_path:
+        response = Response(content="")
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": "Repository non ha un path locale", "type": "error"}}
+        )
+        return response
+
+    # Queue discovery in background
+    background_tasks.add_task(
+        _execute_test_discovery,
+        repository_id=repository_id,
+        repo_name=repo.name,
+        repo_path=repo.local_path,
+    )
+
+    response = Response(content="")
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "showToast": {"message": "Discovery avviato...", "type": "info"},
+        }
+    )
+    return response
+
+
+async def _execute_test_discovery(repository_id: str, repo_name: str, repo_path: str) -> None:
+    """Background task to execute test discovery."""
+    import logging
+    from pathlib import Path
+
+    from ...db.session import get_session_local
+    from ...tasks.test_discovery import discover_and_save_tests
+
+    logger = logging.getLogger(__name__)
+    SessionLocal = get_session_local()
+    db = SessionLocal()
+    try:
+        result = await discover_and_save_tests(
+            repo_path=Path(repo_path),
+            repo_name=repo_name,
+            repository_id=repository_id,
+            db_session=db,
+        )
+        if result.success:
+            logger.info(f"Test discovery completed: {len(result.suites)} suites found")
+        else:
+            logger.error(f"Test discovery failed: {result.error}")
+    except Exception as e:
+        logger.exception(f"Test discovery failed: {e}")
+    finally:
+        db.close()
 
 
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
