@@ -6,10 +6,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, WebSocket
+from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .. import __version__
@@ -47,6 +49,8 @@ from .websocket import ChatWebSocketHandler
 # Template and static directories
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
+
+logger = logging.getLogger(__name__)
 
 
 def configure_logging() -> None:
@@ -238,6 +242,14 @@ def create_app() -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+
+    # Global exception handler for SQLAlchemy errors
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+        """Handle SQLAlchemy errors and log them for visibility in console."""
+        error_msg = f"Database error: {exc}"
+        logger.error(error_msg)
+        return JSONResponse(status_code=500, content={"detail": error_msg})
 
     # Authentication middleware (must be added before CORS)
     app.add_middleware(AuthMiddleware)

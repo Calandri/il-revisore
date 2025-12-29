@@ -27,6 +27,10 @@
 
 /* === COMMENT THREAD === */
 .comment-thread { border-left: 2px solid rgba(107, 114, 128, 0.3); }
+
+/* === HIDE SCROLLBAR === */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
 {% endblock %}
 
@@ -36,142 +40,147 @@
     <!-- ============================================== -->
     <!-- HEADER -->
     <!-- ============================================== -->
-    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-8">
-        <div class="flex items-start gap-4">
+    <div class="flex flex-col gap-4 mb-6 md:mb-8">
+        <!-- Top row: Navigation + Issue code + Status badges -->
+        <div class="flex items-center gap-2 md:gap-4 flex-wrap">
             <!-- Navigation: Back + Prev/Next -->
-            <div class="flex items-center gap-1 mt-1">
+            <div class="flex items-center gap-1">
                 <!-- Back to list -->
-                <a href="/issues" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Torna alla lista">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <a href="/issues" class="p-1.5 md:p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Torna alla lista">
+                    <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                     </svg>
                 </a>
                 <!-- Separator -->
-                <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                <div class="w-px h-5 md:h-6 bg-gray-300 dark:bg-gray-600 mx-0.5 md:mx-1"></div>
                 <!-- Previous Issue -->
                 <a :href="prevIssue ? '/issues/' + prevIssue.issue_code + (filterParams ? '?' + filterParams : '') : '#'"
                    :class="prevIssue ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
-                   class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
+                   class="p-1.5 md:p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
                    :title="prevIssue ? prevIssue.issue_code : 'Nessuna issue precedente'">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
                     </svg>
-                    <span class="text-xs font-mono hidden sm:inline" x-text="prevIssue ? getShortCode(prevIssue.issue_code) : ''"></span>
+                    <span class="text-[10px] md:text-xs font-mono hidden sm:inline" x-text="prevIssue ? getShortCode(prevIssue.issue_code) : ''"></span>
                 </a>
                 <!-- Current position -->
-                <span class="px-2 text-xs text-gray-500" x-show="currentIndex >= 0" x-text="(currentIndex + 1) + '/' + totalIssues"></span>
+                <span class="px-1 md:px-2 text-[10px] md:text-xs text-gray-500" x-show="currentIndex >= 0" x-text="(currentIndex + 1) + '/' + totalIssues"></span>
                 <!-- Next Issue -->
                 <a :href="nextIssue ? '/issues/' + nextIssue.issue_code + (filterParams ? '?' + filterParams : '') : '#'"
                    :class="nextIssue ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
-                   class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
+                   class="p-1.5 md:p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
                    :title="nextIssue ? nextIssue.issue_code : 'Nessuna issue successiva'">
-                    <span class="text-xs font-mono hidden sm:inline" x-text="nextIssue ? getShortCode(nextIssue.issue_code) : ''"></span>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span class="text-[10px] md:text-xs font-mono hidden sm:inline" x-text="nextIssue ? getShortCode(nextIssue.issue_code) : ''"></span>
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
                     </svg>
                 </a>
             </div>
-            <div>
-                <div class="flex flex-wrap items-center gap-3 mb-2">
-                    <h1 class="text-2xl md:text-3xl font-bold font-mono">{{ issue.issue_code }}</h1>
-                    <span class="px-3 py-1 rounded-full text-sm font-bold text-white severity-{{ issue.severity|lower }}">{{ issue.severity }}</span>
-                    <span class="px-3 py-1 rounded-full text-sm font-medium border status-{{ issue.status }}">{{ issue.status }}</span>
-                    <!-- Viewed toggle -->
-                    <button @click="toggleViewed()"
-                            :class="isViewed ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-300 dark:border-gray-600'"
-                            class="px-3 py-1 rounded-full text-sm font-medium border flex items-center gap-1.5 transition-colors hover:opacity-80"
-                            title="Segna come già revisionata">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path x-show="isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            <path x-show="!isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            <path x-show="!isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                        </svg>
-                        <span x-text="isViewed ? 'Reviewed' : 'Not reviewed'"></span>
-                    </button>
-                    {% if issue.linear_identifier %}
-                    <a href="{{ issue.linear_url or '#' }}" target="_blank"
-                       class="px-3 py-1 rounded-full text-sm font-medium text-white linear-brand flex items-center gap-2 hover:opacity-90 transition-opacity">
-                        <svg class="w-4 h-4" viewBox="0 0 100 100" fill="currentColor">
-                            <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
-                        </svg>
-                        {{ issue.linear_identifier }}
-                    </a>
-                    {% endif %}
-                </div>
-                <h2 class="text-xl text-gray-600 dark:text-gray-300">{{ issue.title }}</h2>
-                <div class="flex flex-wrap items-center gap-4 mt-3 text-sm text-gray-500">
-                    <span class="flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-                        </svg>
-                        {{ issue.category }}
-                    </span>
-                    {% if issue.rule %}
-                    <span class="flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-                        </svg>
-                        Rule: {{ issue.rule }}
-                    </span>
-                    {% endif %}
-                    <span class="flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        {{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}
-                    </span>
-                    {% if issue.phase_started_at %}
-                    <span class="flex items-center gap-1 text-purple-500 dark:text-purple-400">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
-                        In fase da {{ issue.phase_started_at.strftime('%H:%M') }}
-                    </span>
-                    {% endif %}
-                </div>
+            <!-- Issue code -->
+            <h1 class="text-lg md:text-2xl lg:text-3xl font-bold font-mono">{{ issue.issue_code }}</h1>
+            <!-- Badges -->
+            <div class="flex flex-wrap items-center gap-1.5 md:gap-2">
+                <span class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-bold text-white severity-{{ issue.severity|lower }}">{{ issue.severity }}</span>
+                <span class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-medium border status-{{ issue.status }}">{{ issue.status }}</span>
+                <!-- Viewed toggle -->
+                <button @click="toggleViewed()"
+                        :class="isViewed ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-300 dark:border-gray-600'"
+                        class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-medium border flex items-center gap-1 md:gap-1.5 transition-colors hover:opacity-80"
+                        title="Segna come già revisionata">
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path x-show="isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        <path x-show="!isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        <path x-show="!isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                    <span class="hidden sm:inline" x-text="isViewed ? 'Reviewed' : 'Not reviewed'"></span>
+                </button>
+                {% if issue.linear_identifier %}
+                <a href="{{ issue.linear_url or '#' }}" target="_blank"
+                   class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-medium text-white linear-brand flex items-center gap-1 md:gap-2 hover:opacity-90 transition-opacity">
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    {{ issue.linear_identifier }}
+                </a>
+                {% endif %}
             </div>
         </div>
 
-        <!-- Actions -->
-        <div class="flex flex-wrap gap-2">
+        <!-- Title -->
+        <h2 class="text-base md:text-xl text-gray-600 dark:text-gray-300">{{ issue.title }}</h2>
+
+        <!-- Metadata row -->
+        <div class="flex flex-wrap items-center gap-2 md:gap-4 text-xs md:text-sm text-gray-500">
+            <span class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                </svg>
+                {{ issue.category }}
+            </span>
+            {% if issue.rule %}
+            <span class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                </svg>
+                <span class="hidden sm:inline">Rule:</span> {{ issue.rule }}
+            </span>
+            {% endif %}
+            <span class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                {{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}
+            </span>
+            {% if issue.phase_started_at %}
+            <span class="flex items-center gap-1 text-purple-500 dark:text-purple-400">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span class="hidden sm:inline">In fase da</span> {{ issue.phase_started_at.strftime('%H:%M') }}
+            </span>
+            {% endif %}
+        </div>
+
+        <!-- Actions - mobile: full width grid, desktop: flex wrap -->
+        <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
             {% if issue.status in ['open', 'in_progress'] %}
             <button @click="resolveIssue()" :disabled="actionLoading"
-                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="px-3 py-2 md:px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
                 Merged
             </button>
             <button @click="ignoreIssue()" :disabled="actionLoading"
-                    class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="px-3 py-2 md:px-4 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
                 </svg>
                 Ignore
             </button>
             {% else %}
             <button @click="reopenIssue()" :disabled="actionLoading"
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="px-3 py-2 md:px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50 col-span-2 sm:col-span-1">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
                 Reopen
             </button>
             {% endif %}
             <button @click="startFix()"
-                    class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="px-3 py-2 md:px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                 </svg>
                 Start Fix
             </button>
             {% if not issue.linear_identifier %}
             <button @click="showLinkLinear = true"
-                    class="px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg font-medium transition-colors flex items-center gap-2">
-                <svg class="w-5 h-5" viewBox="0 0 100 100" fill="currentColor">
+                    class="px-3 py-2 md:px-4 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2">
+                <svg class="w-4 h-4 md:w-5 md:h-5" viewBox="0 0 100 100" fill="currentColor">
                     <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
                 </svg>
-                Link Linear
+                <span class="hidden sm:inline">Link</span> Linear
             </button>
             {% endif %}
         </div>
@@ -187,38 +196,38 @@
 
             <!-- TABS CONTAINER -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <!-- Tab Navigation -->
-                <div class="flex border-b border-gray-200 dark:border-gray-700">
+                <!-- Tab Navigation - scrollable on mobile -->
+                <div class="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto scrollbar-hide">
                     <button @click="activeTab = 'details'"
                             :class="activeTab === 'details' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors">
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Dettagli
                     </button>
                     <button @click="activeTab = 'comments'"
                             :class="activeTab === 'comments' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
-                        Discussione
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                        <span class="hidden sm:inline">Discussione</span><span class="sm:hidden">Chat</span>
                         {% if issue.comments and issue.comments|length > 0 %}
-                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs">{{ issue.comments|length }}</span>
+                        <span class="px-1.5 md:px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] md:text-xs">{{ issue.comments|length }}</span>
                         {% endif %}
                     </button>
                     <button @click="activeTab = 'attachments'"
                             :class="activeTab === 'attachments' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
-                        Allegati
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                        <span class="hidden sm:inline">Allegati</span><span class="sm:hidden">Files</span>
                         {% if issue.attachments and issue.attachments|length > 0 %}
-                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs">{{ issue.attachments|length }}</span>
+                        <span class="px-1.5 md:px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] md:text-xs">{{ issue.attachments|length }}</span>
                         {% endif %}
                     </button>
                     <button @click="activeTab = 'history'"
                             :class="activeTab === 'history' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
-                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors">
-                        Cronologia
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        <span class="hidden sm:inline">Cronologia</span><span class="sm:hidden">Log</span>
                     </button>
                 </div>
 
                 <!-- TAB: DETAILS -->
-                <div x-show="activeTab === 'details'" class="p-6 space-y-6">
+                <div x-show="activeTab === 'details'" class="p-4 md:p-6 space-y-4 md:space-y-6">
                     <!-- Description -->
                     <div>
                         <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -286,7 +295,7 @@
                 </div>
 
                 <!-- TAB: COMMENTS -->
-                <div x-show="activeTab === 'comments'" class="p-6">
+                <div x-show="activeTab === 'comments'" class="p-4 md:p-6">
                     <div class="space-y-4">
                         {% if issue.comments %}
                         {% for comment in issue.comments %}
@@ -339,7 +348,7 @@
                 </div>
 
                 <!-- TAB: ATTACHMENTS -->
-                <div x-show="activeTab === 'attachments'" class="p-6">
+                <div x-show="activeTab === 'attachments'" class="p-4 md:p-6">
                     <div class="space-y-3">
                         {% if issue.attachments %}
                         {% for attachment in issue.attachments %}
@@ -376,7 +385,7 @@
                 </div>
 
                 <!-- TAB: HISTORY -->
-                <div x-show="activeTab === 'history'" class="p-6">
+                <div x-show="activeTab === 'history'" class="p-4 md:p-6">
                     <div class="space-y-4">
                         {% if issue.fix_code %}
                         <div class="flex items-start gap-3">
@@ -410,18 +419,18 @@
             <!-- FIX RESULT (shown when fixed) -->
             {% if issue.fix_code %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-green-300 dark:border-green-500/30 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-500/10">
-                    <h3 class="text-lg font-semibold flex items-center gap-2 text-green-700 dark:text-green-400">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="px-4 md:px-6 py-3 md:py-4 border-b border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-500/10">
+                    <h3 class="text-base md:text-lg font-semibold flex flex-wrap items-center gap-2 text-green-700 dark:text-green-400">
+                        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                         </svg>
                         Fix Applicato
                         {% if issue.fixed_by and issue.fixed_at %}
-                        <span class="text-sm font-normal text-gray-500 dark:text-gray-400 ml-2">da {{ issue.fixed_by }} il {{ issue.fixed_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        <span class="text-xs md:text-sm font-normal text-gray-500 dark:text-gray-400">da {{ issue.fixed_by }} il {{ issue.fixed_at.strftime('%Y-%m-%d %H:%M') }}</span>
                         {% endif %}
                     </h3>
                 </div>
-                <div class="p-6 space-y-4">
+                <div class="p-4 md:p-6 space-y-4">
                     {% if issue.fix_explanation %}
                     <div>
                         <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Spiegazione</h4>
@@ -465,12 +474,12 @@
         <!-- ============================================== -->
         <!-- RIGHT COLUMN (1/3) -->
         <!-- ============================================== -->
-        <div class="space-y-6">
+        <div class="space-y-4 md:space-y-6">
 
             <!-- LINEAR INTEGRATION -->
             {% if issue.linear_identifier %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-500/30 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-500/30 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
                         <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
                     </svg>
@@ -500,8 +509,8 @@
 
             <!-- EFFORT ESTIMATION -->
             {% if issue.estimated_effort %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
@@ -531,8 +540,8 @@
 
             <!-- REFERENCES -->
             {% if issue.references %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
                     </svg>
@@ -550,8 +559,8 @@
 
             <!-- FLAGGED BY -->
             {% if issue.flagged_by %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
                     </svg>
@@ -566,8 +575,8 @@
             {% endif %}
 
             <!-- RELATED INFO -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
@@ -593,17 +602,17 @@
 
             <!-- FIX LOG BUTTON -->
             {% if issue.fix_session_id %}
-            <button @click="showFixLog = true" class="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
-                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button @click="showFixLog = true" class="w-full px-3 md:px-4 py-2.5 md:py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 text-sm">
+                <svg class="w-4 h-4 md:w-5 md:h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
-                Visualizza Fix Log (S3)
+                <span class="hidden sm:inline">Visualizza</span> Fix Log
             </button>
             {% endif %}
 
             <!-- DANGER ZONE -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-300 dark:border-red-500/30 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-red-600 dark:text-red-400">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-300 dark:border-red-500/30 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2 text-red-600 dark:text-red-400">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                     </svg>
@@ -634,17 +643,17 @@
     <!-- ============================================== -->
     <!-- FIX LOG MODAL -->
     <!-- ============================================== -->
-    <div x-show="showFixLog" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="showFixLog = false" style="display: none;">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
-                <h3 class="text-lg font-semibold">Fix Log - Session {{ issue.fix_session_id[:8] if issue.fix_session_id else '' }}...</h3>
+    <div x-show="showFixLog" x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showFixLog = false" style="display: none;">
+        <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
+                <h3 class="text-base md:text-lg font-semibold truncate">Fix Log - Session {{ issue.fix_session_id[:8] if issue.fix_session_id else '' }}...</h3>
                 <button @click="showFixLog = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                 </button>
             </div>
-            <div class="flex-1 overflow-y-auto p-6">
+            <div class="flex-1 overflow-y-auto p-4 md:p-6">
                 <template x-if="fixLogLoading">
                     <div class="flex items-center justify-center py-12">
                         <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
@@ -654,8 +663,8 @@
                     </div>
                 </template>
                 <template x-if="!fixLogLoading && fixLog">
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="space-y-4 md:space-y-6">
+                        <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
                             <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                                 <div class="text-sm text-gray-500">Status</div>
                                 <div class="font-medium" x-text="fixLog.status"></div>
@@ -705,10 +714,10 @@
     <!-- ============================================== -->
     <!-- LINK LINEAR MODAL -->
     <!-- ============================================== -->
-    <div x-show="showLinkLinear" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="showLinkLinear = false" style="display: none;">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
-            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                <h3 class="text-lg font-semibold flex items-center gap-2">
+    <div x-show="showLinkLinear" x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showLinkLinear = false" style="display: none;">
+        <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-md">
+            <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 class="text-base md:text-lg font-semibold flex items-center gap-2">
                     <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
                         <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
                     </svg>
@@ -720,17 +729,17 @@
                     </svg>
                 </button>
             </div>
-            <div class="p-6 space-y-4">
+            <div class="p-4 md:p-6 space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Linear Issue ID o URL</label>
                     <input type="text" x-model="linearIdentifier" placeholder="TEAM-123 o https://linear.app/..."
-                           class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-primary">
+                           class="w-full px-3 md:px-4 py-2.5 md:py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-primary">
                 </div>
-                <p class="text-xs text-gray-500">Inserisci l'identificativo (es. TEAM-123) o l'URL completo dell'issue Linear da collegare.</p>
+                <p class="text-xs text-gray-500">Inserisci l'identificativo (es. TEAM-123) o l'URL completo dell'issue Linear.</p>
                 <div class="flex gap-3 pt-2">
-                    <button @click="showLinkLinear = false" class="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">Annulla</button>
+                    <button @click="showLinkLinear = false" class="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">Annulla</button>
                     <button @click="linkLinear()" :disabled="!linearIdentifier || linkingLinear"
-                            class="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                            class="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
                         <span x-show="!linkingLinear">Collega</span>
                         <span x-show="linkingLinear">Collegando...</span>
                     </button>

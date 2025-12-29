@@ -273,6 +273,58 @@ def get_default_branch(url: str, token: str | None = None) -> str:
         return "main"
 
 
+def install_git_hooks(repo_path: Path, api_base_url: str = "http://localhost:8000") -> None:
+    """Install git hooks to notify the UI on git operations.
+
+    Installs hooks for:
+    - post-commit: after local commits
+    - post-merge: after git pull/merge
+    - post-checkout: after branch change
+    - post-rewrite: after rebase/amend
+
+    Args:
+        repo_path: Path to the git repository.
+        api_base_url: Base URL for the API server.
+    """
+    hooks_dir = repo_path / ".git" / "hooks"
+    if not hooks_dir.exists():
+        logger.warning(f"Hooks dir not found: {hooks_dir}")
+        return
+
+    # Hook script template - calls the API to notify UI
+    hook_template = f"""#!/bin/sh
+# TurboWrap git hook - auto-installed
+# Notifies the UI when git operations occur
+curl -s -X POST "{api_base_url}/api/git/notify?event_type=$1&repo_path={repo_path}" > /dev/null 2>&1 &
+"""
+
+    hooks_to_install = {
+        "post-commit": "commit",
+        "post-merge": "merge",
+        "post-checkout": "checkout",
+        "post-rewrite": "rewrite",
+    }
+
+    for hook_name, event_type in hooks_to_install.items():
+        hook_path = hooks_dir / hook_name
+        hook_content = hook_template.replace("$1", event_type)
+
+        # Don't overwrite existing hooks, append instead
+        if hook_path.exists():
+            existing_content = hook_path.read_text()
+            if "TurboWrap git hook" in existing_content:
+                continue  # Already installed
+            # Append to existing hook
+            hook_content = existing_content.rstrip() + "\n\n" + hook_content
+        else:
+            hook_content = hook_content
+
+        hook_path.write_text(hook_content)
+        hook_path.chmod(0o755)  # Make executable
+
+    logger.info(f"[GitHooks] Installed hooks in {repo_path}")
+
+
 def clone_repo(
     url: str,
     branch: str = "main",
@@ -326,6 +378,8 @@ def clone_repo(
             text=True,
             env=_get_git_env(),
         )
+        # Install git hooks for UI notifications
+        install_git_hooks(local_path)
         return local_path
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.replace(token, "***") if token else e.stderr

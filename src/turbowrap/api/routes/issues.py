@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import boto3
@@ -78,8 +78,8 @@ class IssueResponse(BaseModel):
 
     # Phase tracking (NEW)
     phase_started_at: datetime | None = None
-    is_active: bool = False
-    is_viewed: bool = False  # Manual "reviewed" flag
+    is_active: bool | None = False
+    is_viewed: bool | None = False  # Manual "reviewed" flag
 
     # Fix result fields (populated when resolved by fixer)
     fix_code: str | None = None
@@ -169,7 +169,12 @@ def list_issues(
     - file: Filter by file path (partial match)
     - linear_linked: 'linked' or 'unlinked'
     - order_by: severity (default), updated_at, created_at
+
+    Note: Automatically resets issues stuck in 'in_progress' for >1 hour.
     """
+    # Auto-cleanup: reset issues stuck in_progress for >1 hour
+    reset_stuck_in_progress_issues(db, max_age_hours=1, repository_id=repository_id)
+
     query = db.query(Issue)
 
     if repository_id:
@@ -327,11 +332,15 @@ def update_issue(
 
         issue.status = data.status  # type: ignore[assignment]
 
-        # Set resolved_at timestamp when marking as resolved
-        if data.status in ("resolved", "ignored", "duplicate"):
+        # Track phase timing
+        if data.status == "in_progress":
+            issue.phase_started_at = datetime.utcnow()  # type: ignore[assignment]
+        elif data.status in ("resolved", "ignored", "duplicate"):
             issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+            issue.phase_started_at = None  # type: ignore[assignment]
         elif data.status == "open":
             issue.resolved_at = None  # type: ignore[assignment]
+            issue.phase_started_at = None  # type: ignore[assignment]
 
     if data.resolution_note is not None:
         issue.resolution_note = data.resolution_note  # type: ignore[assignment]
@@ -661,3 +670,77 @@ def delete_comment_from_issue(
 
     logger.info(f"Deleted comment {comment_id} from issue {issue_id}")
     return issue
+
+
+# =============================================================================
+# CLEANUP ENDPOINTS
+# =============================================================================
+
+
+class StuckIssuesResetResponse(BaseModel):
+    """Response for stuck issues reset."""
+
+    reset_count: int
+    reset_issue_ids: list[str]
+
+
+def reset_stuck_in_progress_issues(
+    db: Session,
+    max_age_hours: int = 1,
+    repository_id: str | None = None,
+) -> tuple[int, list[str]]:
+    """
+    Reset issues stuck in 'in_progress' for longer than max_age_hours.
+
+    Returns tuple of (count, list of reset issue IDs).
+    """
+    cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+
+    # Build query for stuck issues
+    query = db.query(Issue).filter(
+        Issue.status == IssueStatus.IN_PROGRESS.value,
+        Issue.deleted_at.is_(None),
+    )
+
+    # Filter by repository if specified
+    if repository_id:
+        query = query.filter(Issue.repository_id == repository_id)
+
+    # Filter by phase_started_at (or updated_at as fallback)
+    stuck_issues = query.filter(
+        # Issue has phase_started_at older than cutoff, or
+        # phase_started_at is null but updated_at is older than cutoff
+        (Issue.phase_started_at.isnot(None) & (Issue.phase_started_at < cutoff_time))
+        | (Issue.phase_started_at.is_(None) & (Issue.updated_at < cutoff_time))
+    ).all()
+
+    reset_ids: list[str] = []
+    for issue in stuck_issues:
+        issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
+        issue.phase_started_at = None  # type: ignore[assignment]
+        issue.resolution_note = (  # type: ignore[assignment]
+            f"Auto-reset: stuck in_progress for >{max_age_hours}h"
+        )
+        reset_ids.append(str(issue.id))
+
+    if reset_ids:
+        db.commit()
+        logger.info(f"Auto-reset {len(reset_ids)} stuck in_progress issues: {reset_ids}")
+
+    return len(reset_ids), reset_ids
+
+
+@router.post("/cleanup/reset-stuck", response_model=StuckIssuesResetResponse)
+def reset_stuck_issues_endpoint(
+    max_age_hours: int = Query(default=1, ge=1, le=24, description="Max hours in_progress"),
+    repository_id: str | None = Query(default=None, description="Filter by repository"),
+    db: Session = Depends(get_db),
+) -> StuckIssuesResetResponse:
+    """
+    Reset issues stuck in 'in_progress' for longer than max_age_hours.
+
+    Issues are reset to 'open' status with a resolution note explaining the auto-reset.
+    Default is 1 hour. Can filter by repository_id.
+    """
+    count, ids = reset_stuck_in_progress_issues(db, max_age_hours, repository_id)
+    return StuckIssuesResetResponse(reset_count=count, reset_issue_ids=ids)

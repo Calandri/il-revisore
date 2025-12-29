@@ -1,11 +1,15 @@
 """Git operations routes for repository activity tracking."""
 
+import asyncio
+import json
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -26,6 +30,24 @@ from ..services.operation_tracker import OperationType, get_tracker
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/git", tags=["git"])
+
+# SSE clients for real-time git event updates
+_git_sse_clients: list[asyncio.Queue[str]] = []
+
+
+async def _broadcast_git_event(event_type: str, data: dict[str, str | None]) -> None:
+    """Broadcast git event to all connected SSE clients."""
+    message = json.dumps({"type": event_type, **data})
+    dead_clients = []
+    for queue in _git_sse_clients:
+        try:
+            queue.put_nowait(message)
+        except asyncio.QueueFull:
+            dead_clients.append(queue)
+    # Remove dead clients
+    for queue in dead_clients:
+        _git_sse_clients.remove(queue)
+
 
 # Alias for API backward compatibility
 GitWorkingStatus = GitStatus
@@ -592,3 +614,72 @@ def pop_stash(
         return GitOperationResult(success=True, message="Popped stash", output=output)
     except Exception as e:
         return GitOperationResult(success=False, message=str(e))
+
+
+# =========================================================================
+# SSE Real-time Git Events (for File Editor auto-refresh)
+# =========================================================================
+
+
+@router.get("/events")
+async def git_events(request: Request) -> StreamingResponse:
+    """SSE endpoint for real-time git events.
+
+    Clients connect to receive notifications when git operations occur
+    (commit, merge, checkout, etc.) triggered by git hooks.
+    """
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
+        _git_sse_clients.append(queue)
+        try:
+            # Send initial connection message
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    # Wait for message with timeout (keeps connection alive)
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {message}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield ": keepalive\n\n"
+        finally:
+            if queue in _git_sse_clients:
+                _git_sse_clients.remove(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/notify")
+async def notify_git_event(
+    event_type: str,
+    repo_path: str | None = None,
+) -> dict[str, bool | int]:
+    """Notify all clients of a git event (called by git hooks).
+
+    Args:
+        event_type: Type of git event (commit, merge, checkout, rewrite)
+        repo_path: Path to the repository where the event occurred
+
+    This endpoint is called by git hooks installed in repositories.
+    It broadcasts the event to all connected SSE clients.
+    """
+    await _broadcast_git_event(
+        event_type,
+        {"repo_path": repo_path},
+    )
+    logger.info(f"[Git SSE] Broadcast {event_type} for repo {repo_path}")
+    return {"success": True, "clients": len(_git_sse_clients)}

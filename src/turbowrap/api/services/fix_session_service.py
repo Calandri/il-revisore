@@ -234,6 +234,7 @@ class FixSessionService:
         # Set issues to in_progress immediately
         for issue in issues:
             issue.status = IssueStatus.IN_PROGRESS.value  # type: ignore[assignment]
+            issue.phase_started_at = datetime.utcnow()  # type: ignore[assignment]
         self.db.commit()
 
         # Create fix request

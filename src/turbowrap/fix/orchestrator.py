@@ -94,6 +94,7 @@ class BillingError(Exception):
 
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 FIXER_AGENT = AGENTS_DIR / "fixer.md"
+RE_FIXER_AGENT = AGENTS_DIR / "re_fixer.md"
 FIX_CHALLENGER_AGENT = AGENTS_DIR / "fix_challenger.md"
 DEV_BE_AGENT = AGENTS_DIR / "dev_be.md"
 DEV_FE_AGENT = AGENTS_DIR / "dev_fe.md"
@@ -134,7 +135,9 @@ class FixOrchestrator:
         self.settings = get_settings()
 
         fix_config = self.settings.fix_challenger
-        self.max_iterations = fix_config.max_iterations  # default 3
+        # Limit to max 2 iterations: 1 fix + 1 re-fix (with challenger feedback)
+        # The re-fix phase is "aware" - it critically evaluates challenger feedback
+        self.max_iterations = min(fix_config.max_iterations, 2)
         self.satisfaction_threshold = fix_config.satisfaction_threshold  # default 95.0
 
         self._agent_cache: dict[str, str] = {}
@@ -232,6 +235,42 @@ class FixOrchestrator:
         principles = self._load_agent(ENGINEERING_PRINCIPLES)
 
         parts = [fixer]
+        if dev_fe:
+            parts.append(f"\n\n# Frontend Development Guidelines\n\n{dev_fe}")
+        if principles:
+            parts.append(f"\n\n# Engineering Principles\n\n{principles}")
+
+        return "\n".join(parts)
+
+    def _get_refixer_prompt_be(self) -> str:
+        """Get re-fixer prompt for backend: re_fixer.md + dev_be.md.
+
+        The re-fixer is used in iteration 2 to critically evaluate
+        the challenger's feedback and decide whether to apply improvements.
+        """
+        refixer = self._load_agent(RE_FIXER_AGENT)
+        dev_be = self._load_agent(DEV_BE_AGENT)
+        principles = self._load_agent(ENGINEERING_PRINCIPLES)
+
+        parts = [refixer]
+        if dev_be:
+            parts.append(f"\n\n# Backend Development Guidelines\n\n{dev_be}")
+        if principles:
+            parts.append(f"\n\n# Engineering Principles\n\n{principles}")
+
+        return "\n".join(parts)
+
+    def _get_refixer_prompt_fe(self) -> str:
+        """Get re-fixer prompt for frontend: re_fixer.md + dev_fe.md.
+
+        The re-fixer is used in iteration 2 to critically evaluate
+        the challenger's feedback and decide whether to apply improvements.
+        """
+        refixer = self._load_agent(RE_FIXER_AGENT)
+        dev_fe = self._load_agent(DEV_FE_AGENT)
+        principles = self._load_agent(ENGINEERING_PRINCIPLES)
+
+        parts = [refixer]
         if dev_fe:
             parts.append(f"\n\n# Frontend Development Guidelines\n\n{dev_fe}")
         if principles:
@@ -696,94 +735,111 @@ class FixOrchestrator:
                         )
                         continue
 
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
-                            session_id=session_id,
-                            message=f"   ✅ {batch_id} Claude fix complete, "
-                            f"running Gemini review...",
+                    # Iteration 2+ (re-fix): Skip Gemini review, commit directly
+                    # The re-fixer already critically evaluated the feedback
+                    if iteration > 1:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_ISSUE_STREAMING,
+                                session_id=session_id,
+                                message=f"   ✅ {batch_id} Re-fix complete, "
+                                f"committing directly (no re-review)...",
+                            )
                         )
-                    )
-
-                    # Step 2: Run Gemini review for THIS BATCH immediately
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_CHALLENGER_EVALUATING,
-                            session_id=session_id,
-                            message=f"🔍 Gemini reviewing {batch_id}...",
-                        )
-                    )
-
-                    review_prompt = self._build_review_prompt_per_batch(
-                        batch, batch_type, batch_idx, request.workspace_path
-                    )
-                    if iteration == 1 and completed_batches == 1:
-                        gemini_prompt = review_prompt  # Save first for S3 logging
-
-                    # Atomic tracking at leaf level
-                    try:
-                        gemini_result = await self.gemini_cli.run(
-                            review_prompt,
-                            operation_type="review",
-                            repo_name=self.repo_path.name,
-                            on_chunk=on_chunk_gemini,
-                            track_operation=True,  # Atomic tracking at leaf level
-                            operation_details={
-                                "parent_session_id": session_id,
-                                "session_id": session_id,  # For UI display
-                                "agent_type": "reviewer",
-                                "batch_id": batch_id,
-                            },
-                        )
-                        gemini_output = gemini_result.output if gemini_result.success else None
-                        last_gemini_output = gemini_output
-                    except Exception as e:
-                        logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
-                        await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
-                        gemini_output = None
-
-                    # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
-
-                    if gemini_output is None:
-                        logger.warning(
-                            f"Gemini CLI failed for {batch_id}, accepting fix without review"
-                        )
-                        await emit_log(
-                            "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
-                        )
+                        # Mark as passed and proceed to commit
                         batch_results[batch_id]["passed"] = True
-                        batch_results[batch_id]["score"] = 100.0
-                        successful_issues.extend(batch)
-                        continue
-
-                    score, failed_issue_codes, per_issue_scores, quality_scores = (
-                        self._parse_batch_review(gemini_output, batch)
-                    )
-                    batch_results[batch_id]["score"] = score
-                    batch_results[batch_id]["failed_issues"] = failed_issue_codes
-
-                    if per_issue_scores:
-                        scores_summary = " | ".join(
-                            [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
-                        )
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_CHALLENGER_RESULT,
-                                session_id=session_id,
-                                message=f"   📊 {batch_id} score: {score}/100 | "
-                                f"Per-issue: {scores_summary}",
-                                quality_scores=quality_scores if quality_scores else None,
-                            )
-                        )
+                        batch_results[batch_id]["score"] = 100.0  # Trust re-fixer
+                        score = 100.0  # For the commit flow below
                     else:
+                        # Iteration 1: Run Gemini review
                         await safe_emit(
                             FixProgressEvent(
-                                type=FixEventType.FIX_CHALLENGER_RESULT,
+                                type=FixEventType.FIX_ISSUE_STREAMING,
                                 session_id=session_id,
-                                message=f"   📊 {batch_id} score: {score}/100",
-                                quality_scores=quality_scores if quality_scores else None,
+                                message=f"   ✅ {batch_id} Claude fix complete, "
+                                f"running Gemini review...",
                             )
                         )
+
+                        # Step 2: Run Gemini review for THIS BATCH immediately
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                                session_id=session_id,
+                                message=f"🔍 Gemini reviewing {batch_id}...",
+                            )
+                        )
+
+                        review_prompt = self._build_review_prompt_per_batch(
+                            batch, batch_type, batch_idx, request.workspace_path
+                        )
+                        if completed_batches == 1:
+                            gemini_prompt = review_prompt  # Save first for S3 logging
+
+                        # Atomic tracking at leaf level
+                        try:
+                            gemini_result = await self.gemini_cli.run(
+                                review_prompt,
+                                operation_type="review",
+                                repo_name=self.repo_path.name,
+                                on_chunk=on_chunk_gemini,
+                                track_operation=True,  # Atomic tracking at leaf level
+                                operation_details={
+                                    "parent_session_id": session_id,
+                                    "session_id": session_id,  # For UI display
+                                    "agent_type": "reviewer",
+                                    "batch_id": batch_id,
+                                },
+                            )
+                            gemini_output = gemini_result.output if gemini_result.success else None
+                            last_gemini_output = gemini_output
+                        except Exception as e:
+                            logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
+                            await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
+                            gemini_output = None
+
+                        # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
+
+                        if gemini_output is None:
+                            logger.warning(
+                                f"Gemini CLI failed for {batch_id}, accepting fix without review"
+                            )
+                            await emit_log(
+                                "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
+                            )
+                            batch_results[batch_id]["passed"] = True
+                            batch_results[batch_id]["score"] = 100.0
+                            successful_issues.extend(batch)
+                            continue
+
+                        score, failed_issue_codes, per_issue_scores, quality_scores = (
+                            self._parse_batch_review(gemini_output, batch)
+                        )
+                        batch_results[batch_id]["score"] = score
+                        batch_results[batch_id]["failed_issues"] = failed_issue_codes
+
+                        if per_issue_scores:
+                            scores_summary = " | ".join(
+                                [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
+                            )
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_CHALLENGER_RESULT,
+                                    session_id=session_id,
+                                    message=f"   📊 {batch_id} score: {score}/100 | "
+                                    f"Per-issue: {scores_summary}",
+                                    quality_scores=quality_scores if quality_scores else None,
+                                )
+                            )
+                        else:
+                            await safe_emit(
+                                FixProgressEvent(
+                                    type=FixEventType.FIX_CHALLENGER_RESULT,
+                                    session_id=session_id,
+                                    message=f"   📊 {batch_id} score: {score}/100",
+                                    quality_scores=quality_scores if quality_scores else None,
+                                )
+                            )
 
                     if score >= self.satisfaction_threshold:
                         batch_results[batch_id]["passed"] = True
@@ -917,9 +973,9 @@ class FixOrchestrator:
                             f"(score {score} < {self.satisfaction_threshold})",
                         )
                         if batch_type == "BE":
-                            feedback_be = gemini_output
+                            feedback_be = gemini_output or ""
                         else:
-                            feedback_fe = gemini_output
+                            feedback_fe = gemini_output or ""
                         failed_msg = (
                             f", failed issues: {', '.join(failed_issue_codes)}"
                             if failed_issue_codes
@@ -1279,11 +1335,26 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             iteration: Current iteration number
             workspace_path: Monorepo workspace restriction (e.g., "packages/frontend")
             user_notes: User-provided notes with additional context or instructions
+
+        Note:
+            For iteration > 1 (re-fix), we use the re-fixer agent which is aware
+            of the challenger's feedback and can critically evaluate whether to
+            apply the suggested improvements.
         """
-        if agent_type == "fe":
-            agent_prompt = self._get_fixer_prompt_fe()
+        # Iteration 1: Use fixer agent
+        # Iteration 2+: Use refixer agent (critically evaluates challenger feedback)
+        if iteration > 1 and feedback:
+            # Use re-fixer for second iteration with challenger feedback
+            if agent_type == "fe":
+                agent_prompt = self._get_refixer_prompt_fe()
+            else:
+                agent_prompt = self._get_refixer_prompt_be()
         else:
-            agent_prompt = self._get_fixer_prompt_be()
+            # First iteration: use regular fixer
+            if agent_type == "fe":
+                agent_prompt = self._get_fixer_prompt_fe()
+            else:
+                agent_prompt = self._get_fixer_prompt_be()
 
         # Build task with all issues
         task_parts = ["# Task: Fix Code Issues\n"]
@@ -1389,12 +1460,28 @@ The developer has provided the following additional context and instructions:
 """
         )
 
+        # For iteration > 1, include structured challenger feedback
         if feedback and iteration > 1:
             task_parts.append(
                 f"""
-The reviewer found issues with the previous fix. Address this feedback:
+---
 
+# Challenger Feedback (EVALUATE CRITICALLY!)
+
+The automated code reviewer (Gemini) evaluated your previous fix and found issues.
+**The reviewer is NOT infallible** - it may have flagged things incorrectly or made invalid suggestions.
+
+**Your job**: Critically evaluate EACH point below. Apply improvements ONLY if they are genuinely valid.
+
+<challenger-feedback>
 {feedback}
+</challenger-feedback>
+
+**Remember**:
+- If the feedback is about a real bug you missed → FIX IT
+- If the feedback is stylistic or out of scope → IGNORE IT
+- If the feedback is wrong or misunderstood context → IGNORE IT
+- Trust your original decision if it was correct
 """
             )
 

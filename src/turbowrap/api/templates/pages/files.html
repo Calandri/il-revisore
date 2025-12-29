@@ -727,6 +727,47 @@ function fileEditor() {
                     this.definitionPopup.show = false;
                 }
             });
+
+            // SSE for git events (auto-refresh on commit, pull, checkout, etc.)
+            this._setupGitSSE();
+        },
+
+        _setupGitSSE() {
+            this._gitEventSource = new EventSource('/api/git/events');
+
+            this._gitEventSource.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[fileEditor] Git SSE event:', data);
+
+                    if (data.type === 'commit' || data.type === 'merge' || data.type === 'checkout' || data.type === 'rewrite') {
+                        console.log('[fileEditor] Git operation detected, refreshing...');
+                        // Reload file tree and commits
+                        await this.loadFileTree();
+                        await this.loadCommits();
+
+                        // Show toast notification
+                        const eventMessages = {
+                            'commit': 'Nuovo commit rilevato',
+                            'merge': 'Pull/merge completato',
+                            'checkout': 'Branch cambiato',
+                            'rewrite': 'History modificata (rebase/amend)'
+                        };
+                        this.showToast(eventMessages[data.type] || 'Git update', 'info');
+                    }
+                } catch (e) {
+                    console.error('[fileEditor] Git SSE parse error:', e);
+                }
+            };
+
+            this._gitEventSource.onerror = (error) => {
+                console.warn('[fileEditor] Git SSE connection error, will retry');
+            };
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => {
+                if (this._gitEventSource) this._gitEventSource.close();
+            });
         },
 
         updateCursorPosition(textarea) {
