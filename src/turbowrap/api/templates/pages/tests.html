@@ -26,259 +26,277 @@
     showRunModal: false,
     testType: 'all',
 
-    // Mock data
-    testSuites: [
-        { id: 1, name: 'API Integration Tests', type: 'classic', framework: 'pytest', tests: 45, passed: 45, failed: 0, duration: '2m 34s', lastRun: '2h ago' },
-        { id: 2, name: 'Database Tests', type: 'classic', framework: 'pytest', tests: 32, passed: 30, failed: 2, duration: '1m 12s', lastRun: '2h ago' },
-        { id: 3, name: 'AI Code Analysis', type: 'ai', framework: 'wrapper', tests: 12, passed: 11, failed: 1, duration: '5m 45s', lastRun: '3h ago' },
-        { id: 4, name: 'E2E User Flow', type: 'classic', framework: 'playwright', tests: 28, passed: 26, failed: 2, duration: '4m 22s', lastRun: '30m ago' },
-    ],
-
-    get filteredSuites() {
-        if (this.testType === 'all') return this.testSuites;
-        return this.testSuites.filter(s => s.type === this.testType);
+    // Form data
+    newSuite: {
+        name: '',
+        path: 'tests/',
+        type: 'classic',
+        framework: 'pytest',
+        command: ''
     },
 
-    get stats() {
-        const total = this.testSuites.reduce((sum, s) => sum + s.tests, 0);
-        const passed = this.testSuites.reduce((sum, s) => sum + s.passed, 0);
-        const failed = this.testSuites.reduce((sum, s) => sum + s.failed, 0);
-        return { total, passed, failed, rate: total > 0 ? Math.round((passed / total) * 100) : 0 };
+    get repositoryId() {
+        return Alpine.store('globalContext')?.selectedRepo || null;
     },
 
-    getFrameworkBadge(framework) {
-        const badges = {
-            'pytest': { label: 'PY', color: 'bg-yellow-500' },
-            'playwright': { label: 'PW', color: 'bg-green-500' },
-            'vitest': { label: 'VT', color: 'bg-purple-500' },
-            'wrapper': { label: 'AI', color: 'bg-gradient-to-br from-indigo-500 to-purple-600' }
-        };
-        return badges[framework] || { label: 'T', color: 'bg-gray-500' };
+    get hasRepo() {
+        return this.repositoryId !== null;
+    },
+
+    refreshSuites() {
+        if (this.repositoryId) {
+            const container = document.getElementById('test-suites-container');
+            if (container) {
+                htmx.ajax('GET', '/htmx/tests/suites?repository_id=' + this.repositoryId + '&type=' + this.testType, {target: '#test-suites-container', swap: 'innerHTML'});
+            }
+        }
+    },
+
+    refreshStats() {
+        if (this.repositoryId) {
+            const container = document.getElementById('test-stats-container');
+            if (container) {
+                htmx.ajax('GET', '/htmx/tests/summary?repository_id=' + this.repositoryId, {target: '#test-stats-container', swap: 'innerHTML'});
+            }
+        }
+    },
+
+    runAllTests() {
+        if (this.repositoryId) {
+            htmx.ajax('POST', '/htmx/tests/run-all/' + this.repositoryId, {swap: 'none'});
+            this.showRunModal = false;
+        }
     }
-}">
+}"
+x-init="
+    // Initial load when repo is already selected
+    $nextTick(() => {
+        if (repositoryId) {
+            refreshSuites();
+            refreshStats();
+        }
+    });
 
-    <!-- Header -->
-    <div class="section-header rounded-xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div class="flex items-center gap-4">
-            <div class="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-            </div>
-            <div>
-                <h1 class="text-3xl font-bold">Tests</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Test suites per la repository selezionata</p>
-            </div>
-        </div>
-        <div class="flex gap-2">
-            <button @click="showRunModal = true"
-                    class="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                </svg>
-                Run All
-            </button>
-            <button @click="showNewTestModal = true"
-                    class="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 font-medium">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                </svg>
-                Nuovo Suite
-            </button>
-        </div>
-    </div>
+    // Listen for global context changes
+    window.addEventListener('globalContext:changed', () => {
+        $nextTick(() => {
+            refreshSuites();
+            refreshStats();
+        });
+    });
 
-    <!-- Stats -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
-            <div class="text-2xl font-bold text-green-600" x-text="stats.passed"></div>
-            <div class="text-sm text-gray-500">Passed</div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
-            <div class="text-2xl font-bold text-red-600" x-text="stats.failed"></div>
-            <div class="text-sm text-gray-500">Failed</div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
-            <div class="text-2xl font-bold text-blue-600" x-text="stats.rate + '%'"></div>
-            <div class="text-sm text-gray-500">Pass Rate</div>
-        </div>
-        <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
-            <div class="text-2xl font-bold text-purple-600" x-text="testSuites.filter(s => s.type === 'ai').length"></div>
-            <div class="text-sm text-gray-500">AI Suites</div>
-        </div>
-    </div>
+    // Listen for HTMX triggers from server
+    document.body.addEventListener('refreshSuites', () => refreshSuites());
+    document.body.addEventListener('refreshRuns', () => refreshStats());
+    document.body.addEventListener('closeModal', () => { showNewTestModal = false; showRunModal = false; });
+">
 
-    <!-- Filter Tabs -->
-    <div class="flex items-center gap-2 border-b dark:border-gray-700 pb-4">
-        <button @click="testType = 'all'"
-                :class="testType === 'all' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
-                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            Tutti (<span x-text="testSuites.length"></span>)
-        </button>
-        <button @click="testType = 'classic'"
-                :class="testType === 'classic' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
-                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            Classic
-        </button>
-        <button @click="testType = 'ai'"
-                :class="testType === 'ai' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
-                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            Wrapper AI
-        </button>
-    </div>
+    <!-- No Repository Selected Warning -->
+    <template x-if="!hasRepo">
+        <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
+            <svg class="w-12 h-12 mx-auto mb-3 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <h3 class="text-lg font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Nessuna repository selezionata</h3>
+            <p class="text-yellow-600 dark:text-yellow-400">Seleziona una repository dal footer per visualizzare i test.</p>
+        </div>
+    </template>
 
-    <!-- Test Suites List -->
-    <div class="space-y-4">
-        <template x-for="suite in filteredSuites" :key="suite.id">
-            <div class="test-card bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                        <!-- Framework Badge -->
-                        <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white text-sm font-bold"
-                             :class="getFrameworkBadge(suite.framework).color"
-                             x-text="getFrameworkBadge(suite.framework).label"></div>
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-semibold text-lg" x-text="suite.name"></h3>
-                                <span x-show="suite.type === 'ai'"
-                                      class="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 dark:from-indigo-900/30 dark:to-purple-900/30 dark:text-indigo-300">
-                                    AI Powered
-                                </span>
-                            </div>
-                            <div class="text-sm text-gray-500 flex items-center gap-4 mt-1">
-                                <span x-text="suite.tests + ' tests'"></span>
-                                <span x-text="suite.duration"></span>
-                                <span class="text-gray-400" x-text="'Last: ' + suite.lastRun"></span>
-                            </div>
-                        </div>
+    <!-- Main Content (only when repo is selected) -->
+    <template x-if="hasRepo">
+        <div class="space-y-6">
+            <!-- Header -->
+            <div class="section-header rounded-xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
                     </div>
-
-                    <div class="flex items-center gap-6">
-                        <!-- Results -->
-                        <div class="text-right">
-                            <div class="flex items-center gap-3 text-sm">
-                                <span class="text-green-600 font-semibold" x-text="suite.passed + ' passed'"></span>
-                                <span class="text-gray-300">|</span>
-                                <span :class="suite.failed > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'" x-text="suite.failed + ' failed'"></span>
-                            </div>
-                        </div>
-
-                        <!-- Actions -->
-                        <div class="flex items-center gap-1">
-                            <button class="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600" title="Run">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                                </svg>
-                            </button>
-                            <button class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500" title="Details">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                </svg>
-                            </button>
-                        </div>
+                    <div>
+                        <h1 class="text-3xl font-bold">Tests</h1>
+                        <p class="text-gray-500 dark:text-gray-400 mt-1">Test suites per la repository selezionata</p>
                     </div>
                 </div>
-
-                <!-- AI Analysis (only for AI tests) -->
-                <div x-show="suite.type === 'ai'" class="mt-4 pt-4 border-t dark:border-gray-700">
-                    <div class="flex items-start gap-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
-                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
-                            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <div class="text-sm font-medium text-indigo-700 dark:text-indigo-300">AI Analysis</div>
-                            <p class="text-sm text-indigo-600/80 dark:text-indigo-400/80 mt-1">
-                                Analisi completata. Trovati suggerimenti per ottimizzazione performance.
-                            </p>
-                        </div>
-                    </div>
+                <div class="flex gap-2">
+                    <button @click="showRunModal = true"
+                            class="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        </svg>
+                        Run All
+                    </button>
+                    <button @click="showNewTestModal = true"
+                            class="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 font-medium">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Nuovo Suite
+                    </button>
                 </div>
             </div>
-        </template>
 
-        <!-- Empty State -->
-        <div x-show="filteredSuites.length === 0" class="text-center py-12 text-gray-500">
-            <p>Nessun test suite trovato per questo filtro.</p>
+            <!-- Stats (loaded via HTMX) -->
+            <div id="test-stats-container">
+                <!-- Loading skeleton -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 animate-pulse">
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-20"></div>
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-20"></div>
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-20"></div>
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-20"></div>
+                </div>
+            </div>
+
+            <!-- Filter Tabs -->
+            <div class="flex items-center gap-2 border-b dark:border-gray-700 pb-4">
+                <button @click="testType = 'all'; refreshSuites()"
+                        :class="testType === 'all' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Tutti
+                </button>
+                <button @click="testType = 'classic'; refreshSuites()"
+                        :class="testType === 'classic' ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Classic
+                </button>
+                <button @click="testType = 'ai'; refreshSuites()"
+                        :class="testType === 'ai' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
+                        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Wrapper AI
+                </button>
+            </div>
+
+            <!-- Test Suites List (loaded via HTMX) -->
+            <div id="test-suites-container">
+                <!-- Loading skeleton -->
+                <div class="space-y-4 animate-pulse">
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-24"></div>
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-24"></div>
+                    <div class="bg-gray-200 dark:bg-gray-700 rounded-xl h-24"></div>
+                </div>
+            </div>
         </div>
-    </div>
+    </template>
 
     <!-- New Test Modal -->
     <div x-show="showNewTestModal" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-         @click.self="showNewTestModal = false">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full">
+         @click.self="showNewTestModal = false"
+         @keydown.escape.window="showNewTestModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full" @click.stop>
             <div class="p-6 border-b dark:border-gray-700">
                 <h3 class="text-xl font-bold">Nuovo Test Suite</h3>
             </div>
-            <div class="p-6 space-y-4">
-                <div>
-                    <label class="block text-sm font-medium mb-2">Nome</label>
-                    <input type="text" placeholder="es. API Integration Tests" class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-2">Tipo</label>
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:border-green-500">
-                            <input type="radio" name="type" value="classic" checked class="text-green-600">
-                            <div>
-                                <div class="font-medium">Classic</div>
-                                <div class="text-xs text-gray-500">pytest, playwright...</div>
-                            </div>
-                        </label>
-                        <label class="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:border-purple-500">
-                            <input type="radio" name="type" value="ai" class="text-purple-600">
-                            <div>
-                                <div class="font-medium">Wrapper AI</div>
-                                <div class="text-xs text-gray-500">Analisi AI</div>
-                            </div>
-                        </label>
+            <form @submit.prevent="
+                const formData = new FormData();
+                formData.append('repository_id', repositoryId);
+                formData.append('name', newSuite.name);
+                formData.append('path', newSuite.path);
+                formData.append('type', newSuite.type);
+                formData.append('framework', newSuite.framework);
+                formData.append('command', newSuite.command);
+
+                fetch('/htmx/tests/suites', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => {
+                    if (response.ok) {
+                        showNewTestModal = false;
+                        refreshSuites();
+                        refreshStats();
+                        newSuite = { name: '', path: 'tests/', type: 'classic', framework: 'pytest', command: '' };
+                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Test suite creato', type: 'success' }}));
+                    } else {
+                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Errore nella creazione', type: 'error' }}));
+                    }
+                });
+            ">
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Nome</label>
+                        <input type="text" x-model="newSuite.name" placeholder="es. API Integration Tests"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Path</label>
+                        <input type="text" x-model="newSuite.path" placeholder="tests/"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 font-mono text-sm" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Tipo</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:border-green-500"
+                                   :class="newSuite.type === 'classic' ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'dark:border-gray-600'">
+                                <input type="radio" value="classic" x-model="newSuite.type" class="text-green-600">
+                                <div>
+                                    <div class="font-medium">Classic</div>
+                                    <div class="text-xs text-gray-500">pytest, playwright...</div>
+                                </div>
+                            </label>
+                            <label class="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:border-purple-500"
+                                   :class="newSuite.type === 'ai_analysis' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'dark:border-gray-600'">
+                                <input type="radio" value="ai_analysis" x-model="newSuite.type" class="text-purple-600">
+                                <div>
+                                    <div class="font-medium">Wrapper AI</div>
+                                    <div class="text-xs text-gray-500">Analisi AI</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Framework</label>
+                        <select x-model="newSuite.framework"
+                                class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
+                            <optgroup label="Backend">
+                                <option value="pytest">pytest</option>
+                            </optgroup>
+                            <optgroup label="Frontend">
+                                <option value="playwright">playwright</option>
+                                <option value="vitest">vitest</option>
+                                <option value="jest">jest</option>
+                                <option value="cypress">cypress</option>
+                            </optgroup>
+                            <optgroup label="Custom">
+                                <option value="custom">custom</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Comando (opzionale)</label>
+                        <input type="text" x-model="newSuite.command" placeholder="pytest tests/ -v"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg font-mono text-sm">
+                    </div>
+                    <div class="flex justify-end gap-3 pt-4">
+                        <button type="button" @click="showNewTestModal = false" class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
+                        <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Crea</button>
                     </div>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium mb-2">Framework</label>
-                    <select class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
-                        <optgroup label="Backend"><option>pytest</option></optgroup>
-                        <optgroup label="Frontend"><option>playwright</option><option>vitest</option></optgroup>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-2">Comando</label>
-                    <input type="text" placeholder="pytest tests/ -v" class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg font-mono text-sm">
-                </div>
-                <div class="flex justify-end gap-3 pt-4">
-                    <button @click="showNewTestModal = false" class="px-4 py-2 hover:bg-gray-100 rounded-lg">Annulla</button>
-                    <button class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Crea</button>
-                </div>
-            </div>
+            </form>
         </div>
     </div>
 
     <!-- Run Modal -->
     <div x-show="showRunModal" x-cloak
          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-         @click.self="showRunModal = false">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+         @click.self="showRunModal = false"
+         @keydown.escape.window="showRunModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full" @click.stop>
             <div class="p-6 border-b dark:border-gray-700">
                 <h3 class="text-xl font-bold">Esegui Tests</h3>
             </div>
             <div class="p-6 space-y-4">
-                <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <input type="checkbox" checked class="text-green-600 rounded">
-                    <span class="font-medium">Test Classic</span>
-                </label>
-                <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <input type="checkbox" class="text-purple-600 rounded">
-                    <span class="font-medium">Test AI (Wrapper)</span>
-                    <span class="text-xs text-gray-500 ml-auto">Richiede piu' tempo</span>
-                </label>
+                <p class="text-gray-600 dark:text-gray-400">
+                    Vuoi eseguire tutti i test suite per questa repository?
+                </p>
                 <div class="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg text-sm text-yellow-700 dark:text-yellow-300">
                     I test AI vengono lanciati dalla chat e analizzati con AI.
                 </div>
                 <div class="flex justify-end gap-3 pt-4">
-                    <button @click="showRunModal = false" class="px-4 py-2 hover:bg-gray-100 rounded-lg">Annulla</button>
-                    <button @click="showRunModal = false" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Esegui</button>
+                    <button @click="showRunModal = false" class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
+                    <button @click="runAllTests()"
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                        Esegui
+                    </button>
                 </div>
             </div>
         </div>

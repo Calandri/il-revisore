@@ -1,0 +1,109 @@
+{% if suites %}
+<div class="space-y-4">
+    {% for suite in suites %}
+    <div class="test-card bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <!-- Framework Badge -->
+                {% set fw_badges = {
+                    'pytest': {'label': 'PY', 'color': 'bg-yellow-500'},
+                    'playwright': {'label': 'PW', 'color': 'bg-green-500'},
+                    'vitest': {'label': 'VT', 'color': 'bg-purple-500'},
+                    'jest': {'label': 'JS', 'color': 'bg-yellow-400'},
+                    'cypress': {'label': 'CY', 'color': 'bg-teal-500'},
+                    'custom': {'label': 'AI', 'color': 'bg-gradient-to-br from-indigo-500 to-purple-600'}
+                } %}
+                {% set badge = fw_badges.get(suite.framework, {'label': 'T', 'color': 'bg-gray-500'}) %}
+                <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white text-sm font-bold {{ badge.color }}">
+                    {{ badge.label }}
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 class="font-semibold text-lg">{{ suite.name }}</h3>
+                        {% if suite.type in ('ai_analysis', 'ai_generation') %}
+                        <span class="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 dark:from-indigo-900/30 dark:to-purple-900/30 dark:text-indigo-300">
+                            AI Powered
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div class="text-sm text-gray-500 flex items-center gap-4 mt-1">
+                        <span>{{ suite.total_tests }} tests</span>
+                        {% if suite.duration_seconds %}
+                        <span>{{ "%.1f"|format(suite.duration_seconds) }}s</span>
+                        {% endif %}
+                        {% if suite.last_run_at %}
+                        <span class="text-gray-400">Last: {{ suite.last_run_at.strftime('%d/%m %H:%M') }}</span>
+                        {% else %}
+                        <span class="text-gray-400">Mai eseguito</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <!-- Results -->
+                <div class="text-right">
+                    <div class="flex items-center gap-3 text-sm">
+                        <span class="text-green-600 font-semibold">{{ suite.passed }} passed</span>
+                        <span class="text-gray-300">|</span>
+                        <span class="{{ 'text-red-600 font-semibold' if suite.failed > 0 else 'text-gray-400' }}">{{ suite.failed }} failed</span>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-1">
+                    <button hx-post="/htmx/tests/run/{{ suite.id }}"
+                            hx-swap="none"
+                            class="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600"
+                            title="Run">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        </svg>
+                    </button>
+                    <button hx-delete="/htmx/tests/suites/{{ suite.id }}"
+                            hx-swap="none"
+                            hx-confirm="Eliminare '{{ suite.name }}'?"
+                            class="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500"
+                            title="Delete">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Analysis (only for AI tests) -->
+        {% if suite.type in ('ai_analysis', 'ai_generation') %}
+        <div class="mt-4 pt-4 border-t dark:border-gray-700">
+            <div class="flex items-start gap-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-3">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="text-sm font-medium text-indigo-700 dark:text-indigo-300">AI Analysis</div>
+                    <p class="text-sm text-indigo-600/80 dark:text-indigo-400/80 mt-1">
+                        {% if suite.type == 'ai_generation' %}
+                        Test generati automaticamente con AI.
+                        {% else %}
+                        Analisi AI disponibile dopo l'esecuzione.
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-12 text-gray-500">
+    <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="text-lg font-medium mb-2">Nessun test suite trovato</p>
+    <p class="text-sm">Crea un nuovo test suite o usa la discovery automatica.</p>
+</div>
+{% endif %}

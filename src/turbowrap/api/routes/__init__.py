@@ -20,6 +20,7 @@ from .repos import router as repos_router
 from .settings import router as settings_router
 from .status import router as status_router
 from .tasks import router as tasks_router
+from .tests import router as tests_router
 from .thinking import router as thinking_router
 from .users import router as users_router
 from .web import router as web_router
@@ -48,4 +49,5 @@ __all__ = [
     "databases_router",
     "endpoints_router",
     "mockups_router",
+    "tests_router",
 ]

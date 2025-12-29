@@ -706,6 +706,376 @@ async def htmx_reclone_repo(
     return cast(Response, response)
 
 
+# =============================================================================
+# HTMX Routes for Tests
+# =============================================================================
+
+
+@router.get("/htmx/tests/suites", response_class=HTMLResponse)
+async def htmx_test_suites(
+    request: Request,
+    repository_id: str,
+    type: str | None = None,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX partial: test suites list for a repository."""
+    from ...db.models import TestSuite
+
+    query = db.query(TestSuite).filter(
+        TestSuite.repository_id == repository_id,
+        TestSuite.deleted_at.is_(None),
+    )
+
+    if type and type != "all":
+        # Map 'ai' to the actual type values
+        if type == "ai":
+            query = query.filter(TestSuite.type.in_(["ai_analysis", "ai_generation"]))
+        else:
+            query = query.filter(TestSuite.type == type)
+
+    suites = query.order_by(TestSuite.name).all()
+
+    # Build suite data with run stats
+    suites_data = []
+    for suite in suites:
+        runs_count = len(suite.runs) if suite.runs else 0
+        last_run = None
+        total_tests = 0
+        passed = 0
+        failed = 0
+
+        if suite.runs:
+            last_run = sorted(suite.runs, key=lambda r: r.created_at, reverse=True)[0]
+            total_tests = last_run.total_tests or 0
+            passed = last_run.passed or 0
+            failed = last_run.failed or 0
+
+        suites_data.append(
+            {
+                "id": suite.id,
+                "name": suite.name,
+                "path": suite.path,
+                "type": suite.type,
+                "framework": suite.framework,
+                "command": suite.command,
+                "runs_count": runs_count,
+                "total_tests": total_tests,
+                "passed": passed,
+                "failed": failed,
+                "last_run_status": last_run.status if last_run else None,
+                "last_run_at": last_run.created_at if last_run else None,
+                "duration_seconds": last_run.duration_seconds if last_run else None,
+            }
+        )
+
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/test_suites_list.html",
+            {
+                "request": request,
+                "suites": suites_data,
+                "repository_id": repository_id,
+            },
+        ),
+    )
+
+
+@router.get("/htmx/tests/summary", response_class=HTMLResponse)
+async def htmx_test_summary(
+    request: Request,
+    repository_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX partial: test summary stats for a repository."""
+    from ...db.models import TestRun, TestSuite
+
+    suites = (
+        db.query(TestSuite)
+        .filter(
+            TestSuite.repository_id == repository_id,
+            TestSuite.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    # Get recent runs
+    recent_runs = (
+        db.query(TestRun)
+        .filter(TestRun.repository_id == repository_id)
+        .order_by(TestRun.created_at.desc())
+        .limit(10)
+        .all()
+    )
+
+    # Calculate stats
+    total_passed = sum(r.passed or 0 for r in recent_runs)
+    total_failed = sum(r.failed or 0 for r in recent_runs)
+    total_tests = sum(r.total_tests or 0 for r in recent_runs)
+    pass_rate = round((total_passed / total_tests * 100), 1) if total_tests > 0 else 0
+    ai_suites = len([s for s in suites if s.type in ("ai_analysis", "ai_generation")])
+
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/test_summary_stats.html",
+            {
+                "request": request,
+                "passed": total_passed,
+                "failed": total_failed,
+                "pass_rate": pass_rate,
+                "ai_suites": ai_suites,
+                "total_suites": len(suites),
+            },
+        ),
+    )
+
+
+@router.get("/htmx/tests/runs", response_class=HTMLResponse)
+async def htmx_test_runs(
+    request: Request,
+    repository_id: str | None = None,
+    suite_id: str | None = None,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX partial: recent test runs."""
+    from ...db.models import TestRun
+
+    query = db.query(TestRun)
+
+    if repository_id:
+        query = query.filter(TestRun.repository_id == repository_id)
+    if suite_id:
+        query = query.filter(TestRun.suite_id == suite_id)
+
+    runs = query.order_by(TestRun.created_at.desc()).limit(limit).all()
+
+    runs_data = []
+    for run in runs:
+        runs_data.append(
+            {
+                "id": run.id,
+                "suite_name": run.suite.name if run.suite else "Unknown",
+                "status": run.status,
+                "total_tests": run.total_tests or 0,
+                "passed": run.passed or 0,
+                "failed": run.failed or 0,
+                "duration_seconds": run.duration_seconds,
+                "created_at": run.created_at,
+                "pass_rate": run.pass_rate,
+            }
+        )
+
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "components/test_runs_list.html",
+            {
+                "request": request,
+                "runs": runs_data,
+            },
+        ),
+    )
+
+
+@router.post("/htmx/tests/suites", response_class=HTMLResponse)
+async def htmx_create_test_suite(
+    request: Request,
+    repository_id: str = Form(...),
+    name: str = Form(...),
+    path: str = Form(...),
+    type: str = Form("classic"),
+    framework: str = Form(...),
+    command: str = Form(None),
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: create a new test suite."""
+    import json
+
+    from ...db.models import TestSuite
+
+    # Validate
+    if not name or not path or not framework:
+        return Response(
+            content="<div class='text-red-500'>Nome, path e framework sono obbligatori</div>",
+            status_code=400,
+        )
+
+    # Check for duplicate
+    existing = (
+        db.query(TestSuite)
+        .filter(
+            TestSuite.repository_id == repository_id,
+            TestSuite.name == name,
+            TestSuite.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if existing:
+        return Response(
+            content=f"<div class='text-red-500'>Test suite '{name}' già esistente</div>",
+            status_code=400,
+        )
+
+    suite = TestSuite(
+        repository_id=repository_id,
+        name=name,
+        path=path,
+        type=type,
+        framework=framework,
+        command=command if command else None,
+        is_auto_discovered=False,
+    )
+    db.add(suite)
+    db.commit()
+
+    # Return updated list
+    templates = request.app.state.templates
+    response = templates.TemplateResponse(
+        "components/test_suites_list.html",
+        {
+            "request": request,
+            "suites": [],  # Will be re-fetched via HTMX
+            "repository_id": repository_id,
+        },
+    )
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "showToast": {"message": f"Test suite '{name}' creato", "type": "success"},
+            "closeModal": True,
+            "refreshSuites": True,
+        }
+    )
+    return cast(Response, response)
+
+
+@router.delete("/htmx/tests/suites/{suite_id}", response_class=HTMLResponse)
+async def htmx_delete_test_suite(
+    request: Request,
+    suite_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: delete a test suite."""
+    import json
+
+    from ...db.models import TestSuite
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(
+            content="<div class='text-red-500'>Suite non trovata</div>", status_code=404
+        )
+
+    suite_name = suite.name
+    suite.soft_delete()
+    db.commit()
+
+    response = Response(content="")
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "showToast": {"message": f"Test suite '{suite_name}' eliminato", "type": "success"},
+            "refreshSuites": True,
+        }
+    )
+    return response
+
+
+@router.post("/htmx/tests/run/{suite_id}", response_class=HTMLResponse)
+async def htmx_run_test_suite(
+    request: Request,
+    suite_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: trigger a test run for a suite."""
+    import json
+
+    from ...db.models import TestRun, TestSuite
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(
+            content="<div class='text-red-500'>Suite non trovata</div>", status_code=404
+        )
+
+    # Create pending run
+    run = TestRun(
+        suite_id=suite.id,
+        repository_id=suite.repository_id,
+        status="pending",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    # TODO: Queue TestTask for actual execution
+
+    response = Response(content="")
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "showToast": {"message": f"Test '{suite.name}' avviato", "type": "success"},
+            "refreshSuites": True,
+            "refreshRuns": True,
+        }
+    )
+    return response
+
+
+@router.post("/htmx/tests/run-all/{repository_id}", response_class=HTMLResponse)
+async def htmx_run_all_tests(
+    request: Request,
+    repository_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: run all test suites for a repository."""
+    import json
+
+    from ...db.models import TestRun, TestSuite
+
+    suites = (
+        db.query(TestSuite)
+        .filter(
+            TestSuite.repository_id == repository_id,
+            TestSuite.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    if not suites:
+        response = Response(content="")
+        response.headers["HX-Trigger"] = json.dumps(
+            {
+                "showToast": {"message": "Nessun test suite trovato", "type": "warning"},
+            }
+        )
+        return response
+
+    # Create runs for all suites
+    for suite in suites:
+        run = TestRun(
+            suite_id=suite.id,
+            repository_id=repository_id,
+            status="pending",
+        )
+        db.add(run)
+
+    db.commit()
+
+    response = Response(content="")
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "showToast": {"message": f"Avviati {len(suites)} test suite", "type": "success"},
+            "closeModal": True,
+            "refreshSuites": True,
+            "refreshRuns": True,
+        }
+    )
+    return response
+
+
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
 async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)) -> Response:
     """HTMX: push repository changes with automatic conflict resolution via Claude CLI."""

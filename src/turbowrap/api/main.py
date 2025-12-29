@@ -40,6 +40,7 @@ from .routes import (
     settings_router,
     status_router,
     tasks_router,
+    tests_router,
     thinking_router,
     users_router,
     web_router,
@@ -290,6 +291,7 @@ def create_app() -> FastAPI:
     app.include_router(databases_router, prefix="/api")
     app.include_router(endpoints_router, prefix="/api")
     app.include_router(mockups_router, prefix="/api")
+    app.include_router(tests_router, prefix="/api")
 
     # Web routes (no prefix - these are the HTML pages)
     app.include_router(web_router)
