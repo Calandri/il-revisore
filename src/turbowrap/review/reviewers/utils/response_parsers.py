@@ -251,8 +251,8 @@ def convert_dict_to_review_output(
                 except ValueError:
                     category = IssueCategory.LOGIC
 
-                # Normalize severity
-                severity_str = issue_data.get("severity", "medium").lower()
+                # Normalize severity (enum expects uppercase)
+                severity_str = issue_data.get("severity", "medium").upper()
                 try:
                     severity = IssueSeverity(severity_str)
                 except ValueError:
