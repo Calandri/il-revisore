@@ -31,7 +31,88 @@ GEMINI_MODEL_MAP = {
     "pro": "gemini-3-pro-preview",
 }
 
+# Gemini pricing per 1M tokens (USD)
+# Reference: https://ai.google.dev/pricing
+GEMINI_PRICING: dict[str, dict[str, float]] = {
+    # Gemini 2.0 Flash
+    "gemini-2.0-flash": {
+        "input": 0.10,
+        "output": 0.40,
+        "cached": 0.025,
+    },
+    "gemini-2.0-flash-lite": {
+        "input": 0.075,
+        "output": 0.30,
+        "cached": 0.01875,
+    },
+    # Gemini 2.5 Flash (preview)
+    "gemini-2.5-flash-preview-05-20": {
+        "input": 0.15,
+        "output": 0.60,
+        "cached": 0.0375,
+    },
+    # Gemini 3 Flash (preview) - using 2.5 pricing as estimate
+    "gemini-3-flash-preview": {
+        "input": 0.15,
+        "output": 0.60,
+        "cached": 0.0375,
+    },
+    # Gemini 1.5 Pro
+    "gemini-1.5-pro": {
+        "input": 1.25,
+        "output": 5.00,
+        "cached": 0.3125,
+    },
+    # Gemini 2.5 Pro (preview)
+    "gemini-2.5-pro-preview-05-06": {
+        "input": 1.25,
+        "output": 10.00,
+        "cached": 0.3125,
+    },
+    # Gemini 3 Pro (preview) - using 2.5 pricing as estimate
+    "gemini-3-pro-preview": {
+        "input": 1.25,
+        "output": 10.00,
+        "cached": 0.3125,
+    },
+}
+
+# Default pricing for unknown models (conservative estimate)
+DEFAULT_GEMINI_PRICING = {
+    "input": 0.15,
+    "output": 0.60,
+    "cached": 0.0375,
+}
+
 DEFAULT_GEMINI_TIMEOUT = 120
+
+
+def calculate_gemini_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cached_tokens: int = 0,
+) -> float:
+    """Calculate cost for Gemini API usage.
+
+    Args:
+        model: Model name
+        input_tokens: Number of input tokens (non-cached)
+        output_tokens: Number of output tokens
+        cached_tokens: Number of cached input tokens
+
+    Returns:
+        Cost in USD
+    """
+    # Get pricing for model, fallback to default
+    pricing = GEMINI_PRICING.get(model, DEFAULT_GEMINI_PRICING)
+
+    # Calculate cost (pricing is per 1M tokens)
+    input_cost = (input_tokens / 1_000_000) * pricing["input"]
+    output_cost = (output_tokens / 1_000_000) * pricing["output"]
+    cached_cost = (cached_tokens / 1_000_000) * pricing["cached"]
+
+    return input_cost + output_cost + cached_cost
 
 
 class GeminiClient(BaseAgent):
@@ -370,14 +451,32 @@ def _parse_stream_json_stats(result_data: dict[str, Any]) -> GeminiSessionStats:
 
     # Create a single model usage entry with aggregated stats
     if s.get("total_tokens", 0) > 0 or s.get("input_tokens", 0) > 0:
+        model_name = result_data.get("model", "unknown")
+        # Gemini CLI provides:
+        # - "input": non-cached input tokens
+        # - "cached": cached input tokens
+        # - "input_tokens": total input (input + cached) - for reference only
+        # - "output_tokens": output tokens
+        non_cached_input = s.get("input", 0)
+        cached_tokens = s.get("cached", 0)
+        output_tokens = s.get("output_tokens", 0)
+
+        # Calculate cost from tokens using pricing table
+        cost_usd = calculate_gemini_cost(
+            model=model_name,
+            input_tokens=non_cached_input,
+            output_tokens=output_tokens,
+            cached_tokens=cached_tokens,
+        )
+
         stats.model_usage.append(
             GeminiModelUsage(
-                model=result_data.get("model", "unknown"),
+                model=model_name,
                 requests=1,
-                input_tokens=s.get("input_tokens", 0),
-                cache_reads=s.get("cached", 0),
-                output_tokens=s.get("output_tokens", 0),
-                cost_usd=s.get("costUSD", 0.0),  # Read directly from Gemini output if available
+                input_tokens=s.get("input_tokens", 0),  # Total input for display
+                cache_reads=cached_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost_usd,
             )
         )
 
