@@ -1052,20 +1052,29 @@
                 <p class="text-sm text-gray-600 dark:text-gray-300">Cosa vuoi fare prima di lanciare i nuovi fix?</p>
             </div>
             <div class="p-4 border-t dark:border-gray-700 flex flex-col gap-2">
-                <button @click="handlePendingBranch('open-pr')" :disabled="pendingBranchLoading"
+                <!-- 1. Merge in main -->
+                <button @click="handlePendingBranch('merge')" :disabled="pendingBranchLoading"
                         class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
-                    <span x-text="pendingBranchLoading ? 'Creating PR...' : 'Open PR'"></span>
+                    <span x-text="pendingBranchLoading ? 'Merging...' : 'Merge in Main'"></span>
                 </button>
-                <button @click="handlePendingBranch('merge')" :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
-                    Main Merge
-                </button>
+                <!-- 2. Usa branch esistente -->
                 <button @click="handlePendingBranch('continue')" :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">
-                    Continua sul Branch Esistente
+                        class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                    </svg>
+                    Usa Branch Esistente
+                </button>
+                <!-- 3. Crea nuovo branch -->
+                <button @click="handlePendingBranch('new-branch')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Crea Nuovo Branch
                 </button>
                 <button @click="handlePendingBranch('cancel')" :disabled="pendingBranchLoading"
                         class="w-full px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
@@ -1715,7 +1724,10 @@ function issuesApp() {
                     const firstIssue = this.issues.find(i => i.id === this.pendingFixRequest.issue_ids[0]);
                     if (firstIssue) {
                         this.selectedIssues = this.pendingFixRequest.issue_ids;
-                        const branchOptions = action === 'continue' ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name } : null;
+                        // continue = usa branch esistente, new-branch/merge = crea nuovo branch
+                        const branchOptions = action === 'continue'
+                            ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name }
+                            : null;
                         await this._startFixProcess(firstIssue, branchOptions);
                     }
                 }
