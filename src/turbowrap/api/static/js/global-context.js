@@ -128,14 +128,8 @@ document.addEventListener('alpine:init', () => {
                     const result = await res.json();
 
                     if (!result.success) {
-                        console.error('[globalContext] Checkout failed:', result.message);
-                        window.dispatchEvent(new CustomEvent('show-toast', {
-                            detail: {
-                                message: `Checkout failed: ${result.message || 'Unknown error'}`,
-                                type: 'error'
-                            }
-                        }));
-                        return; // Don't update state if checkout failed
+                        TurboWrapError.handle('Git Checkout Branch', new Error(result.message || 'Checkout failed'), { repoId: this.selectedRepoId, branch });
+                        return;
                     }
 
                     // Show success toast
@@ -143,10 +137,7 @@ document.addEventListener('alpine:init', () => {
                         detail: { message: `Switched to ${branch}`, type: 'success' }
                     }));
                 } catch (e) {
-                    console.error('[globalContext] Checkout error:', e);
-                    window.dispatchEvent(new CustomEvent('show-toast', {
-                        detail: { message: 'Checkout failed: Network error', type: 'error' }
-                    }));
+                    TurboWrapError.handle('Git Checkout Branch', e, { repoId: this.selectedRepoId, branch });
                     return;
                 }
             }

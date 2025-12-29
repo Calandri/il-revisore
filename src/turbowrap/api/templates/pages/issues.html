@@ -1403,15 +1403,11 @@ function issuesApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ linear_identifier: this.linkLinearInput })
                 });
-                if (res.ok) {
-                    this.showLinkLinearModal = false;
-                    await this.refresh();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to link'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                this.showLinkLinearModal = false;
+                await this.refresh();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Link Linear Issue', e);
             }
             this.linkingLinear = false;
         },
@@ -1801,17 +1797,13 @@ function issuesApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
-                if (res.ok) {
-                    this.showIgnoreModal = false;
-                    this.ignoreIssue = null;
-                    this.ignoreReason = '';
-                    await this.refresh();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to ignore'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                this.showIgnoreModal = false;
+                this.ignoreIssue = null;
+                this.ignoreReason = '';
+                await this.refresh();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Ignore Issue', e, { issueId: this.ignoreIssue?.id });
             }
             this.ignoringIssue = false;
         },
@@ -1823,15 +1815,11 @@ function issuesApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'merged' })
                 });
-                if (res.ok) {
-                    issue.status = 'merged';
-                    await this.refresh();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to mark as merged'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                issue.status = 'merged';
+                await this.refresh();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Mark Issue Merged', e, { issueId: issue.id });
             }
         },
 
@@ -1842,15 +1830,11 @@ function issuesApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'open' })
                 });
-                if (res.ok) {
-                    issue.status = 'open';
-                    await this.refresh();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to reopen'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                issue.status = 'open';
+                await this.refresh();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Reopen Issue', e, { issueId: issue.id });
             }
         }
     }

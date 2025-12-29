@@ -566,15 +566,8 @@ Contesto: ${contextStr}`;
          */
         async changeBranch(newBranch) {
             if (!this.activeSession || !newBranch) return;
-
-            // Skip if same branch
             if (newBranch === this.activeSession.current_branch) return;
-
-            // Confirmation dialog
-            if (!confirm(`Sei sicuro di voler cambiare branch e lavorare su "${newBranch}"?`)) {
-                // Reset select to current value
-                return;
-            }
+            if (!confirm(`Cambiare branch a "${newBranch}"?`)) return;
 
             try {
                 const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/branch`, {
@@ -583,24 +576,17 @@ Contesto: ${contextStr}`;
                     body: JSON.stringify({ branch: newBranch })
                 });
 
-                if (res.ok) {
-                    const updated = await res.json();
-                    this.activeSession = updated;
-
-                    // Update in sessions list
-                    const idx = this.sessions.findIndex(s => s.id === updated.id);
-                    if (idx >= 0) {
-                        this.sessions[idx] = updated;
-                    }
-
-                    this.showToast(`Branch cambiato a ${newBranch}`, 'success');
-                } else {
-                    const error = await res.text();
-                    console.error('[chatSidebar] Failed to change branch:', error);
-                    this.showToast('Errore cambio branch', 'error');
+                if (!res.ok) {
+                    throw new Error(await res.text() || `HTTP ${res.status}`);
                 }
+
+                const updated = await res.json();
+                this.activeSession = updated;
+                const idx = this.sessions.findIndex(s => s.id === updated.id);
+                if (idx >= 0) this.sessions[idx] = updated;
+                this.showToast(`Branch: ${newBranch}`, 'success');
             } catch (error) {
-                TurboWrapError.handle('Change Git Branch', error, { repoId: this.activeSession?.repository_id, branch: branchName });
+                TurboWrapError.handle('Change Git Branch', error, { repoId: this.activeSession?.repository_id, branch: newBranch });
             }
         },
 
@@ -613,13 +599,9 @@ Contesto: ${contextStr}`;
                 const payload = {
                     cli_type: cliType,
                     display_name: cliType === 'claude' ? 'Claude Chat' : 'Gemini Chat',
-                    color: cliType === 'claude' ? '#f97316' : '#3b82f6'
+                    color: cliType === 'claude' ? '#f97316' : '#3b82f6',
+                    ...(repositoryId && { repository_id: repositoryId })
                 };
-
-                // Add repository context if selected
-                if (repositoryId) {
-                    payload.repository_id = repositoryId;
-                }
 
                 const res = await fetch('/api/cli-chat/sessions', {
                     method: 'POST',
@@ -627,14 +609,16 @@ Contesto: ${contextStr}`;
                     body: JSON.stringify(payload)
                 });
 
-                if (res.ok) {
-                    const session = await res.json();
-                    this.sessions.unshift(session);
-                    this.selectSession(session);
-                    this.showToast('Chat creata', 'success');
+                if (!res.ok) {
+                    throw new Error(await res.text() || `HTTP ${res.status}`);
                 }
+
+                const session = await res.json();
+                this.sessions.unshift(session);
+                this.selectSession(session);
+                this.showToast('Chat creata', 'success');
             } catch (error) {
-                TurboWrapError.handle('Create Chat Session', error, { agent: payload?.agent_type, repoId: payload?.repository_id });
+                TurboWrapError.handle('Create Chat Session', error, { agent: cliType, repoId: repositoryId });
             } finally {
                 this.creating = false;
             }
@@ -644,35 +628,20 @@ Contesto: ${contextStr}`;
          * Select a session and load its messages
          */
         async selectSession(session) {
-            console.log('[selectSession] Loading session:', session.id, session.display_name);
             this.activeSession = session;
             this.messages = [];
             this.showSettings = false;
             this.branches = [];
-
-            // Persist active session ID for cross-page navigation
             localStorage.setItem('chatActiveSessionId', session.id);
 
             try {
-                const url = `/api/cli-chat/sessions/${session.id}/messages`;
-                console.log('[selectSession] Fetching:', url);
-                const res = await fetch(url);
-                console.log('[selectSession] Response status:', res.status);
+                const res = await fetch(`/api/cli-chat/sessions/${session.id}/messages`);
+                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
 
-                if (res.ok) {
-                    this.messages = await res.json();
-                    console.log('[selectSession] Loaded messages:', this.messages.length);
-                    this.$nextTick(() => this.scrollToBottom());
-                } else {
-                    const errorText = await res.text();
-                    console.error('[selectSession] Failed to load messages:', res.status, errorText);
-                    this.showToast('Errore caricamento messaggi', 'error');
-                }
+                this.messages = await res.json();
+                this.$nextTick(() => this.scrollToBottom());
 
-                // Load branches if session is linked to a repository
-                if (session.repository_id) {
-                    await this.loadBranches();
-                }
+                if (session.repository_id) await this.loadBranches();
             } catch (error) {
                 TurboWrapError.handle('Load Chat Session', error, { sessionId: session?.id });
             }
@@ -697,39 +666,32 @@ Contesto: ${contextStr}`;
                     })
                 });
 
-                if (res.ok) {
-                    // Update in sessions list
-                    const updated = await res.json();
-                    const idx = this.sessions.findIndex(s => s.id === updated.id);
-                    if (idx >= 0) {
-                        this.sessions[idx] = updated;
-                    }
-                }
+                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+
+                const updated = await res.json();
+                const idx = this.sessions.findIndex(s => s.id === updated.id);
+                if (idx >= 0) this.sessions[idx] = updated;
             } catch (error) {
-                console.error('Error updating session:', error);
+                TurboWrapError.handle('Update Session Settings', error, { sessionId: this.activeSession?.id });
             }
         },
 
         /**
          * Delete a session
-         * @param {string} sessionId - Session ID to delete
          */
         async deleteSession(sessionId) {
             if (!confirm('Eliminare questa chat?')) return;
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${sessionId}`, {
-                    method: 'DELETE'
-                });
+                const res = await fetch(`/api/cli-chat/sessions/${sessionId}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
 
-                if (res.ok) {
-                    this.sessions = this.sessions.filter(s => s.id !== sessionId);
-                    if (this.activeSession?.id === sessionId) {
-                        this.activeSession = null;
-                        localStorage.removeItem('chatActiveSessionId');
-                    }
-                    this.showToast('Chat eliminata', 'success');
+                this.sessions = this.sessions.filter(s => s.id !== sessionId);
+                if (this.activeSession?.id === sessionId) {
+                    this.activeSession = null;
+                    localStorage.removeItem('chatActiveSessionId');
                 }
+                this.showToast('Chat eliminata', 'success');
             } catch (error) {
                 TurboWrapError.handle('Delete Chat Session', error, { sessionId });
             }

@@ -790,10 +790,7 @@ document.addEventListener('mouseout', (e) => {
                     throw new Error('Failed to create project');
                 }
             } catch (e) {
-                console.error('Failed to create project:', e);
-                window.dispatchEvent(new CustomEvent('show-toast', {
-                    detail: { message: 'Errore nella creazione del progetto', type: 'error' }
-                }));
+                TurboWrapError.handle('Create Mockup Project', e);
             } finally {
                 this.creatingProject = false;
             }
@@ -811,20 +808,17 @@ document.addEventListener('mouseout', (e) => {
             this.deleting = true;
             try {
                 const res = await fetch(`/api/mockups/${this.mockupToDelete.id}`, { method: 'DELETE' });
-                if (res.ok) {
-                    this.mockups = this.mockups.filter(m => m.id !== this.mockupToDelete.id);
-                    if (this.selectedMockup?.id === this.mockupToDelete.id) {
-                        this.selectedMockup = null;
-                    }
-                    window.dispatchEvent(new CustomEvent('show-toast', {
-                        detail: { message: 'Mockup eliminato', type: 'success' }
-                    }));
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                this.mockups = this.mockups.filter(m => m.id !== this.mockupToDelete.id);
+                if (this.selectedMockup?.id === this.mockupToDelete.id) {
+                    this.selectedMockup = null;
                 }
-            } catch (e) {
-                console.error('Failed to delete mockup:', e);
                 window.dispatchEvent(new CustomEvent('show-toast', {
-                    detail: { message: 'Errore durante l\'eliminazione', type: 'error' }
+                    detail: { message: 'Mockup eliminato', type: 'success' }
                 }));
+            } catch (e) {
+                TurboWrapError.handle('Delete Mockup', e, { mockupId: this.mockupToDelete?.id });
             } finally {
                 this.deleting = false;
                 this.showDeleteModal = false;

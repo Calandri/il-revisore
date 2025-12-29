@@ -855,31 +855,23 @@ function issueDetailApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ linear_identifier: this.linearIdentifier })
                 });
-                if (res.ok) {
-                    window.location.reload();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to link Linear'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                window.location.reload();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Link Linear Issue', e, { issueId: this.issueId });
             }
             this.linkingLinear = false;
         },
 
         async unlinkLinear() {
-            if (!confirm('Sei sicuro di voler rimuovere il collegamento Linear?')) return;
+            if (!confirm('Rimuovere collegamento Linear?')) return;
             this.actionLoading = true;
             try {
                 const res = await fetch(`/api/issues/${this.issueId}/link-linear`, { method: 'DELETE' });
-                if (res.ok) {
-                    window.location.reload();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to unlink Linear'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                window.location.reload();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Unlink Linear Issue', e, { issueId: this.issueId });
             }
             this.actionLoading = false;
         },
@@ -893,14 +885,10 @@ function issueDetailApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content: this.newComment, author: 'user', comment_type: 'human' })
                 });
-                if (res.ok) {
-                    window.location.reload();
-                } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Failed to add comment'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                window.location.reload();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Add Comment', e, { issueId: this.issueId });
             }
             this.addingComment = false;
         },
@@ -925,25 +913,19 @@ function issueDetailApp() {
             try {
                 const url = `/api/issues/${this.issueId}/${action}${note ? '?note=' + encodeURIComponent(note) : ''}`;
                 const res = await fetch(url, { method: 'POST' });
-                if (res.ok) {
-                    // After status change, go to next issue if available
-                    if (this.nextIssue) {
-                        const params = this.filterParams ? '?' + this.filterParams : '';
-                        window.location.href = '/issues/' + this.nextIssue.issue_code + params;
-                    } else if (this.prevIssue) {
-                        // If no next, go to previous
-                        const params = this.filterParams ? '?' + this.filterParams : '';
-                        window.location.href = '/issues/' + this.prevIssue.issue_code + params;
-                    } else {
-                        // No more issues, go back to list
-                        window.location.href = '/issues';
-                    }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+
+                // After status change, go to next/prev issue or list
+                const params = this.filterParams ? '?' + this.filterParams : '';
+                if (this.nextIssue) {
+                    window.location.href = '/issues/' + this.nextIssue.issue_code + params;
+                } else if (this.prevIssue) {
+                    window.location.href = '/issues/' + this.prevIssue.issue_code + params;
                 } else {
-                    const data = await res.json();
-                    alert('Errore: ' + (data.detail || 'Unknown error'));
+                    window.location.href = '/issues';
                 }
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Update Issue Status', e, { issueId: this.issueId, action });
             }
             this.actionLoading = false;
         },
@@ -957,14 +939,11 @@ function issueDetailApp() {
             this.fixLogError = null;
             try {
                 const res = await fetch(`/api/issues/${this.issueId}/fix-log`);
-                if (res.ok) {
-                    this.fixLog = await res.json();
-                } else {
-                    const error = await res.json();
-                    this.fixLogError = error.detail || 'Failed to load fix log';
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                this.fixLog = await res.json();
             } catch (e) {
-                this.fixLogError = 'Network error: ' + e.message;
+                TurboWrapError.warning('Load Fix Log', e, { issueId: this.issueId });
+                this.fixLogError = e.message;
             }
             this.fixLogLoading = false;
         },
@@ -980,20 +959,17 @@ function issueDetailApp() {
         async toggleViewed() {
             const newState = !this.isViewed;
             try {
-                const res = await fetch(`/api/issues/${this.issueId}/toggle-viewed?viewed=${newState}`, {
-                    method: 'POST'
-                });
-                if (res.ok) {
-                    this.isViewed = newState;
-                }
+                const res = await fetch(`/api/issues/${this.issueId}/toggle-viewed?viewed=${newState}`, { method: 'POST' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                this.isViewed = newState;
             } catch (e) {
-                console.error('Failed to toggle viewed:', e);
+                TurboWrapError.warning('Toggle Viewed', e, { issueId: this.issueId });
             }
         },
 
         async forceChangeStatus() {
             if (!this.forceStatus) return;
-            if (!confirm(`Sei sicuro di voler forzare lo stato a "${this.forceStatus}"? Questa azione è pericolosa.`)) {
+            if (!confirm(`Forzare stato a "${this.forceStatus}"? Azione pericolosa.`)) {
                 this.forceStatus = '';
                 return;
             }
@@ -1003,18 +979,14 @@ function issueDetailApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: this.forceStatus })
                 });
-                if (res.ok) {
-                    window.dispatchEvent(new CustomEvent('show-toast', {
-                        detail: { message: `Stato cambiato a ${this.forceStatus}`, type: 'success' }
-                    }));
-                    // Reload page to reflect changes
-                    window.location.reload();
-                } else {
-                    const error = await res.json();
-                    alert('Errore: ' + (error.detail || 'Failed to change status'));
-                }
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: `Stato: ${this.forceStatus}`, type: 'success' }
+                }));
+                window.location.reload();
             } catch (e) {
-                alert('Errore di rete: ' + e.message);
+                TurboWrapError.handle('Force Change Status', e, { issueId: this.issueId, status: this.forceStatus });
             }
             this.forceStatus = '';
         }
