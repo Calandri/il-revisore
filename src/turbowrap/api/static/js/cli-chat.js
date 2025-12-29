@@ -1069,7 +1069,11 @@ function chatSidebar() {
 
             // Links [text](url)
             html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-                '<a href="$2" target="_blank" class="text-blue-500 hover:text-blue-600 dark:text-blue-400 underline">$1</a>');
+                '<a href="$2" target="_blank" rel="noopener" class="text-blue-500 hover:text-blue-600 dark:text-blue-400 underline">$1</a>');
+
+            // Auto-link plain URLs (that aren't already inside href="...")
+            html = html.replace(/(^|[^="'])(https?:\/\/[^\s<>"')\]]+)/g,
+                '$1<a href="$2" target="_blank" rel="noopener" class="text-blue-500 hover:text-blue-600 dark:text-blue-400 underline break-all">$2</a>');
 
             // Bold **text** or __text__
             html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold">$1</strong>');
