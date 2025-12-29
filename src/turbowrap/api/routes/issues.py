@@ -79,6 +79,7 @@ class IssueResponse(BaseModel):
     # Phase tracking (NEW)
     phase_started_at: datetime | None = None
     is_active: bool = False
+    is_viewed: bool = False  # Manual "reviewed" flag
 
     # Fix result fields (populated when resolved by fixer)
     fix_code: str | None = None
@@ -390,6 +391,24 @@ def reopen_issue(
 
     issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
     issue.resolved_at = None  # type: ignore[assignment]
+
+    db.commit()
+    db.refresh(issue)
+    return issue
+
+
+@router.post("/{issue_id}/toggle-viewed", response_model=IssueResponse)
+def toggle_issue_viewed(
+    issue_id: str,
+    viewed: bool = Query(default=True, description="Set viewed status"),
+    db: Session = Depends(get_db),
+) -> Issue:
+    """Toggle the is_viewed flag on an issue (manual triage marker)."""
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    issue.is_viewed = viewed  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)

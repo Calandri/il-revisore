@@ -419,6 +419,12 @@
                         <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
                               :class="'cat-' + (issue.category || 'default')"
                               x-text="issue.category || '-'"></span>
+                        <!-- Viewed indicator -->
+                        <template x-if="issue.is_viewed">
+                            <span class="flex items-center text-green-500" title="Reviewed">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            </span>
+                        </template>
                         <!-- Comments count -->
                         <template x-if="(issue.comments || []).length > 0">
                             <span class="flex items-center gap-0.5 text-xs text-gray-400" :title="(issue.comments || []).length + ' commenti'">
@@ -559,6 +565,12 @@
                         <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
                               :class="'cat-' + (issue.category || 'default')"
                               x-text="issue.category || '-'"></span>
+                        <!-- Viewed indicator -->
+                        <template x-if="issue.is_viewed">
+                            <span class="flex items-center text-green-500" title="Reviewed">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            </span>
+                        </template>
                     </div>
                     <!-- Quick action -->
                     <template x-if="issue.status === 'open' || issue.status === 'in_progress'">

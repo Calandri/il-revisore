@@ -76,6 +76,18 @@
                     <h1 class="text-2xl md:text-3xl font-bold font-mono">{{ issue.issue_code }}</h1>
                     <span class="px-3 py-1 rounded-full text-sm font-bold text-white severity-{{ issue.severity|lower }}">{{ issue.severity }}</span>
                     <span class="px-3 py-1 rounded-full text-sm font-medium border status-{{ issue.status }}">{{ issue.status }}</span>
+                    <!-- Viewed toggle -->
+                    <button @click="toggleViewed()"
+                            :class="isViewed ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 border-gray-300 dark:border-gray-600'"
+                            class="px-3 py-1 rounded-full text-sm font-medium border flex items-center gap-1.5 transition-colors hover:opacity-80"
+                            title="Segna come già revisionata">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path x-show="isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            <path x-show="!isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path x-show="!isViewed" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                        <span x-text="isViewed ? 'Reviewed' : 'Not reviewed'"></span>
+                    </button>
                     {% if issue.linear_identifier %}
                     <a href="{{ issue.linear_url or '#' }}" target="_blank"
                        class="px-3 py-1 rounded-full text-sm font-medium text-white linear-brand flex items-center gap-2 hover:opacity-90 transition-opacity">
@@ -710,6 +722,7 @@ function issueDetailApp() {
         issueId: '{{ issue.id }}',
         issueCode: '{{ issue.issue_code }}',
         repositoryId: '{{ issue.repository_id }}',
+        isViewed: {{ 'true' if issue.is_viewed else 'false' }},
         activeTab: 'details',
         actionLoading: false,
         showFixLog: false,
@@ -876,7 +889,18 @@ function issueDetailApp() {
                 const url = `/api/issues/${this.issueId}/${action}${note ? '?note=' + encodeURIComponent(note) : ''}`;
                 const res = await fetch(url, { method: 'POST' });
                 if (res.ok) {
-                    window.location.reload();
+                    // After status change, go to next issue if available
+                    if (this.nextIssue) {
+                        const params = this.filterParams ? '?' + this.filterParams : '';
+                        window.location.href = '/issues/' + this.nextIssue.issue_code + params;
+                    } else if (this.prevIssue) {
+                        // If no next, go to previous
+                        const params = this.filterParams ? '?' + this.filterParams : '';
+                        window.location.href = '/issues/' + this.prevIssue.issue_code + params;
+                    } else {
+                        // No more issues, go back to list
+                        window.location.href = '/issues';
+                    }
                 } else {
                     const data = await res.json();
                     alert('Errore: ' + (data.detail || 'Unknown error'));
@@ -914,6 +938,20 @@ function issueDetailApp() {
                     detail: { message: 'Copiato negli appunti!', type: 'success' }
                 }));
             });
+        },
+
+        async toggleViewed() {
+            const newState = !this.isViewed;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/toggle-viewed?viewed=${newState}`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    this.isViewed = newState;
+                }
+            } catch (e) {
+                console.error('Failed to toggle viewed:', e);
+            }
         }
     }
 }

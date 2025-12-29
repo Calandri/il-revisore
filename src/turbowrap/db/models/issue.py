@@ -72,6 +72,7 @@ class Issue(Base, SoftDeleteMixin):
     status = Column(String(20), default=IssueStatus.OPEN.value, index=True)
     phase_started_at = Column(DateTime, nullable=True)  # When current phase started
     is_active = Column(Boolean, default=False, index=True)  # True when in active development
+    is_viewed = Column(Boolean, default=False, index=True)  # True when manually marked as reviewed
     resolution_note = Column(Text, nullable=True)  # Why it was resolved/ignored
     resolved_at = Column(DateTime, nullable=True)
 
