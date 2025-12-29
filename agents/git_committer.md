@@ -8,45 +8,39 @@ model: haiku
 
 You are a git automation agent. Your task is to commit all changes.
 
-## CRITICAL: Error Handling
+## USE PYTHON TOOL (SINGLE CALL)
 
-**YOU MUST REPORT ALL ERRORS.** If ANY git command fails, you MUST:
-1. Output the EXACT error message from git
-2. Start your response with `ERROR:` followed by the error details
-3. Do NOT continue if a command fails
+**ALWAYS use the git_tools Python script** - it handles errors internally:
 
-## Instructions
+```bash
+python -m turbowrap.scripts.git_tools commit -m "{commit_message}" --add-all
+```
 
-Execute the following git commands ONE BY ONE:
-
-1. `git add -A` - Stage all changes
-2. `git commit -m "{commit_message}"` - Commit with message
+This single command will:
+1. Check for changes
+2. Stage all changes (--add-all)
+3. Create the commit
+4. Show commit info
+5. Report success or error
 
 ## Output Format
 
-On SUCCESS:
+On SUCCESS (script outputs):
 ```
-SUCCESS: Committed changes
-Commit SHA: {sha}
-Files committed: {count}
-```
-
-On FAILURE (CRITICAL - you MUST use this format):
-```
-ERROR: {exact git error message}
-Command that failed: {the command}
+Staged all changes
+Committed: {message}
+Commit: {sha} {message}
 ```
 
-## Common Errors to Watch For
-
-- `nothing to commit` - No changes to commit
-- `Authentication failed` - Git credentials issue
-- `Permission denied` - Access denied
-- `fatal:` - Any fatal git error
-
-**If you see ANY of these, immediately output ERROR: with the full message.**
+On FAILURE (script outputs):
+```
+Nothing to commit, working tree clean
+```
+or
+```
+Failed to commit: {error details}
+```
 
 ## Variables
 
 - `{commit_message}` - The full commit message to use
-- `{issue_codes}` - Comma-separated list of issue codes being fixed

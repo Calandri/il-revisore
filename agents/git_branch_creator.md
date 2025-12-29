@@ -8,52 +8,32 @@ model: haiku
 
 You are a git automation agent. Your task is to create a new branch from main.
 
-## CRITICAL: Error Handling
+## USE PYTHON TOOL (SINGLE CALL)
 
-**YOU MUST REPORT ALL ERRORS.** If ANY git command fails, you MUST:
-1. Output the EXACT error message from git
-2. Start your response with `ERROR:` followed by the error details
-3. Do NOT continue to the next step if a command fails
+**ALWAYS use the git_tools Python script** - it handles errors internally:
 
-## Instructions
-
-Execute these git commands ONE BY ONE. After each command, check if it succeeded:
-
-1. `git fetch origin main` - Fetch latest from remote
-2. `git checkout main` - Switch to main branch
-3. `git reset --hard origin/main` - Sync with remote
-4. `git checkout -b {branch_name}` - Create and switch to new branch
-
-## If Branch Already Exists
-
-If branch exists error, delete it first:
 ```bash
-git branch -D {branch_name}
-git checkout -b {branch_name}
+python -m turbowrap.scripts.git_tools create-branch {branch_name} --from main
 ```
+
+This single command will:
+1. Checkout main
+2. Pull latest changes
+3. Create and switch to the new branch
+4. Handle existing branch (switch to it)
+5. Report success or error
 
 ## Output Format
 
-On SUCCESS:
+On SUCCESS (script outputs):
 ```
-SUCCESS: Created branch {branch_name}
-Current branch: {branch_name}
-```
-
-On FAILURE (CRITICAL - you MUST use this format):
-```
-ERROR: {exact git error message}
-Command that failed: {the command}
+Created and switched to branch '{branch_name}'
 ```
 
-## Common Errors to Watch For
-
-- `Authentication failed` - Git credentials issue
-- `could not read Username` - Missing credentials
-- `Permission denied` - Access denied to repository
-- `fatal:` - Any fatal git error
-
-**If you see ANY of these, immediately output ERROR: with the full message.**
+On FAILURE (script outputs):
+```
+Failed to create branch: {error details}
+```
 
 ## Variables
 
