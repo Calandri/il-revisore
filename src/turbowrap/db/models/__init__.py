@@ -35,6 +35,11 @@ from .base import (
     OperationType,
     # Mixins and utilities
     SoftDeleteMixin,
+    # Test enums
+    TestCaseStatus,
+    TestFramework,
+    TestRunStatus,
+    TestSuiteType,
     generate_uuid,
     is_valid_feature_transition,
     is_valid_issue_transition,
@@ -76,6 +81,9 @@ from .settings import Setting
 # Task models
 from .task import AgentRun, Task
 
+# Test models
+from .test import TestCase, TestRun, TestSuite
+
 __all__ = [
     # Base
     "SoftDeleteMixin",
@@ -90,6 +98,11 @@ __all__ = [
     "FEATURE_STATUS_TRANSITIONS",
     "is_valid_feature_transition",
     "FeatureRepositoryRole",
+    # Test Enums
+    "TestSuiteType",
+    "TestRunStatus",
+    "TestCaseStatus",
+    "TestFramework",
     # Other Enums
     "LinkType",
     "ExternalLinkType",
@@ -131,4 +144,8 @@ __all__ = [
     "MockupProject",
     "Mockup",
     "MockupStatus",
+    # Test
+    "TestSuite",
+    "TestRun",
+    "TestCase",
 ]

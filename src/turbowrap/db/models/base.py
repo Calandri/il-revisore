@@ -267,3 +267,56 @@ class OperationType(str, Enum):
 
     # Generic CLI task
     CLI_TASK = "cli_task"
+
+    # Test operations
+    TEST_RUN = "test_run"
+    TEST_DISCOVER = "test_discover"
+
+
+# =============================================================================
+# Test Enums
+# =============================================================================
+
+
+class TestSuiteType(str, Enum):
+    """Type of test suite."""
+
+    CLASSIC = "classic"  # Traditional test execution (pytest, playwright, etc.)
+    AI_ANALYSIS = "ai_analysis"  # AI analyzes test results
+    AI_GENERATION = "ai_generation"  # AI generates tests
+
+
+class TestRunStatus(str, Enum):
+    """Status of a test run."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    PASSED = "passed"
+    FAILED = "failed"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
+
+class TestCaseStatus(str, Enum):
+    """Status of a single test case."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    ERROR = "error"
+
+
+class TestFramework(str, Enum):
+    """Supported test frameworks."""
+
+    # Python
+    PYTEST = "pytest"
+
+    # JavaScript/TypeScript
+    PLAYWRIGHT = "playwright"
+    VITEST = "vitest"
+    JEST = "jest"
+    CYPRESS = "cypress"
+
+    # Generic
+    CUSTOM = "custom"

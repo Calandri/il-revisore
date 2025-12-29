@@ -113,6 +113,25 @@ async def review_page(request: Request, db: Session = Depends(get_db)) -> Respon
     )
 
 
+@router.get("/tests", response_class=HTMLResponse)
+async def tests_page(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Tests management page."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/tests.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "tests",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/issues", response_class=HTMLResponse)
 async def issues_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Issues tracking page."""
