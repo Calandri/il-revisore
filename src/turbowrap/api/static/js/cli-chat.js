@@ -1248,7 +1248,7 @@ function chatSidebar() {
 
             // Append any additional arguments from user
             if (additionalArgs) {
-                expandedContent += `\n\nNote aggiuntive: ${additionalArgs}`;
+                expandedContent += `\n\n---\n**COMMAND ARGUMENTS (USE THESE VALUES!):**\n${additionalArgs}`;
             }
 
             console.log(`[chatSidebar] Expanded /${commandName} command`);

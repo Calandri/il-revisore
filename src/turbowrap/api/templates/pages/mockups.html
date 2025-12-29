@@ -174,6 +174,54 @@
     <!-- New Project Modal -->
     {% include "components/mockup_project_modal.html" %}
 
+    <!-- Select Project Modal -->
+    <div x-show="showSelectProjectModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+         @click.self="showSelectProjectModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4"
+             @click.stop>
+            <div class="p-4 border-b dark:border-gray-700">
+                <h3 class="text-lg font-semibold">Seleziona Progetto</h3>
+            </div>
+            <div class="p-4">
+                <!-- Search -->
+                <input type="text"
+                       x-model="projectSearchQuery"
+                       placeholder="Cerca progetto..."
+                       class="w-full px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 mb-3 focus:ring-2 focus:ring-primary focus:border-transparent">
+                <!-- Project list -->
+                <div class="max-h-64 overflow-y-auto space-y-1">
+                    <template x-for="project in filteredProjects" :key="project.id">
+                        <button @click="selectProjectAndStartChat(project)"
+                                class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <div class="font-medium" x-text="project.name"></div>
+                            <div class="text-xs text-gray-500" x-text="project.description || 'Nessuna descrizione'"></div>
+                        </button>
+                    </template>
+                    <div x-show="filteredProjects.length === 0" class="text-center text-gray-500 py-4">
+                        Nessun progetto trovato
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex justify-between">
+                <button @click="showSelectProjectModal = false; showNewProjectModal = true"
+                        class="px-4 py-2 text-primary hover:underline">
+                    + Nuovo Progetto
+                </button>
+                <button @click="showSelectProjectModal = false"
+                        class="px-4 py-2 text-gray-600 hover:text-gray-800">
+                    Annulla
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -193,9 +241,9 @@ function mockupsPage() {
         creatingProject: false,
         // Preview state
         previewHtml: '',
-        // Chat selection
-        showChatSelectionModal: false,
-        chatSessions: [],
+        // Project selection modal
+        showSelectProjectModal: false,
+        projectSearchQuery: '',
 
         async init() {
             // Load data for selected repo
@@ -406,15 +454,40 @@ function mockupsPage() {
         },
 
         openMockupChat() {
-            // Crea sempre una nuova chat per mockup (contesto pulito)
-            const projectId = this.selectedProject?.id;
-            const projectName = this.selectedProject?.name;
-            const command = projectId
-                ? `/mockup --project-id ${projectId} --project-name "${projectName}"`
-                : '/mockup';
+            if (!this.selectedProject) {
+                if (this.projects.length === 0) {
+                    // No projects exist - create one first
+                    this.showNewProjectModal = true;
+                } else {
+                    // Show project selection modal
+                    this.projectSearchQuery = '';
+                    this.showSelectProjectModal = true;
+                }
+                return;
+            }
+            this._startMockupChat();
+        },
+
+        _startMockupChat() {
+            const projectId = this.selectedProject.id;
+            const projectName = this.selectedProject.name;
+            const command = `/mockup --project-id ${projectId} --project-name "${projectName}"`;
+            console.log('[mockups] Opening chat with command:', command);
             window.dispatchEvent(new CustomEvent('open-chat-with-command', {
                 detail: { command, newSession: true }
             }));
+        },
+
+        selectProjectAndStartChat(project) {
+            this.selectedProject = project;
+            this.showSelectProjectModal = false;
+            this._startMockupChat();
+        },
+
+        get filteredProjects() {
+            if (!this.projectSearchQuery) return this.projects;
+            const q = this.projectSearchQuery.toLowerCase();
+            return this.projects.filter(p => p.name.toLowerCase().includes(q));
         },
 
         modifyMockup(mockupId) {

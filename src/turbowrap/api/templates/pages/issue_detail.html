@@ -38,12 +38,39 @@
     <!-- ============================================== -->
     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-8">
         <div class="flex items-start gap-4">
-            <!-- Back -->
-            <a href="/issues" class="mt-1 p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                </svg>
-            </a>
+            <!-- Navigation: Back + Prev/Next -->
+            <div class="flex items-center gap-1 mt-1">
+                <!-- Back to list -->
+                <a href="/issues" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Torna alla lista">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </a>
+                <!-- Separator -->
+                <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                <!-- Previous Issue -->
+                <a :href="prevIssue ? '/issues/' + prevIssue.issue_code : '#'"
+                   :class="prevIssue ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
+                   class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
+                   :title="prevIssue ? prevIssue.issue_code : 'Nessuna issue precedente'">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
+                    </svg>
+                    <span class="text-xs font-mono hidden sm:inline" x-text="prevIssue ? prevIssue.issue_code.split('-').pop() : ''"></span>
+                </a>
+                <!-- Current position -->
+                <span class="px-2 text-xs text-gray-500" x-show="currentIndex >= 0" x-text="(currentIndex + 1) + '/' + totalIssues"></span>
+                <!-- Next Issue -->
+                <a :href="nextIssue ? '/issues/' + nextIssue.issue_code : '#'"
+                   :class="nextIssue ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
+                   class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
+                   :title="nextIssue ? nextIssue.issue_code : 'Nessuna issue successiva'">
+                    <span class="text-xs font-mono hidden sm:inline" x-text="nextIssue ? nextIssue.issue_code.split('-').pop() : ''"></span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                    </svg>
+                </a>
+            </div>
             <div>
                 <div class="flex flex-wrap items-center gap-3 mb-2">
                     <h1 class="text-2xl md:text-3xl font-bold font-mono">{{ issue.issue_code }}</h1>
@@ -681,6 +708,8 @@
 function issueDetailApp() {
     return {
         issueId: '{{ issue.id }}',
+        issueCode: '{{ issue.issue_code }}',
+        repositoryId: '{{ issue.repository_id }}',
         activeTab: 'details',
         actionLoading: false,
         showFixLog: false,
@@ -692,13 +721,48 @@ function issueDetailApp() {
         linkingLinear: false,
         newComment: '',
         addingComment: false,
+        // Navigation
+        prevIssue: null,
+        nextIssue: null,
+        currentIndex: -1,
+        totalIssues: 0,
 
-        init() {
+        async init() {
             this.$watch('showFixLog', async (value) => {
                 if (value && !this.fixLog) {
                     await this.loadFixLog();
                 }
             });
+            // Load adjacent issues for navigation
+            await this.loadAdjacentIssues();
+            // Keyboard shortcuts for navigation
+            document.addEventListener('keydown', (e) => {
+                // Skip if user is typing in an input
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                if (e.key === 'ArrowLeft' && this.prevIssue) {
+                    window.location.href = '/issues/' + this.prevIssue.issue_code;
+                } else if (e.key === 'ArrowRight' && this.nextIssue) {
+                    window.location.href = '/issues/' + this.nextIssue.issue_code;
+                }
+            });
+        },
+
+        async loadAdjacentIssues() {
+            try {
+                // Fetch issues for the same repository, ordered by severity
+                const res = await fetch(`/api/issues?repository_id=${this.repositoryId}&limit=500`);
+                if (!res.ok) return;
+                const issues = await res.json();
+                this.totalIssues = issues.length;
+                // Find current issue index
+                const idx = issues.findIndex(i => i.issue_code === this.issueCode);
+                if (idx === -1) return;
+                this.currentIndex = idx;
+                this.prevIssue = idx > 0 ? issues[idx - 1] : null;
+                this.nextIssue = idx < issues.length - 1 ? issues[idx + 1] : null;
+            } catch (e) {
+                console.warn('Failed to load adjacent issues:', e);
+            }
         },
 
         async linkLinear() {

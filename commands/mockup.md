@@ -1,28 +1,41 @@
-# /mockup - Genera Mockup UI
+# /mockup - Generate UI Mockup
 
-Crea un mockup UI per l'utente.
+Create a UI mockup for the user.
 
 ---
 
-## ISTRUZIONI (esegui in ordine!)
+## CRITICAL: EXECUTE THESE STEPS IN ORDER!
 
-**STEP 1 - INIT** (fallo PRIMA di rispondere!):
+**STEP 1 - INIT (DO THIS FIRST, BEFORE ANY RESPONSE!):**
+
+Look at the COMMAND ARGUMENTS section below. Extract the `--project-id` value and use it:
+
 ```bash
-python -m turbowrap.scripts.mockup_tool init --project-id <PROJECT_ID> --name "<nome>" --type page
+python -m turbowrap.scripts.mockup_tool init --project-id <PROJECT_ID_FROM_ARGS> --name "<mockup_name>" --type page
 ```
 
-**STEP 2 - CREA HTML**: Scrivi in `/tmp/mockup_<MOCKUP_ID>.html` (NON mostrare in chat!)
+This will output a `mockup_id`. Save it for step 3.
 
-**STEP 3 - SAVE**:
+**STEP 2 - CREATE HTML:**
+
+Write the HTML to `/tmp/mockup_<MOCKUP_ID>.html`
+
+DO NOT show HTML code in chat!
+
+**STEP 3 - SAVE:**
+
 ```bash
 python -m turbowrap.scripts.mockup_tool save --mockup-id <MOCKUP_ID> --html-file /tmp/mockup_<MOCKUP_ID>.html
 ```
 
-**STEP 4 - CONFERMA**: "Mockup creato! Vai alla pagina Mockups per vederlo."
+**STEP 4 - CONFIRM:**
+
+Say: "Mockup creato! Vai alla pagina Mockups per vederlo."
 
 ---
 
-**IMPORTANTE**:
-- Il `--project-id` è passato nel comando, USALO!
-- Rispondi in italiano
-- NON mostrare codice HTML all'utente
+## RULES:
+- The `--project-id` is in the COMMAND ARGUMENTS below - USE IT!
+- Respond in Italian
+- DO NOT show HTML code to the user
+- Run the init command BEFORE asking questions or generating content
