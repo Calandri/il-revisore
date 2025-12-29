@@ -238,6 +238,51 @@ function chatSidebar() {
                     </svg> Invio...`;
                 }
             });
+
+            // Listen for AI help requests (from error handler modal)
+            window.addEventListener('request-ai-help', async (e) => {
+                console.log('[chatSidebar] Request AI help:', e.detail);
+                await this.handleAIHelpRequest(e.detail);
+            });
+        },
+
+        /**
+         * Handle AI help request from error handler
+         * Opens chat, creates/selects session, and sends error context
+         */
+        async handleAIHelpRequest(detail) {
+            const { commandName, error, context } = detail;
+
+            // 1. Open chat if hidden
+            const htmlData = Alpine.$data(document.documentElement);
+            if (htmlData && htmlData.chatMode === 'hidden') {
+                htmlData.chatMode = 'third';
+            }
+
+            // 2. Ensure we have a session (create if needed)
+            if (!this.activeSession) {
+                const repoId = Alpine.store('globalContext')?.selectedRepoId;
+                await this.createSession('claude', repoId);
+            }
+
+            // 3. Build the help message with /help-error command
+            // Format: /help-error <command_name> | <error_message> | <context>
+            const errorMsg = error?.message || 'Errore sconosciuto';
+            const errorStack = error?.stack || '';
+            const contextStr = context && Object.keys(context).length > 0
+                ? JSON.stringify(context)
+                : '';
+
+            // Slash command with structured arguments
+            const helpMessage = `/help-error
+Comando: ${commandName}
+Errore: ${errorMsg}
+Stack: ${errorStack}
+Contesto: ${contextStr}`;
+
+            // 4. Send the message (slash command will be expanded)
+            this.inputMessage = helpMessage;
+            await this.sendMessage();
         },
 
         /**
@@ -555,8 +600,7 @@ function chatSidebar() {
                     this.showToast('Errore cambio branch', 'error');
                 }
             } catch (error) {
-                console.error('[chatSidebar] Error changing branch:', error);
-                this.showToast('Errore cambio branch', 'error');
+                TurboWrapError.handle('Change Git Branch', error, { repoId: this.activeSession?.repository_id, branch: branchName });
             }
         },
 
@@ -590,8 +634,7 @@ function chatSidebar() {
                     this.showToast('Chat creata', 'success');
                 }
             } catch (error) {
-                console.error('Error creating session:', error);
-                this.showToast('Errore creazione chat', 'error');
+                TurboWrapError.handle('Create Chat Session', error, { agent: payload?.agent_type, repoId: payload?.repository_id });
             } finally {
                 this.creating = false;
             }
@@ -631,8 +674,7 @@ function chatSidebar() {
                     await this.loadBranches();
                 }
             } catch (error) {
-                console.error('[selectSession] Error:', error);
-                this.showToast('Errore connessione', 'error');
+                TurboWrapError.handle('Load Chat Session', error, { sessionId: session?.id });
             }
         },
 
@@ -689,8 +731,7 @@ function chatSidebar() {
                     this.showToast('Chat eliminata', 'success');
                 }
             } catch (error) {
-                console.error('Error deleting session:', error);
-                this.showToast('Errore eliminazione', 'error');
+                TurboWrapError.handle('Delete Chat Session', error, { sessionId });
             }
         },
 
@@ -786,8 +827,7 @@ function chatSidebar() {
                 await this.sendMessage();
 
             } catch (e) {
-                console.error('[FORK] Error:', e);
-                this.showToast('Errore fork: ' + e.message, 'error');
+                TurboWrapError.handle('Fork Chat Session', e, { sessionId: this.activeSession?.id, messageIdx });
             } finally {
                 this.forkInProgress = false;
             }
@@ -998,8 +1038,7 @@ function chatSidebar() {
                     console.log('[chatSidebar] Stream aborted by user');
                     return;
                 }
-                console.error('Error sending message:', error);
-                this.showToast('Errore invio messaggio', 'error');
+                TurboWrapError.handle('Send Chat Message', error, { sessionId: this.activeSession?.id });
                 this.streaming = false;
             } finally {
                 this.abortController = null;
@@ -1161,32 +1200,13 @@ function chatSidebar() {
                 if (question.includes('`') || question.includes('//') || question.includes('/*')) return match;
                 hasQuestions = true;
                 const escapedQ = question.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-                return `<div class="question-block my-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
-                    <div class="font-medium text-blue-800 dark:text-blue-200 mb-2 flex items-start gap-2">
-                        <svg class="w-5 h-5 mt-0.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <span>${question}</span>
-                    </div>
-                    <input type="text"
-                           data-question-id="${questionId}"
-                           data-question="${escapedQ}"
-                           placeholder="Scrivi la tua risposta..."
-                           class="question-input w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
-                </div>`;
+                // Single line to avoid \n → <br> breaking the HTML
+                return `<div class="question-block my-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800"><div class="font-medium text-blue-800 dark:text-blue-200 mb-2 flex items-start gap-2"><svg class="w-5 h-5 mt-0.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>${question}</span></div><input type="text" data-question-id="${questionId}" data-question="${escapedQ}" placeholder="Scrivi la tua risposta..." class="question-input w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"></div>`;
             });
 
-            // Add submit button if there are questions
+            // Add submit button if there are questions (single line to avoid \n → <br> breaking HTML)
             if (hasQuestions) {
-                html += `<div class="mt-4 flex justify-end">
-                    <button onclick="window.dispatchEvent(new CustomEvent('submit-chat-answers', {detail: {id: '${questionId}'}}))"
-                            class="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-                        </svg>
-                        Invia Risposte
-                    </button>
-                </div>`;
+                html += `<div class="mt-4 flex justify-end"><button onclick="window.dispatchEvent(new CustomEvent('submit-chat-answers', {detail: {id: '${questionId}'}}))" class="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Invia Risposte</button></div>`;
             }
 
             // Line breaks (but not inside pre/code blocks)
@@ -1438,8 +1458,7 @@ function chatSidebar() {
                 await this.sendMessage();
 
             } catch (error) {
-                console.error('[LOGS] Error fetching server logs:', error);
-                this.showToast(error.message || 'Errore nel recupero dei log', 'error');
+                TurboWrapError.handle('Analyze Server Logs', error, { lines });
             } finally {
                 this.isLoadingLogs = false;
             }

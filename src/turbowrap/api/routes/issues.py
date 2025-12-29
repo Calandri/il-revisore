@@ -397,13 +397,20 @@ def reopen_issue(
     issue_id: str,
     db: Session = Depends(get_db),
 ) -> Issue:
-    """Reopen a resolved or ignored issue."""
+    """Reopen a resolved or ignored issue.
+
+    Clears all fix-related data (commit SHA, branch) so the issue
+    can be fixed again from scratch.
+    """
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
     issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
     issue.resolved_at = None  # type: ignore[assignment]
+    # Clear fix-related data so issue can be fixed again
+    issue.fix_commit_sha = None  # type: ignore[assignment]
+    issue.fix_branch = None  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)
@@ -744,3 +751,109 @@ def reset_stuck_issues_endpoint(
     """
     count, ids = reset_stuck_in_progress_issues(db, max_age_hours, repository_id)
     return StuckIssuesResetResponse(reset_count=count, reset_issue_ids=ids)
+
+
+# =============================================================================
+# AI Error Handler - Create Issue from Error
+# =============================================================================
+
+
+class CreateIssueFromErrorRequest(BaseModel):
+    """Request to create an issue from an error caught by TurboWrapAI."""
+
+    title: str = Field(..., min_length=5, max_length=200, description="Issue title")
+    description: str = Field(..., min_length=10, description="Detailed description")
+    error_message: str = Field(..., description="The actual error message")
+    error_stack: str | None = Field(None, description="Stack trace if available")
+    file_path: str | None = Field(None, description="File where error occurred")
+    line_number: int | None = Field(None, description="Line number")
+    suggested_fix: str | None = Field(None, description="AI's suggested fix")
+    severity: str = Field(default="medium", description="critical|high|medium|low")
+    repository_id: str | None = Field(None, description="Associated repository")
+    source: str = Field(default="ai_analysis", description="Issue source identifier")
+
+
+class CreateIssueFromErrorResponse(BaseModel):
+    """Response after creating issue from error."""
+
+    id: str
+    issue_code: str
+    title: str
+    severity: str
+    status: str
+    message: str
+
+
+@router.post("/from-error", response_model=CreateIssueFromErrorResponse)
+def create_issue_from_error(
+    data: CreateIssueFromErrorRequest,
+    db: Session = Depends(get_db),
+) -> CreateIssueFromErrorResponse:
+    """
+    Create an issue from an error caught by TurboWrapAI.
+
+    This endpoint is called by the AI chat when it analyzes an error
+    and determines a bug needs to be tracked.
+    """
+    import uuid
+
+    # Validate severity
+    valid_severities = ["critical", "high", "medium", "low"]
+    severity = data.severity.lower()
+    if severity not in valid_severities:
+        severity = "medium"
+
+    # Generate issue code
+    issue_code = f"ERR-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+
+    # Build description with error details
+    full_description = f"{data.description}\n\n"
+    full_description += "## Error Details\n\n"
+    full_description += f"```\n{data.error_message}\n```\n\n"
+
+    if data.error_stack:
+        full_description += f"### Stack Trace\n```\n{data.error_stack}\n```\n\n"
+
+    if data.file_path:
+        location = data.file_path
+        if data.line_number:
+            location += f":{data.line_number}"
+        full_description += f"**Location:** `{location}`\n\n"
+
+    if data.suggested_fix:
+        full_description += f"## Suggested Fix\n\n{data.suggested_fix}\n\n"
+
+    full_description += "\n---\n*Created automatically by TurboWrapAI from error analysis*"
+
+    # Create the issue
+    issue = Issue(
+        id=str(uuid.uuid4()),
+        issue_code=issue_code,
+        repository_id=data.repository_id or "00000000-0000-0000-0000-000000000000",
+        severity=severity.upper(),
+        category="bug",
+        rule="ai_detected",
+        file=data.file_path or "unknown",
+        line=data.line_number,
+        title=data.title,
+        description=full_description,
+        suggested_fix=data.suggested_fix,
+        status=IssueStatus.OPEN.value,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
+    db.add(issue)
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(f"Created issue {issue_code} from AI error analysis: {data.title}")
+
+    return CreateIssueFromErrorResponse(
+        id=str(issue.id),
+        issue_code=issue_code,
+        title=data.title,
+        severity=severity.upper(),
+        status=IssueStatus.OPEN.value,
+        message=f"Issue {issue_code} created successfully",
+    )
