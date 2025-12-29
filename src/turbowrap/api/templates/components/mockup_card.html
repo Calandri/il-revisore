@@ -4,12 +4,26 @@
 
     <!-- Preview Thumbnail -->
     <div class="aspect-video bg-white dark:bg-gray-800 relative overflow-hidden">
-        <!-- Placeholder gradient -->
-        <div class="absolute inset-0 bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 flex items-center justify-center">
-            <svg class="w-12 h-12 text-indigo-200 dark:text-indigo-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
-            </svg>
-        </div>
+        <!-- Live Preview iframe (scaled down) -->
+        <template x-if="mockup.s3_html_url">
+            <iframe :src="'/mockups/' + mockup.id + '/preview'"
+                    class="absolute inset-0 w-[400%] h-[400%] origin-top-left pointer-events-none"
+                    style="transform: scale(0.25);"
+                    loading="lazy"
+                    sandbox="allow-scripts allow-same-origin">
+            </iframe>
+        </template>
+        <!-- Placeholder for mockups without preview -->
+        <template x-if="!mockup.s3_html_url">
+            <div class="absolute inset-0 bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20 flex items-center justify-center">
+                <div class="text-center">
+                    <svg class="w-8 h-8 mx-auto text-indigo-300 dark:text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <span class="text-xs text-indigo-400 dark:text-indigo-500 mt-1 block">Generating...</span>
+                </div>
+            </div>
+        </template>
 
         <!-- LLM Badge -->
         <div class="absolute top-2 right-2 px-2 py-0.5 rounded text-xs font-medium"

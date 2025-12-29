@@ -1,9 +1,12 @@
 """Mockup management API routes."""
 
+import asyncio
+import json
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -31,6 +34,81 @@ from ..services.mockup_service import get_mockup_service
 
 router = APIRouter(prefix="/mockups", tags=["mockups"])
 logger = logging.getLogger(__name__)
+
+# SSE clients for real-time updates
+_sse_clients: list[asyncio.Queue] = []
+
+
+# =========================================================================
+# SSE Real-time Updates
+# =========================================================================
+
+
+async def _broadcast_event(event_type: str, data: dict) -> None:
+    """Broadcast event to all connected SSE clients."""
+    message = json.dumps({"type": event_type, **data})
+    dead_clients = []
+    for queue in _sse_clients:
+        try:
+            queue.put_nowait(message)
+        except asyncio.QueueFull:
+            dead_clients.append(queue)
+    # Remove dead clients
+    for queue in dead_clients:
+        _sse_clients.remove(queue)
+
+
+@router.get("/events")
+async def mockup_events(request: Request):
+    """SSE endpoint for real-time mockup updates."""
+
+    async def event_generator():
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        _sse_clients.append(queue)
+        try:
+            # Send initial connection message
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    # Wait for message with timeout (keeps connection alive)
+                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {message}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield ": keepalive\n\n"
+        finally:
+            if queue in _sse_clients:
+                _sse_clients.remove(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/notify")
+async def notify_mockup_change(
+    event_type: str,
+    mockup_id: str,
+    project_id: str | None = None,
+) -> dict:
+    """Notify all clients of a mockup change (called by mockup_tool)."""
+    await _broadcast_event(
+        event_type,
+        {"mockup_id": mockup_id, "project_id": project_id},
+    )
+    logger.info(f"[SSE] Broadcast {event_type} for mockup {mockup_id}")
+    return {"success": True, "clients": len(_sse_clients)}
 
 
 # =========================================================================

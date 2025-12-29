@@ -17,8 +17,29 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from turbowrap.db.models import Mockup, MockupProject, MockupStatus
-from turbowrap.db.session import get_session_local
+from turbowrap.db.models import Mockup, MockupProject, MockupStatus  # noqa: E402
+from turbowrap.db.session import get_session_local  # noqa: E402
+
+
+def _notify_change(event_type: str, mockup_id: str, project_id: str | None = None) -> None:
+    """Notify the frontend of a mockup change via SSE."""
+    import urllib.parse
+    import urllib.request
+
+    try:
+        params = urllib.parse.urlencode(
+            {
+                "event_type": event_type,
+                "mockup_id": mockup_id,
+                "project_id": project_id or "",
+            }
+        )
+        url = f"http://127.0.0.1:8000/api/mockups/notify?{params}"
+        req = urllib.request.Request(url, method="POST")  # noqa: S310
+        urllib.request.urlopen(req, timeout=2).close()  # noqa: S310
+    except Exception as e:
+        # Don't fail if notification fails
+        print(f"[INFO] Could not notify frontend: {e}")
 
 
 def init_mockup(
@@ -55,6 +76,9 @@ def init_mockup(
         db.commit()
         db.refresh(mockup)
 
+        # Notify frontend
+        _notify_change("init", mockup.id, project_id)
+
         return {
             "success": True,
             "mockup_id": mockup.id,
@@ -75,7 +99,9 @@ def save_mockup(
     llm_model: str | None = None,
 ) -> dict:
     """Save HTML content to mockup and upload to S3."""
-    from turbowrap.api.services.mockup_service import get_mockup_service
+    from datetime import datetime, timezone
+
+    from turbowrap.config import get_settings
 
     SessionLocal = get_session_local()
     db = SessionLocal()
@@ -90,16 +116,37 @@ def save_mockup(
 
         # Get mockup
         mockup = (
-            db.query(Mockup)
-            .filter(Mockup.id == mockup_id, Mockup.deleted_at.is_(None))
-            .first()
+            db.query(Mockup).filter(Mockup.id == mockup_id, Mockup.deleted_at.is_(None)).first()
         )
         if not mockup:
             return {"success": False, "error": f"Mockup not found: {mockup_id}"}
 
         # Upload to S3
-        service = get_mockup_service()
-        s3_url = service.upload_html_to_s3(mockup_id, html_content)
+        settings = get_settings()
+        s3_url = None
+
+        if settings.thinking.s3_bucket:
+            try:
+                import boto3
+
+                client = boto3.client("s3", region_name=settings.thinking.s3_region)
+                timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+                s3_key = f"mockups/{timestamp}/{mockup_id}/mockup.html"
+
+                client.put_object(
+                    Bucket=settings.thinking.s3_bucket,
+                    Key=s3_key,
+                    Body=html_content.encode("utf-8"),
+                    ContentType="text/html",
+                )
+
+                s3_url = (
+                    f"https://{settings.thinking.s3_bucket}"
+                    f".s3.{settings.thinking.s3_region}.amazonaws.com/{s3_key}"
+                )
+            except Exception as e:
+                # S3 upload failed, but we can still save locally
+                print(f"[WARNING] S3 upload failed: {e}")
 
         # Update mockup
         mockup.s3_html_url = s3_url
@@ -107,14 +154,18 @@ def save_mockup(
         if llm_model:
             mockup.llm_model = llm_model
 
+        project_id = mockup.project_id
         db.commit()
+
+        # Notify frontend
+        _notify_change("save", mockup_id, project_id)
 
         return {
             "success": True,
             "mockup_id": mockup_id,
             "status": "completed",
             "s3_url": s3_url,
-            "message": f"Mockup saved! View at /mockups page.",
+            "message": "Mockup saved! View at /mockups page.",
         }
 
     except Exception as e:
@@ -131,9 +182,7 @@ def fail_mockup(mockup_id: str, error: str) -> dict:
 
     try:
         mockup = (
-            db.query(Mockup)
-            .filter(Mockup.id == mockup_id, Mockup.deleted_at.is_(None))
-            .first()
+            db.query(Mockup).filter(Mockup.id == mockup_id, Mockup.deleted_at.is_(None)).first()
         )
         if not mockup:
             return {"success": False, "error": f"Mockup not found: {mockup_id}"}

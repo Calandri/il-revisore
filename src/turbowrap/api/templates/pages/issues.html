@@ -302,18 +302,25 @@
         </div>
         <div class="flex items-center gap-2">
             <!-- View Toggle -->
-            <button @click="viewMode = 'list'"
+            <button @click="viewMode = 'list'" title="Lista"
                     :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
                     class="p-2 rounded-lg transition-colors">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
                 </svg>
             </button>
-            <button @click="viewMode = 'cards'"
+            <button @click="viewMode = 'cards'" title="Cards"
                     :class="viewMode === 'cards' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
                     class="p-2 rounded-lg transition-colors">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                </svg>
+            </button>
+            <button @click="viewMode = 'files'" title="Group by File"
+                    :class="viewMode === 'files' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                    class="p-2 rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
                 </svg>
             </button>
         </div>
@@ -610,6 +617,66 @@
                     <span x-text="formatDate(issue.created_at)"></span>
                 </div>
             </a>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- ISSUES GROUP BY FILE VIEW -->
+    <!-- ============================================== -->
+    <div x-show="!loading && issues.length > 0 && viewMode === 'files'" class="space-y-4">
+        <template x-for="[file, fileIssues] in Object.entries(getIssuesByFile())" :key="file">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <!-- File Header -->
+                <div class="px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="font-mono text-sm truncate max-w-[400px]" x-text="file" :title="file"></span>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 dark:bg-gray-700" x-text="fileIssues.length + ' issue' + (fileIssues.length > 1 ? 's' : '')"></span>
+                    </div>
+                    <button @click="createBatchFromFile(file, fileIssues)"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        Fix Batch
+                    </button>
+                </div>
+                <!-- Issues in this file -->
+                <div class="divide-y divide-gray-100 dark:divide-gray-700">
+                    <template x-for="issue in fileIssues" :key="issue.id">
+                        <a :href="'/issues/' + issue.issue_code + getFilterParams()"
+                           class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <!-- Severity bar -->
+                            <div class="w-1 h-8 rounded-full flex-shrink-0"
+                                 :class="{
+                                     'severity-critical': issue.severity === 'CRITICAL',
+                                     'severity-high': issue.severity === 'HIGH',
+                                     'severity-medium': issue.severity === 'MEDIUM',
+                                     'severity-low': issue.severity === 'LOW'
+                                 }"></div>
+                            <!-- Issue info -->
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono text-xs text-gray-500" x-text="issue.issue_code"></span>
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                          :class="'cat-' + (issue.category || 'default')"
+                                          x-text="issue.category || '-'"></span>
+                                    <template x-if="issue.line">
+                                        <span class="text-xs text-gray-400">L<span x-text="issue.line"></span></span>
+                                    </template>
+                                </div>
+                                <p class="text-sm truncate mt-0.5" x-text="issue.title"></p>
+                            </div>
+                            <!-- Status -->
+                            <span class="px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0"
+                                  :class="'status-' + issue.status"
+                                  x-text="issue.status"></span>
+                        </a>
+                    </template>
+                </div>
+            </div>
         </template>
     </div>
 
@@ -1553,6 +1620,37 @@ function issuesApp() {
             if (r.includes('claude')) return 'ai-icon-claude';
             if (r.includes('openai') || r.includes('gpt')) return 'ai-icon-openai';
             return 'bg-gray-200 dark:bg-gray-700';
+        },
+
+        // Group issues by file path, sorted by number of issues (descending)
+        getIssuesByFile() {
+            const byFile = {};
+            for (const issue of this.issues) {
+                const file = issue.file || 'unknown';
+                if (!byFile[file]) byFile[file] = [];
+                byFile[file].push(issue);
+            }
+            // Sort by count descending
+            const sorted = Object.entries(byFile)
+                .sort((a, b) => b[1].length - a[1].length);
+            return Object.fromEntries(sorted);
+        },
+
+        // Select all issues from a file for batch fix
+        createBatchFromFile(file, fileIssues) {
+            // Filter only fixable issues (open status)
+            const fixableIds = fileIssues
+                .filter(i => i.status === 'open')
+                .map(i => i.id);
+            if (fixableIds.length === 0) {
+                this.showToast('Nessuna issue open da fixare in questo file', 'warning');
+                return;
+            }
+            // Add to selection and trigger fix
+            this.selectedIssues = fixableIds;
+            this.showToast(`Selezionate ${fixableIds.length} issue da ${file.split('/').pop()}`, 'success');
+            // Optionally auto-open fix modal
+            // this.openFixModal();
         },
 
         quickIgnore(issue) {
