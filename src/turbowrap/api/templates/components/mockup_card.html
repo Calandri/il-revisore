@@ -4,9 +4,9 @@
 
     <!-- Preview Thumbnail -->
     <div class="aspect-video bg-white dark:bg-gray-800 relative overflow-hidden">
-        <!-- Live Preview iframe (scaled down) -->
+        <!-- Live Preview iframe (scaled down) - links directly to S3 -->
         <template x-if="mockup.s3_html_url">
-            <iframe :src="'/mockups/' + mockup.id + '/preview'"
+            <iframe :src="mockup.s3_html_url"
                     class="absolute inset-0 w-[400%] h-[400%] origin-top-left pointer-events-none"
                     style="transform: scale(0.25);"
                     loading="lazy"
@@ -65,8 +65,9 @@
 
         <!-- Actions -->
         <div class="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity" @click.stop>
-            <button @click="window.open('/mockups/' + mockup.id + '/preview', '_blank')"
-                    class="flex-1 px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary/90 transition-colors">
+            <button @click="window.open(mockup.s3_html_url, '_blank')"
+                    class="flex-1 px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary/90 transition-colors"
+                    :disabled="!mockup.s3_html_url">
                 Preview
             </button>
             <button @click="modifyMockup(mockup.id)"

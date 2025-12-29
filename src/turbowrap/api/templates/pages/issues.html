@@ -300,29 +300,30 @@
                 </div>
             </template>
         </div>
-        <div class="flex items-center gap-2">
-            <!-- View Toggle -->
-            <button @click="viewMode = 'list'" title="Lista"
-                    :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
-                    class="p-2 rounded-lg transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                </svg>
-            </button>
-            <button @click="viewMode = 'cards'" title="Cards"
-                    :class="viewMode === 'cards' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
-                    class="p-2 rounded-lg transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-                </svg>
-            </button>
-            <button @click="viewMode = 'files'" title="Group by File"
-                    :class="viewMode === 'files' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
-                    class="p-2 rounded-lg transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                </svg>
-            </button>
+        <div class="flex items-center gap-3">
+            <!-- Group By Dropdown -->
+            <select x-model="groupBy"
+                    class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                <option value="">No grouping</option>
+                <option value="file">Group by File</option>
+            </select>
+            <!-- View Toggle (only when not grouped) -->
+            <div class="flex items-center gap-1" x-show="!groupBy">
+                <button @click="viewMode = 'list'" title="Lista"
+                        :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                        class="p-2 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                    </svg>
+                </button>
+                <button @click="viewMode = 'cards'" title="Cards"
+                        :class="viewMode === 'cards' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                        class="p-2 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                    </svg>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -358,7 +359,7 @@
     <!-- ============================================== -->
     <!-- ISSUES LIST VIEW -->
     <!-- ============================================== -->
-    <div x-show="!loading && issues.length > 0 && viewMode === 'list'"
+    <div x-show="!loading && issues.length > 0 && viewMode === 'list' && !groupBy"
          class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <!-- Table Header -->
         <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -520,7 +521,7 @@
     <!-- ============================================== -->
     <!-- ISSUES CARDS VIEW -->
     <!-- ============================================== -->
-    <div x-show="!loading && issues.length > 0 && viewMode === 'cards'"
+    <div x-show="!loading && issues.length > 0 && viewMode === 'cards' && !groupBy"
          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <template x-for="issue in issues" :key="issue.id">
             <a :href="'/issues/' + issue.issue_code + getFilterParams()"
@@ -623,7 +624,7 @@
     <!-- ============================================== -->
     <!-- ISSUES GROUP BY FILE VIEW -->
     <!-- ============================================== -->
-    <div x-show="!loading && issues.length > 0 && viewMode === 'files'" class="space-y-4">
+    <div x-show="!loading && issues.length > 0 && groupBy === 'file'" class="space-y-4">
         <template x-for="[file, fileIssues] in Object.entries(getIssuesByFile())" :key="file">
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <!-- File Header -->
@@ -1110,6 +1111,7 @@ function issuesApp() {
         summary: {},
         selectedIssues: [],
         viewMode: 'list',
+        groupBy: '',
         selectAllChecked: false,
         isFixing: false,
         isAnalyzing: false,
