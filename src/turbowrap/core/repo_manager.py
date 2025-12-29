@@ -14,6 +14,7 @@ from ..exceptions import RepositoryError
 from ..utils.file_utils import FileInfo, detect_repo_type, discover_files, load_file_content
 from ..utils.git_utils import (
     clone_repo,
+    get_current_branch,
     get_local_path,
     get_repo_status,
     parse_github_url,
@@ -341,9 +342,13 @@ class RepoManager:
 
         disk_size = get_directory_size(scan_path)
 
+        # Get actual branch after clone (may have been auto-detected)
+        actual_branch = get_current_branch(local_path)
+
         repo.local_path = str(local_path)  # type: ignore[assignment]
         repo.status = "active"  # type: ignore[assignment]
         repo.repo_type = repo_type  # type: ignore[assignment]
+        repo.default_branch = actual_branch  # type: ignore[assignment]
         repo.last_synced_at = datetime.utcnow()  # type: ignore[assignment]
         repo.metadata_ = {  # type: ignore[assignment]
             "be_files": be_stats,

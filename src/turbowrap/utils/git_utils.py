@@ -233,6 +233,46 @@ def _get_auth_url(url: str, token: str | None = None) -> str:
     return url
 
 
+def get_default_branch(url: str, token: str | None = None) -> str:
+    """Detect the default branch of a remote repository.
+
+    Uses `git ls-remote --symref` to find the HEAD reference.
+
+    Args:
+        url: GitHub repository URL.
+        token: Optional GitHub token for private repos.
+
+    Returns:
+        Default branch name (e.g., 'main', 'master').
+        Falls back to 'main' if detection fails.
+    """
+    auth_url = _get_auth_url(url, token)
+
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--symref", auth_url, "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_get_git_env(),
+        )
+
+        if result.returncode == 0:
+            # Output format: "ref: refs/heads/master\tHEAD"
+            for line in result.stdout.splitlines():
+                if line.startswith("ref: refs/heads/"):
+                    branch = line.split("ref: refs/heads/")[1].split()[0]
+                    logger.info(f"Detected default branch for {url}: {branch}")
+                    return branch
+
+        logger.warning(f"Could not detect default branch for {url}, falling back to 'main'")
+        return "main"
+
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+        logger.warning(f"Error detecting default branch for {url}: {e}, falling back to 'main'")
+        return "main"
+
+
 def clone_repo(
     url: str,
     branch: str = "main",
@@ -244,7 +284,7 @@ def clone_repo(
 
     Args:
         url: GitHub repository URL.
-        branch: Branch to clone.
+        branch: Branch to clone. If "main" (default), auto-detects the default branch.
         token: Optional GitHub token.
         target_path: Optional explicit code path.
         workspace_path: Optional workspace path for monorepos.
@@ -262,9 +302,25 @@ def clone_repo(
 
     clone_url = _get_auth_url(url, token)
 
+    # Auto-detect default branch when using the default "main"
+    effective_branch = branch
+    if branch == "main":
+        detected_branch = get_default_branch(url, token)
+        if detected_branch != "main":
+            logger.info(f"Auto-detected default branch '{detected_branch}' for {url}")
+            effective_branch = detected_branch
+
     try:
         subprocess.run(
-            ["git", "clone", "--branch", branch, "--single-branch", clone_url, str(local_path)],
+            [
+                "git",
+                "clone",
+                "--branch",
+                effective_branch,
+                "--single-branch",
+                clone_url,
+                str(local_path),
+            ],
             check=True,
             capture_output=True,
             text=True,
