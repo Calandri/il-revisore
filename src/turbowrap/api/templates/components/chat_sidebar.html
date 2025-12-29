@@ -435,13 +435,6 @@
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                     </button>
                 </form>
-                <!-- Repo/Branch -->
-                <div x-show="activeSession?.repository_id" class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                    <span class="text-xs italic text-gray-500 dark:text-gray-400">
-                        Repo: <span x-text="repositories.find(r => r.id === activeSession?.repository_id)?.name || 'Repo'"></span>
-                        - <span x-text="activeSession?.current_branch || 'main'"></span>
-                    </span>
-                </div>
             </div>
         </div>
 
