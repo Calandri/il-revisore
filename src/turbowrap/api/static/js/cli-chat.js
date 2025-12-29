@@ -48,6 +48,7 @@ function chatSidebar() {
         streamContent: '',
         inputMessage: '',
         showSettings: false,
+        showModelDropdown: false,
         showNewChatMenu: false,
         showSystemInfo: false,
         systemInfo: [],
