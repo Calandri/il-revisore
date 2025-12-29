@@ -326,21 +326,65 @@ class ReviewRecoveryService:
             try:
                 data = json.loads(line)
                 if isinstance(data, dict):
-                    # Check for tool_use with write_file
+                    # Format 1: Gemini style - tool_use with write_file
                     if data.get("type") == "tool_use" and data.get("tool_name") == "write_file":
                         content = data.get("parameters", {}).get("content", "")
                         if content and "specialist" in content:
                             return content
+
+                    # Format 2: Claude CLI style - Write tool with input.content
+                    # Pattern: {"name": "Write", "input": {"file_path": "...", "content": "..."}}
+                    if data.get("name") == "Write" or "Write" in str(data.get("tool_name", "")):
+                        input_data = data.get("input", {})
+                        content = input_data.get("content", "")
+                        if content and "specialist" in content:
+                            return content
+
+                    # Format 3: Nested in content_block
+                    content_block = data.get("content_block", {})
+                    if content_block.get("name") == "Write":
+                        input_data = content_block.get("input", {})
+                        content = input_data.get("content", "")
+                        if content and "specialist" in content:
+                            return content
+
             except json.JSONDecodeError:
                 continue
+
+        # Fallback: regex search for Write tool content in raw JSONL
+        pattern = r'"Write"[^}]*"input"\s*:\s*\{[^}]*"content"\s*:\s*"(\[[\s\S]*?\])"'
+        match = re.search(pattern, jsonl_content)
+        if match:
+            # Unescape JSON string
+            content = match.group(1).replace("\\n", "\n").replace('\\"', '"')
+            if "specialist" in content:
+                return content
+
         return None
 
     def _parse_review_json(self, json_str: str, llm_name: str) -> list[ReviewIssue]:
         """Parse review JSON (list or dict of specialists)."""
         issues: list[ReviewIssue] = []
 
+        # Handle concatenated JSON arrays by extracting just the first complete one
+        json_to_parse = json_str.strip()
+        if json_to_parse.startswith("["):
+            # Find the matching closing bracket
+            bracket_count = 0
+            end_pos = 0
+            for i, char in enumerate(json_to_parse):
+                if char == "[":
+                    bracket_count += 1
+                elif char == "]":
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        end_pos = i + 1
+                        break
+            if end_pos > 0:
+                json_to_parse = json_to_parse[:end_pos]
+
         try:
-            data = json.loads(json_str)
+            data = json.loads(json_to_parse)
         except json.JSONDecodeError as e:
             logger.error(f"[RECOVERY] Failed to parse JSON: {e}")
             return issues
@@ -383,8 +427,19 @@ class ReviewRecoveryService:
         matches = re.findall(json_pattern, content)
 
         for match in matches:
+            # Try direct parse first
+            json_str = match.strip()
+
+            # Handle escaped JSON (common in JSONL output)
+            if json_str.startswith("\\n") or '\\"' in json_str:
+                json_str = json_str.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+
+            # Skip template/placeholder JSON
+            if "<specialist_name>" in json_str or "<int>" in json_str:
+                continue
+
             try:
-                data = json.loads(match)
+                data = json.loads(json_str)
                 if isinstance(data, dict) and "specialist" in data:
                     review_data = data.get("review", data)
                     spec_name = data.get("specialist", "unknown")
@@ -422,6 +477,11 @@ class ReviewRecoveryService:
                 # Fallback to ARCHITECTURE for unknown categories
                 category = IssueCategory.ARCHITECTURE
 
+            # Ensure effort is at least 1 (validation requires >= 1)
+            effort = issue_dict.get("effort", issue_dict.get("estimated_effort"))
+            if effort is not None and effort < 1:
+                effort = 1
+
             return ReviewIssue(
                 id=issue_dict.get("code", issue_dict.get("id", f"{spec_name}-{llm_name}-001")),
                 severity=severity,
@@ -436,7 +496,7 @@ class ReviewRecoveryService:
                 suggested_fix=issue_dict.get("suggested_fix", issue_dict.get("fix")),
                 references=issue_dict.get("references", []),
                 flagged_by=[llm_name, spec_name],
-                estimated_effort=issue_dict.get("effort", issue_dict.get("estimated_effort")),
+                estimated_effort=effort,
                 estimated_files_count=issue_dict.get("estimated_files_count"),
             )
         except Exception as e:
