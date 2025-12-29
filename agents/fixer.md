@@ -65,41 +65,40 @@ Collect all sub-agent responses and output final JSON.
 
 ## TODO List Format
 
-The TODO list you receive looks like this:
+The TODO list you receive has **2 sections**:
 
 ```json
 {
+  "type": "BE",
   "session_id": "abc123",
   "branch_name": "fix/abc123",
-  "groups": [
+  "parallel_group": {
+    "description": "Issues su FILE DIVERSI - lancia TUTTI insieme in UN messaggio",
+    "issues": [
+      {
+        "code": "BE-CRIT-001",
+        "file": "src/api/routes.py",
+        "title": "Missing null check",
+        "description": "...",
+        "suggested_fix": "..."
+      },
+      {
+        "code": "BE-HIGH-002",
+        "file": "src/services/auth.py",
+        "title": "Type error",
+        "description": "...",
+        "suggested_fix": "..."
+      }
+    ]
+  },
+  "serial_groups": [
     {
-      "group_id": 1,
-      "mode": "parallel",
+      "file": "src/api/routes.py",
+      "description": "Issues su STESSO FILE - lancia UNO alla volta",
       "issues": [
         {
-          "code": "FUNC-001",
-          "file": "src/services.py",
-          "title": "Missing null check",
-          "description": "...",
-          "suggested_fix": "..."
-        },
-        {
-          "code": "FUNC-002",
-          "file": "src/utils.py",
-          "title": "Type error",
-          "description": "...",
-          "suggested_fix": "..."
-        }
-      ]
-    },
-    {
-      "group_id": 2,
-      "mode": "serial",
-      "depends_on": 1,
-      "issues": [
-        {
-          "code": "FUNC-003",
-          "file": "src/services.py",
+          "code": "BE-MED-003",
+          "file": "src/api/routes.py",
           "title": "Another issue same file",
           "description": "...",
           "suggested_fix": "..."
@@ -109,6 +108,22 @@ The TODO list you receive looks like this:
   ]
 }
 ```
+
+### How to Execute:
+
+1. **STEP 1**: Create branch using Task(git-branch-creator, haiku)
+
+2. **STEP 2**: Execute `parallel_group` - launch ALL issues in ONE message:
+   ```
+   Task(fixer-single, BE-CRIT-001)  }
+   Task(fixer-single, BE-HIGH-002)  } --> ALL in SAME message = PARALLEL
+   ```
+
+3. **STEP 3**: Execute `serial_groups` - launch ONE at a time:
+   ```
+   Task(fixer-single, BE-MED-003)  --> Wait for result
+   Task(fixer-single, BE-MED-004)  --> Then next (if any)
+   ```
 
 ## Sub-Agent Prompt Template
 

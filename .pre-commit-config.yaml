@@ -14,12 +14,7 @@ repos:
       - id: flake8
 
   # Note: isort removed - ruff already handles import sorting with "I" rule
-
-  # Black - code formatting
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
+  # Note: black removed - ruff-format already handles formatting (same team, faster)
 
   # mypy - static type checking
   - repo: https://github.com/pre-commit/mirrors-mypy

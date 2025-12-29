@@ -406,6 +406,105 @@ class FixOrchestrator:
         logger.info(f"Generated TODO list at {todo_file} with {len(groups)} groups")
         return todo_file
 
+    def _generate_group_todo_list(
+        self,
+        issues: list[Issue],
+        group_type: str,  # "BE" or "FE"
+        session_id: str,
+        branch_name: str,
+    ) -> Path:
+        """Generate TODO list JSON for a specific group (BE or FE).
+
+        Creates a file with explicit parallel/serial structure:
+        - parallel_group: issues on DIFFERENT files (can run together)
+        - serial_groups: issues on SAME file (must run one at a time)
+
+        Args:
+            issues: List of issues for this group
+            group_type: "BE" or "FE"
+            session_id: Session identifier
+            branch_name: Git branch name
+
+        Returns:
+            Path to the generated TODO list JSON file
+        """
+        import tempfile
+        from collections import defaultdict
+
+        # Group issues by file
+        issues_by_file: dict[str, list[Issue]] = defaultdict(list)
+        for issue in issues:
+            file_path = str(issue.file) if issue.file else "unknown"
+            issues_by_file[file_path].append(issue)
+
+        # First issue per file -> parallel_group
+        # Remaining issues per file -> serial_groups
+        parallel_issues: list[Issue] = []
+        serial_groups: list[dict[str, Any]] = []
+
+        for file_path, file_issues in issues_by_file.items():
+            # First issue goes to parallel group
+            parallel_issues.append(file_issues[0])
+
+            # Remaining issues go to serial group for this file
+            if len(file_issues) > 1:
+                serial_groups.append(
+                    {
+                        "file": file_path,
+                        "description": "Issues su STESSO FILE - lancia UNO alla volta",
+                        "issues": [
+                            {
+                                "code": str(issue.issue_code),
+                                "file": str(issue.file) if issue.file else None,
+                                "title": issue.title,
+                                "description": issue.description,
+                                "suggested_fix": issue.suggested_fix,
+                                "severity": issue.severity,
+                                "line": issue.line,
+                                "end_line": issue.end_line,
+                            }
+                            for issue in file_issues[1:]
+                        ],
+                    }
+                )
+
+        todo_list = {
+            "type": group_type,
+            "session_id": session_id,
+            "branch_name": branch_name,
+            "repo_path": str(self.repo_path),
+            "parallel_group": {
+                "description": "Issues su FILE DIVERSI - lancia TUTTI insieme in UN messaggio",
+                "issues": [
+                    {
+                        "code": str(issue.issue_code),
+                        "file": str(issue.file) if issue.file else None,
+                        "title": issue.title,
+                        "description": issue.description,
+                        "suggested_fix": issue.suggested_fix,
+                        "severity": issue.severity,
+                        "line": issue.line,
+                        "end_line": issue.end_line,
+                    }
+                    for issue in parallel_issues
+                ],
+            },
+            "serial_groups": serial_groups,
+            "total_issues": len(issues),
+        }
+
+        # Write to temp file with group type in filename
+        filename = f"fix_todo_{group_type.lower()}_{session_id}.json"
+        todo_file = Path(tempfile.gettempdir()) / filename
+        with open(todo_file, "w", encoding="utf-8") as f:
+            json.dump(todo_list, f, indent=2)
+
+        logger.info(
+            f"Generated {group_type} TODO list at {todo_file} "
+            f"({len(parallel_issues)} parallel, {len(serial_groups)} serial groups)"
+        )
+        return todo_file
+
     def _get_challenger_prompt(self) -> str:
         """Get fix challenger prompt."""
         return self._load_agent(FIX_CHALLENGER_AGENT)
@@ -646,14 +745,28 @@ class FixOrchestrator:
             session_context = FixSessionContext()
             logger.info("[FIX] Session context initialized (Opus manages sessions internally)")
 
-            # Generate TODO list for orchestrator mode
-            all_issues = be_issues + fe_issues
-            todo_list_path = self._generate_todo_list(
-                issues=all_issues,
-                session_id=session_id,
-                branch_name=branch_name,
-            )
-            logger.info(f"[FIX] Generated TODO list: {todo_list_path}")
+            # Generate separate TODO lists for BE and FE groups
+            # Each file specifies parallel (different files) vs serial (same file) execution
+            be_todo_path: Path | None = None
+            fe_todo_path: Path | None = None
+
+            if be_issues:
+                be_todo_path = self._generate_group_todo_list(
+                    issues=be_issues,
+                    group_type="BE",
+                    session_id=session_id,
+                    branch_name=branch_name,
+                )
+                logger.info(f"[FIX] Generated BE TODO list: {be_todo_path}")
+
+            if fe_issues:
+                fe_todo_path = self._generate_group_todo_list(
+                    issues=fe_issues,
+                    group_type="FE",
+                    session_id=session_id,
+                    branch_name=branch_name,
+                )
+                logger.info(f"[FIX] Generated FE TODO list: {fe_todo_path}")
 
             for iteration in range(1, self.max_iterations + 1):
                 if iteration == 1:
@@ -757,6 +870,7 @@ class FixOrchestrator:
                     group_feedback: str,
                     group_session_ctx: FixSessionContext,
                     current_iteration: int,  # Bind loop variable to avoid B023
+                    group_todo_path: Path | None,  # TODO list specific to this group
                 ) -> BatchGroupResult:
                     """Process a group of batches (BE or FE) sequentially within the group."""
                     group_batch_updates: dict[str, dict[str, Any]] = {}
@@ -811,7 +925,7 @@ class FixOrchestrator:
                             current_iteration,
                             request.workspace_path,
                             request.user_notes,
-                            todo_list_path=todo_list_path if current_iteration == 1 else None,
+                            todo_list_path=group_todo_path if current_iteration == 1 else None,
                         )
 
                         thinking_budget = None
@@ -1122,9 +1236,9 @@ class FixOrchestrator:
                                         _,
                                     ) = await self._get_git_info()
                                     group_batch_updates[batch_id]["commit_sha"] = batch_commit_sha
-                                    group_batch_updates[batch_id][
-                                        "modified_files"
-                                    ] = batch_modified_files
+                                    group_batch_updates[batch_id]["modified_files"] = (
+                                        batch_modified_files
+                                    )
 
                                     # NOTE: Per-batch issue updates removed to prevent race condition
                                     # with fix_session_service.update_issue_statuses()
@@ -1226,11 +1340,15 @@ class FixOrchestrator:
                 tasks = []
                 if be_batch_ids:
                     tasks.append(
-                        process_batch_group(be_batch_ids, "BE", feedback_be, be_session, iteration)
+                        process_batch_group(
+                            be_batch_ids, "BE", feedback_be, be_session, iteration, be_todo_path
+                        )
                     )
                 if fe_batch_ids:
                     tasks.append(
-                        process_batch_group(fe_batch_ids, "FE", feedback_fe, fe_session, iteration)
+                        process_batch_group(
+                            fe_batch_ids, "FE", feedback_fe, fe_session, iteration, fe_todo_path
+                        )
                     )
 
                 # Run tasks in parallel
