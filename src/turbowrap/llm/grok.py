@@ -52,6 +52,8 @@ class GrokSessionStats:
     tool_calls: int = 0
     duration_ms: int = 0
     model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -62,6 +64,8 @@ class GrokSessionStats:
             "tool_calls": self.tool_calls,
             "duration_ms": self.duration_ms,
             "model": self.model,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
         }
 
 
@@ -381,6 +385,8 @@ class GrokCLI(OperationTrackingMixin):
                     duration_ms=duration_ms,
                     session_stats=session_stats,
                     tools_used=tools_used,
+                    s3_prompt_url=s3_prompt_url,
+                    s3_output_url=s3_output_url,
                 )
 
             logger.info(f"[GROK CLI] Completed in {duration_ms}ms")
@@ -431,8 +437,10 @@ class GrokCLI(OperationTrackingMixin):
         duration_ms: int,
         session_stats: GrokSessionStats | None = None,
         tools_used: set[str] | None = None,
+        s3_prompt_url: str | None = None,
+        s3_output_url: str | None = None,
     ) -> None:
-        """Complete operation in tracker."""
+        """Complete operation in tracker with session stats and S3 URLs."""
         try:
             from turbowrap.api.services.operation_tracker import get_tracker
 
@@ -442,9 +450,15 @@ class GrokCLI(OperationTrackingMixin):
             if session_stats:
                 result["session_stats"] = session_stats.to_dict()
                 result["tool_calls"] = session_stats.tool_calls
+                result["total_input_tokens"] = session_stats.input_tokens
+                result["total_output_tokens"] = session_stats.output_tokens
 
             # Add tools used (sorted for consistency)
             result["tools_used"] = sorted(tools_used) if tools_used else []
+
+            # Add S3 URLs
+            if s3_output_url:
+                result["s3_output_url"] = s3_output_url
 
             tracker.complete(operation_id, result=result)
             logger.info(
