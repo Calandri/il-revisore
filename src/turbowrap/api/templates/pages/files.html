@@ -611,7 +611,7 @@ function fileEditor() {
         // Repository and files
         selectedRepoId: '',
         selectedBranch: '',  // Track current branch for reload on change
-        fileExtension: '.md',
+        fileExtension: 'changes',
         fileTree: null,
         expandedFolders: {},
         loadingTree: false,
@@ -629,7 +629,7 @@ function fileEditor() {
         isDirty: false,
 
         // Diff view
-        viewMode: 'edit', // 'edit' | 'diff'
+        viewMode: 'diff', // 'edit' | 'diff'
         diffContent: '',
         diffLines: [],
         loadingDiff: false,
@@ -680,14 +680,28 @@ function fileEditor() {
                 const newBranch = e.detail.branch || '';
 
                 if (newRepoId !== this.selectedRepoId) {
-                    // Repo changed
+                    // Repo changed - reset everything
                     this.selectedRepoId = newRepoId;
                     this.selectedBranch = newBranch;
+                    this.currentFilePath = '';
+                    this.content = '';
+                    this.originalContent = '';
+                    this.isDirty = false;
+                    this.diffContent = '';
+                    this.diffLines = [];
                     this.loadFileTree();
+                    this.loadCommits();
                 } else if (newBranch && newBranch !== this.selectedBranch) {
-                    // Branch changed for same repo - reload file tree
+                    // Branch changed for same repo - reload everything
                     this.selectedBranch = newBranch;
+                    this.currentFilePath = '';
+                    this.content = '';
+                    this.originalContent = '';
+                    this.isDirty = false;
+                    this.diffContent = '';
+                    this.diffLines = [];
                     this.loadFileTree();
+                    this.loadCommits();
                 }
             });
 
@@ -895,7 +909,7 @@ function fileEditor() {
 
             this.loading = true;
             this.currentFilePath = path;
-            this.viewMode = 'edit';
+            this.viewMode = 'diff';
             this.viewingCommitSha = null;  // Reset commit diff view
             this.diffContent = '';
             this.diffLines = [];
@@ -918,6 +932,7 @@ function fileEditor() {
                 this.showToast('Errore connessione', 'error');
             }
             this.loading = false;
+            await this.loadDiff();
         },
 
         reloadFile() {
