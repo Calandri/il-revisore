@@ -592,6 +592,7 @@ export class IssueWidget {
           userAnswers: this.state.answers,
           geminiInsights: this.state.geminiInsights,
           teamId: this.config.teamId,
+          tempSessionId: this.state.tempSessionId,
           websiteLink: window.location.href,
           selectedElement: this.state.selectedElement || undefined,
         },

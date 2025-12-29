@@ -84,6 +84,7 @@ export class IssueAPIClient {
           user_answers: data.userAnswers,
           gemini_insights: data.geminiInsights,
           team_id: data.teamId || this.teamId,
+          temp_session_id: data.tempSessionId,
           figma_link: data.figmaLink,
           website_link: data.websiteLink,
           selected_element: data.selectedElement,

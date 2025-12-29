@@ -49,6 +49,7 @@ export interface FinalizeRequest {
   userAnswers: Record<number, string>;
   geminiInsights: string;
   teamId: string;
+  tempSessionId: string;
   figmaLink?: string;
   websiteLink?: string;
   selectedElement?: ElementInfo;
