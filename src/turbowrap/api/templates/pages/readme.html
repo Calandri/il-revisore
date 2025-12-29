@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Readme - TurboWrap{% endblock %}
+
+{% block head %}
+<!-- Mermaid.js via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+    .mermaid {
+        display: flex;
+        justify-content: center;
+    }
+    .mermaid svg {
+        max-width: 100%;
+        height: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="h-[calc(100vh-3rem)] flex flex-col" x-data="readmePage()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-4 shrink-0">
+        <div>
+            <h1 class="text-2xl font-bold flex items-center gap-2 flex-wrap">
+                <span>Readme</span>
+                <template x-if="$store.globalContext?.selectedRepo">
+                    <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
+                        per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
+                    </span>
+                </template>
+            </h1>
+            <p class="text-gray-500 dark:text-gray-400">Genera diagrammi architetturali con AI</p>
+        </div>
+        <div class="flex gap-2">
+            <button @click="openReadmeChat()"
+                    :disabled="!selectedRepoId"
+                    :title="!selectedRepoId ? 'Seleziona prima un repository dal footer' : 'Genera Readme'"
+                    class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <span class="flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Genera Readme
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col min-h-0">
+
+        <!-- Loading State -->
+        <div x-show="loading" class="flex-1 flex justify-center items-center">
+            <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+        </div>
+
+        <!-- Empty State - No Repository Selected -->
+        <div x-show="!loading && !selectedRepoId"
+             class="flex-1 flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center max-w-md">
+                <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-medium mb-2">Seleziona un Repository</h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">Seleziona un repository dal footer per generare il diagramma architetturale</p>
+            </div>
+        </div>
+
+        <!-- Empty State - No Readme Yet -->
+        <div x-show="!loading && selectedRepoId && !mermaidCode"
+             class="flex-1 flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center max-w-md">
+                <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-medium mb-2">Nessun Readme Generato</h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">Clicca sul pulsante per generare un diagramma architetturale del repository</p>
+                <button @click="openReadmeChat()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                    Genera Readme
+                </button>
+            </div>
+        </div>
+
+        <!-- Diagram View -->
+        <div x-show="!loading && selectedRepoId && mermaidCode"
+             class="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+
+            <!-- Toolbar -->
+            <div class="p-3 border-b dark:border-gray-700 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-900">
+                <div class="flex items-center gap-3">
+                    <span class="font-medium">Architettura</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- View Toggle -->
+                    <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                        <button @click="viewMode = 'diagram'"
+                                :class="viewMode === 'diagram' ? 'bg-white dark:bg-gray-800 shadow-sm' : ''"
+                                class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
+                            Diagramma
+                        </button>
+                        <button @click="viewMode = 'code'"
+                                :class="viewMode === 'code' ? 'bg-white dark:bg-gray-800 shadow-sm' : ''"
+                                class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
+                            Codice
+                        </button>
+                    </div>
+                    <!-- Copy Button -->
+                    <button @click="copyMermaidCode()"
+                            class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="Copia codice Mermaid">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                    </button>
+                    <!-- Regenerate Button -->
+                    <button @click="openReadmeChat()"
+                            class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="Rigenera">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Diagram View -->
+            <div x-show="viewMode === 'diagram'" class="flex-1 overflow-auto p-6">
+                <div class="mermaid" x-ref="mermaidContainer"></div>
+            </div>
+
+            <!-- Code View -->
+            <div x-show="viewMode === 'code'" class="flex-1 overflow-hidden">
+                <textarea x-model="mermaidCode"
+                          @input.debounce.500ms="renderDiagram()"
+                          class="w-full h-full p-4 font-mono text-sm bg-gray-900 text-green-400 focus:outline-none resize-none"
+                          placeholder="graph TD..."></textarea>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div x-show="!loading && selectedRepoId && mermaidCode"
+             class="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 shrink-0">
+            <h3 class="font-semibold mb-3 text-sm">Legenda</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded bg-blue-500"></div>
+                    <span class="text-sm text-gray-600 dark:text-gray-400">API / Backend</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded bg-green-500"></div>
+                    <span class="text-sm text-gray-600 dark:text-gray-400">Database</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded bg-purple-500"></div>
+                    <span class="text-sm text-gray-600 dark:text-gray-400">Frontend</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded bg-orange-500"></div>
+                    <span class="text-sm text-gray-600 dark:text-gray-400">External Services</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize Mermaid with dark mode support
+mermaid.initialize({
+    startOnLoad: false,
+    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+    securityLevel: 'loose',
+    flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis'
+    }
+});
+
+function readmePage() {
+    return {
+        loading: false,
+        viewMode: 'diagram',
+        mermaidCode: '',
+        selectedRepoId: '',
+
+        async init() {
+            // Sync with global context
+            const store = Alpine.store('globalContext');
+            if (store?.selectedRepoId) {
+                this.selectedRepoId = store.selectedRepoId;
+            }
+
+            // Watch for changes
+            window.addEventListener('global-context-changed', (e) => {
+                this.selectedRepoId = e.detail.repoId || '';
+                // Reset when repo changes
+                this.mermaidCode = '';
+            });
+
+            // Listen for readme generation complete
+            window.addEventListener('readme-generated', (e) => {
+                if (e.detail.mermaidCode) {
+                    this.mermaidCode = e.detail.mermaidCode;
+                    this.$nextTick(() => this.renderDiagram());
+                }
+            });
+
+            // Watch for dark mode changes
+            const observer = new MutationObserver(() => {
+                const isDark = document.documentElement.classList.contains('dark');
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: isDark ? 'dark' : 'default',
+                    securityLevel: 'loose'
+                });
+                if (this.mermaidCode) {
+                    this.renderDiagram();
+                }
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        },
+
+        openReadmeChat() {
+            if (!this.selectedRepoId) {
+                this.showToast('Seleziona prima un repository', 'error');
+                return;
+            }
+
+            const store = Alpine.store('globalContext');
+            const repoName = store?.selectedRepo?.name || '';
+            const command = `/readme`;
+
+            console.log('[readme] Opening chat with command:', command);
+            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+                detail: { command, newSession: true }
+            }));
+        },
+
+        async renderDiagram() {
+            try {
+                const container = this.$refs.mermaidContainer;
+                if (!container || !this.mermaidCode) return;
+
+                // Clear previous
+                container.innerHTML = '';
+
+                // Generate unique ID
+                const id = 'mermaid-' + Date.now();
+
+                // Render
+                const { svg } = await mermaid.render(id, this.mermaidCode);
+                container.innerHTML = svg;
+            } catch (error) {
+                console.error('Mermaid render error:', error);
+                this.showToast('Errore nel rendering del diagramma', 'error');
+            }
+        },
+
+        async copyMermaidCode() {
+            try {
+                await navigator.clipboard.writeText(this.mermaidCode);
+                this.showToast('Codice copiato!', 'success');
+            } catch (error) {
+                this.showToast('Errore nella copia', 'error');
+            }
+        },
+
+        showToast(message, type) {
+            window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: { message, type }
+            }));
+        }
+    };
+}
+</script>
+{% endblock %}

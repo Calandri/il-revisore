@@ -145,6 +145,49 @@
                   class="w-2 h-2 rounded-full bg-yellow-400"
                   title="Uncommitted changes"></span>
         </div>
+
+        <!-- Separator -->
+        <div x-show="$store.globalContext.selectedRepoId && syncStatus?.ahead > 0"
+             class="w-px h-3 bg-white/20"></div>
+
+        <!-- Push Button (visible when ahead > 0) -->
+        <button x-show="$store.globalContext.selectedRepoId && syncStatus?.ahead > 0"
+                @click="pushToRemote()"
+                :disabled="gitLoading"
+                class="h-full px-2 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
+                :class="{ 'opacity-50 cursor-not-allowed': gitLoading }"
+                title="Push commits to remote">
+            <svg class="w-3.5 h-3.5" :class="{ 'animate-spin': gitLoading === 'push' }" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z"/>
+            </svg>
+            <span class="text-[10px]">Push</span>
+        </button>
+
+        <!-- New Branch Button (visible when ahead > 0) -->
+        <button x-show="$store.globalContext.selectedRepoId && syncStatus?.ahead > 0"
+                @click="moveCommitsToNewBranch()"
+                :disabled="gitLoading"
+                class="h-full px-2 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
+                :class="{ 'opacity-50 cursor-not-allowed': gitLoading }"
+                title="Move commits to new branch">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z"/>
+            </svg>
+            <span class="text-[10px]">Branch</span>
+        </button>
+
+        <!-- Merge to Main Button (visible when NOT on main/master) -->
+        <button x-show="$store.globalContext.selectedRepoId && syncStatus && !['main', 'master'].includes(syncStatus.branch)"
+                @click="mergeToMain()"
+                :disabled="gitLoading"
+                class="h-full px-2 flex items-center gap-1 hover:bg-white/10 transition-colors cursor-pointer"
+                :class="{ 'opacity-50 cursor-not-allowed': gitLoading }"
+                title="Merge current branch into main">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.5 2.5 0 0 0 6 8.5h1.5V14a1 1 0 0 0 1 1h.5a1 1 0 0 0 1-1V8.5H11.5a2.5 2.5 0 0 0 2.5-2.5v-.878a2.25 2.25 0 1 0-1.5 0V6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-.628zM11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
+            </svg>
+            <span class="text-[10px]">Merge</span>
+        </button>
     </div>
 
     <!-- Right section: spacer -->
@@ -158,6 +201,7 @@ function globalContextFooter() {
         showBranchDropdown: false,
         syncStatus: null,
         syncLoading: false,
+        gitLoading: false, // 'push', 'branch', 'merge' or false
         highlighted: false,
         pollInterval: null,
         POLL_INTERVAL_MS: 30000, // 30 seconds
@@ -333,6 +377,123 @@ function globalContextFooter() {
                 }));
             } finally {
                 this.syncLoading = false;
+            }
+        },
+
+        async pushToRemote() {
+            const repoId = Alpine.store('globalContext').selectedRepoId;
+            if (!repoId || this.gitLoading) return;
+
+            this.gitLoading = 'push';
+            try {
+                const res = await fetch(`/api/git/repositories/${repoId}/push`, {
+                    method: 'POST'
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: 'Push completed successfully', type: 'success' }
+                    }));
+                } else {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Push failed: ${result.message}`, type: 'error' }
+                    }));
+                }
+
+                await this.loadSyncStatus();
+            } catch (e) {
+                console.error('[globalContextFooter] Push failed:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Push failed', type: 'error' }
+                }));
+            } finally {
+                this.gitLoading = false;
+            }
+        },
+
+        async moveCommitsToNewBranch() {
+            const repoId = Alpine.store('globalContext').selectedRepoId;
+            if (!repoId || this.gitLoading) return;
+
+            const branchName = prompt('Enter new branch name:');
+            if (!branchName || !branchName.trim()) return;
+
+            this.gitLoading = 'branch';
+            try {
+                const res = await fetch(`/api/git/repositories/${repoId}/move-commits-to-branch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_branch_name: branchName.trim() })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: result.message, type: 'success' }
+                    }));
+                    // Reload branches and update selected branch
+                    await Alpine.store('globalContext').loadBranches();
+                    Alpine.store('globalContext').selectedBranch = branchName.trim();
+                } else {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Failed: ${result.message}`, type: 'error' }
+                    }));
+                }
+
+                await this.loadSyncStatus();
+            } catch (e) {
+                console.error('[globalContextFooter] Move commits failed:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Move commits failed', type: 'error' }
+                }));
+            } finally {
+                this.gitLoading = false;
+            }
+        },
+
+        async mergeToMain() {
+            const repoId = Alpine.store('globalContext').selectedRepoId;
+            if (!repoId || this.gitLoading) return;
+
+            const currentBranch = this.syncStatus?.branch || Alpine.store('globalContext').selectedBranch;
+            if (!confirm(`Merge "${currentBranch}" into main?\n\nThis will switch you to the main branch.`)) {
+                return;
+            }
+
+            this.gitLoading = 'merge';
+            try {
+                const res = await fetch(`/api/git/repositories/${repoId}/merge-to-main`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ push_after_merge: false })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: result.message, type: 'success' }
+                    }));
+                    // Update selected branch to main
+                    await Alpine.store('globalContext').loadBranches();
+                    // Determine which main branch exists
+                    const branches = Alpine.store('globalContext').branches;
+                    const mainBranch = branches.includes('main') ? 'main' : 'master';
+                    Alpine.store('globalContext').selectedBranch = mainBranch;
+                } else {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Merge failed: ${result.message}`, type: 'error' }
+                    }));
+                }
+
+                await this.loadSyncStatus();
+            } catch (e) {
+                console.error('[globalContextFooter] Merge failed:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Merge failed', type: 'error' }
+                }));
+            } finally {
+                this.gitLoading = false;
             }
         }
     };

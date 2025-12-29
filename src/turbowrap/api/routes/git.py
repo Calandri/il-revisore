@@ -112,6 +112,18 @@ class StashPopRequest(BaseModel):
     index: int = 0
 
 
+class MoveCommitsToBranchRequest(BaseModel):
+    """Move commits to a new branch request."""
+
+    new_branch_name: str
+
+
+class MergeToMainRequest(BaseModel):
+    """Merge current branch to main/master request."""
+
+    push_after_merge: bool = False
+
+
 class StashEntry(BaseModel):
     """Stash entry info."""
 
@@ -470,6 +482,214 @@ async def smart_push_remote(
 
         return result
     except Exception as e:
+        tracker.fail(op_id, error=str(e))
+        return GitOperationResult(success=False, message=str(e))
+
+
+@router.post("/repositories/{repo_id}/move-commits-to-branch", response_model=GitOperationResult)
+def move_commits_to_branch(
+    repo_id: str, request: MoveCommitsToBranchRequest, db: Session = Depends(get_db)
+) -> GitOperationResult:
+    """Move unpushed commits to a new branch and reset current branch.
+
+    This operation:
+    1. Creates a new branch with the current commits
+    2. Resets the original branch to match remote
+    3. Switches to the new branch
+    """
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+    repo_name = _extract_repo_name(repo)
+    current_branch = get_current_branch_util(repo_path)
+
+    # Validate branch name
+    new_branch = request.new_branch_name.strip()
+    if not new_branch:
+        return GitOperationResult(success=False, message="Branch name cannot be empty")
+
+    # Check if branch already exists
+    try:
+        existing_branches = list_branches_util(repo_path, include_remote=False)
+        if new_branch in existing_branches:
+            return GitOperationResult(
+                success=False, message=f"Branch '{new_branch}' already exists"
+            )
+    except Exception:
+        pass
+
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.GIT_CHECKOUT,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=current_branch,
+        details={"action": "move_commits_to_branch", "new_branch": new_branch},
+    )
+
+    try:
+        # 1. Create new branch from current HEAD
+        run_git_command(repo_path, ["branch", new_branch])
+
+        # 2. Reset current branch to remote
+        try:
+            run_git_command(repo_path, ["reset", "--hard", f"origin/{current_branch}"])
+        except Exception as reset_err:
+            # If no remote tracking, just leave it as is and switch to new branch
+            logger.warning(f"[GIT] Could not reset to origin/{current_branch}: {reset_err}")
+
+        # 3. Checkout the new branch
+        run_git_command(repo_path, ["checkout", new_branch])
+
+        tracker.complete(op_id, result={"new_branch": new_branch})
+        return GitOperationResult(
+            success=True,
+            message=f"Commits moved to '{new_branch}'. Now on '{new_branch}'.",
+            output=f"Created and switched to branch '{new_branch}'",
+        )
+    except Exception as e:
+        tracker.fail(op_id, error=str(e))
+        return GitOperationResult(success=False, message=str(e))
+
+
+@router.post("/repositories/{repo_id}/merge-to-main", response_model=GitOperationResult)
+async def merge_to_main(
+    repo_id: str, request: MergeToMainRequest, db: Session = Depends(get_db)
+) -> GitOperationResult:
+    """Merge current branch into main/master and stay on main.
+
+    This operation:
+    1. Saves the current branch name
+    2. Determines main branch (main or master)
+    3. Checkouts main and pulls latest
+    4. Merges the source branch (with AI conflict resolution if needed)
+    5. Optionally pushes to remote
+    6. Stays on main
+    """
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+    repo_name = _extract_repo_name(repo)
+    source_branch = get_current_branch_util(repo_path)
+
+    # Check if already on main/master
+    if source_branch in ("main", "master"):
+        return GitOperationResult(success=False, message="Already on main/master branch")
+
+    # Determine the main branch name
+    try:
+        branches = list_branches_util(repo_path, include_remote=False)
+        if "main" in branches:
+            main_branch = "main"
+        elif "master" in branches:
+            main_branch = "master"
+        else:
+            return GitOperationResult(success=False, message="No main or master branch found")
+    except Exception as e:
+        return GitOperationResult(success=False, message=f"Failed to list branches: {e}")
+
+    tracker = get_tracker()
+    op_id = str(uuid.uuid4())
+    tracker.register(
+        op_type=OperationType.GIT_MERGE,
+        operation_id=op_id,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        branch=main_branch,
+        details={
+            "action": "merge_to_main",
+            "source_branch": source_branch,
+            "target_branch": main_branch,
+            "push_after": request.push_after_merge,
+        },
+    )
+
+    try:
+        # 1. Checkout main
+        run_git_command(repo_path, ["checkout", main_branch])
+
+        # 2. Pull latest
+        try:
+            run_git_command(repo_path, ["pull"])
+        except Exception as pull_err:
+            logger.warning(f"[GIT] Pull failed (continuing): {pull_err}")
+
+        # 3. Merge source branch
+        try:
+            merge_output = run_git_command(repo_path, ["merge", source_branch])
+        except Exception as merge_err:
+            err_msg = str(merge_err)
+            is_conflict = "CONFLICT" in err_msg or "conflict" in err_msg.lower()
+
+            if is_conflict:
+                logger.info("[GIT] Merge conflict detected, calling Gemini...")
+                result = await resolve_conflicts_with_gemini(
+                    repo_path=repo_path,
+                    context_desc=f"Merge {source_branch} into {main_branch}",
+                    op_id=op_id,
+                )
+
+                if result.success:
+                    try:
+                        commit_msg = f"Merge {source_branch}: AI-resolved conflicts"
+                        run_git_command(repo_path, ["commit", "-m", commit_msg])
+                        merge_output = "Merge completed with AI resolution"
+                    except Exception as commit_err:
+                        # Abort merge and go back to source branch
+                        try:
+                            run_git_command(repo_path, ["merge", "--abort"])
+                        except Exception:
+                            pass
+                        run_git_command(repo_path, ["checkout", source_branch])
+                        tracker.fail(op_id, error=f"Commit failed: {commit_err}")
+                        return GitOperationResult(
+                            success=False, message=f"Commit failed: {commit_err}"
+                        )
+                else:
+                    # Abort merge and go back to source branch
+                    try:
+                        run_git_command(repo_path, ["merge", "--abort"])
+                    except Exception:
+                        pass
+                    run_git_command(repo_path, ["checkout", source_branch])
+                    tracker.fail(op_id, error=result.message)
+                    return GitOperationResult(
+                        success=False, message=f"AI resolution failed: {result.message}"
+                    )
+            else:
+                # Non-conflict error, abort and return
+                try:
+                    run_git_command(repo_path, ["merge", "--abort"])
+                except Exception:
+                    pass
+                run_git_command(repo_path, ["checkout", source_branch])
+                tracker.fail(op_id, error=err_msg)
+                return GitOperationResult(success=False, message=err_msg)
+
+        # 4. Push if requested
+        push_output = ""
+        if request.push_after_merge:
+            try:
+                push_output = run_git_command(repo_path, ["push"])
+            except Exception as push_err:
+                logger.warning(f"[GIT] Push failed: {push_err}")
+                push_output = f"Push failed: {push_err}"
+
+        # 5. Stay on main (already there)
+        final_msg = f"Merged '{source_branch}' into '{main_branch}'"
+        if push_output:
+            final_msg += f". {push_output}"
+
+        tracker.complete(op_id, result={"output": final_msg[:200]})
+        return GitOperationResult(
+            success=True,
+            message=final_msg,
+            output=merge_output,
+        )
+    except Exception as e:
+        # Try to go back to source branch on any unexpected error
+        try:
+            run_git_command(repo_path, ["checkout", source_branch])
+        except Exception:
+            pass
         tracker.fail(op_id, error=str(e))
         return GitOperationResult(success=False, message=str(e))
 

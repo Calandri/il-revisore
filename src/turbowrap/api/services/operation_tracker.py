@@ -35,6 +35,7 @@ class OperationType(str, Enum):
     GIT_MERGE = "git_merge"
     GIT_PUSH = "git_push"
     GIT_PULL = "git_pull"
+    GIT_CHECKOUT = "git_checkout"
 
     CLONE = "clone"
     SYNC = "sync"

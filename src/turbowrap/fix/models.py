@@ -299,6 +299,11 @@ class IssueFixResult(BaseModel):
     started_at: datetime | None = Field(default=None)
     completed_at: datetime | None = Field(default=None)
 
+    # False positive flag - issue doesn't exist in code
+    false_positive: bool = Field(
+        default=False, description="True if issue was a false positive (no fix needed)"
+    )
+
 
 class FixSessionResult(BaseModel):
     """Result of a complete fix session."""

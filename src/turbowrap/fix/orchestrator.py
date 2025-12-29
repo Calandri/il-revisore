@@ -293,6 +293,107 @@ class FixOrchestrator:
 
         return be_issues, fe_issues
 
+    def _generate_todo_list(self, issues: list[Issue], session_id: str, branch_name: str) -> Path:
+        """Generate TODO list JSON for the fixer orchestrator.
+
+        Groups issues by file:
+        - Issues on different files -> parallel group
+        - Issues on same file -> serial group (depends on parallel group)
+
+        Args:
+            issues: List of issues to fix
+            session_id: Session identifier
+            branch_name: Git branch name to create
+
+        Returns:
+            Path to the generated TODO list JSON file
+        """
+        import tempfile
+        from collections import defaultdict
+
+        # Group issues by file
+        issues_by_file: dict[str, list[Issue]] = defaultdict(list)
+        for issue in issues:
+            file_path = str(issue.file) if issue.file else "unknown"
+            issues_by_file[file_path].append(issue)
+
+        groups = []
+        group_id = 1
+
+        # First group: one issue per file (parallel)
+        parallel_issues = []
+        serial_issues_by_file: dict[str, list[Issue]] = {}
+
+        for file_path, file_issues in issues_by_file.items():
+            # First issue goes to parallel group
+            parallel_issues.append(file_issues[0])
+            # Remaining issues go to serial groups
+            if len(file_issues) > 1:
+                serial_issues_by_file[file_path] = file_issues[1:]
+
+        # Create parallel group
+        if parallel_issues:
+            groups.append(
+                {
+                    "group_id": group_id,
+                    "mode": "parallel",
+                    "issues": [
+                        {
+                            "code": str(issue.issue_code),
+                            "file": str(issue.file) if issue.file else None,
+                            "title": issue.title,
+                            "description": issue.description,
+                            "suggested_fix": issue.suggested_fix,
+                            "severity": issue.severity,
+                            "line": issue.line,
+                            "end_line": issue.end_line,
+                        }
+                        for issue in parallel_issues
+                    ],
+                }
+            )
+            group_id += 1
+
+        # Create serial groups for remaining issues (one group per file)
+        for _file_path, remaining_issues in serial_issues_by_file.items():
+            for issue in remaining_issues:
+                groups.append(
+                    {
+                        "group_id": group_id,
+                        "mode": "serial",
+                        "depends_on": 1,  # Depends on the parallel group
+                        "issues": [
+                            {
+                                "code": str(issue.issue_code),
+                                "file": str(issue.file) if issue.file else None,
+                                "title": issue.title,
+                                "description": issue.description,
+                                "suggested_fix": issue.suggested_fix,
+                                "severity": issue.severity,
+                                "line": issue.line,
+                                "end_line": issue.end_line,
+                            }
+                        ],
+                    }
+                )
+                group_id += 1
+
+        todo_list = {
+            "session_id": session_id,
+            "branch_name": branch_name,
+            "repo_path": str(self.repo_path),
+            "groups": groups,
+            "total_issues": len(issues),
+        }
+
+        # Write to temp file
+        todo_file = Path(tempfile.gettempdir()) / f"fix_todo_{session_id}.json"
+        with open(todo_file, "w", encoding="utf-8") as f:
+            json.dump(todo_list, f, indent=2)
+
+        logger.info(f"Generated TODO list at {todo_file} with {len(groups)} groups")
+        return todo_file
+
     def _get_challenger_prompt(self) -> str:
         """Get fix challenger prompt."""
         return self._load_agent(FIX_CHALLENGER_AGENT)
@@ -308,11 +409,12 @@ class FixOrchestrator:
             Code snippet with line numbers, or empty string if file not found
         """
         if issue.current_code:
-            line_info = (
-                f"(lines {issue.line}-{issue.end_line})"
-                if issue.line and issue.end_line
-                else f"(line {issue.line})" if issue.line else ""
-            )
+            if issue.line and issue.end_line:
+                line_info = f"(lines {issue.line}-{issue.end_line})"
+            elif issue.line:
+                line_info = f"(line {issue.line})"
+            else:
+                line_info = ""
             return f"{line_info}\n{issue.current_code}"
 
         if not issue.line:
@@ -437,36 +539,19 @@ class FixOrchestrator:
                 if proc.returncode != 0:
                     raise Exception(f"Failed to checkout branch {branch_name}: {stderr.decode()}")
             else:
-                branch_creator_prompt = self._load_agent(GIT_BRANCH_CREATOR_AGENT)
-                branch_creator_prompt = branch_creator_prompt.replace("{branch_name}", branch_name)
-                branch_result = await self._run_claude_cli(
-                    branch_creator_prompt,
-                    timeout=60,
-                    model="haiku",
-                    parent_session_id=session_id,
-                    agent_type="branch_creator",
-                )
-
-                # Capture branch session ID for later reuse (FASE 3)
-                branch_session_id = branch_result.session_id
+                # Branch creation is now handled by the Opus orchestrator internally
+                # via Task tool with haiku model (Step 1 in fixer.md)
                 logger.info(
-                    f"[FIX] Branch created with session: {branch_session_id[:8] if branch_session_id else 'N/A'}... "
-                    f"(will be propagated to fix and commit phases)"
+                    f"[FIX] Branch '{branch_name}' will be created by Opus orchestrator "
+                    f"via Task tool (haiku model)"
                 )
-
-                # Check for errors
-                if not branch_result.success:
-                    specific_error = branch_result.error or "Unknown error"
-                    error_msg = f"Failed to create branch '{branch_name}': {specific_error}"
-                    logger.error(f"[FIX] {error_msg}")
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_ISSUE_STREAMING,
-                            session_id=session_id,
-                            message=f"❌ {error_msg}",
-                        )
+                await safe_emit(
+                    FixProgressEvent(
+                        type=FixEventType.FIX_ISSUE_STREAMING,
+                        session_id=session_id,
+                        message=f"Branch '{branch_name}' will be created by Opus orchestrator",
                     )
-                    raise Exception(error_msg)
+                )
 
             feedback_be = ""
             feedback_fe = ""
@@ -532,34 +617,66 @@ class FixOrchestrator:
             successful_issues: list[Issue] = []
             failed_issues: list[Issue] = []
 
-            # Initialize session context with branch session if available (FASE 4)
-            if not request.use_existing_branch and branch_session_id:
-                # Unified session mode: propagate branch session to fix and commit phases
-                session_context = FixSessionContext(
-                    branch_session_id=branch_session_id,
-                    claude_session_id=branch_session_id,  # Start with same session
-                )
-                logger.info(
-                    f"[FIX] ✓ Unified session mode enabled: {branch_session_id[:8]}... "
-                    f"(fix and commit will reuse cache from branch creation)"
-                )
-            else:
-                # Fallback to isolated sessions
-                session_context = FixSessionContext()
-                logger.info("[FIX] Using isolated sessions (no branch session to propagate)")
+            # Per-issue status tracking (SOLVED vs IN_PROGRESS)
+            # Key: issue_code, Value: {"status": "SOLVED"|"IN_PROGRESS", "score": float, "issue": Issue}
+            issue_status_map: dict[str, dict[str, Any]] = {}
+            for issue in be_issues + fe_issues:
+                issue_status_map[str(issue.issue_code)] = {
+                    "status": "IN_PROGRESS",
+                    "score": 0.0,
+                    "issue": issue,
+                }
+
+            # Initialize session context for fix operations
+            # Note: Branch creation is now handled internally by Opus orchestrator via Task tool
+            # so we don't have a branch_session_id to propagate. Each Opus CLI call manages
+            # its own session internally.
+            session_context = FixSessionContext()
+            logger.info("[FIX] Session context initialized (Opus manages sessions internally)")
+
+            # Generate TODO list for orchestrator mode
+            all_issues = be_issues + fe_issues
+            todo_list_path = self._generate_todo_list(
+                issues=all_issues,
+                session_id=session_id,
+                branch_name=branch_name,
+            )
+            logger.info(f"[FIX] Generated TODO list: {todo_list_path}")
 
             for iteration in range(1, self.max_iterations + 1):
                 if iteration == 1:
                     batches_to_process = list(batch_results.keys())
                 else:
-                    batches_to_process = [
-                        batch_id
-                        for batch_id, result in batch_results.items()
-                        if not result["passed"]
-                    ]
+                    # For retry iterations: only include batches that have IN_PROGRESS issues
+                    # Also update batch issues to exclude SOLVED ones
+                    batches_to_process = []
+                    for batch_id, batch_info in batch_results.items():
+                        if batch_info["passed"]:
+                            continue  # Skip already passed batches
+
+                        # Filter out SOLVED issues from this batch
+                        original_issues = batch_info["issues"]
+                        remaining_issues = [
+                            issue
+                            for issue in original_issues
+                            if issue_status_map.get(str(issue.issue_code), {}).get("status")
+                            == "IN_PROGRESS"
+                        ]
+
+                        if remaining_issues:
+                            # Update batch with only IN_PROGRESS issues
+                            batch_results[batch_id]["issues"] = remaining_issues
+                            batches_to_process.append(batch_id)
+                            logger.info(
+                                f"[FIX] {batch_id}: {len(remaining_issues)}/{len(original_issues)} issues need retry"
+                            )
+                        else:
+                            # All issues in this batch are SOLVED
+                            batch_results[batch_id]["passed"] = True
+                            logger.info(f"[FIX] {batch_id}: All issues SOLVED, skipping retry")
 
                 if not batches_to_process:
-                    logger.info("All batches passed, no more retries needed")
+                    logger.info("All issues SOLVED, no more retries needed")
                     break
 
                 be_retry = [b for b in batches_to_process if b.startswith("BE")]
@@ -648,6 +765,7 @@ class FixOrchestrator:
                         iteration,
                         request.workspace_path,
                         request.user_notes,
+                        todo_list_path=todo_list_path if iteration == 1 else None,
                     )
                     if iteration == 1:
                         claude_prompts.append(
@@ -735,138 +853,182 @@ class FixOrchestrator:
                         )
                         continue
 
-                    # Iteration 2+ (re-fix): Skip Gemini review, commit directly
-                    # The re-fixer already critically evaluated the feedback
-                    if iteration > 1:
-                        await safe_emit(
-                            FixProgressEvent(
-                                type=FixEventType.FIX_ISSUE_STREAMING,
-                                session_id=session_id,
-                                message=f"   ✅ {batch_id} Re-fix complete, "
-                                f"committing directly (no re-review)...",
-                            )
+                    # CHECK: Verify there are actual uncommitted changes
+                    # If fixer identified a false positive, there will be no changes to commit
+                    # FALSE POSITIVE = issue doesn't exist = SOLVED (nothing to fix)
+                    uncommitted_files = await self._get_uncommitted_files()
+                    if not uncommitted_files:
+                        logger.info(
+                            f"{batch_id}: No uncommitted changes found - "
+                            f"false positive detected, marking as SOLVED"
                         )
-                        # Mark as passed and proceed to commit
+                        await emit_log(
+                            "INFO",
+                            f"{batch_id}: False positive - issue doesn't exist, marking SOLVED",
+                        )
+                        # False positive = SOLVED (nothing to fix means issue is resolved)
                         batch_results[batch_id]["passed"] = True
-                        batch_results[batch_id]["score"] = 100.0  # Trust re-fixer
-                        score = 100.0  # For the commit flow below
-                    else:
-                        # Iteration 1: Run Gemini review
+                        batch_results[batch_id]["score"] = 100.0
+                        batch_results[batch_id]["false_positive"] = True
+                        successful_issues.extend(batch)
                         await safe_emit(
                             FixProgressEvent(
                                 type=FixEventType.FIX_ISSUE_STREAMING,
                                 session_id=session_id,
-                                message=f"   ✅ {batch_id} Claude fix complete, "
-                                f"running Gemini review...",
+                                message=f"   ✅ {batch_id} false positive - no fix needed (SOLVED)",
                             )
                         )
+                        continue
 
-                        # Step 2: Run Gemini review for THIS BATCH immediately
+                    # ALWAYS run Gemini review (even after re-fix in iteration 2+)
+                    # This ensures proper per-issue evaluation with SOLVED/IN_PROGRESS status
+                    review_label = "Re-fix" if iteration > 1 else "Fix"
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_ISSUE_STREAMING,
+                            session_id=session_id,
+                            message=f"   ✅ {batch_id} Claude {review_label.lower()} complete, "
+                            f"running Gemini review...",
+                        )
+                    )
+
+                    # Step 2: Run Gemini review for THIS BATCH immediately
+                    await safe_emit(
+                        FixProgressEvent(
+                            type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                            session_id=session_id,
+                            message=f"🔍 Gemini reviewing {batch_id}...",
+                        )
+                    )
+
+                    review_prompt = self._build_review_prompt_per_batch(
+                        batch, batch_type, batch_idx, request.workspace_path
+                    )
+                    if completed_batches == 1:
+                        gemini_prompt = review_prompt  # Save first for S3 logging
+
+                    # Atomic tracking at leaf level
+                    try:
+                        gemini_result = await self.gemini_cli.run(
+                            review_prompt,
+                            operation_type="review",
+                            repo_name=self.repo_path.name,
+                            on_chunk=on_chunk_gemini,
+                            track_operation=True,  # Atomic tracking at leaf level
+                            operation_details={
+                                "parent_session_id": session_id,
+                                "session_id": session_id,  # For UI display
+                                "agent_type": "reviewer",
+                                "batch_id": batch_id,
+                                "iteration": iteration,
+                            },
+                        )
+                        gemini_output = gemini_result.output if gemini_result.success else None
+                        last_gemini_output = gemini_output
+                    except Exception as e:
+                        logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
+                        await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
+                        gemini_output = None
+
+                    # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
+
+                    if gemini_output is None:
+                        logger.warning(
+                            f"Gemini CLI failed for {batch_id}, accepting fix without review"
+                        )
+                        await emit_log(
+                            "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
+                        )
+                        batch_results[batch_id]["passed"] = True
+                        batch_results[batch_id]["score"] = 100.0
+                        successful_issues.extend(batch)
+                        continue
+
+                    score, failed_issue_codes, per_issue_scores, per_issue_data = (
+                        self._parse_batch_review(gemini_output, batch)
+                    )
+                    batch_results[batch_id]["score"] = score
+                    batch_results[batch_id]["failed_issues"] = failed_issue_codes
+                    batch_results[batch_id]["per_issue_data"] = per_issue_data
+
+                    # Update per-issue status map based on Gemini review (90% threshold)
+                    SOLVED_THRESHOLD = 90.0
+                    solved_in_batch = []
+                    in_progress_in_batch = []
+                    for issue in batch:
+                        code = str(issue.issue_code)
+                        issue_score = per_issue_scores.get(code, score)  # Fallback to batch score
+                        if issue_score >= SOLVED_THRESHOLD:
+                            issue_status_map[code]["status"] = "SOLVED"
+                            issue_status_map[code]["score"] = issue_score
+                            solved_in_batch.append(code)
+                        else:
+                            issue_status_map[code]["status"] = "IN_PROGRESS"
+                            issue_status_map[code]["score"] = issue_score
+                            in_progress_in_batch.append(code)
+
+                    if solved_in_batch:
+                        logger.info(f"[FIX] {batch_id} SOLVED issues: {', '.join(solved_in_batch)}")
+                    if in_progress_in_batch:
+                        logger.info(
+                            f"[FIX] {batch_id} IN_PROGRESS issues: {', '.join(in_progress_in_batch)}"
+                        )
+
+                    if per_issue_scores:
+                        scores_summary = " | ".join(
+                            [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
+                        )
                         await safe_emit(
                             FixProgressEvent(
-                                type=FixEventType.FIX_CHALLENGER_EVALUATING,
+                                type=FixEventType.FIX_CHALLENGER_RESULT,
                                 session_id=session_id,
-                                message=f"🔍 Gemini reviewing {batch_id}...",
+                                message=f"   📊 {batch_id} score: {score}/100 | "
+                                f"Per-issue: {scores_summary}",
+                                quality_scores=per_issue_data if per_issue_data else None,
                             )
                         )
-
-                        review_prompt = self._build_review_prompt_per_batch(
-                            batch, batch_type, batch_idx, request.workspace_path
+                    else:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_CHALLENGER_RESULT,
+                                session_id=session_id,
+                                message=f"   📊 {batch_id} score: {score}/100",
+                                quality_scores=per_issue_data if per_issue_data else None,
+                            )
                         )
-                        if completed_batches == 1:
-                            gemini_prompt = review_prompt  # Save first for S3 logging
-
-                        # Atomic tracking at leaf level
-                        try:
-                            gemini_result = await self.gemini_cli.run(
-                                review_prompt,
-                                operation_type="review",
-                                repo_name=self.repo_path.name,
-                                on_chunk=on_chunk_gemini,
-                                track_operation=True,  # Atomic tracking at leaf level
-                                operation_details={
-                                    "parent_session_id": session_id,
-                                    "session_id": session_id,  # For UI display
-                                    "agent_type": "reviewer",
-                                    "batch_id": batch_id,
-                                },
-                            )
-                            gemini_output = gemini_result.output if gemini_result.success else None
-                            last_gemini_output = gemini_output
-                        except Exception as e:
-                            logger.error(f"Gemini CLI ({batch_id}) exception: {e}")
-                            await emit_log("WARNING", f"Gemini exception: {str(e)[:100]}")
-                            gemini_output = None
-
-                        # NOTE: Operation tracking is now handled atomically by GeminiCLI.run()
-
-                        if gemini_output is None:
-                            logger.warning(
-                                f"Gemini CLI failed for {batch_id}, accepting fix without review"
-                            )
-                            await emit_log(
-                                "WARNING", f"Gemini review failed for {batch_id}, accepting fix"
-                            )
-                            batch_results[batch_id]["passed"] = True
-                            batch_results[batch_id]["score"] = 100.0
-                            successful_issues.extend(batch)
-                            continue
-
-                        score, failed_issue_codes, per_issue_scores, quality_scores = (
-                            self._parse_batch_review(gemini_output, batch)
-                        )
-                        batch_results[batch_id]["score"] = score
-                        batch_results[batch_id]["failed_issues"] = failed_issue_codes
-
-                        if per_issue_scores:
-                            scores_summary = " | ".join(
-                                [f"{code}: {int(s)}" for code, s in per_issue_scores.items()]
-                            )
-                            await safe_emit(
-                                FixProgressEvent(
-                                    type=FixEventType.FIX_CHALLENGER_RESULT,
-                                    session_id=session_id,
-                                    message=f"   📊 {batch_id} score: {score}/100 | "
-                                    f"Per-issue: {scores_summary}",
-                                    quality_scores=quality_scores if quality_scores else None,
-                                )
-                            )
-                        else:
-                            await safe_emit(
-                                FixProgressEvent(
-                                    type=FixEventType.FIX_CHALLENGER_RESULT,
-                                    session_id=session_id,
-                                    message=f"   📊 {batch_id} score: {score}/100",
-                                    quality_scores=quality_scores if quality_scores else None,
-                                )
-                            )
 
                     if score >= self.satisfaction_threshold:
                         batch_results[batch_id]["passed"] = True
                         await emit_log("INFO", f"{batch_id} passed with score {score}/100")
+
+                        # Get uncommitted files for the commit
+                        uncommitted = await self._get_uncommitted_files()
+                        if not uncommitted:
+                            logger.warning(f"{batch_id}: No files to commit after passing review")
+                            await emit_log(
+                                "WARNING",
+                                f"{batch_id}: No files to commit",
+                            )
+                            continue
 
                         batch_issue_codes = ", ".join(str(i.issue_code) for i in batch)
                         batch_commit_msg = f"[FIX] {batch_issue_codes}"
                         commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
                         commit_prompt = commit_prompt.replace("{commit_message}", batch_commit_msg)
                         commit_prompt = commit_prompt.replace("{issue_codes}", batch_issue_codes)
+                        # Pass specific files to commit (avoid --add-all)
+                        files_to_commit = " ".join(uncommitted)
+                        commit_prompt = commit_prompt.replace("{files}", files_to_commit)
 
                         # Log session status before commit phase
-                        if session_context.branch_session_id:
-                            logger.info(
-                                f"[FIX] Commit phase resuming session: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'N/A'}... | "
-                                f"Model: haiku | Cache READ expected (reusing branch cache)"
-                            )
-                        else:
-                            logger.info(
-                                "[FIX] Commit phase starting new session | "
-                                "Model: haiku | Cache CREATION expected"
-                            )
+                        logger.info(
+                            f"[FIX] Commit phase | Session: {session_context.claude_session_id[:8] if session_context.claude_session_id else 'new'}... | "
+                            f"Model: haiku | Files: {uncommitted}"
+                        )
 
                         batch_commit_success = False
 
                         if request.workspace_path:
-                            uncommitted = await self._get_uncommitted_files()
                             violations = self._validate_workspace_scope(
                                 uncommitted,
                                 request.workspace_path,
@@ -1014,6 +1176,7 @@ class FixOrchestrator:
                     batch_results=batch_results,
                     current_iteration=iteration,
                     is_partial=True,  # Still in progress
+                    issue_status_map=issue_status_map,
                 )
 
                 if all_passed_this_iteration:
@@ -1026,20 +1189,50 @@ class FixOrchestrator:
                     )
                     break
 
+            # Use per-issue status map to determine final status
+            # This replaces batch-level pass/fail with individual issue tracking
+            for _code, status_data in issue_status_map.items():
+                issue = status_data["issue"]
+                if status_data["status"] == "SOLVED" and issue not in successful_issues:
+                    # Issue was solved but may not have been committed yet
+                    # Check if it's in a passed batch
+                    for _batch_id, batch_data in batch_results.items():
+                        if batch_data["passed"] and issue in batch_data.get("issues", []):
+                            successful_issues.append(issue)
+                            break
+                elif status_data["status"] == "IN_PROGRESS" and issue not in failed_issues:
+                    failed_issues.append(issue)
+
+            # Emit FIX_BATCH_FAILED for remaining IN_PROGRESS issues
             for _batch_id, batch_data in batch_results.items():
                 if not batch_data["passed"]:
-                    failed_issues.extend(batch_data["issues"])
-                    # Emit FIX_BATCH_FAILED for UI
-                    await safe_emit(
-                        FixProgressEvent(
-                            type=FixEventType.FIX_BATCH_FAILED,
-                            session_id=session_id,
-                            message=f"   ❌ {_batch_id} FAILED after {self.max_iterations} retries",
-                            issue_ids=[i.id for i in batch_data["issues"]],
-                            issue_codes=[i.issue_code for i in batch_data["issues"]],
-                            error=f"Score {batch_data.get('score', 0)} < {self.satisfaction_threshold}",
+                    in_progress_issues_in_batch = [
+                        i
+                        for i in batch_data["issues"]
+                        if issue_status_map.get(str(i.issue_code), {}).get("status")
+                        == "IN_PROGRESS"
+                    ]
+                    if in_progress_issues_in_batch:
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_BATCH_FAILED,
+                                session_id=session_id,
+                                message=f"   ❌ {_batch_id}: {len(in_progress_issues_in_batch)} issues "
+                                f"FAILED after {self.max_iterations} retries",
+                                issue_ids=[i.id for i in in_progress_issues_in_batch],
+                                issue_codes=[i.issue_code for i in in_progress_issues_in_batch],
+                                error="Score < 90% threshold",
+                            )
                         )
-                    )
+
+            # Log per-issue final status summary
+            solved_count = sum(1 for s in issue_status_map.values() if s["status"] == "SOLVED")
+            in_progress_count = sum(
+                1 for s in issue_status_map.values() if s["status"] == "IN_PROGRESS"
+            )
+            logger.info(
+                f"[FIX] Final per-issue status: {solved_count} SOLVED, {in_progress_count} IN_PROGRESS"
+            )
 
             # NOTE: Workspace scope validation now happens BEFORE each batch commit (in the loop above)
 
@@ -1053,7 +1246,7 @@ class FixOrchestrator:
 
             logger.info(
                 f"Fix results: {actually_fixed_count} successful, "
-                f"{failed_count} failed (based on batch_results)"
+                f"{failed_count} failed (based on per-issue status)"
             )
 
             for issue in successful_issues:
@@ -1063,10 +1256,12 @@ class FixOrchestrator:
                 issue_commit_sha = None
                 issue_modified_files: list[str] = []
                 issue_codes_for_msg = str(issue.issue_code)
+                is_false_positive = False
                 for _batch_id, data in batch_results.items():
                     if issue in data.get("issues", []):
                         issue_commit_sha = data.get("commit_sha")
                         issue_modified_files = data.get("modified_files", [])
+                        is_false_positive = data.get("false_positive", False)
                         issue_codes_for_msg = ", ".join(
                             str(i.issue_code) for i in data.get("issues", [])
                         )
@@ -1078,29 +1273,41 @@ class FixOrchestrator:
                     status=FixStatus.COMPLETED,
                     commit_sha=issue_commit_sha,
                     commit_message=f"[FIX] {issue_codes_for_msg}",
-                    changes_made=f"Fixed {issue.title}",
+                    changes_made=(
+                        "False positive - issue does not exist in code"
+                        if is_false_positive
+                        else f"Fixed {issue.title}"
+                    ),
                     fix_code=fix_code,
                     fix_explanation=fix_explanation,
                     fix_files_modified=issue_modified_files,
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
+                    false_positive=is_false_positive,
                 )
                 result.results.append(issue_result)
 
             for issue in failed_issues:
-                batch_info = ""
-                for batch_id, data in batch_results.items():
-                    if issue in data.get("issues", []):
-                        batch_info = f" (batch {batch_id}, score: {data.get('score', 'N/A')})"
+                issue_code = str(issue.issue_code)
+                issue_data = issue_status_map.get(issue_code, {})
+                issue_score = issue_data.get("score", 0)
+
+                # Find which batch this issue was in
+                batch_label = ""
+                for batch_id, batch_data in batch_results.items():
+                    if issue in batch_data.get("issues", []):
+                        batch_label = f" (batch {batch_id})"
                         break
 
-                logger.warning(f"Issue {issue.issue_code} batch failed Gemini review{batch_info}")
+                logger.warning(
+                    f"Issue {issue_code} did not reach 90% threshold "
+                    f"(score: {issue_score}){batch_label}"
+                )
                 issue_result = IssueFixResult(
                     issue_id=str(issue.id),
-                    issue_code=str(issue.issue_code),
+                    issue_code=issue_code,
                     status=FixStatus.FAILED,
-                    error=f"Batch did not pass Gemini review "
-                    f"(score < {self.satisfaction_threshold}){batch_info}",
+                    error=f"Issue score {issue_score:.0f}% < 90% threshold{batch_info}",
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                 )
@@ -1134,6 +1341,7 @@ class FixOrchestrator:
                 batch_results=batch_results,
                 current_iteration=None,  # Completed
                 is_partial=False,  # Session complete
+                issue_status_map=issue_status_map,
             )
 
             return result
@@ -1236,75 +1444,133 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
     def _parse_batch_review(
         self, output: str, issues: list[Issue]
-    ) -> tuple[float, list[str], dict[str, float], dict[str, int]]:
-        """Parse Gemini's per-batch review output.
+    ) -> tuple[float, list[str], dict[str, float], dict[str, Any]]:
+        """Parse Gemini's per-issue review output.
+
+        Supports new JSON format with per-issue status:
+        {
+            "issues": {
+                "FUNC-001": {"score": 95, "status": "SOLVED", ...},
+                "FUNC-002": {"score": 75, "status": "IN_PROGRESS", ...}
+            },
+            "batch_summary": {...}
+        }
+
+        Also maintains backwards compatibility with old format.
 
         Args:
             output: Gemini's response
             issues: Issues in this batch
 
         Returns:
-            Tuple of (batch_score, failed_issue_codes, per_issue_scores, quality_scores)
+            Tuple of (batch_score, in_progress_codes, per_issue_scores, per_issue_data)
+            - in_progress_codes: Issues with score < 90 (need retry)
+            - per_issue_data: Full per-issue evaluation data
         """
+        SOLVED_THRESHOLD = 90.0  # Issues >= 90% are SOLVED
+
         batch_score = 70.0  # default
-        failed_issues: list[str] = []
+        in_progress_issues: list[str] = []
         per_issue_scores: dict[str, float] = {}
-        quality_scores: dict[str, int] = {}
+        per_issue_data: dict[str, Any] = {}
 
         json_match = re.search(r"```json\s*([\s\S]*?)```", output)
         if json_match:
             try:
                 review_data = json.loads(json_match.group(1))
-                # Extract quality_scores from JSON
-                if "quality_scores" in review_data:
-                    quality_scores = review_data["quality_scores"]
-                    logger.info(f"Parsed quality_scores: {quality_scores}")
-                if "satisfaction_score" in review_data:
-                    batch_score = float(review_data["satisfaction_score"])
-                    logger.info(f"Parsed satisfaction_score from JSON: {batch_score}")
+
+                # NEW FORMAT: per-issue evaluation
+                if "issues" in review_data and isinstance(review_data["issues"], dict):
+                    logger.info("Parsing new per-issue JSON format")
+                    solved_count = 0
+                    in_progress_count = 0
+
+                    for code, issue_data in review_data["issues"].items():
+                        score = float(issue_data.get("score", 0))
+                        status = issue_data.get("status", "IN_PROGRESS")
+                        per_issue_scores[code] = score
+                        per_issue_data[code] = issue_data
+
+                        # Determine status based on 90% threshold
+                        if score >= SOLVED_THRESHOLD or status == "SOLVED":
+                            solved_count += 1
+                            logger.debug(f"Issue {code}: SOLVED (score={score})")
+                        else:
+                            in_progress_issues.append(code)
+                            in_progress_count += 1
+                            logger.debug(f"Issue {code}: IN_PROGRESS (score={score})")
+
+                    # Calculate batch score as average of per-issue scores
+                    if per_issue_scores:
+                        batch_score = sum(per_issue_scores.values()) / len(per_issue_scores)
+
+                    logger.info(
+                        f"Parsed {len(per_issue_scores)} issues: "
+                        f"{solved_count} SOLVED, {in_progress_count} IN_PROGRESS"
+                    )
+
+                    # Extract batch_summary if present
+                    if "batch_summary" in review_data:
+                        per_issue_data["_batch_summary"] = review_data["batch_summary"]
+
+                # OLD FORMAT: backwards compatibility
+                elif "quality_scores" in review_data or "satisfaction_score" in review_data:
+                    logger.info("Parsing old JSON format (backwards compatibility)")
+                    if "quality_scores" in review_data:
+                        per_issue_data["_quality_scores"] = review_data["quality_scores"]
+                    if "satisfaction_score" in review_data:
+                        batch_score = float(review_data["satisfaction_score"])
+                        logger.info(f"Parsed satisfaction_score from JSON: {batch_score}")
+
             except json.JSONDecodeError as e:
                 logger.debug(f"Failed to parse JSON block: {e}")
 
-        match = re.search(r"BATCH_SCORE:\s*(\d+)", output, re.IGNORECASE)
-        if match:
-            batch_score = float(match.group(1))
-            logger.info(f"Parsed BATCH_SCORE: {batch_score}")
-        elif not quality_scores:  # Only use old fallback if no JSON parsed
-            # Fallback to old SCORE pattern
-            match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
+        # Fallback: BATCH_SCORE pattern (old format)
+        if not per_issue_scores:
+            match = re.search(r"BATCH_SCORE:\s*(\d+)", output, re.IGNORECASE)
             if match:
                 batch_score = float(match.group(1))
-                logger.info(f"Parsed SCORE (fallback): {batch_score}")
+                logger.info(f"Parsed BATCH_SCORE (fallback): {batch_score}")
+            else:
+                match = re.search(r"SCORE:\s*(\d+)", output, re.IGNORECASE)
+                if match:
+                    batch_score = float(match.group(1))
+                    logger.info(f"Parsed SCORE (fallback): {batch_score}")
 
-        for issue in issues:
-            code = str(issue.issue_code)
-            pattern = rf"-\s*{re.escape(code)}:\s*(\d+)"
-            match = re.search(pattern, output, re.IGNORECASE)
+        # Fallback: per-issue scores from text pattern (old format)
+        if not per_issue_scores:
+            for issue in issues:
+                code = str(issue.issue_code)
+                pattern = rf"-\s*{re.escape(code)}:\s*(\d+)"
+                match = re.search(pattern, output, re.IGNORECASE)
+                if match:
+                    score = float(match.group(1))
+                    per_issue_scores[code] = score
+                    if score < SOLVED_THRESHOLD:
+                        in_progress_issues.append(code)
+                    logger.debug(f"Issue {code}: score {score}")
+
+        # Fallback: FAILED_ISSUES pattern (old format)
+        if not in_progress_issues:
+            match = re.search(r"FAILED_ISSUES:\s*(.+?)(?:\n|$)", output, re.IGNORECASE)
             if match:
-                per_issue_scores[code] = float(match.group(1))
-                logger.debug(f"Issue {code}: score {per_issue_scores[code]}")
+                failed_text = match.group(1).strip().lower()
+                if failed_text != "none" and failed_text:
+                    in_progress_issues = [
+                        code.strip().upper()
+                        for code in re.findall(r"[A-Z]+-\d+", match.group(1), re.IGNORECASE)
+                    ]
+                    logger.info(f"Parsed FAILED_ISSUES (fallback): {in_progress_issues}")
 
-        match = re.search(r"FAILED_ISSUES:\s*(.+?)(?:\n|$)", output, re.IGNORECASE)
-        if match:
-            failed_text = match.group(1).strip().lower()
-            if failed_text != "none" and failed_text:
-                # Extract issue codes (format: ISSUE-123, ISSUE-456)
-                failed_issues = [
-                    code.strip().upper()
-                    for code in re.findall(r"[A-Z]+-\d+", match.group(1), re.IGNORECASE)
-                ]
-                logger.info(f"Parsed FAILED_ISSUES: {failed_issues}")
-
-        if not failed_issues and per_issue_scores:
-            failed_issues = [
-                code
-                for code, score in per_issue_scores.items()
-                if score < self.satisfaction_threshold
+        # Derive in_progress from scores if not explicitly set
+        if not in_progress_issues and per_issue_scores:
+            in_progress_issues = [
+                code for code, score in per_issue_scores.items() if score < SOLVED_THRESHOLD
             ]
-            if failed_issues:
-                logger.info(f"Derived FAILED_ISSUES from scores: {failed_issues}")
+            if in_progress_issues:
+                logger.info(f"Derived IN_PROGRESS from scores: {in_progress_issues}")
 
-        return batch_score, failed_issues, per_issue_scores, quality_scores
+        return batch_score, in_progress_issues, per_issue_scores, per_issue_data
 
     def _load_structure_doc(self, workspace_path: str | None = None) -> str | None:
         """Load structure documentation for context.
@@ -1325,6 +1591,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         iteration: int,
         workspace_path: str | None = None,
         user_notes: str | None = None,
+        todo_list_path: Path | None = None,
     ) -> str:
         """Build prompt for Claude CLI to fix issues.
 
@@ -1335,6 +1602,7 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
             iteration: Current iteration number
             workspace_path: Monorepo workspace restriction (e.g., "packages/frontend")
             user_notes: User-provided notes with additional context or instructions
+            todo_list_path: Path to TODO list JSON for parallel/serial orchestration
 
         Note:
             For iteration > 1 (re-fix), we use the re-fixer agent which is aware
@@ -1358,6 +1626,28 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         # Build task with all issues
         task_parts = ["# Task: Fix Code Issues\n"]
+
+        # Add TODO list reference for orchestrator mode
+        if todo_list_path:
+            task_parts.append(
+                f"""
+## TODO List (Orchestration)
+
+Read the TODO list at: `{todo_list_path}`
+
+This JSON file contains:
+- `branch_name`: Git branch to create (via Task tool with haiku model)
+- `groups`: Issue groups with parallel/serial execution order
+- Issue details for each fix
+
+**Follow the TODO list exactly:**
+1. First, create the branch using Task tool with model=haiku
+2. Then process groups in order (parallel groups together, serial groups one by one)
+3. Return aggregated JSON with results for each issue
+
+---
+"""
+            )
 
         structure_doc = self._load_structure_doc(workspace_path)
         if structure_doc:
@@ -2079,6 +2369,7 @@ The automated code reviewer (Gemini) evaluated your previous fix and found issue
         batch_results: dict[str, dict[str, Any]] | None = None,
         current_iteration: int | None = None,
         is_partial: bool = False,
+        issue_status_map: dict[str, dict[str, Any]] | None = None,
     ) -> str | None:
         """
         Save fix session log to S3 for debugging.
@@ -2096,6 +2387,7 @@ The automated code reviewer (Gemini) evaluated your previous fix and found issue
             batch_results: Current batch results state (for incremental saves)
             current_iteration: Current iteration number (for incremental saves)
             is_partial: True if this is an incremental save (session still in progress)
+            issue_status_map: Per-issue status tracking (SOLVED/IN_PROGRESS)
 
         Returns:
             S3 URL if saved, None if failed
@@ -2153,6 +2445,18 @@ The automated code reviewer (Gemini) evaluated your previous fix and found issue
                         for batch_id, data in (batch_results or {}).items()
                     }
                     if batch_results
+                    else None
+                ),
+                # Per-issue status tracking (SOLVED vs IN_PROGRESS)
+                "per_issue_status": (
+                    {
+                        code: {
+                            "status": data["status"],
+                            "score": data["score"],
+                        }
+                        for code, data in (issue_status_map or {}).items()
+                    }
+                    if issue_status_map
                     else None
                 ),
             }

@@ -143,6 +143,31 @@ class CLIProcessManager:
         self._max_processes = max_processes
         self._shared_resume_ids: dict[str, str] = {}
 
+    def _build_env_with_api_keys(self) -> dict[str, str]:
+        """Build environment with API keys from centralized config.
+
+        Ensures API keys are available to CLI subprocesses regardless
+        of whether they're set as env vars or only in .env/config.
+
+        Returns:
+            Environment dict with API keys set
+        """
+        settings = get_settings()
+        env = os.environ.copy()
+
+        # Anthropic API key for Claude CLI
+        if settings.agents.anthropic_api_key:
+            env["ANTHROPIC_API_KEY"] = settings.agents.anthropic_api_key
+
+        # Google/Gemini API key for Gemini CLI
+        # Set both for compatibility (some tools use GOOGLE_API_KEY, others GEMINI_API_KEY)
+        effective_key = settings.agents.effective_google_key
+        if effective_key:
+            env["GEMINI_API_KEY"] = effective_key
+            env["GOOGLE_API_KEY"] = effective_key
+
+        return env
+
     def set_shared_resume_id(self, session_id: str, claude_session_id: str) -> None:
         """Store a shared claude_session_id for a forked session.
 
@@ -228,8 +253,8 @@ class CLIProcessManager:
             if len(self._processes) >= self._max_processes:
                 raise RuntimeError(f"Max processes ({self._max_processes}) reached")
 
-        # Build environment
-        env = os.environ.copy()
+        # Build environment with API keys from config
+        env = self._build_env_with_api_keys()
         env["TMPDIR"] = "/tmp"  # Workaround for Bun file watcher bug
         env["PYTHONUNBUFFERED"] = "1"  # Disable Python buffering
         env["NODE_OPTIONS"] = "--no-warnings"  # Less noise from node
@@ -375,10 +400,8 @@ class CLIProcessManager:
             if len(self._processes) >= self._max_processes:
                 raise RuntimeError(f"Max processes ({self._max_processes}) reached")
 
-        # Build environment
-        os.environ.copy()
-
         # Create a placeholder process (Gemini starts fresh per message)
+        # Note: Environment with API keys is built in _send_gemini_message
         cli_proc = CLIProcess(
             session_id=session_id,
             cli_type=CLIType.GEMINI,
@@ -415,8 +438,8 @@ class CLIProcessManager:
             proc: The CLIProcess to respawn
             force_new_session: If True, create a new session instead of resuming
         """
-        # Build environment
-        env = os.environ.copy()
+        # Build environment with API keys from config
+        env = self._build_env_with_api_keys()
         env["TMPDIR"] = "/tmp"
         env["PYTHONUNBUFFERED"] = "1"
         env["NODE_OPTIONS"] = "--no-warnings"
@@ -623,8 +646,8 @@ class CLIProcessManager:
         timeout_value = timeout or GEMINI_TIMEOUT
         proc.status = SessionStatus.STREAMING
 
-        # Build environment
-        env = os.environ.copy()
+        # Build environment with API keys from config
+        env = self._build_env_with_api_keys()
 
         full_message = message
         if proc.gemini_context and not proc.context_used:

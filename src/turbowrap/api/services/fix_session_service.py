@@ -312,7 +312,23 @@ class FixSessionService:
                         continue
 
                     if issue_result.status.value == "completed":
-                        # Safety: Don't mark resolved without a commit
+                        # Check for false positive - no fix needed, mark as resolved
+                        if issue_result.false_positive:
+                            logger.info(
+                                f"Issue {issue_result.issue_code} is a false positive - marking as RESOLVED"
+                            )
+                            db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
+                            db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+                            db_issue.resolution_note = (  # type: ignore[assignment]
+                                "False positive - issue does not exist in code"
+                            )
+                            db_issue.fix_session_id = session_id  # type: ignore[assignment]
+                            db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
+                            db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
+                            completed_count += 1
+                            continue
+
+                        # Safety: Don't mark resolved without a commit (unless false positive)
                         if not issue_result.commit_sha:
                             logger.warning(
                                 f"Issue {issue_result.issue_code} completed but no commit - resetting to OPEN"

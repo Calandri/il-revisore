@@ -15,18 +15,29 @@ LABEL org.opencontainers.image.created=$BUILD_DATE
 LABEL org.opencontainers.image.title="TurboWrap"
 LABEL org.opencontainers.image.description="AI-Powered Repository Orchestrator"
 
-# Install git, Node.js, and dependencies for Claude CLI
+# Install git, Node.js, GitHub CLI, AWS CLI, and dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
     gnupg \
     procps \
+    unzip \
     && mkdir -p /etc/apt/keyrings \
+    # Node.js
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    # GitHub CLI
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list \
     && apt-get update \
-    && apt-get install -y nodejs \
+    && apt-get install -y nodejs gh \
+    # AWS CLI v2
+    && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude CLI, Gemini CLI, and Grok CLI globally
