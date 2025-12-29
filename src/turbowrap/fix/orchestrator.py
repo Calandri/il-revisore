@@ -1241,6 +1241,8 @@ class FixOrchestrator:
                                     session_context=group_session_ctx,
                                     parent_session_id=session_id,
                                     agent_type="committer",
+                                    issue_codes=[str(i.issue_code) for i in batch],
+                                    issue_ids=[str(i.id) for i in batch],
                                 )
                                 if not commit_result.success:
                                     await emit_log("ERROR", f"Batch {batch_id} commit failed")

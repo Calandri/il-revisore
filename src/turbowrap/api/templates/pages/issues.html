@@ -420,7 +420,7 @@
             <div class="col-span-1">Status</div>
             <div class="col-span-1">Linear</div>
             <div class="col-span-1">Effort</div>
-            <div class="col-span-1">Data</div>
+            <div class="col-span-1">Modifica</div>
         </div>
 
         <!-- Issue Rows -->
@@ -608,8 +608,8 @@
                         </template>
                     </div>
 
-                    <!-- Date -->
-                    <div class="col-span-1 text-xs text-gray-500" x-text="formatDate(issue.created_at)"></div>
+                    <!-- Date (updated) -->
+                    <div class="col-span-1 text-xs text-gray-500" x-text="formatDate(issue.updated_at || issue.created_at)"></div>
                 </div>
             </a>
         </template>
@@ -718,7 +718,7 @@
                             </span>
                         </template>
                     </div>
-                    <span x-text="formatDate(issue.created_at)"></span>
+                    <span x-text="formatDate(issue.updated_at || issue.created_at)"></span>
                 </div>
             </a>
         </template>
