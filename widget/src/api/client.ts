@@ -39,7 +39,7 @@ export class IssueAPIClient {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/linear/create/analyze`, {
+      const response = await fetch(`${this.baseUrl}/api/linear/create/analyze`, {
         method: 'POST',
         headers: {
           'X-Widget-Key': this.apiKey,
@@ -72,7 +72,7 @@ export class IssueAPIClient {
     onError: (error: string) => void
   ): Promise<void> {
     try {
-      const response = await fetch(`${this.baseUrl}/linear/create/finalize`, {
+      const response = await fetch(`${this.baseUrl}/api/linear/create/finalize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

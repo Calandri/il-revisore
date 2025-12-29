@@ -122,6 +122,13 @@
             </template>
         </div>
 
+        <!-- Session ID (if custom) -->
+        <template x-if="op.details?.session_id">
+            <div class="flex-shrink-0 hidden lg:block">
+                <code class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded" x-text="op.details.session_id"></code>
+            </div>
+        </template>
+
         <!-- Timestamp (history only) -->
         <template x-if="!isLive">
             <div class="flex-shrink-0 hidden sm:block text-xs text-gray-500 dark:text-gray-600" x-text="formatTimeAgo(op.completed_at || op.started_at)"></div>
@@ -159,7 +166,7 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
             <div>
                 <span class="text-gray-500 block mb-1">Session ID</span>
-                <code class="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded" x-text="op.operation_id?.substring(0, 8) || '-'"></code>
+                <code class="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded" x-text="op.details?.session_id || op.operation_id?.substring(0, 8) || '-'"></code>
             </div>
             <div>
                 <span class="text-gray-500 block mb-1">Working Dir</span>

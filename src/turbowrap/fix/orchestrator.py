@@ -730,6 +730,7 @@ class FixOrchestrator:
                             track_operation=True,  # Atomic tracking at leaf level
                             operation_details={
                                 "parent_session_id": session_id,
+                                "session_id": session_id,  # For UI display
                                 "agent_type": "reviewer",
                                 "batch_id": batch_id,
                             },
@@ -1491,6 +1492,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             track_operation=True,  # Atomic tracking at leaf level
             operation_details={
                 "parent_session_id": parent_session_id,
+                "session_id": parent_session_id,  # For UI display
                 "agent_type": agent_type or "fixer",
             },
             resume_session_id=session_context.claude_session_id if session_context else None,
@@ -1577,6 +1579,7 @@ The reviewer found issues with the previous fix. Address this feedback:
             track_operation=True,  # Atomic tracking at leaf level
             operation_details={
                 "parent_session_id": parent_session_id,
+                "session_id": parent_session_id,  # For UI display
                 "agent_type": "compaction",
             },
             resume_session_id=session_context.claude_session_id,  # Same session!
@@ -1878,9 +1881,7 @@ The reviewer found issues with the previous fix. Address this feedback:
                         db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
                         db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
                 db.commit()
-                logger.info(
-                    f"Updated {len(issues)} issues to RESOLVED (commit {commit_sha[:7]})"
-                )
+                logger.info(f"Updated {len(issues)} issues to RESOLVED (commit {commit_sha[:7]})")
             finally:
                 db.close()
 
