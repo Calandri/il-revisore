@@ -191,6 +191,52 @@ function chatSidebar() {
                     console.error('[chatSidebar] Could not access Alpine data on html element');
                 }
             });
+
+            // Listen for submit-chat-answers events (from question blocks in messages)
+            window.addEventListener('submit-chat-answers', (e) => {
+                const questionId = e.detail?.id;
+                if (!questionId) return;
+
+                // Find all inputs with this question ID
+                const inputs = document.querySelectorAll(`input[data-question-id="${questionId}"]`);
+                if (inputs.length === 0) return;
+
+                // Collect answers
+                const answers = [];
+                inputs.forEach(input => {
+                    const question = input.getAttribute('data-question');
+                    const answer = input.value.trim();
+                    if (answer) {
+                        answers.push(`**${question}**\n${answer}`);
+                    }
+                });
+
+                if (answers.length === 0) {
+                    this.showToast('Compila almeno una risposta', 'warning');
+                    return;
+                }
+
+                // Format as message and send
+                const message = answers.join('\n\n');
+                this.inputMessage = message;
+                this.sendMessage();
+
+                // Clear the inputs
+                inputs.forEach(input => {
+                    input.value = '';
+                    input.disabled = true;
+                });
+
+                // Disable the submit button
+                const btn = document.querySelector(`button[onclick*="${questionId}"]`);
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg> Invio...`;
+                }
+            });
         },
 
         /**
@@ -1085,6 +1131,43 @@ function chatSidebar() {
 
             // Strikethrough ~~text~~
             html = html.replace(/~~([^~]+)~~/g, '<del class="line-through text-gray-500">$1</del>');
+
+            // Questions with input fields (lines ending with ? that are actual questions)
+            // Skip very short lines, code-like lines, or lines that are just punctuation
+            const questionId = Math.random().toString(36).substr(2, 9);
+            let hasQuestions = false;
+            html = html.replace(/^([A-Z][^<\n]{10,}\?)\s*$/gm, (match, question) => {
+                // Skip if inside a code block indicator or looks like code
+                if (question.includes('`') || question.includes('//') || question.includes('/*')) return match;
+                hasQuestions = true;
+                const escapedQ = question.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                return `<div class="question-block my-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                    <div class="font-medium text-blue-800 dark:text-blue-200 mb-2 flex items-start gap-2">
+                        <svg class="w-5 h-5 mt-0.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <span>${question}</span>
+                    </div>
+                    <input type="text"
+                           data-question-id="${questionId}"
+                           data-question="${escapedQ}"
+                           placeholder="Scrivi la tua risposta..."
+                           class="question-input w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                </div>`;
+            });
+
+            // Add submit button if there are questions
+            if (hasQuestions) {
+                html += `<div class="mt-4 flex justify-end">
+                    <button onclick="window.dispatchEvent(new CustomEvent('submit-chat-answers', {detail: {id: '${questionId}'}}))"
+                            class="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        </svg>
+                        Invia Risposte
+                    </button>
+                </div>`;
+            }
 
             // Line breaks (but not inside pre/code blocks)
             html = html.replace(/\n/g, '<br>');
