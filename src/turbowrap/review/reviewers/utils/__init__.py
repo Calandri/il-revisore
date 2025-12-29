@@ -19,6 +19,7 @@ from turbowrap.review.reviewers.utils.prompt_builders import (
     build_challenge_prompt_sdk,
 )
 from turbowrap.review.reviewers.utils.response_parsers import (
+    convert_dict_to_review_output,
     parse_challenger_feedback,
     parse_review_output,
 )
@@ -36,6 +37,7 @@ __all__ = [
     # Response parsers
     "parse_review_output",
     "parse_challenger_feedback",
+    "convert_dict_to_review_output",
     # Prompt builders
     "build_challenge_prompt_sdk",
     "build_challenge_prompt_cli",

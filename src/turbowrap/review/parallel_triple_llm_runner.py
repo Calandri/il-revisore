@@ -39,12 +39,11 @@ from turbowrap.llm.grok import GrokCLI
 from turbowrap.orchestration.report_utils import deduplicate_issues
 from turbowrap.review.models.review import (
     Issue,
-    IssueCategory,
     IssueSeverity,
     ReviewOutput,
     ReviewSummary,
 )
-from turbowrap.review.reviewers.utils import parse_review_output
+from turbowrap.review.reviewers.utils import convert_dict_to_review_output, parse_review_output
 
 if TYPE_CHECKING:
     from turbowrap.review.reviewers.base import ReviewContext
@@ -484,6 +483,7 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                     "reviewer": "parallel_claude",
                     "specialists": self.specialists,
                     "workspace_path": context.workspace_path,
+                    "parent_session_id": review_id,
                 },
             )
 
@@ -532,6 +532,7 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                     "reviewer": "parallel_gemini",
                     "specialists": self.specialists,
                     "workspace_path": context.workspace_path,
+                    "parent_session_id": review_id,
                 },
             )
 
@@ -580,6 +581,7 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                     "reviewer": "parallel_grok",
                     "specialists": self.specialists,
                     "workspace_path": context.workspace_path,
+                    "parent_session_id": review_id,
                 },
             )
 
@@ -621,7 +623,10 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                 if isinstance(data, dict) and "specialist" in data and "review" in data:
                     spec_name = data["specialist"]
                     review_data = data["review"]
-                    review = self._convert_review_data(review_data, spec_name, llm, files_count)
+                    # Use centralized converter with LLM and specialist tagging
+                    review = convert_dict_to_review_output(
+                        review_data, spec_name, files_count, flagged_by=[llm, spec_name]
+                    )
                     if review:
                         results[spec_name] = review
                         n_issues = len(review.issues)
@@ -655,8 +660,9 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                         if "specialist" in data and "review" in data:
                             spec_name = data["specialist"]
                             review_data = data["review"]
-                            review = self._convert_review_data(
-                                review_data, spec_name, llm, files_count
+                            # Use centralized converter
+                            review = convert_dict_to_review_output(
+                                review_data, spec_name, files_count, flagged_by=[llm, spec_name]
                             )
                             if review:
                                 results[spec_name] = review
@@ -678,78 +684,6 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
 
         logger.info(f"[PARALLEL-{llm.upper()}] Parsed {len(results)} specialist reviews")
         return results
-
-    def _convert_review_data(
-        self,
-        review_data: dict[str, Any],
-        spec_name: str,
-        llm: str,
-        files_count: int,
-    ) -> ReviewOutput | None:
-        """Convert parsed review data dict to ReviewOutput."""
-        try:
-            # Extract summary
-            summary_data = review_data.get("summary", {})
-            summary = ReviewSummary(
-                files_reviewed=summary_data.get("files_reviewed", files_count),
-                critical_issues=summary_data.get("critical_issues", 0),
-                high_issues=summary_data.get("high_issues", 0),
-                medium_issues=summary_data.get("medium_issues", 0),
-                low_issues=summary_data.get("low_issues", 0),
-                score=summary_data.get("score", 5.0),
-            )
-
-            # Extract issues
-            issues: list[Issue] = []
-            for issue_data in review_data.get("issues", []):
-                try:
-                    severity_str = issue_data.get("severity", "medium").lower()
-                    valid_severities = ["critical", "high", "medium", "low"]
-                    if severity_str in valid_severities:
-                        severity = IssueSeverity(severity_str)
-                    else:
-                        severity = IssueSeverity.MEDIUM
-
-                    # Map category string to enum
-                    category_str = issue_data.get("category", "logic").lower()
-                    category_map = {
-                        "security": IssueCategory.SECURITY,
-                        "performance": IssueCategory.PERFORMANCE,
-                        "architecture": IssueCategory.ARCHITECTURE,
-                        "style": IssueCategory.STYLE,
-                        "logic": IssueCategory.LOGIC,
-                        "ux": IssueCategory.UX,
-                        "testing": IssueCategory.TESTING,
-                        "documentation": IssueCategory.DOCUMENTATION,
-                    }
-                    category = category_map.get(category_str, IssueCategory.LOGIC)
-
-                    issue = Issue(
-                        id=issue_data.get("code", f"{spec_name.upper()}-{len(issues)+1:03d}"),
-                        severity=severity,
-                        category=category,
-                        file=issue_data.get("file", ""),
-                        line=issue_data.get("line"),
-                        title=issue_data.get("title", "Untitled Issue"),
-                        description=issue_data.get("description", ""),
-                        suggested_fix=issue_data.get("suggested_fix"),
-                        estimated_effort=issue_data.get("effort"),
-                        flagged_by=[llm, spec_name],
-                    )
-                    issues.append(issue)
-                except Exception as e:
-                    logger.debug(f"[PARALLEL-{llm.upper()}] Failed to parse issue: {e}")
-                    continue
-
-            return ReviewOutput(
-                reviewer=spec_name,
-                summary=summary,
-                issues=issues,
-            )
-
-        except Exception as e:
-            logger.warning(f"[PARALLEL-{llm.upper()}] Failed to convert review data: {e}")
-            return None
 
     def _merge_summaries(
         self,

@@ -481,3 +481,104 @@ def list_workflow_runs(
         raise HTTPException(status_code=e.status, detail=str(e))
     finally:
         g.close()
+
+
+# --- Branches ---
+
+
+class BranchInfo(BaseModel):
+    """Branch information."""
+
+    name: str
+    protected: bool
+    default: bool
+
+
+@router.get("/repos/{owner}/{repo}/branches")
+def list_branches(
+    owner: str,
+    repo: str,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[BranchInfo]:
+    """List branches for a repository."""
+    try:
+        g = _get_github_client()
+        repository = g.get_repo(f"{owner}/{repo}")
+        branches = repository.get_branches()
+        default_branch = repository.default_branch
+
+        result = []
+        for branch in list(branches)[:limit]:
+            result.append(
+                BranchInfo(
+                    name=branch.name,
+                    protected=branch.protected,
+                    default=branch.name == default_branch,
+                )
+            )
+
+        # Sort: default branch first, then alphabetically
+        result.sort(key=lambda b: (not b.default, b.name))
+        return result
+
+    except GithubException as e:
+        logger.error(f"GitHub API error: {e}")
+        if e.status == 404:
+            raise HTTPException(status_code=404, detail="Repository not found")
+        if e.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid GitHub token")
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        g.close()
+
+
+# --- User Repositories ---
+
+
+class RepoInfo(BaseModel):
+    """Repository information for autocomplete."""
+
+    full_name: str  # owner/repo
+    name: str
+    private: bool
+    default_branch: str
+    html_url: str
+    description: str | None
+    updated_at: str
+    time_ago: str
+
+
+@router.get("/user/repos")
+def list_user_repos(
+    limit: int = Query(default=50, ge=1, le=100),
+    sort: str = Query(default="updated", regex="^(updated|created|pushed|full_name)$"),
+) -> list[RepoInfo]:
+    """List repositories accessible to the authenticated user."""
+    try:
+        g = _get_github_client()
+        user = g.get_user()
+        repos = user.get_repos(sort=sort, direction="desc")
+
+        result = []
+        for repo in list(repos)[:limit]:
+            result.append(
+                RepoInfo(
+                    full_name=repo.full_name,
+                    name=repo.name,
+                    private=repo.private,
+                    default_branch=repo.default_branch or "main",
+                    html_url=repo.html_url,
+                    description=repo.description,
+                    updated_at=repo.updated_at.isoformat() if repo.updated_at else "",
+                    time_ago=_time_ago(repo.updated_at),
+                )
+            )
+        return result
+
+    except GithubException as e:
+        logger.error(f"GitHub API error: {e}")
+        if e.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid GitHub token")
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        g.close()

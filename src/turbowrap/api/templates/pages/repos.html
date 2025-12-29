@@ -80,6 +80,26 @@
     evaluationError: null,
     evaluationRepoName: '',
 
+    // Repo search state
+    repoSearch: {
+        loading: false,
+        error: null,
+        repos: [],
+        filteredRepos: [],
+        query: '',
+        showDropdown: false,
+        initialized: false,
+    },
+
+    // Branch selector state
+    branchSelector: {
+        loading: false,
+        error: null,
+        branches: [],
+        selectedBranch: 'main',
+        showDropdown: false,
+    },
+
     // Folder selector state
     folderSelector: {
         enabled: false,
@@ -166,6 +186,116 @@
         this.folderSelector.parentPath = null;
         this.folderSelector.searchQuery = '';
         this.folderSelector.selectedPath = '';
+    },
+
+    parseGitHubUrl(url) {
+        if (!url) return null;
+        // Match github.com/owner/repo or github.com/owner/repo.git
+        const match = url.match(/github\.com\/([^\/]+)\/([^\/\s\.]+)/);
+        if (!match) return null;
+        return { owner: match[1], repo: match[2] };
+    },
+
+    async loadBranches(url) {
+        const parsed = this.parseGitHubUrl(url);
+        if (!parsed) {
+            this.branchSelector.error = null;
+            this.branchSelector.branches = [];
+            return;
+        }
+
+        this.branchSelector.loading = true;
+        this.branchSelector.error = null;
+
+        try {
+            const response = await fetch(`/api/github/repos/${parsed.owner}/${parsed.repo}/branches`);
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Errore nel caricamento dei branch');
+            }
+
+            const branches = await response.json();
+            this.branchSelector.branches = branches;
+
+            // Auto-select default branch
+            const defaultBranch = branches.find(b => b.default);
+            if (defaultBranch) {
+                this.branchSelector.selectedBranch = defaultBranch.name;
+            }
+        } catch (e) {
+            this.branchSelector.error = e.message;
+            // Keep default 'main' as fallback
+        } finally {
+            this.branchSelector.loading = false;
+        }
+    },
+
+    selectBranch(branchName) {
+        this.branchSelector.selectedBranch = branchName;
+        this.branchSelector.showDropdown = false;
+    },
+
+    resetBranchSelector() {
+        this.branchSelector.loading = false;
+        this.branchSelector.error = null;
+        this.branchSelector.branches = [];
+        this.branchSelector.selectedBranch = 'main';
+        this.branchSelector.showDropdown = false;
+    },
+
+    async initRepoSearch() {
+        if (this.repoSearch.initialized) return;
+
+        this.repoSearch.loading = true;
+        this.repoSearch.error = null;
+
+        try {
+            const response = await fetch('/api/github/user/repos?limit=100&sort=updated');
+            if (!response.ok) {
+                // Token not configured or other error - silently fail
+                this.repoSearch.repos = [];
+                return;
+            }
+
+            const repos = await response.json();
+            this.repoSearch.repos = repos;
+            this.repoSearch.filteredRepos = repos.slice(0, 10);
+            this.repoSearch.initialized = true;
+        } catch (e) {
+            // Silently fail - repo search is optional
+            this.repoSearch.repos = [];
+        } finally {
+            this.repoSearch.loading = false;
+        }
+    },
+
+    filterRepos() {
+        if (!this.repoSearch.query) {
+            this.repoSearch.filteredRepos = this.repoSearch.repos.slice(0, 10);
+            return;
+        }
+        const query = this.repoSearch.query.toLowerCase();
+        this.repoSearch.filteredRepos = this.repoSearch.repos
+            .filter(r => r.full_name.toLowerCase().includes(query) ||
+                        (r.description && r.description.toLowerCase().includes(query)))
+            .slice(0, 10);
+    },
+
+    selectRepo(repo) {
+        this.repoSearch.query = repo.html_url;
+        this.repoSearch.showDropdown = false;
+        // Auto-select default branch
+        this.branchSelector.selectedBranch = repo.default_branch;
+        // Load branches for this repo
+        this.loadBranches(repo.html_url);
+    },
+
+    resetRepoSearch() {
+        this.repoSearch.loading = false;
+        this.repoSearch.error = null;
+        this.repoSearch.query = '';
+        this.repoSearch.filteredRepos = this.repoSearch.repos.slice(0, 10);
+        this.repoSearch.showDropdown = false;
     },
 
     async loadStructure(repoId, repoName) {
@@ -262,7 +392,7 @@
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-         @click.self="showAddModal = false; resetFolderSelector()">
+         @click.self="showAddModal = false; resetFolderSelector(); resetBranchSelector(); resetRepoSearch()"
 
         <div x-show="showAddModal"
              x-transition:enter="transition ease-out duration-300"
@@ -281,25 +411,185 @@
                   hx-target="#repo-list"
                   hx-swap="innerHTML"
                   @htmx:before-request="cloneLoading = true; cloneError = null"
-                  @htmx:after-request="cloneLoading = false; if($event.detail.successful) { showAddModal = false; resetFolderSelector(); } else { cloneError = 'Errore durante la clonazione'; }"
+                  @htmx:after-request="cloneLoading = false; if($event.detail.successful) { showAddModal = false; resetFolderSelector(); resetBranchSelector(); resetRepoSearch(); } else { cloneError = 'Errore durante la clonazione'; }"
                   class="p-4 md:p-6 space-y-4 overflow-y-auto flex-1">
 
-                <div>
+                <div x-init="initRepoSearch()">
                     <label class="block text-sm font-medium mb-2">URL GitHub</label>
-                    <input type="url" name="url" required
-                           placeholder="https://github.com/owner/repo"
-                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
-                                  bg-white dark:bg-gray-700
-                                  focus:ring-2 focus:ring-primary focus:border-transparent
-                                  placeholder-gray-400">
+                    <!-- URL input with autocomplete -->
+                    <div class="relative">
+                        <input type="url" name="url" required
+                               x-model="repoSearch.query"
+                               @input="filterRepos(); repoSearch.showDropdown = repoSearch.repos.length > 0"
+                               @focus="repoSearch.showDropdown = repoSearch.repos.length > 0"
+                               @blur="loadBranches($event.target.value); setTimeout(() => repoSearch.showDropdown = false, 200)"
+                               placeholder="https://github.com/owner/repo"
+                               class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
+                                      bg-white dark:bg-gray-700
+                                      focus:ring-2 focus:ring-primary focus:border-transparent
+                                      placeholder-gray-400">
+
+                        <!-- Loading indicator -->
+                        <div x-show="repoSearch.loading"
+                             class="absolute right-3 top-1/2 -translate-y-1/2">
+                            <svg class="animate-spin w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+
+                        <!-- Autocomplete dropdown -->
+                        <div x-show="repoSearch.showDropdown && repoSearch.filteredRepos.length > 0"
+                             x-cloak
+                             x-transition:enter="transition ease-out duration-200"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-100"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             class="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+
+                            <template x-for="repo in repoSearch.filteredRepos" :key="repo.full_name">
+                                <button type="button"
+                                        @mousedown.prevent="selectRepo(repo)"
+                                        class="w-full px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 border-b dark:border-gray-700 last:border-0">
+                                    <div class="flex items-center gap-2">
+                                        <!-- Private/Public icon -->
+                                        <svg x-show="repo.private" class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                        </svg>
+                                        <svg x-show="!repo.private" class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                                        </svg>
+                                        <span class="font-medium" x-text="repo.full_name"></span>
+                                        <span class="text-xs text-gray-400 shrink-0" x-text="repo.time_ago"></span>
+                                    </div>
+                                    <div x-show="repo.description" class="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate" x-text="repo.description"></div>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                      d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                                            </svg>
+                                            <span x-text="repo.default_branch"></span>
+                                        </span>
+                                    </div>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                    <p x-show="repoSearch.repos.length > 0" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Cerca tra i tuoi repository o incolla un URL
+                    </p>
                 </div>
 
                 <div>
                     <label class="block text-sm font-medium mb-2">Branch</label>
-                    <input type="text" name="branch" value="main"
-                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
-                                  bg-white dark:bg-gray-700
-                                  focus:ring-2 focus:ring-primary focus:border-transparent">
+                    <!-- Hidden input for form submission -->
+                    <input type="hidden" name="branch" :value="branchSelector.selectedBranch">
+
+                    <!-- Branch dropdown -->
+                    <div class="relative">
+                        <button type="button"
+                                @click="branchSelector.showDropdown = !branchSelector.showDropdown"
+                                class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
+                                       bg-white dark:bg-gray-700
+                                       focus:ring-2 focus:ring-primary focus:border-transparent
+                                       text-left flex items-center justify-between">
+                            <span class="flex items-center gap-2">
+                                <!-- Loading spinner -->
+                                <svg x-show="branchSelector.loading" class="animate-spin w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <!-- Branch icon -->
+                                <svg x-show="!branchSelector.loading" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                                </svg>
+                                <span x-text="branchSelector.selectedBranch"></span>
+                                <!-- Default badge -->
+                                <span x-show="branchSelector.branches.find(b => b.name === branchSelector.selectedBranch && b.default)"
+                                      class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded">
+                                    default
+                                </span>
+                            </span>
+                            <svg class="w-4 h-4 text-gray-400 transition-transform"
+                                 :class="branchSelector.showDropdown ? 'rotate-180' : ''"
+                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+
+                        <!-- Dropdown menu -->
+                        <div x-show="branchSelector.showDropdown"
+                             x-cloak
+                             @click.outside="branchSelector.showDropdown = false"
+                             x-transition:enter="transition ease-out duration-200"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-100"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+
+                            <!-- Error message -->
+                            <div x-show="branchSelector.error && branchSelector.branches.length === 0"
+                                 class="p-3 text-sm text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                </svg>
+                                <span>Inserisci URL per caricare i branch</span>
+                            </div>
+
+                            <!-- Manual input fallback -->
+                            <div x-show="branchSelector.branches.length === 0 && !branchSelector.loading"
+                                 class="p-2 border-b dark:border-gray-700">
+                                <input type="text"
+                                       x-model="branchSelector.selectedBranch"
+                                       @keydown.enter.prevent="branchSelector.showDropdown = false"
+                                       placeholder="Inserisci nome branch..."
+                                       class="w-full px-3 py-1.5 text-sm border dark:border-gray-600 rounded
+                                              bg-gray-50 dark:bg-gray-900
+                                              focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+
+                            <!-- Branch list -->
+                            <template x-for="branch in branchSelector.branches" :key="branch.name">
+                                <button type="button"
+                                        @click="selectBranch(branch.name)"
+                                        class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700
+                                               flex items-center justify-between"
+                                        :class="branch.name === branchSelector.selectedBranch ? 'bg-primary/10 text-primary' : ''">
+                                    <span class="flex items-center gap-2">
+                                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                  d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/>
+                                        </svg>
+                                        <span x-text="branch.name"></span>
+                                    </span>
+                                    <span class="flex items-center gap-2">
+                                        <span x-show="branch.default"
+                                              class="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded">
+                                            default
+                                        </span>
+                                        <span x-show="branch.protected"
+                                              class="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded">
+                                            protected
+                                        </span>
+                                        <!-- Checkmark for selected -->
+                                        <svg x-show="branch.name === branchSelector.selectedBranch"
+                                             class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                    </span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
                 </div>
 
                 <div>
@@ -461,7 +751,7 @@
 
                 <div class="flex justify-end gap-3 pt-4">
                     <button type="button"
-                            @click="showAddModal = false; resetFolderSelector()"
+                            @click="showAddModal = false; resetFolderSelector(); resetBranchSelector(); resetRepoSearch()"
                             :disabled="cloneLoading"
                             class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                         Annulla

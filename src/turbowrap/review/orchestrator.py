@@ -41,9 +41,9 @@ from turbowrap.review.models.report import (
     ReviewerResult,
 )
 from turbowrap.review.models.review import Issue, ReviewMode, ReviewRequest
+from turbowrap.review.parallel_triple_llm_runner import ParallelTripleLLMRunner
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.claude_evaluator import ClaudeEvaluator
-from turbowrap.review.sequential_triple_llm_runner import SequentialTripleLLMRunner
 from turbowrap.review.utils.repo_detector import RepoDetector
 from turbowrap.tools.structure_generator import StructureGenerator
 from turbowrap.utils.file_utils import is_text_file, read_file
@@ -330,8 +330,8 @@ class Orchestrator:
                     )
 
         else:
-            # Sequential Triple-LLM mode: 3 CLI processes instead of 15
-            # Each LLM (Claude, Gemini, Grok) runs ALL specialists sequentially
+            # Parallel Triple-LLM mode: 3 CLI processes instead of 15
+            # Each LLM (Claude, Gemini, Grok) runs IN PARALLEL
             # This shares cache within each LLM session, reducing costs by ~80%
 
             started_at = datetime.utcnow()
@@ -340,25 +340,25 @@ class Orchestrator:
             await emit(
                 ProgressEvent(
                     type=ProgressEventType.REVIEWER_STARTED,
-                    reviewer_name="sequential_claude",
+                    reviewer_name="parallel_claude",
                     reviewer_display_name="Claude (All Specialists)",
-                    message="Starting Claude sequential review...",
+                    message="Starting Claude parallel review...",
                 )
             )
             await emit(
                 ProgressEvent(
                     type=ProgressEventType.REVIEWER_STARTED,
-                    reviewer_name="sequential_gemini",
+                    reviewer_name="parallel_gemini",
                     reviewer_display_name="Gemini (All Specialists)",
-                    message="Starting Gemini sequential review...",
+                    message="Starting Gemini parallel review...",
                 )
             )
             await emit(
                 ProgressEvent(
                     type=ProgressEventType.REVIEWER_STARTED,
-                    reviewer_name="sequential_grok",
+                    reviewer_name="parallel_grok",
                     reviewer_display_name="Grok (All Specialists)",
-                    message="Starting Grok sequential review...",
+                    message="Starting Grok parallel review...",
                 )
             )
 
@@ -367,7 +367,7 @@ class Orchestrator:
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="sequential_claude",
+                        reviewer_name="parallel_claude",
                         reviewer_display_name="Claude (All Specialists)",
                         content=chunk,
                     )
@@ -377,7 +377,7 @@ class Orchestrator:
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="sequential_gemini",
+                        reviewer_name="parallel_gemini",
                         reviewer_display_name="Gemini (All Specialists)",
                         content=chunk,
                     )
@@ -387,16 +387,16 @@ class Orchestrator:
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="sequential_grok",
+                        reviewer_name="parallel_grok",
                         reviewer_display_name="Grok (All Specialists)",
                         content=chunk,
                     )
                 )
 
             try:
-                # Run the sequential triple-LLM review (3 CLIs, all specialists)
-                runner = SequentialTripleLLMRunner(specialists=reviewers)
-                seq_result = await runner.run(
+                # Run the parallel triple-LLM review (3 CLIs in parallel)
+                runner = ParallelTripleLLMRunner(specialists=reviewers)
+                par_result = await runner.run(
                     context=context,
                     file_list=context.files,
                     on_claude_chunk=on_claude_chunk,
@@ -408,72 +408,72 @@ class Orchestrator:
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name="sequential_claude",
+                        reviewer_name="parallel_claude",
                         reviewer_display_name="Claude (All Specialists)",
-                        issues_found=seq_result.claude_issues_count,
-                        message=f"Claude: {seq_result.claude_issues_count} issues",
+                        issues_found=par_result.claude_issues_count,
+                        message=f"Claude: {par_result.claude_issues_count} issues",
                     )
                 )
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name="sequential_gemini",
+                        reviewer_name="parallel_gemini",
                         reviewer_display_name="Gemini (All Specialists)",
-                        issues_found=seq_result.gemini_issues_count,
-                        message=f"Gemini: {seq_result.gemini_issues_count} issues",
+                        issues_found=par_result.gemini_issues_count,
+                        message=f"Gemini: {par_result.gemini_issues_count} issues",
                     )
                 )
                 await emit(
                     ProgressEvent(
                         type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name="sequential_grok",
+                        reviewer_name="parallel_grok",
                         reviewer_display_name="Grok (All Specialists)",
-                        issues_found=seq_result.grok_issues_count,
-                        message=f"Grok: {seq_result.grok_issues_count} issues",
+                        issues_found=par_result.grok_issues_count,
+                        message=f"Grok: {par_result.grok_issues_count} issues",
                     )
                 )
 
                 # Log summary
                 await emit_log(
                     "INFO",
-                    f"✓ Sequential review: {seq_result.merged_issues_count} issues "
-                    f"(C:{seq_result.claude_issues_count} G:{seq_result.gemini_issues_count} "
-                    f"X:{seq_result.grok_issues_count}, overlap={seq_result.overlap_count})",
+                    f"✓ Parallel review: {par_result.merged_issues_count} issues "
+                    f"(C:{par_result.claude_issues_count} G:{par_result.gemini_issues_count} "
+                    f"X:{par_result.grok_issues_count}, overlap={par_result.overlap_count})",
                 )
 
                 # Build reviewer_results for each specialist from merged data
                 for reviewer_name in reviewers:
                     # Count issues for this specialist across all LLMs
                     specialist_issues = 0
-                    if reviewer_name in seq_result.claude_reviews:
-                        specialist_issues += len(seq_result.claude_reviews[reviewer_name].issues)
-                    if reviewer_name in seq_result.gemini_reviews:
-                        specialist_issues += len(seq_result.gemini_reviews[reviewer_name].issues)
-                    if reviewer_name in seq_result.grok_reviews:
-                        specialist_issues += len(seq_result.grok_reviews[reviewer_name].issues)
+                    if reviewer_name in par_result.claude_reviews:
+                        specialist_issues += len(par_result.claude_reviews[reviewer_name].issues)
+                    if reviewer_name in par_result.gemini_reviews:
+                        specialist_issues += len(par_result.gemini_reviews[reviewer_name].issues)
+                    if reviewer_name in par_result.grok_reviews:
+                        specialist_issues += len(par_result.grok_reviews[reviewer_name].issues)
 
                     # Count how many LLMs successfully reviewed this specialist
                     llms_ok = sum(
                         [
-                            reviewer_name in seq_result.claude_reviews,
-                            reviewer_name in seq_result.gemini_reviews,
-                            reviewer_name in seq_result.grok_reviews,
+                            reviewer_name in par_result.claude_reviews,
+                            reviewer_name in par_result.gemini_reviews,
+                            reviewer_name in par_result.grok_reviews,
                         ]
                     )
 
                     # Calculate total cost for this specialist across all LLMs
                     specialist_cost = 0.0
-                    if reviewer_name in seq_result.claude_reviews:
+                    if reviewer_name in par_result.claude_reviews:
                         specialist_cost += sum(
-                            m.cost_usd for m in seq_result.claude_reviews[reviewer_name].model_usage
+                            m.cost_usd for m in par_result.claude_reviews[reviewer_name].model_usage
                         )
-                    if reviewer_name in seq_result.gemini_reviews:
+                    if reviewer_name in par_result.gemini_reviews:
                         specialist_cost += sum(
-                            m.cost_usd for m in seq_result.gemini_reviews[reviewer_name].model_usage
+                            m.cost_usd for m in par_result.gemini_reviews[reviewer_name].model_usage
                         )
-                    if reviewer_name in seq_result.grok_reviews:
+                    if reviewer_name in par_result.grok_reviews:
                         specialist_cost += sum(
-                            m.cost_usd for m in seq_result.grok_reviews[reviewer_name].model_usage
+                            m.cost_usd for m in par_result.grok_reviews[reviewer_name].model_usage
                         )
 
                     reviewer_results.append(
@@ -481,7 +481,7 @@ class Orchestrator:
                             name=reviewer_name,
                             status="completed" if llms_ok > 0 else "error",
                             issues_found=specialist_issues,
-                            duration_seconds=seq_result.total_duration_seconds / len(reviewers),
+                            duration_seconds=par_result.total_duration_seconds / len(reviewers),
                             iterations=1,
                             final_satisfaction=llms_ok * 33.33,
                             cost_usd=specialist_cost,  # Read directly from model_usage
@@ -489,19 +489,19 @@ class Orchestrator:
                     )
 
                 # Add all merged issues
-                all_issues.extend(seq_result.final_review.issues)
+                all_issues.extend(par_result.final_review.issues)
 
                 # Checkpoint callback for recovery
                 if checkpoint_callback:
                     for reviewer_name in reviewers:
                         # Get issues for this specialist
                         spec_issues: list[Issue] = []
-                        if reviewer_name in seq_result.claude_reviews:
-                            spec_issues.extend(seq_result.claude_reviews[reviewer_name].issues)
-                        if reviewer_name in seq_result.gemini_reviews:
-                            spec_issues.extend(seq_result.gemini_reviews[reviewer_name].issues)
-                        if reviewer_name in seq_result.grok_reviews:
-                            spec_issues.extend(seq_result.grok_reviews[reviewer_name].issues)
+                        if reviewer_name in par_result.claude_reviews:
+                            spec_issues.extend(par_result.claude_reviews[reviewer_name].issues)
+                        if reviewer_name in par_result.gemini_reviews:
+                            spec_issues.extend(par_result.gemini_reviews[reviewer_name].issues)
+                        if reviewer_name in par_result.grok_reviews:
+                            spec_issues.extend(par_result.grok_reviews[reviewer_name].issues)
 
                         await checkpoint_callback(
                             reviewer_name,
@@ -514,10 +514,10 @@ class Orchestrator:
                         )
 
             except Exception as e:
-                logger.exception(f"Sequential triple-LLM review failed: {e}")
+                logger.exception(f"Parallel triple-LLM review failed: {e}")
 
                 # Emit error for all LLM streams
-                llm_names = ["sequential_claude", "sequential_gemini", "sequential_grok"]
+                llm_names = ["parallel_claude", "parallel_gemini", "parallel_grok"]
                 for llm_name in llm_names:
                     display = f"{llm_name.split('_')[1].title()} (All Specialists)"
                     await emit(
@@ -530,7 +530,7 @@ class Orchestrator:
                         )
                     )
 
-                await emit_log("ERROR", f"✗ Sequential review failed: {str(e)[:60]}")
+                await emit_log("ERROR", f"✗ Parallel review failed: {str(e)[:60]}")
 
                 # Mark all reviewers as failed
                 for reviewer_name in reviewers:

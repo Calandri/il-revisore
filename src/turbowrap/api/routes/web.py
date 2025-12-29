@@ -512,7 +512,13 @@ async def htmx_add_repo(
 
     For monorepos, workspace_path limits operations to a subfolder.
     """
+    import json
+    import logging
+
     from ...core.repo_manager import RepoManager
+
+    logger = logging.getLogger(__name__)
+    clone_error: str | None = None
 
     manager = RepoManager(db)
     try:
@@ -520,17 +526,23 @@ async def htmx_add_repo(
         ws_path = workspace_path.strip() if workspace_path else None
         manager.clone(url, branch, workspace_path=ws_path)
     except Exception as e:
-        print(f"Clone error: {e}")
+        logger.error(f"Clone error for {url}: {e}")
+        clone_error = str(e)
 
     # Return updated list
     repos = db.query(Repository).filter(Repository.status != "deleted").all()
     templates = request.app.state.templates
-    return cast(
-        Response,
-        templates.TemplateResponse(
-            "components/repo_list.html", {"request": request, "repos": repos}
-        ),
+    response = templates.TemplateResponse(
+        "components/repo_list.html", {"request": request, "repos": repos}
     )
+
+    # Send toast notification on error
+    if clone_error:
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": f"Clone fallito: {clone_error}", "type": "error"}}
+        )
+
+    return cast(Response, response)
 
 
 @router.delete("/htmx/repos/{repo_id}", response_class=HTMLResponse)
