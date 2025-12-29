@@ -1,16 +1,17 @@
 /**
  * Global Repository/Branch Context Store
  *
- * Provides app-wide repo/branch selection that persists in localStorage
- * and syncs with active CLI chat sessions.
+ * Provides app-wide repo/branch selection that persists per-tab in sessionStorage,
+ * with localStorage as fallback for new tabs (inherits last used).
+ * This allows different tabs to use different repos independently.
  */
 
 document.addEventListener('alpine:init', () => {
     Alpine.store('globalContext', {
         // State
         repositories: [],
-        selectedRepoId: localStorage.getItem('globalRepoId') || null,
-        selectedBranch: localStorage.getItem('globalBranch') || null,
+        selectedRepoId: sessionStorage.getItem('globalRepoId') || localStorage.getItem('globalRepoId') || null,
+        selectedBranch: sessionStorage.getItem('globalBranch') || localStorage.getItem('globalBranch') || null,
         branches: [],
         loading: false,
         branchesLoading: false,
@@ -69,6 +70,7 @@ document.addEventListener('alpine:init', () => {
                         const currentBranch = data.current || this.branches[0] || null;
                         this.selectedBranch = currentBranch;
                         if (currentBranch) {
+                            sessionStorage.setItem('globalBranch', currentBranch);
                             localStorage.setItem('globalBranch', currentBranch);
                         }
                     }
@@ -87,14 +89,17 @@ document.addEventListener('alpine:init', () => {
             this.selectedRepoId = repoId || null;
 
             if (repoId) {
+                sessionStorage.setItem('globalRepoId', repoId);
                 localStorage.setItem('globalRepoId', repoId);
             } else {
+                sessionStorage.removeItem('globalRepoId');
                 localStorage.removeItem('globalRepoId');
             }
 
             // Reset branch when repo changes
             if (oldRepoId !== repoId) {
                 this.selectedBranch = null;
+                sessionStorage.removeItem('globalBranch');
                 localStorage.removeItem('globalBranch');
                 this.branches = [];
 
@@ -148,6 +153,7 @@ document.addEventListener('alpine:init', () => {
 
             // Update state after successful checkout
             this.selectedBranch = branch;
+            sessionStorage.setItem('globalBranch', branch);
             localStorage.setItem('globalBranch', branch);
 
             // Emit event
@@ -159,6 +165,8 @@ document.addEventListener('alpine:init', () => {
             this.selectedRepoId = null;
             this.selectedBranch = null;
             this.branches = [];
+            sessionStorage.removeItem('globalRepoId');
+            sessionStorage.removeItem('globalBranch');
             localStorage.removeItem('globalRepoId');
             localStorage.removeItem('globalBranch');
             this._emitChange();
