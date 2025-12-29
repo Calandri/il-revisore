@@ -357,11 +357,11 @@ export class IssueWidget {
     this.shadow.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
 
-      if (target.id === 'iw-next') {
+      if (target.id === 'iw-next' || target.closest('#iw-next')) {
         this.handleNext();
-      } else if (target.id === 'iw-back') {
+      } else if (target.id === 'iw-back' || target.closest('#iw-back')) {
         this.handleBack();
-      } else if (target.id === 'iw-done') {
+      } else if (target.id === 'iw-done' || target.closest('#iw-done')) {
         this.close();
         this.reset();
       } else if (target.id === 'iw-screenshot-btn' || target.closest('#iw-screenshot-btn')) {
