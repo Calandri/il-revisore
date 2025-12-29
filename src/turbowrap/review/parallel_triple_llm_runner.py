@@ -30,6 +30,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from turbowrap.config import get_settings
@@ -505,7 +506,13 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                 logger.error(f"[PARALLEL-CLAUDE] Failed: {result.error}")
                 return {}, time.time() - start_time
 
-            reviews = self._parse_output(result.output, "claude", len(context.files))
+            reviews = self._parse_output(
+                result.output,
+                "claude",
+                len(context.files),
+                repo_path=context.repo_path,
+                workspace_path=context.workspace_path,
+            )
             return reviews, time.time() - start_time
 
         except Exception as e:
@@ -554,7 +561,13 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                 logger.error(f"[PARALLEL-GEMINI] Failed: {result.error}")
                 return {}, time.time() - start_time
 
-            reviews = self._parse_output(result.output, "gemini", len(context.files))
+            reviews = self._parse_output(
+                result.output,
+                "gemini",
+                len(context.files),
+                repo_path=context.repo_path,
+                workspace_path=context.workspace_path,
+            )
             return reviews, time.time() - start_time
 
         except Exception as e:
@@ -603,7 +616,13 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                 logger.error(f"[PARALLEL-GROK] Failed: {result.error}")
                 return {}, time.time() - start_time
 
-            reviews = self._parse_output(result.output, "grok", len(context.files))
+            reviews = self._parse_output(
+                result.output,
+                "grok",
+                len(context.files),
+                repo_path=context.repo_path,
+                workspace_path=context.workspace_path,
+            )
             return reviews, time.time() - start_time
 
         except Exception as e:
@@ -615,12 +634,18 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
         output: str,
         llm: str,
         files_count: int,
+        repo_path: Path | None = None,
+        workspace_path: str | None = None,
     ) -> dict[str, ReviewOutput]:
         """
         Parse multi-specialist JSON output from single CLI session.
 
         Extracts all JSON blocks with {"specialist": "name", "review": {...}}
         and converts them to ReviewOutput objects.
+
+        Strategy (in order):
+        1. Parse JSON blocks from stream output
+        2. Fallback: Read from saved .turbowrap_review_parallel.json file
         """
         results: dict[str, ReviewOutput] = {}
 
@@ -696,7 +721,99 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
                         if review and review.issues:
                             results[spec_name] = review
 
+        # Strategy 4: Read from saved file (most reliable fallback)
+        if not results and repo_path:
+            results = self._parse_from_saved_file(repo_path, workspace_path, llm, files_count)
+
         logger.info(f"[PARALLEL-{llm.upper()}] Parsed {len(results)} specialist reviews")
+        return results
+
+    def _parse_from_saved_file(
+        self,
+        repo_path: Path,
+        workspace_path: str | None,
+        llm: str,
+        files_count: int,
+    ) -> dict[str, ReviewOutput]:
+        """
+        Read reviews from saved .turbowrap_review_parallel.json file.
+
+        This is the most reliable source since LLMs save directly to file.
+        """
+        results: dict[str, ReviewOutput] = {}
+        output_file = ".turbowrap_review_parallel.json"
+
+        # Determine file path (monorepo vs single repo)
+        if workspace_path:
+            file_path = Path(repo_path) / workspace_path / output_file
+        else:
+            file_path = Path(repo_path) / output_file
+
+        if not file_path.exists():
+            logger.debug(f"[PARALLEL-{llm.upper()}] Saved file not found: {file_path}")
+            return results
+
+        try:
+            content = file_path.read_text()
+            logger.info(f"[PARALLEL-{llm.upper()}] Reading from saved file: {file_path}")
+
+            # Try to parse as JSON
+            data = json.loads(content)
+
+            # Handle different formats:
+            # Format 1: {"specialist_name": {review_data}, ...}
+            # Format 2: [{"specialist": "name", "review": {...}}, ...]
+            # Format 3: {"specialists": {"name": {...}, ...}}
+
+            if isinstance(data, dict):
+                # Check for specialists wrapper
+                if "specialists" in data:
+                    data = data["specialists"]
+
+                # Try each key as specialist name
+                for key, value in data.items():
+                    if key in self.specialists or any(s in key for s in self.specialists):
+                        spec_name = key
+                        # Normalize specialist name
+                        for s in self.specialists:
+                            if s in key:
+                                spec_name = s
+                                break
+
+                        review_data = value
+                        # If value has "review" wrapper, unwrap it
+                        if isinstance(value, dict) and "review" in value:
+                            review_data = value["review"]
+
+                        review = convert_dict_to_review_output(
+                            review_data, spec_name, files_count, flagged_by=[llm, spec_name]
+                        )
+                        if review:
+                            results[spec_name] = review
+                            logger.debug(
+                                f"[PARALLEL-{llm.upper()}] From file: {spec_name} "
+                                f"with {len(review.issues)} issues"
+                            )
+
+            elif isinstance(data, list):
+                # List of specialist reviews
+                for item in data:
+                    if isinstance(item, dict) and "specialist" in item:
+                        spec_name = item["specialist"]
+                        review_data = item.get("review", item)
+                        review = convert_dict_to_review_output(
+                            review_data, spec_name, files_count, flagged_by=[llm, spec_name]
+                        )
+                        if review:
+                            results[spec_name] = review
+
+            logger.info(f"[PARALLEL-{llm.upper()}] Loaded {len(results)} reviews from file")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[PARALLEL-{llm.upper()}] Failed to parse saved file: {e}")
+        except Exception as e:
+            logger.error(f"[PARALLEL-{llm.upper()}] Error reading saved file: {e}")
+
         return results
 
     def _merge_summaries(
