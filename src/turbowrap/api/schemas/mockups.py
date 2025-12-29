@@ -202,6 +202,14 @@ class MockupModifyRequest(BaseModel):
     )
 
 
+class MockupStatusEnum(str, Enum):
+    """Mockup generation status."""
+
+    GENERATING = "generating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class MockupResponse(BaseModel):
     """Mockup response."""
 
@@ -212,6 +220,7 @@ class MockupResponse(BaseModel):
     name: str = Field(..., description="Mockup name")
     description: str | None = Field(default=None, description="Mockup description")
     component_type: str | None = Field(default=None, description="Component type")
+    status: str = Field(default="completed", description="Generation status")
 
     # LLM metadata
     llm_type: str = Field(..., description="LLM used for generation")
@@ -268,3 +277,105 @@ class MockupGenerateResponse(BaseModel):
     success: bool = Field(..., description="Whether generation succeeded")
     mockup: MockupResponse | None = Field(default=None, description="Generated mockup")
     error: str | None = Field(default=None, description="Error message if failed")
+
+
+# =========================================================================
+# Tool Schemas (for LLM tools init_mockup / save_mockup)
+# =========================================================================
+
+
+class MockupInitRequest(BaseModel):
+    """Request to initialize a mockup (creates placeholder with 'generating' status).
+
+    Used by LLM tool: init_mockup
+    """
+
+    project_id: str = Field(
+        ...,
+        min_length=36,
+        max_length=36,
+        description="Project UUID to associate the mockup with",
+    )
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Mockup name (descriptive, like 'Dashboard Admin' or 'Login Form')",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Brief description of what this mockup will be",
+    )
+    component_type: ComponentTypeEnum | None = Field(
+        default=None,
+        description="Type of UI component (page, component, modal, form, table, etc.)",
+    )
+    llm_type: LLMTypeEnum = Field(
+        default=LLMTypeEnum.CLAUDE,
+        description="LLM generating this mockup",
+    )
+    chat_session_id: str | None = Field(
+        default=None,
+        description="Chat session ID if created from CLI chat",
+    )
+
+
+class MockupInitResponse(BaseModel):
+    """Response from init_mockup - returns the mockup ID for later save."""
+
+    mockup_id: str = Field(..., description="Created mockup UUID - use this in save_mockup")
+    status: str = Field(default="generating", description="Mockup status")
+    message: str = Field(
+        default="Mockup initialized. Generate the HTML and call save_mockup when done.",
+        description="Instruction message",
+    )
+
+
+class MockupSaveRequest(BaseModel):
+    """Request to save mockup HTML content.
+
+    Used by LLM tool: save_mockup
+    """
+
+    html_content: str = Field(
+        ...,
+        min_length=50,
+        description="Complete HTML content (including DOCTYPE, head, body)",
+    )
+    tokens_in: int | None = Field(
+        default=None,
+        description="Input tokens used for generation",
+    )
+    tokens_out: int | None = Field(
+        default=None,
+        description="Output tokens used for generation",
+    )
+    llm_model: str | None = Field(
+        default=None,
+        description="Specific model used (e.g., claude-3-sonnet)",
+    )
+
+
+class MockupSaveResponse(BaseModel):
+    """Response from save_mockup."""
+
+    success: bool = Field(..., description="Whether save succeeded")
+    mockup_id: str = Field(..., description="Mockup UUID")
+    status: str = Field(..., description="New mockup status (completed/failed)")
+    s3_html_url: str | None = Field(default=None, description="S3 URL where HTML was saved")
+    preview_url: str = Field(..., description="URL to preview the mockup")
+    message: str = Field(..., description="Result message")
+
+
+class MockupFailRequest(BaseModel):
+    """Request to mark a mockup as failed.
+
+    Used when generation fails and cleanup is needed.
+    """
+
+    error_message: str = Field(
+        ...,
+        max_length=2000,
+        description="Error description",
+    )

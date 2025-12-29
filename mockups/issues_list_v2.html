@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="it" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Issues List v2 - Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        :root { --primary: #6366f1; }
+        .bg-primary { background-color: var(--primary); }
+        .text-primary { color: var(--primary); }
+        .border-primary { border-color: var(--primary); }
+
+        /* Severity */
+        .severity-critical { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .severity-high { background: linear-gradient(135deg, #f97316, #ea580c); }
+        .severity-medium { background: linear-gradient(135deg, #eab308, #ca8a04); }
+        .severity-low { background: linear-gradient(135deg, #6b7280, #4b5563); }
+
+        /* Status */
+        .status-open { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+        .status-in_progress { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+        .status-resolved { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+        .status-merged { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+        .status-in_review { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+        .status-ignored { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+
+        /* Card hover */
+        .issue-card { transition: all 0.2s ease; }
+        .issue-card:hover { transform: translateY(-2px); box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3); }
+
+        /* Stat card */
+        .stat-card { transition: all 0.2s ease; }
+        .stat-card:hover { transform: translateY(-2px); }
+
+        /* Pulse animation */
+        @keyframes pulse-critical {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+        }
+        .pulse-critical { animation: pulse-critical 2s ease-in-out infinite; }
+
+        /* Linear brand */
+        .linear-brand { background: linear-gradient(135deg, #5E6AD2, #4B51B6); }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 py-8" x-data="issuesList()">
+
+        <!-- ============================================== -->
+        <!-- HEADER -->
+        <!-- ============================================== -->
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3 flex-wrap">
+                    <span>Issues</span>
+                    <span class="text-lg font-normal text-gray-500">per</span>
+                    <span class="text-primary font-medium">lambda-oasi</span>
+                </h1>
+                <p class="text-gray-500 mt-1">Problemi trovati nelle code review</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Aggiorna
+                </button>
+                <button class="px-4 py-2 bg-primary hover:opacity-90 text-white rounded-lg font-medium transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    Nuova Review
+                </button>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- SUMMARY CARDS -->
+        <!-- ============================================== -->
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+            <div class="stat-card bg-gray-800 rounded-xl p-4 border border-gray-700">
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Totali</div>
+                <div class="text-3xl font-bold mt-1 text-white">127</div>
+            </div>
+            <div class="stat-card bg-gray-800 rounded-xl p-4 border border-red-500/30">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-red-500 pulse-critical"></span>
+                    <span class="text-xs font-medium text-gray-500 uppercase">Critical</span>
+                </div>
+                <div class="text-3xl font-bold mt-1 text-red-400">8</div>
+            </div>
+            <div class="stat-card bg-gray-800 rounded-xl p-4 border border-orange-500/30">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                    <span class="text-xs font-medium text-gray-500 uppercase">High</span>
+                </div>
+                <div class="text-3xl font-bold mt-1 text-orange-400">23</div>
+            </div>
+            <div class="stat-card bg-gray-800 rounded-xl p-4 border border-yellow-500/30">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
+                    <span class="text-xs font-medium text-gray-500 uppercase">Medium</span>
+                </div>
+                <div class="text-3xl font-bold mt-1 text-yellow-400">56</div>
+            </div>
+            <div class="stat-card bg-gray-800 rounded-xl p-4 border border-blue-500/30">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                    <span class="text-xs font-medium text-gray-500 uppercase">Low</span>
+                </div>
+                <div class="text-3xl font-bold mt-1 text-blue-400">40</div>
+            </div>
+            <!-- LINEAR LINKED (NEW) -->
+            <div class="stat-card bg-gray-800 rounded-xl p-4 border border-indigo-500/30">
+                <div class="flex items-center gap-2">
+                    <svg class="w-3 h-3 text-indigo-400" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    <span class="text-xs font-medium text-gray-500 uppercase">Linked</span>
+                </div>
+                <div class="text-3xl font-bold mt-1 text-indigo-400">12</div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- FILTERS -->
+        <!-- ============================================== -->
+        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-6">
+            <div class="flex flex-wrap gap-3 items-center">
+                <!-- Status Filter -->
+                <div class="flex-1 min-w-[150px]">
+                    <select class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-primary">
+                        <option value="">Tutti gli stati</option>
+                        <option value="open" selected>Open</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="in_review">In Review</option>
+                        <option value="merged">Merged</option>
+                        <option value="ignored">Ignored</option>
+                    </select>
+                </div>
+                <!-- Severity Filter -->
+                <div class="flex-1 min-w-[150px]">
+                    <select class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-primary">
+                        <option value="">Tutte le severity</option>
+                        <option value="CRITICAL">Critical</option>
+                        <option value="HIGH">High</option>
+                        <option value="MEDIUM">Medium</option>
+                        <option value="LOW">Low</option>
+                    </select>
+                </div>
+                <!-- Category Filter -->
+                <div class="flex-1 min-w-[150px]">
+                    <select class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-primary">
+                        <option value="">Tutte le categorie</option>
+                        <option value="security">Security</option>
+                        <option value="performance">Performance</option>
+                        <option value="architecture">Architecture</option>
+                        <option value="code_quality">Code Quality</option>
+                        <option value="best_practices">Best Practices</option>
+                    </select>
+                </div>
+                <!-- LINEAR FILTER (NEW) -->
+                <div class="flex-1 min-w-[150px]">
+                    <select class="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 focus:outline-none focus:border-primary">
+                        <option value="">Linear: Tutti</option>
+                        <option value="linked">Collegati</option>
+                        <option value="unlinked">Non collegati</option>
+                    </select>
+                </div>
+                <!-- Search -->
+                <div class="flex-[2] min-w-[200px]">
+                    <div class="relative">
+                        <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" placeholder="Cerca per titolo, file, codice..."
+                               class="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:border-primary">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- VIEW TOGGLE + BULK ACTIONS -->
+        <!-- ============================================== -->
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+                <!-- Select All -->
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" x-model="selectAll" @change="toggleSelectAll()" class="w-4 h-4 rounded border-gray-600 bg-gray-900 text-primary focus:ring-primary">
+                    <span class="text-sm text-gray-400">Seleziona tutto</span>
+                </label>
+                <!-- Bulk Actions -->
+                <template x-if="selectedIssues.length > 0">
+                    <div class="flex items-center gap-2 ml-4">
+                        <span class="text-sm text-gray-400" x-text="selectedIssues.length + ' selezionati'"></span>
+                        <button class="px-3 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded text-sm transition-colors">
+                            Fix Selected
+                        </button>
+                        <button class="px-3 py-1 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded text-sm transition-colors">
+                            Bulk Edit
+                        </button>
+                    </div>
+                </template>
+            </div>
+            <div class="flex items-center gap-2">
+                <!-- View Toggle -->
+                <button @click="viewMode = 'list'"
+                        :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-800 text-gray-400'"
+                        class="p-2 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                    </svg>
+                </button>
+                <button @click="viewMode = 'cards'"
+                        :class="viewMode === 'cards' ? 'bg-primary text-white' : 'bg-gray-800 text-gray-400'"
+                        class="p-2 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- ISSUES LIST VIEW -->
+        <!-- ============================================== -->
+        <div x-show="viewMode === 'list'" class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+            <!-- Table Header -->
+            <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-gray-900 border-b border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <div class="col-span-1"></div>
+                <div class="col-span-4">Issue</div>
+                <div class="col-span-2">File</div>
+                <div class="col-span-1">Severity</div>
+                <div class="col-span-1">Status</div>
+                <div class="col-span-1">Linear</div>
+                <div class="col-span-1">Effort</div>
+                <div class="col-span-1">Data</div>
+            </div>
+
+            <!-- Issue Row 1 - Critical with Linear -->
+            <a href="#" class="issue-card grid grid-cols-12 gap-4 px-4 py-4 border-b border-gray-700 hover:bg-gray-700/50 items-center">
+                <div class="col-span-1 flex items-center gap-2">
+                    <input type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-gray-900 text-primary focus:ring-primary" @click.stop>
+                    <div class="w-1 h-8 rounded-full severity-critical"></div>
+                </div>
+                <div class="col-span-4">
+                    <div class="font-mono text-sm font-medium text-white">BE-CRIT-001</div>
+                    <div class="text-sm text-gray-400 truncate">SQL Injection vulnerability in user search</div>
+                </div>
+                <div class="col-span-2">
+                    <div class="text-xs font-mono text-gray-500 truncate">src/api/routes/users.py</div>
+                    <div class="text-xs text-primary">:45</div>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-critical">CRITICAL</span>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs border status-open">open</span>
+                </div>
+                <div class="col-span-1">
+                    <!-- LINEAR BADGE (NEW) -->
+                    <a href="#" @click.stop class="px-2 py-1 rounded text-xs font-medium text-white linear-brand hover:opacity-90 inline-flex items-center gap-1">
+                        <svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+                            <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                        </svg>
+                        123
+                    </a>
+                </div>
+                <div class="col-span-1">
+                    <div class="flex items-center gap-1">
+                        <div class="w-12 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                            <div class="w-2/5 h-full bg-yellow-500"></div>
+                        </div>
+                        <span class="text-xs text-gray-500">2</span>
+                    </div>
+                </div>
+                <div class="col-span-1 text-xs text-gray-500">2h fa</div>
+            </a>
+
+            <!-- Issue Row 2 - High without Linear -->
+            <a href="#" class="issue-card grid grid-cols-12 gap-4 px-4 py-4 border-b border-gray-700 hover:bg-gray-700/50 items-center">
+                <div class="col-span-1 flex items-center gap-2">
+                    <input type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-gray-900 text-primary focus:ring-primary" @click.stop>
+                    <div class="w-1 h-8 rounded-full severity-high"></div>
+                </div>
+                <div class="col-span-4">
+                    <div class="font-mono text-sm font-medium text-white">BE-HIGH-012</div>
+                    <div class="text-sm text-gray-400 truncate">Missing rate limiting on authentication endpoint</div>
+                </div>
+                <div class="col-span-2">
+                    <div class="text-xs font-mono text-gray-500 truncate">src/api/routes/auth.py</div>
+                    <div class="text-xs text-primary">:89</div>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-high">HIGH</span>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs border status-in_progress">in_progress</span>
+                </div>
+                <div class="col-span-1">
+                    <!-- No Linear - Button to link -->
+                    <button @click.stop class="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 border border-dashed border-gray-600 hover:border-gray-500 transition-colors">
+                        + Link
+                    </button>
+                </div>
+                <div class="col-span-1">
+                    <div class="flex items-center gap-1">
+                        <div class="w-12 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                            <div class="w-3/5 h-full bg-yellow-500"></div>
+                        </div>
+                        <span class="text-xs text-gray-500">3</span>
+                    </div>
+                </div>
+                <div class="col-span-1 text-xs text-gray-500">1h fa</div>
+            </a>
+
+            <!-- Issue Row 3 - Medium Resolved -->
+            <a href="#" class="issue-card grid grid-cols-12 gap-4 px-4 py-4 border-b border-gray-700 hover:bg-gray-700/50 items-center opacity-70">
+                <div class="col-span-1 flex items-center gap-2">
+                    <input type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-gray-900 text-primary focus:ring-primary" @click.stop>
+                    <div class="w-1 h-8 rounded-full severity-medium"></div>
+                </div>
+                <div class="col-span-4">
+                    <div class="font-mono text-sm font-medium text-white">FE-MED-045</div>
+                    <div class="text-sm text-gray-400 truncate">Unnecessary re-renders in dashboard component</div>
+                </div>
+                <div class="col-span-2">
+                    <div class="text-xs font-mono text-gray-500 truncate">src/components/Dashboard.tsx</div>
+                    <div class="text-xs text-primary">:123-156</div>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-medium">MEDIUM</span>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs border status-resolved">resolved</span>
+                </div>
+                <div class="col-span-1">
+                    <a href="#" @click.stop class="px-2 py-1 rounded text-xs font-medium text-white linear-brand hover:opacity-90 inline-flex items-center gap-1">
+                        <svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+                            <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                        </svg>
+                        456
+                    </a>
+                </div>
+                <div class="col-span-1">
+                    <div class="flex items-center gap-1">
+                        <div class="w-12 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                            <div class="w-1/5 h-full bg-yellow-500"></div>
+                        </div>
+                        <span class="text-xs text-gray-500">1</span>
+                    </div>
+                </div>
+                <div class="col-span-1 text-xs text-gray-500">5h fa</div>
+            </a>
+
+            <!-- Issue Row 4 - With comments indicator (NEW) -->
+            <a href="#" class="issue-card grid grid-cols-12 gap-4 px-4 py-4 border-b border-gray-700 hover:bg-gray-700/50 items-center">
+                <div class="col-span-1 flex items-center gap-2">
+                    <input type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-gray-900 text-primary focus:ring-primary" @click.stop>
+                    <div class="w-1 h-8 rounded-full severity-high"></div>
+                </div>
+                <div class="col-span-4">
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-sm font-medium text-white">BE-HIGH-023</span>
+                        <!-- COMMENTS INDICATOR (NEW) -->
+                        <span class="flex items-center gap-1 text-gray-400" title="3 commenti">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                            </svg>
+                            <span class="text-xs">3</span>
+                        </span>
+                        <!-- ATTACHMENTS INDICATOR (NEW) -->
+                        <span class="flex items-center gap-1 text-gray-400" title="2 allegati">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                            </svg>
+                            <span class="text-xs">2</span>
+                        </span>
+                    </div>
+                    <div class="text-sm text-gray-400 truncate">Hardcoded credentials in configuration</div>
+                </div>
+                <div class="col-span-2">
+                    <div class="text-xs font-mono text-gray-500 truncate">src/config/settings.py</div>
+                    <div class="text-xs text-primary">:34</div>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-high">HIGH</span>
+                </div>
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs border status-open">open</span>
+                </div>
+                <div class="col-span-1">
+                    <button @click.stop class="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 border border-dashed border-gray-600 hover:border-gray-500 transition-colors">
+                        + Link
+                    </button>
+                </div>
+                <div class="col-span-1">
+                    <div class="flex items-center gap-1">
+                        <div class="w-12 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                            <div class="w-4/5 h-full bg-yellow-500"></div>
+                        </div>
+                        <span class="text-xs text-gray-500">4</span>
+                    </div>
+                </div>
+                <div class="col-span-1 text-xs text-gray-500">30m fa</div>
+            </a>
+
+            <!-- More rows... -->
+        </div>
+
+        <!-- ============================================== -->
+        <!-- ISSUES CARDS VIEW (NEW) -->
+        <!-- ============================================== -->
+        <div x-show="viewMode === 'cards'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Card 1 -->
+            <a href="#" class="issue-card bg-gray-800 rounded-xl border border-gray-700 p-5 block">
+                <div class="flex items-start justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-critical">CRITICAL</span>
+                        <span class="px-2 py-1 rounded-full text-xs border status-open">open</span>
+                    </div>
+                    <a href="#" @click.stop class="px-2 py-1 rounded text-xs font-medium text-white linear-brand hover:opacity-90 inline-flex items-center gap-1">
+                        <svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+                            <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                        </svg>
+                        123
+                    </a>
+                </div>
+                <div class="font-mono text-sm font-medium text-white mb-1">BE-CRIT-001</div>
+                <div class="text-sm text-gray-400 mb-3 line-clamp-2">SQL Injection vulnerability in user search endpoint</div>
+                <div class="text-xs font-mono text-gray-500 mb-3 truncate">src/api/routes/users.py:45</div>
+                <div class="flex items-center justify-between text-xs text-gray-500">
+                    <div class="flex items-center gap-3">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                            </svg>
+                            3
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                            </svg>
+                            1
+                        </span>
+                    </div>
+                    <span>2h fa</span>
+                </div>
+            </a>
+
+            <!-- Card 2 -->
+            <a href="#" class="issue-card bg-gray-800 rounded-xl border border-gray-700 p-5 block">
+                <div class="flex items-start justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-high">HIGH</span>
+                        <span class="px-2 py-1 rounded-full text-xs border status-in_progress">in_progress</span>
+                    </div>
+                    <button @click.stop class="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 border border-dashed border-gray-600 hover:border-gray-500 transition-colors">
+                        + Link
+                    </button>
+                </div>
+                <div class="font-mono text-sm font-medium text-white mb-1">BE-HIGH-012</div>
+                <div class="text-sm text-gray-400 mb-3 line-clamp-2">Missing rate limiting on authentication endpoint</div>
+                <div class="text-xs font-mono text-gray-500 mb-3 truncate">src/api/routes/auth.py:89</div>
+                <div class="flex items-center justify-between text-xs text-gray-500">
+                    <div class="flex items-center gap-3">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                            </svg>
+                            0
+                        </span>
+                    </div>
+                    <span>1h fa</span>
+                </div>
+            </a>
+
+            <!-- Card 3 -->
+            <a href="#" class="issue-card bg-gray-800 rounded-xl border border-gray-700 p-5 block opacity-70">
+                <div class="flex items-start justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-1 rounded-full text-xs font-bold text-white severity-medium">MEDIUM</span>
+                        <span class="px-2 py-1 rounded-full text-xs border status-resolved">resolved</span>
+                    </div>
+                    <a href="#" @click.stop class="px-2 py-1 rounded text-xs font-medium text-white linear-brand hover:opacity-90 inline-flex items-center gap-1">
+                        <svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+                            <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                        </svg>
+                        456
+                    </a>
+                </div>
+                <div class="font-mono text-sm font-medium text-white mb-1">FE-MED-045</div>
+                <div class="text-sm text-gray-400 mb-3 line-clamp-2">Unnecessary re-renders in dashboard component</div>
+                <div class="text-xs font-mono text-gray-500 mb-3 truncate">src/components/Dashboard.tsx:123</div>
+                <div class="flex items-center justify-between text-xs text-gray-500">
+                    <div class="flex items-center gap-3">
+                        <span class="flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Fixed
+                        </span>
+                    </div>
+                    <span>5h fa</span>
+                </div>
+            </a>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- PAGINATION -->
+        <!-- ============================================== -->
+        <div class="flex items-center justify-between mt-6">
+            <div class="text-sm text-gray-500">
+                Mostrando <span class="font-medium text-gray-300">1-10</span> di <span class="font-medium text-gray-300">127</span> issues
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors disabled:opacity-50" disabled>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <button class="px-3 py-2 bg-primary text-white rounded-lg text-sm">1</button>
+                <button class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors">2</button>
+                <button class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors">3</button>
+                <span class="px-2 text-gray-500">...</span>
+                <button class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors">13</button>
+                <button class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function issuesList() {
+        return {
+            viewMode: 'list',
+            selectAll: false,
+            selectedIssues: [],
+            toggleSelectAll() {
+                // Implementation
+            }
+        }
+    }
+    </script>
+</body>
+</html>

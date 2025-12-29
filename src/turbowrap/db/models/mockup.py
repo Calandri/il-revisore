@@ -1,6 +1,7 @@
 """Mockup models."""
 
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -8,6 +9,14 @@ from sqlalchemy.orm import relationship
 from turbowrap.db.base import Base
 
 from .base import SoftDeleteMixin, generate_uuid
+
+
+class MockupStatus(str, Enum):
+    """Mockup generation status."""
+
+    GENERATING = "generating"  # LLM is generating the mockup
+    COMPLETED = "completed"  # Mockup saved successfully
+    FAILED = "failed"  # Generation failed
 
 
 class MockupProject(Base, SoftDeleteMixin):
@@ -48,6 +57,7 @@ class Mockup(Base, SoftDeleteMixin):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     component_type = Column(String(100), nullable=True)  # page, component, modal, form, table
+    status = Column(String(20), default=MockupStatus.GENERATING.value, nullable=False, index=True)
 
     # LLM metadata
     llm_type = Column(String(50), default="claude")  # claude, gemini, grok
@@ -66,6 +76,9 @@ class Mockup(Base, SoftDeleteMixin):
     version = Column(Integer, default=1)
     parent_mockup_id = Column(String(36), ForeignKey("mockups.id"), nullable=True)
 
+    # Error tracking (for failed generations)
+    error_message = Column(Text, nullable=True)
+
     # Link to chat session (if created from CLI)
     chat_session_id = Column(String(36), ForeignKey("cli_chat_sessions.id"), nullable=True)
 
@@ -81,6 +94,7 @@ class Mockup(Base, SoftDeleteMixin):
         Index("idx_mockups_project", "project_id"),
         Index("idx_mockups_parent", "parent_mockup_id"),
         Index("idx_mockups_llm_type", "llm_type"),
+        Index("idx_mockups_status", "status"),
         Index("idx_mockups_deleted", "deleted_at"),
     )
 

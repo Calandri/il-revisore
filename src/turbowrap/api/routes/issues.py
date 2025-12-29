@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 
-from ...db.models import Issue, IssueStatus
+from ...db.models import Issue, IssueStatus, is_valid_issue_transition
 from ..deps import get_db
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,30 @@ S3_BUCKET = "turbowrap-thinking"
 router = APIRouter(prefix="/issues", tags=["issues"])
 
 
+class IssueComment(BaseModel):
+    """Comment on an issue."""
+
+    id: str
+    author: str
+    content: str
+    created_at: str
+    comment_type: str = "human"  # human, ai, system
+
+
+class IssueAttachment(BaseModel):
+    """Attachment on an issue."""
+
+    filename: str
+    s3_key: str
+    file_type: str
+    uploaded_at: str
+
+
 class IssueResponse(BaseModel):
     """Issue response schema."""
 
     id: str
-    task_id: str
+    task_id: str | None = None
     repository_id: str
     issue_code: str
     severity: str
@@ -35,6 +54,7 @@ class IssueResponse(BaseModel):
     rule: str | None = None
     file: str
     line: int | None = None
+    end_line: int | None = None
     title: str
     description: str
     current_code: str | None = None
@@ -46,6 +66,19 @@ class IssueResponse(BaseModel):
     resolved_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    # Linear integration (NEW)
+    linear_id: str | None = None
+    linear_identifier: str | None = None  # e.g., "TEAM-123"
+    linear_url: str | None = None
+
+    # Discussion & Attachments (NEW)
+    comments: list[IssueComment] | None = None
+    attachments: list[IssueAttachment] | None = None
+
+    # Phase tracking (NEW)
+    phase_started_at: datetime | None = None
+    is_active: bool = False
 
     # Fix result fields (populated when resolved by fixer)
     fix_code: str | None = None
@@ -83,6 +116,23 @@ class IssueSummary(BaseModel):
     by_severity: dict[str, int]
     by_status: dict[str, int]
     by_category: dict[str, int]
+    linear_linked: int = 0  # Count of issues linked to Linear
+
+
+class LinkLinearRequest(BaseModel):
+    """Request to link an issue to Linear."""
+
+    linear_identifier: str = Field(
+        ..., description="Linear issue identifier (e.g., TEAM-123) or URL"
+    )
+
+
+class AddCommentRequest(BaseModel):
+    """Request to add a comment to an issue."""
+
+    content: str = Field(..., min_length=1, description="Comment content")
+    author: str = Field(default="user", description="Comment author")
+    comment_type: str = Field(default="human", description="Comment type: human, ai, system")
 
 
 @router.get("", response_model=list[IssueResponse])
@@ -93,6 +143,9 @@ def list_issues(
     status: str | None = Query(default=None, description="Filter by status"),
     category: str | None = None,
     file: str | None = None,
+    linear_linked: str | None = Query(
+        default=None, description="Filter by Linear link: 'linked', 'unlinked', or None for all"
+    ),
     search: str | None = Query(
         default=None, description="Search in title, description, file, issue_code"
     ),
@@ -113,6 +166,7 @@ def list_issues(
     - status: open, in_progress, resolved, ignored, duplicate
     - category: security, performance, architecture, etc.
     - file: Filter by file path (partial match)
+    - linear_linked: 'linked' or 'unlinked'
     - order_by: severity (default), updated_at, created_at
     """
     query = db.query(Issue)
@@ -129,6 +183,10 @@ def list_issues(
         query = query.filter(Issue.category == category)
     if file:
         query = query.filter(Issue.file.contains(file))
+    if linear_linked == "linked":
+        query = query.filter(Issue.linear_id.isnot(None))
+    elif linear_linked == "unlinked":
+        query = query.filter(Issue.linear_id.is_(None))
     if search:
         search_term = f"%{search}%"
         query = query.filter(
@@ -184,6 +242,7 @@ def get_issues_summary(
     }
     by_category: dict[str, int] = {}
 
+    linear_linked_count = 0
     for issue in issues:
         # Count by severity - cast to str for type safety
         severity_val = str(issue.severity)
@@ -201,11 +260,16 @@ def get_issues_summary(
             by_category[category_val] = 0
         by_category[category_val] += 1
 
+        # Count Linear linked
+        if issue.linear_id:
+            linear_linked_count += 1
+
     return IssueSummary(
         total=len(issues),
         by_severity=by_severity,
         by_status=by_status,
         by_category=by_category,
+        linear_linked=linear_linked_count,
     )
 
 
@@ -246,6 +310,16 @@ def update_issue(
             raise HTTPException(
                 status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}"
             )
+
+        # Validate state transition
+        current_status = IssueStatus(str(issue.status))
+        new_status = IssueStatus(data.status)
+        if not is_valid_issue_transition(current_status, new_status):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status transition: {current_status.value} → {new_status.value}",
+            )
+
         issue.status = data.status  # type: ignore[assignment]
 
         # Set resolved_at timestamp when marking as resolved
@@ -416,3 +490,151 @@ def get_issue_fix_log(
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error for fix log: {e}")
         raise HTTPException(status_code=500, detail="Fix log file is corrupted")
+
+
+# =============================================================================
+# LINEAR INTEGRATION ENDPOINTS
+# =============================================================================
+
+
+@router.post("/{issue_id}/link-linear", response_model=IssueResponse)
+def link_issue_to_linear(
+    issue_id: str,
+    data: LinkLinearRequest,
+    db: Session = Depends(get_db),
+) -> Issue:
+    """
+    Link an issue to a Linear issue.
+
+    Accepts either:
+    - Linear identifier (e.g., "TEAM-123")
+    - Linear URL (e.g., "https://linear.app/team/issue/TEAM-123")
+    """
+    import re
+    import uuid
+
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    linear_input = data.linear_identifier.strip()
+
+    # Extract identifier from URL if provided
+    url_match = re.search(r"linear\.app/[^/]+/issue/([A-Z]+-\d+)", linear_input)
+    if url_match:
+        linear_identifier = url_match.group(1)
+        linear_url = linear_input
+    elif re.match(r"^[A-Z]+-\d+$", linear_input):
+        linear_identifier = linear_input
+        linear_url = None  # Could be constructed if we knew the team slug
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Linear identifier. Use format 'TEAM-123' or a Linear URL",
+        )
+
+    # Generate a Linear-compatible UUID if not syncing from Linear API
+    # In a real implementation, you'd fetch this from Linear API
+    linear_id = str(uuid.uuid4())
+
+    issue.linear_id = linear_id  # type: ignore[assignment]
+    issue.linear_identifier = linear_identifier  # type: ignore[assignment]
+    if linear_url:
+        issue.linear_url = linear_url  # type: ignore[assignment]
+
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(f"Linked issue {issue_id} to Linear {linear_identifier}")
+    return issue
+
+
+@router.delete("/{issue_id}/link-linear", response_model=IssueResponse)
+def unlink_issue_from_linear(
+    issue_id: str,
+    db: Session = Depends(get_db),
+) -> Issue:
+    """Remove Linear link from an issue."""
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    if not issue.linear_id:
+        raise HTTPException(status_code=400, detail="Issue is not linked to Linear")
+
+    issue.linear_id = None  # type: ignore[assignment]
+    issue.linear_identifier = None  # type: ignore[assignment]
+    issue.linear_url = None  # type: ignore[assignment]
+
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(f"Unlinked issue {issue_id} from Linear")
+    return issue
+
+
+# =============================================================================
+# COMMENTS ENDPOINTS
+# =============================================================================
+
+
+@router.post("/{issue_id}/comments", response_model=IssueResponse)
+def add_comment_to_issue(
+    issue_id: str,
+    data: AddCommentRequest,
+    db: Session = Depends(get_db),
+) -> Issue:
+    """Add a comment to an issue."""
+    import uuid
+
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    # Initialize comments list if None
+    comments = issue.comments or []
+
+    # Create new comment
+    new_comment = {
+        "id": str(uuid.uuid4()),
+        "author": data.author,
+        "content": data.content,
+        "created_at": datetime.utcnow().isoformat(),
+        "type": data.comment_type,
+    }
+    comments.append(new_comment)
+
+    issue.comments = comments  # type: ignore[assignment]
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(f"Added comment to issue {issue_id} by {data.author}")
+    return issue
+
+
+@router.delete("/{issue_id}/comments/{comment_id}", response_model=IssueResponse)
+def delete_comment_from_issue(
+    issue_id: str,
+    comment_id: str,
+    db: Session = Depends(get_db),
+) -> Issue:
+    """Delete a comment from an issue."""
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    comments = issue.comments or []
+
+    # Find and remove the comment
+    original_length = len(comments)
+    comments = [c for c in comments if c.get("id") != comment_id]
+
+    if len(comments) == original_length:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    issue.comments = comments  # type: ignore[assignment]
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(f"Deleted comment {comment_id} from issue {issue_id}")
+    return issue

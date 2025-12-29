@@ -23,13 +23,23 @@ from .base import IssueStatus, SoftDeleteMixin, generate_uuid
 
 
 class Issue(Base, SoftDeleteMixin):
-    """Code review issue found in a repository."""
+    """Code review issue found in a repository.
+
+    Supports Linear integration and discussion comments.
+    """
 
     __tablename__ = "issues"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False)
+    task_id = Column(
+        String(36), ForeignKey("tasks.id"), nullable=True
+    )  # Optional: not all issues come from tasks
     repository_id = Column(String(36), ForeignKey("repositories.id"), nullable=False)
+
+    # Linear integration (optional)
+    linear_id = Column(String(100), unique=True, nullable=True, index=True)  # Linear UUID
+    linear_identifier = Column(String(50), nullable=True, index=True)  # e.g., "TEAM-123"
+    linear_url = Column(String(512), nullable=True)
 
     # Issue identification
     issue_code = Column(String(50), nullable=False)  # e.g., BE-CRIT-001
@@ -49,14 +59,19 @@ class Issue(Base, SoftDeleteMixin):
     suggested_fix = Column(Text, nullable=True)
     references = Column(JSON, nullable=True)  # List of URLs/docs
     flagged_by = Column(JSON, nullable=True)  # List of agents that flagged this
+    attachments = Column(JSON, nullable=True)  # [{filename, s3_key, type, uploaded_at}]
+
+    # Discussion (Linear-style comments)
+    comments = Column(JSON, nullable=True)  # [{id, author, content, created_at, type}]
 
     # Workload estimation (populated by reviewer agent)
     estimated_effort = Column(Integer, nullable=True)  # 1-5 scale (1=trivial, 5=major refactor)
     estimated_files_count = Column(Integer, nullable=True)  # Number of files to modify
 
     # Tracking
-    status = Column(String(20), default=IssueStatus.OPEN.value)
-    is_active = Column(Boolean, default=False, index=True)  # True when in development
+    status = Column(String(20), default=IssueStatus.OPEN.value, index=True)
+    phase_started_at = Column(DateTime, nullable=True)  # When current phase started
+    is_active = Column(Boolean, default=False, index=True)  # True when in active development
     resolution_note = Column(Text, nullable=True)  # Why it was resolved/ignored
     resolved_at = Column(DateTime, nullable=True)
 
@@ -86,9 +101,10 @@ class Issue(Base, SoftDeleteMixin):
         Index("idx_issues_repository", "repository_id"),
         Index("idx_issues_task", "task_id"),
         Index("idx_issues_severity", "severity"),
-        Index("idx_issues_status", "status"),
         Index("idx_issues_category", "category"),
         Index("idx_issues_file", "file"),
+        Index("idx_issues_linear_id", "linear_id"),
+        Index("idx_issues_linear_identifier", "linear_identifier"),
     )
 
     def __repr__(self) -> str:

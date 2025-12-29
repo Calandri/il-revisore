@@ -7,12 +7,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ...db.models import Mockup, MockupProject, Repository
+from ...db.models import Mockup, MockupProject, MockupStatus, Repository
 from ..deps import get_db
 from ..schemas.mockups import (
     MockupContentResponse,
     MockupCreate,
+    MockupFailRequest,
     MockupGenerateResponse,
+    MockupInitRequest,
+    MockupInitResponse,
     MockupListResponse,
     MockupModifyRequest,
     MockupProjectCreate,
@@ -20,6 +23,8 @@ from ..schemas.mockups import (
     MockupProjectResponse,
     MockupProjectUpdate,
     MockupResponse,
+    MockupSaveRequest,
+    MockupSaveResponse,
     MockupUpdate,
 )
 from ..services.mockup_service import get_mockup_service
@@ -567,3 +572,169 @@ async def delete_mockup(
     db.commit()
 
     logger.info(f"Deleted mockup: {mockup.name} ({mockup.id})")
+
+
+# =========================================================================
+# LLM Tool Endpoints (init_mockup / save_mockup)
+# =========================================================================
+
+
+@router.post("/init", response_model=MockupInitResponse, status_code=201)
+async def init_mockup(
+    request: MockupInitRequest,
+    db: Session = Depends(get_db),
+) -> MockupInitResponse:
+    """Initialize a mockup placeholder with 'generating' status.
+
+    Used by LLM tools to create a mockup record before generating content.
+    The UI shows this as a loading/in-progress state.
+
+    Returns the mockup_id to use with save_mockup when generation is complete.
+    """
+    # Verify project exists
+    project = (
+        db.query(MockupProject)
+        .filter(
+            MockupProject.id == request.project_id,
+            MockupProject.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Create mockup with 'generating' status
+    mockup = Mockup(
+        project_id=request.project_id,
+        name=request.name,
+        description=request.description,
+        component_type=request.component_type.value if request.component_type else None,
+        llm_type=request.llm_type.value,
+        status=MockupStatus.GENERATING.value,
+        chat_session_id=request.chat_session_id,
+    )
+
+    db.add(mockup)
+    db.commit()
+    db.refresh(mockup)
+
+    logger.info(f"Initialized mockup: {mockup.name} ({mockup.id}) - generating")
+
+    return MockupInitResponse(
+        mockup_id=mockup.id,
+        status=MockupStatus.GENERATING.value,
+        message=f"Mockup '{mockup.name}' initialized. Generate the HTML and call save_mockup with mockup_id='{mockup.id}' when done.",
+    )
+
+
+@router.put("/{mockup_id}/save", response_model=MockupSaveResponse)
+async def save_mockup(
+    mockup_id: str,
+    request: MockupSaveRequest,
+    db: Session = Depends(get_db),
+) -> MockupSaveResponse:
+    """Save HTML content to a mockup and mark as completed.
+
+    Used by LLM tools to save the generated content.
+    The HTML is uploaded to S3 and the mockup status changes to 'completed'.
+    """
+    mockup = (
+        db.query(Mockup)
+        .filter(
+            Mockup.id == mockup_id,
+            Mockup.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not mockup:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+
+    # Get mockup service for S3 upload
+    service = get_mockup_service(db)
+
+    try:
+        # Upload HTML to S3
+        s3_result = await service._save_to_s3(mockup.id, request.html_content)
+
+        # Update mockup record
+        mockup.s3_html_url = s3_result.get("html")
+        mockup.status = MockupStatus.COMPLETED.value
+        mockup.tokens_in = request.tokens_in or 0
+        mockup.tokens_out = request.tokens_out or 0
+        mockup.llm_model = request.llm_model
+        mockup.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(mockup)
+
+        logger.info(f"Saved mockup: {mockup.name} ({mockup.id}) - completed")
+
+        return MockupSaveResponse(
+            success=True,
+            mockup_id=mockup.id,
+            status=MockupStatus.COMPLETED.value,
+            s3_html_url=mockup.s3_html_url,
+            preview_url=f"/mockups/{mockup.id}/preview",
+            message=f"Mockup '{mockup.name}' saved successfully! View it at /mockups",
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to save mockup {mockup_id}: {e}")
+
+        # Mark as failed
+        mockup.status = MockupStatus.FAILED.value
+        mockup.error_message = str(e)
+        mockup.updated_at = datetime.utcnow()
+        db.commit()
+
+        return MockupSaveResponse(
+            success=False,
+            mockup_id=mockup.id,
+            status=MockupStatus.FAILED.value,
+            s3_html_url=None,
+            preview_url=f"/mockups/{mockup.id}/preview",
+            message=f"Failed to save mockup: {e}",
+        )
+
+
+@router.put("/{mockup_id}/fail", response_model=MockupSaveResponse)
+async def fail_mockup(
+    mockup_id: str,
+    request: MockupFailRequest,
+    db: Session = Depends(get_db),
+) -> MockupSaveResponse:
+    """Mark a mockup as failed.
+
+    Used by LLM tools when generation fails for any reason.
+    """
+    mockup = (
+        db.query(Mockup)
+        .filter(
+            Mockup.id == mockup_id,
+            Mockup.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not mockup:
+        raise HTTPException(status_code=404, detail="Mockup not found")
+
+    mockup.status = MockupStatus.FAILED.value
+    mockup.error_message = request.error_message
+    mockup.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(mockup)
+
+    logger.warning(f"Mockup failed: {mockup.name} ({mockup.id}) - {request.error_message}")
+
+    return MockupSaveResponse(
+        success=False,
+        mockup_id=mockup.id,
+        status=MockupStatus.FAILED.value,
+        s3_html_url=None,
+        preview_url=f"/mockups/{mockup.id}/preview",
+        message=f"Mockup marked as failed: {request.error_message}",
+    )

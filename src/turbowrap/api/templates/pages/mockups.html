@@ -43,55 +43,63 @@
     <!-- Main Content: 3-column layout -->
     <div class="flex-1 flex gap-4 min-h-0">
 
-        <!-- Left: Repository/Project Tree -->
+        <!-- Left: Projects Panel (for selected repo from global context) -->
         <div class="w-64 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col shrink-0">
             <div class="p-3 border-b dark:border-gray-700">
                 <h3 class="font-semibold text-sm">Progetti</h3>
             </div>
             <div class="flex-1 overflow-y-auto p-2">
-                <template x-for="repo in repositories" :key="repo.id">
-                    <div class="mb-2">
-                        <button @click="toggleRepo(repo.id)"
-                                class="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-left">
-                            <svg class="w-4 h-4 text-gray-400 transition-transform"
-                                 :class="expandedRepos.includes(repo.id) ? 'rotate-90' : ''"
-                                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                            </svg>
-                            <span class="text-sm truncate" x-text="repo.name.split('/')[1] || repo.name"></span>
-                        </button>
-
-                        <!-- Projects under repo -->
-                        <div x-show="expandedRepos.includes(repo.id)" x-collapse class="ml-6 mt-1 space-y-1">
-                            <template x-for="project in getProjectsForRepo(repo.id)" :key="project.id">
-                                <button @click="selectProject(project)"
-                                        class="w-full flex items-center gap-2 px-2 py-1 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
-                                        :class="selectedProject?.id === project.id ? 'bg-primary/10 text-primary' : ''">
-                                    <div class="w-3 h-3 rounded" :style="`background-color: ${project.color}`"></div>
-                                    <span class="truncate" x-text="project.name"></span>
-                                    <span class="ml-auto text-xs text-gray-400" x-text="project.mockup_count"></span>
-                                </button>
-                            </template>
-
-                            <button @click="showNewProjectModal = true; newProjectRepoId = repo.id"
-                                    class="w-full flex items-center gap-2 px-2 py-1 rounded text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                </svg>
-                                Nuovo progetto
-                            </button>
-                        </div>
+                <!-- No repo selected -->
+                <template x-if="!$store.globalContext?.selectedRepoId">
+                    <div class="text-center py-8 text-gray-400 text-sm">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                        </svg>
+                        <p>Seleziona un repository</p>
+                        <p class="mt-1 text-xs">Usa il selettore in basso</p>
                     </div>
                 </template>
 
-                <!-- Empty state -->
-                <div x-show="repositories.length === 0" class="text-center py-8 text-gray-400 text-sm">
-                    <p>Nessun repository</p>
-                    <p class="mt-1">Aggiungi un repository per iniziare</p>
-                </div>
+                <!-- Repo selected: show projects -->
+                <template x-if="$store.globalContext?.selectedRepoId">
+                    <div class="space-y-1">
+                        <!-- All mockups option -->
+                        <button @click="clearProjectSelection()"
+                                class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                                :class="!selectedProject ? 'bg-primary/10 text-primary' : ''">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                            </svg>
+                            <span>Tutti i mockup</span>
+                        </button>
+
+                        <!-- Project list -->
+                        <template x-for="project in projects" :key="project.id">
+                            <button @click="selectProject(project)"
+                                    class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    :class="selectedProject?.id === project.id ? 'bg-primary/10 text-primary' : ''">
+                                <div class="w-3 h-3 rounded" :style="`background-color: ${project.color}`"></div>
+                                <span class="truncate" x-text="project.name"></span>
+                                <span class="ml-auto text-xs text-gray-400" x-text="project.mockup_count"></span>
+                            </button>
+                        </template>
+
+                        <!-- New project button -->
+                        <button @click="showNewProjectModal = true"
+                                class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 mt-2 border-t dark:border-gray-700 pt-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span>Nuovo progetto</span>
+                        </button>
+
+                        <!-- Empty projects state -->
+                        <div x-show="projects.length === 0" class="text-center py-4 text-gray-400 text-xs mt-4">
+                            <p>Nessun progetto</p>
+                            <p class="mt-1">Crea il primo progetto</p>
+                        </div>
+                    </div>
+                </template>
             </div>
         </div>
 
@@ -165,73 +173,81 @@
 
     <!-- New Project Modal -->
     {% include "components/mockup_project_modal.html" %}
+
 </div>
 
 <script>
 function mockupsPage() {
     return {
-        repositories: {{ repos | tojson }},
         projects: [],
         mockups: [],
         loading: false,
         viewMode: 'grid',
-        expandedRepos: [],
-        selectedRepoId: null,
         selectedProject: null,
         selectedMockup: null,
         selectedElement: null,
         showNewProjectModal: false,
-        newProjectRepoId: null,
         newProjectName: '',
         newProjectDescription: '',
         newProjectDesignSystem: 'tailwind',
         creatingProject: false,
+        // Preview state
+        previewHtml: '',
+        // Chat selection
+        showChatSelectionModal: false,
+        chatSessions: [],
 
         async init() {
-            // Sync with global context store
-            const store = Alpine.store('globalContext');
-            if (store?.selectedRepoId) {
-                this.selectedRepoId = store.selectedRepoId;
-            }
+            // Load data for selected repo
+            await this.loadProjects();
+            await this.loadMockups();
 
-            // Watch for global context changes
-            window.addEventListener('global-context-changed', (e) => {
-                const newRepoId = e.detail.repoId || '';
-                this.selectedRepoId = newRepoId;
-                // Auto-expand the selected repo in the tree
-                if (newRepoId && !this.expandedRepos.includes(newRepoId)) {
-                    this.expandedRepos.push(newRepoId);
-                }
+            // Watch for global context changes (repo selection)
+            window.addEventListener('global-context-changed', async (e) => {
+                console.log('[mockupsPage] Global context changed:', e.detail);
+                // Reset selection and reload data for new repo
+                this.selectedProject = null;
+                this.selectedMockup = null;
+                await this.loadProjects();
+                await this.loadMockups();
             });
 
-            await this.loadProjects();
-
-            // Expand repo from global context, or first repo by default
-            if (this.selectedRepoId && !this.expandedRepos.includes(this.selectedRepoId)) {
-                this.expandedRepos.push(this.selectedRepoId);
-            } else if (this.repositories.length > 0 && this.expandedRepos.length === 0) {
-                this.expandedRepos.push(this.repositories[0].id);
-            }
-
-            // Load all mockups initially
-            await this.loadMockups();
+            // Listen for element selection from preview iframe
+            window.addEventListener('message', (e) => {
+                if (e.data && e.data.type === 'element-selected') {
+                    this.selectedElement = e.data.selector;
+                }
+            });
         },
 
         async loadProjects() {
+            const repoId = Alpine.store('globalContext')?.selectedRepoId;
+            if (!repoId) {
+                this.projects = [];
+                return;
+            }
             try {
-                const res = await fetch('/api/mockups/projects');
-                this.projects = await res.json();
+                const res = await fetch(`/api/mockups/projects?repository_id=${repoId}`);
+                const data = await res.json();
+                this.projects = data.items || [];
             } catch (e) {
                 console.error('Failed to load projects:', e);
+                this.projects = [];
             }
         },
 
         async loadMockups(projectId = null) {
+            const repoId = Alpine.store('globalContext')?.selectedRepoId;
+            if (!repoId) {
+                this.mockups = [];
+                return;
+            }
             this.loading = true;
             try {
-                const url = projectId
-                    ? `/api/mockups/?project_id=${projectId}`
-                    : '/api/mockups/';
+                let url = `/api/mockups/?repository_id=${repoId}`;
+                if (projectId) {
+                    url += `&project_id=${projectId}`;
+                }
                 const res = await fetch(url);
                 const data = await res.json();
                 this.mockups = data.mockups || [];
@@ -240,19 +256,6 @@ function mockupsPage() {
                 this.mockups = [];
             } finally {
                 this.loading = false;
-            }
-        },
-
-        getProjectsForRepo(repoId) {
-            return this.projects.filter(p => p.repository_id === repoId);
-        },
-
-        toggleRepo(repoId) {
-            const idx = this.expandedRepos.indexOf(repoId);
-            if (idx >= 0) {
-                this.expandedRepos.splice(idx, 1);
-            } else {
-                this.expandedRepos.push(repoId);
             }
         },
 
@@ -268,13 +271,83 @@ function mockupsPage() {
             this.loadMockups();
         },
 
-        selectMockup(mockup) {
+        async selectMockup(mockup) {
             this.selectedMockup = mockup;
             this.selectedElement = null;
+            this.previewHtml = '';
+
+            // Fetch mockup content for preview
+            try {
+                const res = await fetch(`/api/mockups/${mockup.id}/content`);
+                const content = await res.json();
+                this.previewHtml = content.html_content;
+            } catch (e) {
+                console.error('Failed to load mockup content:', e);
+                this.previewHtml = '<div class="flex items-center justify-center h-full text-red-500">Errore nel caricamento</div>';
+            }
+        },
+
+        setupPreviewClickHandler() {
+            const iframe = this.$refs.previewFrame;
+            if (!iframe || !iframe.contentWindow) return;
+
+            try {
+                const doc = iframe.contentDocument || iframe.contentWindow.document;
+
+                // Inject click handler script for element selection
+                const script = doc.createElement('script');
+                script.textContent = `
+                    document.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        // Remove previous highlight
+                        document.querySelectorAll('[data-tw-selected]').forEach(el => {
+                            el.style.outline = '';
+                            el.removeAttribute('data-tw-selected');
+                        });
+
+                        // Highlight clicked element
+                        e.target.style.outline = '2px solid #6366f1';
+                        e.target.setAttribute('data-tw-selected', 'true');
+
+                        // Get unique selector
+                        const selector = getUniqueSelector(e.target);
+                        parent.postMessage({ type: 'element-selected', selector }, '*');
+                    }, true);
+
+                    function getUniqueSelector(el) {
+                        if (el.id) return '#' + el.id;
+
+                        const path = [];
+                        while (el && el.nodeType === Node.ELEMENT_NODE) {
+                            let selector = el.tagName.toLowerCase();
+
+                            if (el.className && typeof el.className === 'string') {
+                                const classes = el.className.split(' ')
+                                    .filter(c => c && !c.startsWith('hover:') && !c.startsWith('dark:'))
+                                    .slice(0, 2)
+                                    .join('.');
+                                if (classes) selector += '.' + classes;
+                            }
+
+                            path.unshift(selector);
+                            if (path.length >= 3) break;
+                            el = el.parentElement;
+                        }
+
+                        return path.join(' > ');
+                    }
+                `;
+                doc.body.appendChild(script);
+            } catch (e) {
+                console.log('Cannot access iframe content (sandbox restriction)');
+            }
         },
 
         async createProject() {
-            if (!this.newProjectName.trim() || !this.newProjectRepoId) return;
+            const repoId = Alpine.store('globalContext')?.selectedRepoId;
+            if (!this.newProjectName.trim() || !repoId) return;
 
             this.creatingProject = true;
             try {
@@ -282,7 +355,7 @@ function mockupsPage() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        repository_id: this.newProjectRepoId,
+                        repository_id: repoId,
                         name: this.newProjectName,
                         description: this.newProjectDescription,
                         design_system: this.newProjectDesignSystem
@@ -333,9 +406,14 @@ function mockupsPage() {
         },
 
         openMockupChat() {
-            // Open chat sidebar with /mockup command
+            // Crea sempre una nuova chat per mockup (contesto pulito)
+            const projectId = this.selectedProject?.id;
+            const projectName = this.selectedProject?.name;
+            const command = projectId
+                ? `/mockup --project-id ${projectId} --project-name "${projectName}"`
+                : '/mockup';
             window.dispatchEvent(new CustomEvent('open-chat-with-command', {
-                detail: { command: '/mockup' }
+                detail: { command, newSession: true }
             }));
         },
 

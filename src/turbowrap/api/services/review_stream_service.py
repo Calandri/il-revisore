@@ -167,22 +167,26 @@ class ReviewStreamService:
             task = self.create_task_record(repository_id, mode, challenger_enabled)
             task_id = cast(str, task.id)
 
-            # Delete all "open" (TO DO) issues for this repository - fresh start
+            # Soft delete all "open" (TO DO) issues for this repository - fresh start
+            # Using soft_delete() instead of hard delete to preserve data history
             from ...db.models import IssueStatus
 
-            deleted_count = (
+            issues_to_archive = (
                 self.db.query(Issue)
                 .filter(
                     Issue.repository_id == repository_id,
                     Issue.status == IssueStatus.OPEN.value,
+                    Issue.deleted_at.is_(None),  # Only non-deleted issues
                 )
-                .delete()
+                .all()
             )
-            if deleted_count > 0:
+            if issues_to_archive:
+                for issue in issues_to_archive:
+                    issue.soft_delete()
                 self.db.commit()
                 logger.info(
-                    f"[REVIEW INIT] Deleted {deleted_count} open issues for repository "
-                    f"{repository_id} (fresh start)"
+                    f"[REVIEW INIT] Soft-deleted {len(issues_to_archive)} open issues for "
+                    f"repository {repository_id} (fresh start, data preserved)"
                 )
         else:
             task_id = resume_task_id

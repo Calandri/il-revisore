@@ -322,6 +322,7 @@ def get_context_for_session(
     repo_id: str | None = None,
     linear_issue_id: str | None = None,
     branch: str | None = None,
+    mockup_project_id: str | None = None,
 ) -> str:
     """Genera context specifico per una sessione.
 
@@ -333,11 +334,12 @@ def get_context_for_session(
         repo_id: ID del repository (opzionale)
         linear_issue_id: ID della issue Linear (opzionale)
         branch: Branch attivo nella sessione (opzionale)
+        mockup_project_id: ID del progetto mockup (opzionale)
 
     Returns:
         Context string
     """
-    from ..db.models import LinearIssue, Repository
+    from ..db.models import LinearIssue, MockupProject, Repository
 
     # Base context
     context = generate_context(db)
@@ -420,6 +422,33 @@ Quando modifichi file, usa path relativi a: `{repo.local_path}`
 {issue.analysis_summary[:500]}...
 """
                 )
+
+    if mockup_project_id:
+        project = (
+            db.query(MockupProject)
+            .filter(MockupProject.id == mockup_project_id)
+            .first()
+        )
+        if project:
+            extras.append(
+                f"""
+## Mockup Project Context
+
+Stai generando mockup per il progetto **{project.name}**.
+
+**IMPORTANTE - Usa questi ID**:
+- `project_id`: `{project.id}`
+- `design_system`: `{project.design_system or 'tailwind'}`
+
+**Workflow obbligatorio**:
+1. PRIMA di rispondere, esegui: `python -m turbowrap.scripts.mockup_tool init --project-id {project.id} --name "Nome mockup" --type page`
+2. Genera HTML e salvalo in `/tmp/mockup_<mockup_id>.html`
+3. Esegui: `python -m turbowrap.scripts.mockup_tool save --mockup-id <mockup_id> --html-file /tmp/mockup_<mockup_id>.html`
+4. Conferma: "Mockup creato! Vai alla pagina Mockups per vederlo."
+
+NON mostrare l'HTML nella chat. NON saltare nessun passaggio.
+"""
+            )
 
     if extras:
         context += "\n\n---\n" + "\n".join(extras)

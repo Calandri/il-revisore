@@ -275,7 +275,9 @@
         <!-- Chat Area -->
         <div class="flex-1 flex flex-col overflow-hidden min-h-0">
             <!-- Messages -->
-            <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900" id="chat-messages">
+            <div class="flex-1 overflow-y-auto space-y-3 bg-gray-50 dark:bg-gray-900"
+                 :class="chatMode === 'third' ? 'p-2' : 'p-4 space-y-4'"
+                 id="chat-messages">
                 <!-- Welcome state (no active session) -->
                 <div x-show="!activeSession" class="flex flex-col items-center justify-center h-full text-center py-12">
                     <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-500/20 dark:to-purple-500/20 rounded-2xl flex items-center justify-center">
@@ -295,10 +297,13 @@
                 <template x-if="activeSession">
                     <template x-for="msg in messages" :key="msg.id">
                         <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                            <div :class="msg.role === 'user'
-                                    ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md'
-                                    : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm'"
-                                 class="max-w-[85%] px-4 py-3">
+                            <div :class="[
+                                    msg.role === 'user'
+                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md'
+                                        : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm',
+                                    chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'
+                                 ]"
+                                 class="max-w-[90%]">
                                 <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content)"></div>
                                 <div :class="msg.role === 'user' ? 'text-white/60' : 'text-gray-400'" class="text-xs mt-2"
                                      x-text="new Date(msg.created_at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})"></div>
@@ -309,7 +314,8 @@
 
                 <!-- Streaming response -->
                 <div x-show="activeSession && streaming" class="flex justify-start">
-                    <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm max-w-[85%] px-4 py-3">
+                    <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm max-w-[90%]"
+                         :class="chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'">
                         <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent)"></div>
                         <div class="flex items-center gap-1" :class="streamContent ? 'mt-2' : ''">
                             <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
@@ -364,26 +370,33 @@
             </div>
 
             <!-- Input Area -->
-            <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 pb-safe">
+            <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pb-safe"
+                 :class="chatMode === 'third' ? 'p-2' : 'p-3'">
                 <form @submit.prevent="sendMessage()" class="flex items-end gap-2">
                     <div class="flex-1 relative">
                         <textarea x-model="inputMessage"
+                                  x-ref="messageInput"
                                   @keydown.enter.prevent="if(!$event.shiftKey && inputMessage.trim() && !streaming) sendMessage()"
                                   placeholder="Scrivi un messaggio..."
                                   rows="1"
-                                  class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
-                                  style="min-height: 44px; max-height: 120px; font-size: 16px;"
-                                  @input="$el.style.height = '44px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
+                                  class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-base md:text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
+                                  :class="chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'"
+                                  :style="chatMode === 'third' ? 'min-height: 38px; max-height: 100px; font-size: 14px;' : 'min-height: 44px; max-height: 120px; font-size: 16px;'"
+                                  @input="$el.style.height = (chatMode === 'third' ? '38px' : '44px'); $el.style.height = $el.scrollHeight + 'px'"></textarea>
                     </div>
                     <button x-show="!streaming" type="submit" :disabled="!inputMessage.trim()"
-                            :class="inputMessage.trim() ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'"
-                            class="w-11 h-11 rounded-xl text-white flex items-center justify-center transition-all shrink-0">
+                            :class="[
+                                inputMessage.trim() ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed',
+                                chatMode === 'third' ? 'w-9 h-9' : 'w-11 h-11'
+                            ]"
+                            class="rounded-xl text-white flex items-center justify-center transition-all shrink-0">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                         </svg>
                     </button>
                     <button x-show="streaming" type="button" @click="stopStreaming()"
-                            class="w-11 h-11 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                            class="rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                            :class="chatMode === 'third' ? 'w-9 h-9' : 'w-11 h-11'"
                             title="Interrompi">
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                     </button>

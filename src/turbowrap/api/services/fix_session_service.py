@@ -279,7 +279,10 @@ class FixSessionService:
         session_id: str,
     ) -> tuple[int, int]:
         """
-        Update database with fix results.
+        Update database with fix results atomically.
+
+        All updates are committed in a single transaction. If any update fails,
+        the entire batch is rolled back to maintain consistency.
 
         Args:
             db: Database session
@@ -289,49 +292,67 @@ class FixSessionService:
 
         Returns:
             Tuple of (completed_count, failed_count)
+
+        Raises:
+            SQLAlchemyError: If database update fails (after rollback)
         """
+        from sqlalchemy.exc import SQLAlchemyError
+
         completed_count = 0
         failed_count = 0
 
-        for issue_result in results:
-            db_issue = db.query(Issue).filter(Issue.id == issue_result.issue_id).first()
-            if db_issue:
-                # Skip if already resolved (updated per-batch in orchestrator)
-                if db_issue.status == IssueStatus.RESOLVED.value:
-                    completed_count += 1
-                    continue
-
-                if issue_result.status.value == "completed":
-                    # Safety: Don't mark resolved without a commit
-                    if not issue_result.commit_sha:
-                        logger.warning(
-                            f"Issue {issue_result.issue_code} completed but no commit - keeping OPEN"
-                        )
-                        failed_count += 1
+        try:
+            for issue_result in results:
+                db_issue = db.query(Issue).filter(Issue.id == issue_result.issue_id).first()
+                if db_issue:
+                    # Skip if already resolved (updated per-batch in orchestrator)
+                    if db_issue.status == IssueStatus.RESOLVED.value:
+                        completed_count += 1
                         continue
 
-                    db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
-                    db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
-                    db_issue.resolution_note = (  # type: ignore[assignment]
-                        f"Fixed in commit {issue_result.commit_sha}"
-                    )
-                    # Save fix result fields
-                    db_issue.fix_code = issue_result.fix_code  # type: ignore[assignment]
-                    db_issue.fix_explanation = issue_result.fix_explanation  # type: ignore[assignment]
-                    db_issue.fix_files_modified = issue_result.fix_files_modified  # type: ignore[assignment]
-                    db_issue.fix_commit_sha = issue_result.commit_sha  # type: ignore[assignment]
-                    db_issue.fix_branch = branch_name  # type: ignore[assignment]
-                    db_issue.fix_session_id = session_id  # type: ignore[assignment]
-                    db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
-                    db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
-                    completed_count += 1
-                elif issue_result.status.value == "failed":
-                    db_issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
-                    db_issue.resolution_note = f"Fix failed: {issue_result.error}"  # type: ignore[assignment]
-                    failed_count += 1
+                    if issue_result.status.value == "completed":
+                        # Safety: Don't mark resolved without a commit
+                        if not issue_result.commit_sha:
+                            logger.warning(
+                                f"Issue {issue_result.issue_code} completed but no commit - resetting to OPEN"
+                            )
+                            # Reset to OPEN so it can be re-fixed
+                            db_issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
+                            db_issue.resolution_note = (  # type: ignore[assignment]
+                                "Fix completed but no commit SHA was generated"
+                            )
+                            failed_count += 1
+                            continue
 
-        db.commit()
-        return completed_count, failed_count
+                        db_issue.status = IssueStatus.RESOLVED.value  # type: ignore[assignment]
+                        db_issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+                        db_issue.resolution_note = (  # type: ignore[assignment]
+                            f"Fixed in commit {issue_result.commit_sha}"
+                        )
+                        # Save fix result fields
+                        db_issue.fix_code = issue_result.fix_code  # type: ignore[assignment]
+                        db_issue.fix_explanation = issue_result.fix_explanation  # type: ignore[assignment]
+                        db_issue.fix_files_modified = issue_result.fix_files_modified  # type: ignore[assignment]
+                        db_issue.fix_commit_sha = issue_result.commit_sha  # type: ignore[assignment]
+                        db_issue.fix_branch = branch_name  # type: ignore[assignment]
+                        db_issue.fix_session_id = session_id  # type: ignore[assignment]
+                        db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
+                        db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
+                        completed_count += 1
+                    elif issue_result.status.value == "failed":
+                        db_issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
+                        db_issue.resolution_note = f"Fix failed: {issue_result.error}"  # type: ignore[assignment]
+                        failed_count += 1
+
+            # Commit all changes atomically
+            db.commit()
+            return completed_count, failed_count
+
+        except SQLAlchemyError as e:
+            # Rollback on any database error to maintain consistency
+            db.rollback()
+            logger.error(f"Database error updating issue statuses, rolled back: {e}")
+            raise
 
     async def transition_linear_issues(
         self,

@@ -109,6 +109,108 @@ class IssueStatus(str, Enum):
     DUPLICATE = "duplicate"  # Duplicate of another issue
 
 
+# Valid state transitions for Issue status
+# Maps current status to list of allowed next statuses
+ISSUE_STATUS_TRANSITIONS: dict["IssueStatus", list["IssueStatus"]] = {
+    IssueStatus.OPEN: [
+        IssueStatus.IN_PROGRESS,
+        IssueStatus.IGNORED,
+        IssueStatus.DUPLICATE,
+    ],
+    IssueStatus.IN_PROGRESS: [
+        IssueStatus.RESOLVED,
+        IssueStatus.OPEN,  # Reset on failure
+        IssueStatus.IGNORED,
+    ],
+    IssueStatus.RESOLVED: [
+        IssueStatus.IN_REVIEW,
+        IssueStatus.OPEN,  # Reopen
+    ],
+    IssueStatus.IN_REVIEW: [
+        IssueStatus.MERGED,
+        IssueStatus.OPEN,  # Reopen
+    ],
+    IssueStatus.MERGED: [],  # Terminal state
+    IssueStatus.IGNORED: [
+        IssueStatus.OPEN,  # Reopen
+    ],
+    IssueStatus.DUPLICATE: [
+        IssueStatus.OPEN,  # Reopen
+    ],
+}
+
+
+def is_valid_issue_transition(current: "IssueStatus", new: "IssueStatus") -> bool:
+    """Check if a status transition is valid."""
+    return new in ISSUE_STATUS_TRANSITIONS.get(current, [])
+
+
+# =============================================================================
+# Feature Status Enums
+# =============================================================================
+
+
+class FeatureStatus(str, Enum):
+    """Feature development status."""
+
+    ANALYSIS = "analysis"  # Clarifying requirements, Q&A phase
+    DESIGN = "design"  # Mockup/design phase
+    DEVELOPMENT = "development"  # In active development
+    REVIEW = "review"  # Code review, awaiting merge
+    MERGED = "merged"  # Completed and merged
+    ON_HOLD = "on_hold"  # Paused
+    CANCELLED = "cancelled"  # Cancelled
+
+
+# Valid state transitions for Feature status
+FEATURE_STATUS_TRANSITIONS: dict["FeatureStatus", list["FeatureStatus"]] = {
+    FeatureStatus.ANALYSIS: [
+        FeatureStatus.DESIGN,
+        FeatureStatus.DEVELOPMENT,  # Skip design if not needed
+        FeatureStatus.ON_HOLD,
+        FeatureStatus.CANCELLED,
+    ],
+    FeatureStatus.DESIGN: [
+        FeatureStatus.DEVELOPMENT,
+        FeatureStatus.ANALYSIS,  # Back to clarify
+        FeatureStatus.ON_HOLD,
+        FeatureStatus.CANCELLED,
+    ],
+    FeatureStatus.DEVELOPMENT: [
+        FeatureStatus.REVIEW,
+        FeatureStatus.DESIGN,  # Back to design
+        FeatureStatus.ON_HOLD,
+        FeatureStatus.CANCELLED,
+    ],
+    FeatureStatus.REVIEW: [
+        FeatureStatus.MERGED,
+        FeatureStatus.DEVELOPMENT,  # Needs more work
+        FeatureStatus.CANCELLED,
+    ],
+    FeatureStatus.MERGED: [],  # Terminal state
+    FeatureStatus.ON_HOLD: [
+        FeatureStatus.ANALYSIS,
+        FeatureStatus.DESIGN,
+        FeatureStatus.DEVELOPMENT,
+        FeatureStatus.CANCELLED,
+    ],
+    FeatureStatus.CANCELLED: [],  # Terminal state
+}
+
+
+def is_valid_feature_transition(current: "FeatureStatus", new: "FeatureStatus") -> bool:
+    """Check if a feature status transition is valid."""
+    return new in FEATURE_STATUS_TRANSITIONS.get(current, [])
+
+
+class FeatureRepositoryRole(str, Enum):
+    """Role of a repository in a feature."""
+
+    PRIMARY = "primary"  # Main repository for the feature
+    SECONDARY = "secondary"  # Supporting repository
+    SHARED = "shared"  # Shared library affected
+
+
 class EndpointVisibility(str, Enum):
     """Endpoint visibility/access level."""
 

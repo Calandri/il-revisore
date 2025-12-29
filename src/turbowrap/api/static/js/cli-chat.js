@@ -122,6 +122,66 @@ function chatSidebar() {
                 console.log('[chatSidebar] Global context changed:', e.detail);
                 this.onGlobalContextChanged(e.detail.repoId);
             });
+
+            // Listen for open-chat-with-command events (from Mockups page, etc.)
+            window.addEventListener('open-chat-with-command', async (e) => {
+                console.log('[chatSidebar] Received open-chat-with-command event:', e.detail);
+
+                // Open chat if hidden
+                const htmlData = Alpine.$data(document.documentElement);
+                console.log('[chatSidebar] Current chatMode:', htmlData?.chatMode);
+
+                if (htmlData) {
+                    if (htmlData.chatMode === 'hidden') {
+                        htmlData.chatMode = 'third';
+                        console.log('[chatSidebar] Changed chatMode to third');
+                    }
+
+                    // Handle session selection
+                    if (e.detail?.newSession) {
+                        // Create a new session
+                        console.log('[chatSidebar] Creating new session');
+                        const repoId = Alpine.store('globalContext')?.selectedRepoId;
+                        await this.createSession('claude', repoId);
+                    } else if (e.detail?.sessionId) {
+                        // Switch to existing session
+                        console.log('[chatSidebar] Switching to session:', e.detail.sessionId);
+                        const session = this.sessions.find(s => s.id === e.detail.sessionId);
+                        if (session) {
+                            await this.selectSession(session);
+                        } else {
+                            // Session not in list, try to fetch it
+                            try {
+                                const res = await fetch(`/api/cli-chat/sessions/${e.detail.sessionId}`);
+                                if (res.ok) {
+                                    const session = await res.json();
+                                    await this.selectSession(session);
+                                }
+                            } catch (err) {
+                                console.error('[chatSidebar] Failed to load session:', err);
+                            }
+                        }
+                    }
+
+                    // Pre-fill the command after a small delay to ensure chat is rendered
+                    if (e.detail?.command) {
+                        setTimeout(() => {
+                            this.inputMessage = e.detail.command + ' ';
+                            console.log('[chatSidebar] Set inputMessage:', this.inputMessage);
+                            // Focus input
+                            const input = document.querySelector('[x-ref="messageInput"]');
+                            if (input) {
+                                input.focus();
+                                console.log('[chatSidebar] Focused input');
+                            } else {
+                                console.warn('[chatSidebar] Could not find messageInput');
+                            }
+                        }, 150);
+                    }
+                } else {
+                    console.error('[chatSidebar] Could not access Alpine data on html element');
+                }
+            });
         },
 
         /**

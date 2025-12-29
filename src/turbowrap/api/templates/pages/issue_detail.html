@@ -4,29 +4,41 @@
 
 {% block head %}
 <style>
-.code-block { font-family: 'Monaco', 'Menlo', monospace; }
-.severity-badge-critical { background: linear-gradient(135deg, #ef4444, #dc2626); }
-.severity-badge-high { background: linear-gradient(135deg, #f97316, #ea580c); }
-.severity-badge-medium { background: linear-gradient(135deg, #eab308, #ca8a04); }
-.severity-badge-low { background: linear-gradient(135deg, #6b7280, #4b5563); }
+/* === CODE BLOCK === */
+.code-block { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; }
 
-.status-open { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
-.status-in_progress { background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
-.status-resolved { background: rgba(34, 197, 94, 0.2); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
-.status-merged { background: rgba(34, 197, 94, 0.2); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
-.status-in_review { background: rgba(234, 179, 8, 0.2); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
-.status-ignored { background: rgba(107, 114, 128, 0.2); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
-.status-duplicate { background: rgba(107, 114, 128, 0.2); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+/* === SEVERITY BADGES === */
+.severity-critical { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.severity-high { background: linear-gradient(135deg, #f97316, #ea580c); }
+.severity-medium { background: linear-gradient(135deg, #eab308, #ca8a04); }
+.severity-low { background: linear-gradient(135deg, #6b7280, #4b5563); }
+
+/* === STATUS BADGES === */
+.status-open { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+.status-in_progress { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+.status-resolved { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.status-merged { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.status-in_review { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+.status-ignored { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+.status-duplicate { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+
+/* === LINEAR BRAND === */
+.linear-brand { background: linear-gradient(135deg, #5E6AD2, #4B51B6); }
+
+/* === COMMENT THREAD === */
+.comment-thread { border-left: 2px solid rgba(107, 114, 128, 0.3); }
 </style>
 {% endblock %}
 
 {% block content %}
 <div x-data="issueDetailApp()" x-init="init()">
 
+    <!-- ============================================== -->
     <!-- HEADER -->
-    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+    <!-- ============================================== -->
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-8">
         <div class="flex items-start gap-4">
-            <!-- Back button -->
+            <!-- Back -->
             <a href="/issues" class="mt-1 p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
@@ -34,20 +46,20 @@
             </a>
             <div>
                 <div class="flex flex-wrap items-center gap-3 mb-2">
-                    <!-- Issue Code -->
                     <h1 class="text-2xl md:text-3xl font-bold font-mono">{{ issue.issue_code }}</h1>
-                    <!-- Severity Badge -->
-                    <span class="px-3 py-1 rounded-full text-sm font-bold text-white severity-badge-{{ issue.severity|lower }}">
-                        {{ issue.severity }}
-                    </span>
-                    <!-- Status Badge -->
-                    <span class="px-3 py-1 rounded-full text-sm font-medium border status-{{ issue.status }}">
-                        {{ issue.status }}
-                    </span>
+                    <span class="px-3 py-1 rounded-full text-sm font-bold text-white severity-{{ issue.severity|lower }}">{{ issue.severity }}</span>
+                    <span class="px-3 py-1 rounded-full text-sm font-medium border status-{{ issue.status }}">{{ issue.status }}</span>
+                    {% if issue.linear_identifier %}
+                    <a href="{{ issue.linear_url or '#' }}" target="_blank"
+                       class="px-3 py-1 rounded-full text-sm font-medium text-white linear-brand flex items-center gap-2 hover:opacity-90 transition-opacity">
+                        <svg class="w-4 h-4" viewBox="0 0 100 100" fill="currentColor">
+                            <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                        </svg>
+                        {{ issue.linear_identifier }}
+                    </a>
+                    {% endif %}
                 </div>
-                <!-- Title -->
                 <h2 class="text-xl text-gray-600 dark:text-gray-300">{{ issue.title }}</h2>
-                <!-- Meta info -->
                 <div class="flex flex-wrap items-center gap-4 mt-3 text-sm text-gray-500">
                     <span class="flex items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,22 +81,29 @@
                         </svg>
                         {{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}
                     </span>
+                    {% if issue.phase_started_at %}
+                    <span class="flex items-center gap-1 text-purple-500 dark:text-purple-400">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        In fase da {{ issue.phase_started_at.strftime('%H:%M') }}
+                    </span>
+                    {% endif %}
                 </div>
             </div>
         </div>
+
         <!-- Actions -->
         <div class="flex flex-wrap gap-2">
             {% if issue.status in ['open', 'in_progress'] %}
-            <button @click="resolveIssue()"
-                    :disabled="actionLoading"
+            <button @click="resolveIssue()" :disabled="actionLoading"
                     class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
                 Merged
             </button>
-            <button @click="ignoreIssue()"
-                    :disabled="actionLoading"
+            <button @click="ignoreIssue()" :disabled="actionLoading"
                     class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
@@ -92,8 +111,7 @@
                 Ignore
             </button>
             {% else %}
-            <button @click="reopenIssue()"
-                    :disabled="actionLoading"
+            <button @click="reopenIssue()" :disabled="actionLoading"
                     class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -108,80 +126,247 @@
                 </svg>
                 Start Fix
             </button>
+            {% if not issue.linear_identifier %}
+            <button @click="showLinkLinear = true"
+                    class="px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg font-medium transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" viewBox="0 0 100 100" fill="currentColor">
+                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                </svg>
+                Link Linear
+            </button>
+            {% endif %}
         </div>
     </div>
 
+    <!-- ============================================== -->
     <!-- MAIN GRID -->
+    <!-- ============================================== -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         <!-- LEFT COLUMN (2/3) -->
         <div class="lg:col-span-2 space-y-6">
 
-            <!-- DESCRIPTION -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    Descrizione
-                </h3>
-                <div class="prose prose-sm dark:prose-invert max-w-none">
-                    {{ issue.description | safe }}
+            <!-- TABS CONTAINER -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <!-- Tab Navigation -->
+                <div class="flex border-b border-gray-200 dark:border-gray-700">
+                    <button @click="activeTab = 'details'"
+                            :class="activeTab === 'details' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors">
+                        Dettagli
+                    </button>
+                    <button @click="activeTab = 'comments'"
+                            :class="activeTab === 'comments' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
+                        Discussione
+                        {% if issue.comments and issue.comments|length > 0 %}
+                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs">{{ issue.comments|length }}</span>
+                        {% endif %}
+                    </button>
+                    <button @click="activeTab = 'attachments'"
+                            :class="activeTab === 'attachments' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
+                        Allegati
+                        {% if issue.attachments and issue.attachments|length > 0 %}
+                        <span class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs">{{ issue.attachments|length }}</span>
+                        {% endif %}
+                    </button>
+                    <button @click="activeTab = 'history'"
+                            :class="activeTab === 'history' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-6 py-3 text-sm font-medium border-b-2 transition-colors">
+                        Cronologia
+                    </button>
                 </div>
-            </div>
 
-            <!-- LOCATION -->
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    </svg>
-                    Posizione nel codice
-                </h3>
-                <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                    <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    <span class="font-mono text-sm text-gray-700 dark:text-gray-300">{{ issue.file }}</span>
-                    {% if issue.line %}
-                    <span class="text-gray-400">:</span>
-                    <span class="font-mono text-sm text-primary">Line {{ issue.line }}{% if issue.end_line and issue.end_line != issue.line %}-{{ issue.end_line }}{% endif %}</span>
+                <!-- TAB: DETAILS -->
+                <div x-show="activeTab === 'details'" class="p-6 space-y-6">
+                    <!-- Description -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Descrizione
+                        </h3>
+                        <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300">
+                            {{ issue.description | safe }}
+                        </div>
+                    </div>
+
+                    <!-- Location -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            </svg>
+                            Posizione
+                        </h3>
+                        <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                            <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <span class="font-mono text-sm text-gray-700 dark:text-gray-300">{{ issue.file }}</span>
+                            {% if issue.line %}
+                            <span class="text-gray-400">:</span>
+                            <span class="font-mono text-sm text-primary">Line {{ issue.line }}{% if issue.end_line and issue.end_line != issue.line %}-{{ issue.end_line }}{% endif %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Current Code -->
+                    {% if issue.current_code %}
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-lg font-semibold flex items-center gap-2">
+                                <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Codice Problematico
+                            </h3>
+                            <button @click="copyToClipboard($refs.currentCode.innerText)" class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors">Copia</button>
+                        </div>
+                        <pre class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg overflow-x-auto code-block text-sm" x-ref="currentCode"><code class="text-red-600 dark:text-red-400">{{ issue.current_code }}</code></pre>
+                    </div>
+                    {% endif %}
+
+                    <!-- Suggested Fix -->
+                    {% if issue.suggested_fix %}
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-lg font-semibold flex items-center gap-2">
+                                <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Fix Suggerito
+                            </h3>
+                            <button @click="copyToClipboard($refs.suggestedFix.innerText)" class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors">Copia</button>
+                        </div>
+                        <pre class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg overflow-x-auto code-block text-sm" x-ref="suggestedFix"><code class="text-green-600 dark:text-green-400">{{ issue.suggested_fix }}</code></pre>
+                    </div>
                     {% endif %}
                 </div>
-            </div>
 
-            <!-- CURRENT CODE -->
-            {% if issue.current_code %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h3 class="text-lg font-semibold flex items-center gap-2">
-                        <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        Codice Problematico
-                    </h3>
-                    <button @click="copyToClipboard($refs.currentCode.innerText)" class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors">Copia</button>
-                </div>
-                <pre class="p-4 overflow-x-auto code-block text-sm bg-gray-50 dark:bg-gray-900" x-ref="currentCode"><code class="text-gray-800 dark:text-gray-300">{{ issue.current_code }}</code></pre>
-            </div>
-            {% endif %}
+                <!-- TAB: COMMENTS -->
+                <div x-show="activeTab === 'comments'" class="p-6">
+                    <div class="space-y-4">
+                        {% if issue.comments %}
+                        {% for comment in issue.comments %}
+                        <div class="comment-thread pl-4 py-2">
+                            <div class="flex items-start gap-3">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br {% if comment.type == 'ai' %}from-purple-500 to-indigo-500{% else %}from-blue-500 to-cyan-500{% endif %} flex items-center justify-center text-xs font-bold text-white shrink-0">
+                                    {% if comment.type == 'ai' %}
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                    {% else %}
+                                    {{ comment.author[:2]|upper }}
+                                    {% endif %}
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="font-medium text-gray-900 dark:text-white">{{ comment.author }}</span>
+                                        <span class="text-xs text-gray-500">{{ comment.created_at[:16] }}</span>
+                                        <span class="px-2 py-0.5 rounded text-xs {% if comment.type == 'ai' %}bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400{% else %}bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400{% endif %}">
+                                            {{ comment.type or 'human' }}
+                                        </span>
+                                    </div>
+                                    <p class="text-gray-700 dark:text-gray-300 text-sm">{{ comment.content }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <p class="text-center text-gray-500 py-8">Nessun commento ancora.</p>
+                        {% endif %}
 
-            <!-- SUGGESTED FIX -->
-            {% if issue.suggested_fix %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h3 class="text-lg font-semibold flex items-center gap-2">
-                        <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        Fix Suggerito
-                    </h3>
-                    <button @click="copyToClipboard($refs.suggestedFix.innerText)" class="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors">Copia</button>
+                        <!-- Add Comment -->
+                        <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <div class="flex gap-3">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-xs font-bold text-white shrink-0">U</div>
+                                <div class="flex-1">
+                                    <textarea x-model="newComment" rows="3" placeholder="Aggiungi un commento..."
+                                              class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:border-primary resize-none"></textarea>
+                                    <div class="flex justify-end mt-2">
+                                        <button @click="addComment()" :disabled="!newComment || addingComment"
+                                                class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                                            <span x-show="!addingComment">Invia</span>
+                                            <span x-show="addingComment">Invio...</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <pre class="p-4 overflow-x-auto code-block text-sm bg-gray-50 dark:bg-gray-900" x-ref="suggestedFix"><code class="text-gray-800 dark:text-gray-300">{{ issue.suggested_fix }}</code></pre>
+
+                <!-- TAB: ATTACHMENTS -->
+                <div x-show="activeTab === 'attachments'" class="p-6">
+                    <div class="space-y-3">
+                        {% if issue.attachments %}
+                        {% for attachment in issue.attachments %}
+                        <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group">
+                            <div class="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-medium text-gray-900 dark:text-white truncate">{{ attachment.filename }}</div>
+                                <div class="text-sm text-gray-500">{{ attachment.file_type }} - {{ attachment.uploaded_at[:10] }}</div>
+                            </div>
+                            <button class="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-white opacity-0 group-hover:opacity-100 transition-all">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                            </button>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <p class="text-center text-gray-500 py-4">Nessun allegato.</p>
+                        {% endif %}
+
+                        <!-- Upload area -->
+                        <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-gray-400 dark:hover:border-gray-500 transition-colors cursor-pointer">
+                            <svg class="w-10 h-10 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            <p class="text-gray-500 text-sm">Trascina file qui o <span class="text-primary">sfoglia</span></p>
+                            <p class="text-gray-400 text-xs mt-1">PDF, PNG, JPG fino a 10MB</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: HISTORY -->
+                <div x-show="activeTab === 'history'" class="p-6">
+                    <div class="space-y-4">
+                        {% if issue.fix_code %}
+                        <div class="flex items-start gap-3">
+                            <div class="w-2 h-2 rounded-full bg-green-500 mt-2"></div>
+                            <div>
+                                <div class="text-sm text-gray-900 dark:text-white">Fix applicato</div>
+                                <div class="text-xs text-gray-500">{{ issue.fixed_at.strftime('%Y-%m-%d %H:%M') if issue.fixed_at else '-' }} - {{ issue.fixed_by or 'fixer' }}</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if issue.status == 'in_progress' %}
+                        <div class="flex items-start gap-3">
+                            <div class="w-2 h-2 rounded-full bg-purple-500 mt-2"></div>
+                            <div>
+                                <div class="text-sm text-gray-900 dark:text-white">Stato cambiato in <span class="font-medium text-purple-500">in_progress</span></div>
+                                <div class="text-xs text-gray-500">{{ issue.phase_started_at.strftime('%Y-%m-%d %H:%M') if issue.phase_started_at else '-' }} - system</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="flex items-start gap-3">
+                            <div class="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
+                            <div>
+                                <div class="text-sm text-gray-900 dark:text-white">Issue creata</div>
+                                <div class="text-xs text-gray-500">{{ issue.created_at.strftime('%Y-%m-%d %H:%M') }} - {% if issue.flagged_by %}{{ issue.flagged_by[0] }}{% else %}reviewer{% endif %}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            {% endif %}
 
             <!-- FIX RESULT (shown when fixed) -->
             {% if issue.fix_code %}
@@ -198,21 +383,16 @@
                     </h3>
                 </div>
                 <div class="p-6 space-y-4">
-                    <!-- Fix explanation -->
                     {% if issue.fix_explanation %}
                     <div>
                         <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Spiegazione</h4>
                         <p class="text-gray-700 dark:text-gray-300 text-sm">{{ issue.fix_explanation }}</p>
                     </div>
                     {% endif %}
-
-                    <!-- Fix code -->
                     <div>
                         <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Codice</h4>
                         <pre class="p-4 overflow-x-auto code-block text-sm bg-gray-50 dark:bg-gray-900 rounded-lg"><code class="text-gray-800 dark:text-gray-300">{{ issue.fix_code }}</code></pre>
                     </div>
-
-                    <!-- Files modified -->
                     {% if issue.fix_files_modified %}
                     <div>
                         <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">File Modificati</h4>
@@ -223,24 +403,16 @@
                         </div>
                     </div>
                     {% endif %}
-
-                    <!-- Git info -->
-                    <div class="flex flex-wrap items-center gap-6 text-sm">
+                    <div class="flex flex-wrap items-center gap-6 text-sm pt-2">
                         {% if issue.fix_branch %}
                         <div class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            <span class="text-gray-500 dark:text-gray-400">Branch:</span>
+                            <span class="text-gray-500">Branch:</span>
                             <span class="font-mono text-primary">{{ issue.fix_branch }}</span>
                         </div>
                         {% endif %}
                         {% if issue.fix_commit_sha %}
                         <div class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
-                            </svg>
-                            <span class="text-gray-500 dark:text-gray-400">Commit:</span>
+                            <span class="text-gray-500">Commit:</span>
                             <span class="font-mono text-gray-700 dark:text-gray-300">{{ issue.fix_commit_sha[:8] }}</span>
                         </div>
                         {% endif %}
@@ -251,8 +423,41 @@
 
         </div>
 
+        <!-- ============================================== -->
         <!-- RIGHT COLUMN (1/3) -->
+        <!-- ============================================== -->
         <div class="space-y-6">
+
+            <!-- LINEAR INTEGRATION -->
+            {% if issue.linear_identifier %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-500/30 p-6">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    Linear
+                </h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-500">Identifier</span>
+                        <span class="text-primary font-mono">{{ issue.linear_identifier }}</span>
+                    </div>
+                    {% if issue.linear_url %}
+                    <a href="{{ issue.linear_url }}" target="_blank"
+                       class="mt-3 w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm text-center transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                        Apri in Linear
+                    </a>
+                    {% endif %}
+                    <button @click="unlinkLinear()"
+                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm text-gray-500 transition-colors">
+                        Rimuovi collegamento
+                    </button>
+                </div>
+            </div>
+            {% endif %}
 
             <!-- EFFORT ESTIMATION -->
             {% if issue.estimated_effort %}
@@ -277,7 +482,7 @@
                     </div>
                     {% if issue.estimated_files_count %}
                     <div class="flex items-center justify-between py-2 border-t border-gray-200 dark:border-gray-700">
-                        <span class="text-sm text-gray-500 dark:text-gray-400">File da modificare</span>
+                        <span class="text-sm text-gray-500">File da modificare</span>
                         <span class="font-medium">{{ issue.estimated_files_count }} file{% if issue.estimated_files_count > 1 %}s{% endif %}</span>
                     </div>
                     {% endif %}
@@ -332,16 +537,16 @@
                 <div class="space-y-3 text-sm">
                     {% if repository %}
                     <div class="flex justify-between">
-                        <span class="text-gray-500 dark:text-gray-400">Repository</span>
+                        <span class="text-gray-500">Repository</span>
                         <a href="/repos" class="text-primary hover:underline">{{ repository.name }}</a>
                     </div>
                     {% endif %}
                     <div class="flex justify-between">
-                        <span class="text-gray-500 dark:text-gray-400">Issue ID</span>
+                        <span class="text-gray-500">Issue ID</span>
                         <span class="font-mono text-xs text-gray-600 dark:text-gray-300">{{ issue.id[:8] }}...</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-gray-500 dark:text-gray-400">Ultimo update</span>
+                        <span class="text-gray-500">Ultimo update</span>
                         <span class="text-gray-600 dark:text-gray-300">{{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
                     </div>
                 </div>
@@ -360,24 +565,11 @@
         </div>
     </div>
 
+    <!-- ============================================== -->
     <!-- FIX LOG MODAL -->
-    <div x-show="showFixLog"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-         @click.self="showFixLog = false"
-         style="display: none;">
-        <div x-show="showFixLog"
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 scale-95"
-             x-transition:enter-end="opacity-100 scale-100"
-             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
-
-            <!-- Header -->
+    <!-- ============================================== -->
+    <div x-show="showFixLog" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="showFixLog = false" style="display: none;">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
             <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
                 <h3 class="text-lg font-semibold">Fix Log - Session {{ issue.fix_session_id[:8] if issue.fix_session_id else '' }}...</h3>
                 <button @click="showFixLog = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
@@ -386,8 +578,6 @@
                     </svg>
                 </button>
             </div>
-
-            <!-- Content -->
             <div class="flex-1 overflow-y-auto p-6">
                 <template x-if="fixLogLoading">
                     <div class="flex items-center justify-center py-12">
@@ -399,7 +589,6 @@
                 </template>
                 <template x-if="!fixLogLoading && fixLog">
                     <div class="space-y-6">
-                        <!-- Summary -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                                 <div class="text-sm text-gray-500">Status</div>
@@ -418,8 +607,6 @@
                                 <div class="font-medium font-mono text-sm" x-text="fixLog.branch_name || '-'"></div>
                             </div>
                         </div>
-
-                        <!-- Claude Prompts -->
                         <template x-if="fixLog.claude_prompts && fixLog.claude_prompts.length > 0">
                             <div>
                                 <h4 class="font-semibold mb-3">Claude Prompts</h4>
@@ -434,8 +621,6 @@
                                 </template>
                             </div>
                         </template>
-
-                        <!-- Gemini Review -->
                         <template x-if="fixLog.gemini_review">
                             <div>
                                 <h4 class="font-semibold mb-3">Gemini Review</h4>
@@ -445,10 +630,45 @@
                     </div>
                 </template>
                 <template x-if="!fixLogLoading && fixLogError">
-                    <div class="text-center py-12 text-red-500">
-                        <p x-text="fixLogError"></p>
-                    </div>
+                    <div class="text-center py-12 text-red-500" x-text="fixLogError"></div>
                 </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- LINK LINEAR MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showLinkLinear" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" @click.self="showLinkLinear = false" style="display: none;">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 class="text-lg font-semibold flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    Collega a Linear
+                </h3>
+                <button @click="showLinkLinear = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Linear Issue ID o URL</label>
+                    <input type="text" x-model="linearIdentifier" placeholder="TEAM-123 o https://linear.app/..."
+                           class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-primary">
+                </div>
+                <p class="text-xs text-gray-500">Inserisci l'identificativo (es. TEAM-123) o l'URL completo dell'issue Linear da collegare.</p>
+                <div class="flex gap-3 pt-2">
+                    <button @click="showLinkLinear = false" class="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">Annulla</button>
+                    <button @click="linkLinear()" :disabled="!linearIdentifier || linkingLinear"
+                            class="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                        <span x-show="!linkingLinear">Collega</span>
+                        <span x-show="linkingLinear">Collegando...</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -461,19 +681,83 @@
 function issueDetailApp() {
     return {
         issueId: '{{ issue.id }}',
+        activeTab: 'details',
         actionLoading: false,
         showFixLog: false,
         fixLog: null,
         fixLogLoading: false,
         fixLogError: null,
+        showLinkLinear: false,
+        linearIdentifier: '',
+        linkingLinear: false,
+        newComment: '',
+        addingComment: false,
 
         init() {
-            // Watch for fix log modal open
             this.$watch('showFixLog', async (value) => {
                 if (value && !this.fixLog) {
                     await this.loadFixLog();
                 }
             });
+        },
+
+        async linkLinear() {
+            if (!this.linearIdentifier) return;
+            this.linkingLinear = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/link-linear`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linear_identifier: this.linearIdentifier })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to link Linear'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
+            this.linkingLinear = false;
+        },
+
+        async unlinkLinear() {
+            if (!confirm('Sei sicuro di voler rimuovere il collegamento Linear?')) return;
+            this.actionLoading = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/link-linear`, { method: 'DELETE' });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to unlink Linear'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
+            this.actionLoading = false;
+        },
+
+        async addComment() {
+            if (!this.newComment.trim()) return;
+            this.addingComment = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/comments`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: this.newComment, author: 'user', comment_type: 'human' })
+                });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to add comment'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
+            this.addingComment = false;
         },
 
         async resolveIssue() {
@@ -483,7 +767,7 @@ function issueDetailApp() {
 
         async ignoreIssue() {
             const note = prompt('Motivo per ignorare (opzionale):');
-            if (note === null) return; // User cancelled
+            if (note === null) return;
             await this.updateStatus('ignore', note);
         },
 
@@ -495,25 +779,20 @@ function issueDetailApp() {
             this.actionLoading = true;
             try {
                 const url = `/api/issues/${this.issueId}/${action}${note ? '?note=' + encodeURIComponent(note) : ''}`;
-                console.log('[Issue] Calling:', url);
                 const res = await fetch(url, { method: 'POST' });
-                const data = await res.json();
-                console.log('[Issue] Response:', res.status, data);
                 if (res.ok) {
-                    console.log('[Issue] Success, reloading page...');
                     window.location.reload();
                 } else {
+                    const data = await res.json();
                     alert('Errore: ' + (data.detail || 'Unknown error'));
                 }
             } catch (e) {
-                console.error('[Issue] Error:', e);
                 alert('Errore di rete: ' + e.message);
             }
             this.actionLoading = false;
         },
 
         startFix() {
-            // Redirect to issues page with this issue pre-selected for fix
             window.location.href = `/issues?fix=${this.issueId}`;
         },
 
@@ -536,7 +815,6 @@ function issueDetailApp() {
 
         copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
-                // Show toast
                 window.dispatchEvent(new CustomEvent('show-toast', {
                     detail: { message: 'Copiato negli appunti!', type: 'success' }
                 }));

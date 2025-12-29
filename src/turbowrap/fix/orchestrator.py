@@ -856,9 +856,10 @@ class FixOrchestrator:
                                 batch_results[batch_id]["commit_sha"] = batch_commit_sha
                                 batch_results[batch_id]["modified_files"] = batch_modified_files
 
-                                await self._update_batch_issues_resolved(
-                                    batch, batch_commit_sha, branch_name, session_id
-                                )
+                                # NOTE: Per-batch issue updates removed to prevent race condition
+                                # with fix_session_service.update_issue_statuses()
+                                # All issue status updates now happen atomically at the end
+                                # via update_issue_statuses() in fix_session_service.py
 
                                 await emit_log(
                                     "INFO",
@@ -1840,6 +1841,12 @@ The reviewer found issues with the previous fix. Address this feedback:
         session_id: str,
     ) -> None:
         """Update issues to RESOLVED after successful batch commit.
+
+        DEPRECATED: This function is no longer called to prevent race conditions
+        with fix_session_service.update_issue_statuses(). All issue status updates
+        now happen atomically at the end of the fix session.
+
+        Kept for reference and potential future use in isolated scenarios.
 
         Uses same pattern as _update_allowed_extra_paths - runs DB update
         in thread pool to avoid blocking async loop.

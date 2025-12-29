@@ -373,11 +373,17 @@ async def cancel_operation(operation_id: str) -> dict[str, str]:
 
 
 @router.post("/issues/reset-stuck")
-async def reset_stuck_issues() -> dict[str, Any]:
+async def reset_stuck_issues(
+    repository_id: str | None = Query(None, description="Filter by repository ID"),
+) -> dict[str, Any]:
     """
-    Reset all issues stuck in 'in_progress' status to 'open'.
+    Reset issues stuck in 'in_progress' status to 'open'.
 
     Use this to cleanup after crashed or interrupted fix sessions.
+
+    Args:
+        repository_id: Optional filter to reset only issues from a specific repository.
+                      If not provided, resets ALL stuck issues (use with caution).
     """
     from ...db.models import Issue, IssueStatus
     from ...db.session import get_session_local
@@ -386,7 +392,13 @@ async def reset_stuck_issues() -> dict[str, Any]:
     db = SessionLocal()
 
     try:
-        stuck_issues = db.query(Issue).filter(Issue.status == IssueStatus.IN_PROGRESS.value).all()
+        query = db.query(Issue).filter(Issue.status == IssueStatus.IN_PROGRESS.value)
+
+        # Filter by repository if provided
+        if repository_id:
+            query = query.filter(Issue.repository_id == repository_id)
+
+        stuck_issues = query.all()
 
         reset_count = 0
         for issue in stuck_issues:
@@ -397,10 +409,12 @@ async def reset_stuck_issues() -> dict[str, Any]:
         if reset_count > 0:
             db.commit()
 
+        scope_msg = f" for repository {repository_id}" if repository_id else " (all repositories)"
         return {
             "status": "success",
-            "message": f"Reset {reset_count} stuck issues",
+            "message": f"Reset {reset_count} stuck issues{scope_msg}",
             "count": reset_count,
+            "repository_id": repository_id,
         }
 
     except Exception as e:

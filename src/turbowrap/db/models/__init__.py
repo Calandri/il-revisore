@@ -6,8 +6,9 @@ This package organizes all SQLAlchemy ORM models by domain:
 - task.py: Task and AgentRun models
 - chat.py: SDK-based chat models
 - settings.py: Application settings
-- issue.py: Issue and checkpoint models
-- linear.py: Linear integration models
+- issue.py: Issue and checkpoint models (with Linear integration)
+- feature.py: Feature models (multi-repo support)
+- linear.py: Linear integration models (legacy, being replaced)
 - cli_chat.py: CLI-based chat models
 - endpoint.py: API endpoint detection
 - database_connection.py: External database connections
@@ -17,16 +18,26 @@ This package organizes all SQLAlchemy ORM models by domain:
 
 # Base classes and utilities
 from .base import (
+    # Feature enums
+    FEATURE_STATUS_TRANSITIONS,
+    # Issue enums
+    ISSUE_STATUS_TRANSITIONS,
+    # Other enums
     DatabaseType,
     EndpointVisibility,
     ExternalLinkType,
+    FeatureRepositoryRole,
+    FeatureStatus,
     IssueSeverity,
     IssueStatus,
     LinkType,
     OperationStatus,
     OperationType,
+    # Mixins and utilities
     SoftDeleteMixin,
     generate_uuid,
+    is_valid_feature_transition,
+    is_valid_issue_transition,
 )
 
 # Chat models (SDK-based)
@@ -41,14 +52,17 @@ from .database_connection import DatabaseConnection
 # Endpoint models
 from .endpoint import Endpoint
 
-# Issue models
+# Feature models (new architecture)
+from .feature import Feature, FeatureRepository
+
+# Issue models (with Linear integration)
 from .issue import Issue, ReviewCheckpoint
 
-# Linear integration models
+# Linear integration models (legacy, to be migrated to Feature)
 from .linear import LinearIssue, LinearIssueRepositoryLink
 
 # Mockup models
-from .mockup import Mockup, MockupProject
+from .mockup import Mockup, MockupProject, MockupStatus
 
 # Operation models
 from .operation import Operation
@@ -66,11 +80,19 @@ __all__ = [
     # Base
     "SoftDeleteMixin",
     "generate_uuid",
-    # Enums
-    "LinkType",
-    "ExternalLinkType",
+    # Issue Enums
     "IssueSeverity",
     "IssueStatus",
+    "ISSUE_STATUS_TRANSITIONS",
+    "is_valid_issue_transition",
+    # Feature Enums
+    "FeatureStatus",
+    "FEATURE_STATUS_TRANSITIONS",
+    "is_valid_feature_transition",
+    "FeatureRepositoryRole",
+    # Other Enums
+    "LinkType",
+    "ExternalLinkType",
     "EndpointVisibility",
     "DatabaseType",
     "OperationStatus",
@@ -87,10 +109,13 @@ __all__ = [
     "ChatMessage",
     # Settings
     "Setting",
-    # Issue
+    # Issue (with Linear integration)
     "Issue",
     "ReviewCheckpoint",
-    # Linear
+    # Feature (multi-repo support)
+    "Feature",
+    "FeatureRepository",
+    # Linear (legacy, to be migrated)
     "LinearIssue",
     "LinearIssueRepositoryLink",
     # CLI Chat
@@ -105,4 +130,5 @@ __all__ = [
     # Mockup
     "MockupProject",
     "Mockup",
+    "MockupStatus",
 ]

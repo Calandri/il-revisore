@@ -4,97 +4,106 @@
 
 {% block head %}
 <style>
+
+/* === SEVERITY BADGES === */
+.severity-critical { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.severity-high { background: linear-gradient(135deg, #f97316, #ea580c); }
+.severity-medium { background: linear-gradient(135deg, #eab308, #ca8a04); }
+.severity-low { background: linear-gradient(135deg, #6b7280, #4b5563); }
+
+/* === STATUS BADGES === */
+.status-open { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+.status-in_progress { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+.status-resolved { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.status-merged { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.status-in_review { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+.status-ignored { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+
+/* === ANIMATIONS === */
+.stat-card { transition: all 0.2s ease; }
+.stat-card:hover { transform: translateY(-2px); }
+.issue-card { transition: all 0.2s ease; }
+.issue-card:hover { transform: translateY(-1px); box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3); }
+
+@keyframes pulse-critical {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+.pulse-critical { animation: pulse-critical 2s ease-in-out infinite; }
+
 @keyframes slide-in {
     from { transform: translateX(100%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
 }
 .animate-slide-in { animation: slide-in 0.3s ease-out; }
 
-/* === STAT CARD === */
-.stat-card {
-    position: relative;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    overflow: hidden;
-}
-.stat-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.1);
-}
-.dark .stat-card:hover {
-    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.4);
-}
-.stat-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--stat-color, #6366f1), transparent);
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-.stat-card:hover::before { opacity: 1; }
+/* === LINEAR BRAND === */
+.linear-brand { background: linear-gradient(135deg, #5E6AD2, #4B51B6); }
 
-/* === SEVERITY PULSE === */
-.severity-critical { animation: pulse-critical 2s ease-in-out infinite; }
-@keyframes pulse-critical {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-    50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+/* === AI MODEL ICONS === */
+.ai-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
+.ai-icon-gemini { background: linear-gradient(135deg, #4285F4, #34A853, #FBBC04, #EA4335); }
+.ai-icon-grok { background: #000; }
+.ai-icon-claude { background: linear-gradient(135deg, #D97706, #B45309); }
+.ai-icon-openai { background: #10A37F; }
 
-/* === ISSUE ROW === */
-.issue-row {
-    position: relative;
-    transition: all 0.2s ease;
+/* === QUICK ACTIONS === */
+.quick-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
 }
-.issue-row::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    opacity: 0;
-    transition: opacity 0.2s;
+.quick-btn-ignore {
+    background: rgba(107, 114, 128, 0.15);
+    color: #9ca3af;
 }
-.issue-row:hover::before { opacity: 1; }
-.issue-row.severity-critical::before { background: linear-gradient(to bottom, #ef4444, #dc2626); }
-.issue-row.severity-high::before { background: linear-gradient(to bottom, #f97316, #ea580c); }
-.issue-row.severity-medium::before { background: linear-gradient(to bottom, #eab308, #ca8a04); }
-.issue-row.severity-low::before { background: linear-gradient(to bottom, #6b7280, #4b5563); }
-
-/* === SECTION HEADER === */
-.section-header {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+.quick-btn-ignore:hover, .quick-btn-ignore:active {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
 }
-.dark .section-header {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+.quick-btn-merge {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
 }
-
-/* === BTN FIX === */
-.btn-fix {
-    position: relative;
-    overflow: hidden;
+.quick-btn-merge:hover, .quick-btn-merge:active {
+    background: rgba(34, 197, 94, 0.25);
+    color: #22c55e;
 }
-.btn-fix::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.2) 50%, transparent 60%);
-    transform: translateX(-100%);
-    transition: transform 0.4s;
+.quick-btn-reopen {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
 }
-.btn-fix:hover::after { transform: translateX(100%); }
+.quick-btn-reopen:hover, .quick-btn-reopen:active {
+    background: rgba(59, 130, 246, 0.25);
+    color: #3b82f6;
+}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="space-y-6" x-data="issuesApp()">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+    <!-- ============================================== -->
+    <!-- HEADER -->
+    <!-- ============================================== -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-            <h1 class="text-2xl sm:text-3xl font-bold flex items-center gap-2 flex-wrap">
+            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3 flex-wrap">
                 <span>Issues</span>
                 <template x-if="$store.globalContext?.selectedRepo">
                     <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
@@ -102,751 +111,486 @@
                     </span>
                 </template>
             </h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">Problemi trovati nelle code review</p>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Problemi trovati nelle code review</p>
         </div>
-        <div class="flex items-center gap-2">
-            <button @click="refresh()"
-                    :disabled="loading"
-                    class="min-h-[44px] px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+        <div class="flex items-center gap-3">
+            <!-- Lint+Fix -->
+            <div class="flex items-center gap-2">
+                <select x-model="lintFixCategory" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm border-0">
+                    <option value="BE">Backend</option>
+                    <option value="FE">Frontend</option>
+                    <option value="all">Tutti</option>
+                </select>
+                <button @click="runLintFix()"
+                        :disabled="isAnalyzing || !filters.repository_id"
+                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                    <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span class="hidden sm:inline">Lint+Fix</span>
+                </button>
+            </div>
+            <button @click="refresh()" :disabled="loading"
+                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2">
                 <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
                 <span class="hidden sm:inline">Aggiorna</span>
             </button>
         </div>
     </div>
 
-    <!-- Toast Notifications (fixed top-right) -->
+    <!-- Toast Notifications -->
     <div class="fixed top-4 right-4 z-50 space-y-2" x-show="toasts.length > 0">
         <template x-for="toast in toasts" :key="toast.id">
-            <div class="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in"
+            <div class="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg animate-slide-in"
                  :class="{
                      'bg-blue-500 text-white': toast.level === 'INFO',
                      'bg-yellow-500 text-white': toast.level === 'WARNING',
                      'bg-red-500 text-white': toast.level === 'ERROR'
                  }">
-                <!-- Icon -->
-                <div class="flex-shrink-0">
-                    <template x-if="toast.level === 'INFO'">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </template>
-                    <template x-if="toast.level === 'WARNING'">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                        </svg>
-                    </template>
-                    <template x-if="toast.level === 'ERROR'">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                    </template>
-                </div>
-                <!-- Content -->
-                <div class="flex-1">
-                    <div class="font-semibold text-sm" x-text="toast.level"></div>
-                    <div class="text-sm opacity-90" x-text="toast.message"></div>
-                </div>
-                <!-- Timestamp -->
-                <div class="text-xs opacity-75" x-text="toast.timestamp"></div>
+                <span class="text-sm" x-text="toast.message"></span>
+                <span class="text-xs opacity-75" x-text="toast.timestamp"></span>
             </div>
         </template>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700" style="--stat-color: #6366f1">
+    <!-- ============================================== -->
+    <!-- SUMMARY CARDS -->
+    <!-- ============================================== -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
             <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Totali</div>
             <div class="text-3xl font-bold mt-1 text-gray-900 dark:text-white" x-text="summary.total || 0"></div>
         </div>
-        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-red-200 dark:border-red-800" style="--stat-color: #ef4444">
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-red-200 dark:border-red-500/30">
             <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-red-500" :class="(summary.by_severity?.CRITICAL || 0) > 0 && 'severity-critical'"></span>
-                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Critical</span>
+                <span class="w-2 h-2 rounded-full bg-red-500" :class="(summary.by_severity?.CRITICAL || 0) > 0 && 'pulse-critical'"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase">Critical</span>
             </div>
             <div class="text-3xl font-bold mt-1 text-red-600 dark:text-red-400" x-text="summary.by_severity?.CRITICAL || 0"></div>
         </div>
-        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-orange-200 dark:border-orange-800" style="--stat-color: #f97316">
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-orange-200 dark:border-orange-500/30">
             <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-orange-500"></span>
-                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">High</span>
+                <span class="text-xs font-medium text-gray-500 uppercase">High</span>
             </div>
             <div class="text-3xl font-bold mt-1 text-orange-600 dark:text-orange-400" x-text="summary.by_severity?.HIGH || 0"></div>
         </div>
-        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-yellow-200 dark:border-yellow-800" style="--stat-color: #eab308">
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-yellow-200 dark:border-yellow-500/30">
             <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
-                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Medium</span>
+                <span class="text-xs font-medium text-gray-500 uppercase">Medium</span>
             </div>
             <div class="text-3xl font-bold mt-1 text-yellow-600 dark:text-yellow-400" x-text="summary.by_severity?.MEDIUM || 0"></div>
         </div>
-        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-blue-200 dark:border-blue-800" style="--stat-color: #3b82f6">
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-blue-200 dark:border-blue-500/30">
             <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Low</span>
+                <span class="text-xs font-medium text-gray-500 uppercase">Low</span>
             </div>
             <div class="text-3xl font-bold mt-1 text-blue-600 dark:text-blue-400" x-text="summary.by_severity?.LOW || 0"></div>
         </div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-indigo-200 dark:border-indigo-500/30">
+            <div class="flex items-center gap-2">
+                <svg class="w-3 h-3 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
+                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                </svg>
+                <span class="text-xs font-medium text-gray-500 uppercase">Linear</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-indigo-600 dark:text-indigo-400" x-text="summary.linear_linked || 0"></div>
+        </div>
     </div>
 
-    <!-- Filters -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-        <div class="flex flex-wrap gap-3 md:gap-4">
-            <!-- Lint+Fix Button -->
-            <div class="w-full sm:w-auto flex flex-col sm:flex-row sm:items-end gap-2">
-                <div class="flex-1 sm:flex-none">
-                    <label class="block text-sm text-gray-500 mb-1 sm:hidden">Lint Type</label>
-                    <select x-model="lintFixCategory" class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                        <option value="BE">Backend (Ruff/Mypy)</option>
-                        <option value="FE">Frontend (TSC/ESLint)</option>
-                        <option value="all">Tutti</option>
-                    </select>
-                </div>
-                <button @click="runLintFix()"
-                        :disabled="isAnalyzing || !filters.repository_id"
-                        class="min-h-[44px] px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        :title="!filters.repository_id ? 'Seleziona prima un repository dal footer' : 'Trova e correggi issues linting'">
-                    <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M5 13l4 4L19 7"/>
-                    </svg>
-                    <span>Lint+Fix</span>
-                </button>
+    <!-- ============================================== -->
+    <!-- FILTERS -->
+    <!-- ============================================== -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+        <div class="flex flex-wrap gap-3 items-center">
+            <div class="flex-1 min-w-[140px]">
+                <select x-model="filters.status" @change="refresh()"
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Tutti gli stati</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="in_review">In Review</option>
+                    <option value="merged">Merged</option>
+                    <option value="ignored">Ignored</option>
+                </select>
             </div>
-
-            <!-- Severity filter -->
-            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
-                <label class="block text-sm text-gray-500 mb-1">Severity</label>
+            <div class="flex-1 min-w-[140px]">
                 <select x-model="filters.severity" @change="refresh()"
-                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="">Tutti</option>
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Tutte le severity</option>
                     <option value="CRITICAL">Critical</option>
                     <option value="HIGH">High</option>
                     <option value="MEDIUM">Medium</option>
                     <option value="LOW">Low</option>
                 </select>
             </div>
-
-            <!-- Status filter -->
-            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
-                <label class="block text-sm text-gray-500 mb-1">Status</label>
-                <select x-model="filters.status" @change="refresh()"
-                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="">Tutti</option>
-                    <option value="open">Open</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="merged">Merged</option>
-                    <option value="ignored">Ignored</option>
-                </select>
-            </div>
-
-            <!-- Category filter -->
-            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
-                <label class="block text-sm text-gray-500 mb-1">Category</label>
+            <div class="flex-1 min-w-[140px]">
                 <select x-model="filters.category" @change="refresh()"
-                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="">Tutti</option>
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Tutte le categorie</option>
                     <option value="security">Security</option>
                     <option value="performance">Performance</option>
                     <option value="architecture">Architecture</option>
                     <option value="code_quality">Code Quality</option>
-                    <option value="maintainability">Maintainability</option>
-                    <option value="testing">Testing</option>
                     <option value="linting">Linting</option>
                 </select>
             </div>
-
-            <!-- Order by filter -->
-            <div class="w-[calc(50%-0.375rem)] sm:w-auto">
-                <label class="block text-sm text-gray-500 mb-1">Ordina per</label>
-                <select x-model="filters.order_by" @change="refresh()"
-                        class="w-full sm:w-auto min-h-[44px] px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <option value="severity">Severità</option>
-                    <option value="updated_at">Ultima modifica</option>
-                    <option value="created_at">Data creazione</option>
+            <div class="flex-1 min-w-[140px]">
+                <select x-model="filters.linear_linked" @change="refresh()"
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Linear: Tutti</option>
+                    <option value="linked">Collegati</option>
+                    <option value="unlinked">Non collegati</option>
                 </select>
             </div>
-
-            <!-- Search filter -->
-            <div class="w-full sm:flex-1 sm:min-w-[200px]">
-                <label class="block text-sm text-gray-500 mb-1">Cerca</label>
+            <div class="flex-[2] min-w-[200px]">
                 <div class="relative">
-                    <input type="text"
-                           x-model="filters.search"
-                           @input.debounce.300ms="refresh()"
-                           placeholder="Cerca in titolo, descrizione, file..."
-                           class="w-full min-h-[44px] px-3 py-2 pl-9 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm">
-                    <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                     </svg>
+                    <input type="text" x-model="filters.search" @input.debounce.300ms="refresh()"
+                           placeholder="Cerca per titolo, file, codice..."
+                           class="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:border-primary">
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Issues List -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <div class="p-4 border-b dark:border-gray-700">
-            <!-- Header row - stack on mobile -->
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div class="flex items-center gap-3">
-                    <h2 class="font-semibold">Lista Issues</h2>
-                    <span class="text-sm text-gray-500" x-text="issues.length + ' risultati'"></span>
-                </div>
-                <!-- Action buttons - wrap on mobile -->
-                <div class="flex flex-wrap items-center gap-2 sm:gap-3">
-                    <button @click="resetAllInProgress()"
-                            x-show="issues.filter(i => i.status === 'in_progress').length > 0"
-                            class="min-h-[44px] px-3 py-2 text-sm text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg flex items-center gap-1 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                        </svg>
-                        <span class="hidden xs:inline">Reset</span> (<span x-text="issues.filter(i => i.status === 'in_progress').length"></span>)
-                    </button>
-                    <button @click="selectAll()"
-                            class="min-h-[44px] px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors">
-                        <span class="hidden sm:inline">Seleziona</span> Tutte
-                    </button>
-                    <button @click="selectAllCritical()"
-                            class="min-h-[44px] px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors">
-                        Critical<span class="hidden sm:inline">/High</span>
+    <!-- ============================================== -->
+    <!-- VIEW TOGGLE + BULK ACTIONS -->
+    <!-- ============================================== -->
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <!-- Select All -->
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" x-model="selectAllChecked" @change="toggleSelectAll()"
+                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
+                <span class="text-sm text-gray-500">Seleziona tutto</span>
+            </label>
+            <!-- Bulk Actions -->
+            <template x-if="selectedIssues.length > 0">
+                <div class="flex items-center gap-2 ml-4">
+                    <span class="text-sm text-gray-500" x-text="selectedIssues.length + ' selezionati'"></span>
+                    <button @click="fixSelected()" :disabled="isFixing"
+                            class="px-3 py-1 bg-green-600/20 text-green-600 dark:text-green-400 hover:bg-green-600/30 rounded text-sm transition-colors disabled:opacity-50">
+                        Fix Selected
                     </button>
                     <button @click="clearSelection()"
-                            x-show="selectedIssues.length > 0"
-                            class="min-h-[44px] px-3 py-2 text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                            class="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-sm transition-colors">
                         Deseleziona
                     </button>
-                    <button @click="fixSelected()"
-                            :disabled="selectedIssues.length === 0 || isFixing"
-                            class="min-h-[44px] bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                        </svg>
-                        <span class="hidden sm:inline">Sistema</span> (<span x-text="selectedIssues.length"></span>)
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div x-show="loading" class="p-8 text-center">
-            <svg class="animate-spin w-8 h-8 mx-auto text-primary" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-        </div>
-
-        <div x-show="!loading && issues.length === 0" class="p-8 text-center text-gray-500">
-            <svg class="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <template x-if="!filters.repository_id">
-                <div>
-                    <p>Seleziona un repository</p>
-                    <p class="text-xs mt-1 opacity-70">dal footer in basso ↓</p>
                 </div>
             </template>
-            <template x-if="filters.repository_id">
-                <p>Nessuna issue trovata per questa repository</p>
-            </template>
         </div>
-
-        <div x-show="!loading && issues.length > 0" class="divide-y dark:divide-gray-700">
-            <template x-for="issue in issues" :key="issue.id">
-                <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                     :class="{'bg-green-50 dark:bg-green-900/10': issue.status === 'resolved', 'bg-primary/5': selectedIssues.includes(issue.id)}">
-                    <div class="flex items-start justify-between gap-4">
-                        <div class="flex items-start gap-4 flex-1">
-                            <!-- Checkbox -->
-                            <input type="checkbox"
-                                   :value="issue.id"
-                                   x-model="selectedIssues"
-                                   :disabled="issue.status === 'resolved' || issue.status === 'ignored'"
-                                   class="w-5 h-5 mt-2 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-50 cursor-pointer">
-                            <!-- Severity icon -->
-                            <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                                 :class="{
-                                     'bg-red-100 dark:bg-red-900/30': issue.severity === 'CRITICAL',
-                                     'bg-orange-100 dark:bg-orange-900/30': issue.severity === 'HIGH',
-                                     'bg-yellow-100 dark:bg-yellow-900/30': issue.severity === 'MEDIUM',
-                                     'bg-blue-100 dark:bg-blue-900/30': issue.severity === 'LOW'
-                                 }">
-                                <svg class="w-5 h-5"
-                                     :class="{
-                                         'text-red-600 dark:text-red-400': issue.severity === 'CRITICAL',
-                                         'text-orange-600 dark:text-orange-400': issue.severity === 'HIGH',
-                                         'text-yellow-600 dark:text-yellow-400': issue.severity === 'MEDIUM',
-                                         'text-blue-600 dark:text-blue-400': issue.severity === 'LOW'
-                                     }"
-                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                                </svg>
-                            </div>
-
-                            <!-- Content -->
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="font-mono text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded"
-                                          x-text="issue.issue_code"></span>
-                                    <span class="px-2 py-0.5 text-xs rounded-full"
-                                          :class="{
-                                              'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': issue.severity === 'CRITICAL',
-                                              'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': issue.severity === 'HIGH',
-                                              'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.severity === 'MEDIUM',
-                                              'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': issue.severity === 'LOW'
-                                          }"
-                                          x-text="issue.severity"></span>
-                                    <span class="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded"
-                                          x-text="issue.category"></span>
-                                    <!-- Flagged by LLM badges -->
-                                    <template x-if="issue.flagged_by && issue.flagged_by.length > 0">
-                                        <span class="flex items-center gap-1">
-                                            <template x-for="llm in issue.flagged_by" :key="llm">
-                                                <span class="px-1.5 py-0.5 text-xs rounded font-medium"
-                                                      :class="{
-                                                          'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': llm === 'claude',
-                                                          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': llm === 'gemini',
-                                                          'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400': llm === 'grok',
-                                                          'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300': !['claude', 'gemini', 'grok'].includes(llm)
-                                                      }"
-                                                      x-text="llm === 'claude' ? 'C' : llm === 'gemini' ? 'G' : llm === 'grok' ? 'X' : llm.charAt(0).toUpperCase()"
-                                                      :title="llm.charAt(0).toUpperCase() + llm.slice(1)"></span>
-                                            </template>
-                                        </span>
-                                    </template>
-                                    <!-- Effort badge -->
-                                    <template x-if="issue.estimated_effort">
-                                        <span class="px-2 py-0.5 text-xs rounded-full flex items-center gap-1"
-                                              :class="{
-                                                  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': issue.estimated_effort <= 2,
-                                                  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.estimated_effort === 3,
-                                                  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': issue.estimated_effort >= 4
-                                              }">
-                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                                            </svg>
-                                            <span x-text="getEffortLabel(issue.estimated_effort)"></span>
-                                            <template x-if="issue.estimated_files_count">
-                                                <span class="opacity-75" x-text="'(' + issue.estimated_files_count + ' files)'"></span>
-                                            </template>
-                                        </span>
-                                    </template>
-                                </div>
-                                <h3 class="font-medium mt-1" x-text="issue.title"></h3>
-                                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2" x-text="issue.description"></p>
-                                <div class="mt-2 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
-                                    <span x-text="issue.file + (issue.line ? ':' + issue.line : '')"></span>
-                                    <span class="flex items-center gap-1" :title="'Creato: ' + new Date(issue.created_at).toLocaleString()">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                        </svg>
-                                        <span x-text="formatDate(issue.created_at)"></span>
-                                    </span>
-                                    <span class="flex items-center gap-1" :title="'Modificato: ' + new Date(issue.updated_at).toLocaleString()">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                        </svg>
-                                        <span x-text="formatDate(issue.updated_at)"></span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Actions -->
-                        <div class="flex items-center gap-2 shrink-0">
-                            <!-- Status badge -->
-                            <span class="px-2 py-1 text-xs rounded-full"
-                                  :class="{
-                                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': issue.status === 'resolved',
-                                      'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.status === 'in_progress',
-                                      'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300': issue.status === 'open',
-                                      'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400': issue.status === 'ignored'
-                                  }"
-                                  x-text="issue.status">
-                            </span>
-
-                            <!-- Quick actions -->
-                            <div class="flex gap-1" x-show="issue.status === 'open'">
-                                <button @click="fixSingle(issue)"
-                                        :disabled="isFixing"
-                                        class="px-3 py-1.5 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                        title="Risolvi con AI">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                    </svg>
-                                    Risolvi
-                                </button>
-                                <button @click="ignoreIssue(issue.id)"
-                                        class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                                        title="Ignora">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                    </svg>
-                                </button>
-                            </div>
-
-                            <!-- Reset in_progress to open -->
-                            <button x-show="issue.status === 'in_progress'"
-                                    @click="resetToOpen(issue.id)"
-                                    class="px-3 py-1.5 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-600 flex items-center gap-1"
-                                    title="Reset a Open">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                                Reset
-                            </button>
-
-                            <button x-show="issue.status === 'resolved' || issue.status === 'ignored'"
-                                    @click="reopenIssue(issue.id)"
-                                    class="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                                    title="Riapri">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                            </button>
-
-                            <!-- Mark as merged (for resolved issues) -->
-                            <button x-show="issue.status === 'resolved'"
-                                    @click="markAsMerged(issue.id)"
-                                    class="p-2 text-purple-500 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg transition-colors"
-                                    title="Segna come Merged">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                          d="M5 13l4 4L19 7"/>
-                                </svg>
-                            </button>
-
-                            <!-- View details (popup) -->
-                            <button @click="viewIssue(issue)"
-                                    class="p-2 text-gray-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                                    title="Anteprima">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                </svg>
-                            </button>
-
-                            <!-- Open full page -->
-                            <a :href="'/issues/' + issue.issue_code"
-                               class="p-2 text-gray-500 hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors"
-                               title="Apri pagina">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                </svg>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </template>
+        <div class="flex items-center gap-2">
+            <!-- View Toggle -->
+            <button @click="viewMode = 'list'"
+                    :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                    class="p-2 rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                </svg>
+            </button>
+            <button @click="viewMode = 'cards'"
+                    :class="viewMode === 'cards' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                    class="p-2 rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                </svg>
+            </button>
         </div>
     </div>
 
-    <!-- Issue Detail Modal -->
-    <div x-show="selectedIssue"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-         @click.self="selectedIssue = null">
+    <!-- ============================================== -->
+    <!-- LOADING STATE -->
+    <!-- ============================================== -->
+    <div x-show="loading" class="bg-white dark:bg-gray-800 rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700">
+        <svg class="animate-spin w-8 h-8 mx-auto text-primary" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        <p class="mt-4 text-gray-500">Caricamento...</p>
+    </div>
 
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-[85vw] h-[95vh] overflow-hidden flex flex-col"
-             @keydown.left.window="selectedIssue && prevIssue()"
-             @keydown.right.window="selectedIssue && nextIssue()"
-             @keydown.escape.window="selectedIssue = null">
-            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between shrink-0">
-                <div class="flex items-center gap-3">
-                    <!-- Navigation arrows -->
-                    <button @click="prevIssue()"
-                            :disabled="!canGoPrev()"
-                            class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Issue precedente (←)">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                        </svg>
-                    </button>
-                    <span class="text-sm text-gray-500" x-text="(currentIssueIndex + 1) + ' / ' + issues.length"></span>
-                    <button @click="nextIssue()"
-                            :disabled="!canGoNext()"
-                            class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Issue successiva (→)">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                    </button>
+    <!-- ============================================== -->
+    <!-- EMPTY STATE -->
+    <!-- ============================================== -->
+    <div x-show="!loading && issues.length === 0" class="bg-white dark:bg-gray-800 rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700">
+        <svg class="w-12 h-12 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <template x-if="!filters.repository_id">
+            <div>
+                <p class="text-gray-500">Seleziona un repository</p>
+                <p class="text-xs mt-1 text-gray-400">dal footer in basso</p>
+            </div>
+        </template>
+        <template x-if="filters.repository_id">
+            <p class="text-gray-500">Nessuna issue trovata</p>
+        </template>
+    </div>
 
-                    <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-2"></div>
+    <!-- ============================================== -->
+    <!-- ISSUES LIST VIEW -->
+    <!-- ============================================== -->
+    <div x-show="!loading && issues.length > 0 && viewMode === 'list'"
+         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <!-- Table Header -->
+        <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <div class="col-span-1"></div>
+            <div class="col-span-4">Issue</div>
+            <div class="col-span-2">File</div>
+            <div class="col-span-1">Severity</div>
+            <div class="col-span-1">Status</div>
+            <div class="col-span-1">Linear</div>
+            <div class="col-span-1">Effort</div>
+            <div class="col-span-1">Data</div>
+        </div>
 
-                    <span class="font-mono text-sm px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded"
-                          x-text="selectedIssue?.issue_code"></span>
-                    <span class="px-2 py-0.5 text-xs rounded-full"
-                          :class="{
-                              'bg-red-100 text-red-700': selectedIssue?.severity === 'CRITICAL',
-                              'bg-orange-100 text-orange-700': selectedIssue?.severity === 'HIGH',
-                              'bg-yellow-100 text-yellow-700': selectedIssue?.severity === 'MEDIUM',
-                              'bg-blue-100 text-blue-700': selectedIssue?.severity === 'LOW'
-                          }"
-                          x-text="selectedIssue?.severity"></span>
+        <!-- Issue Rows -->
+        <template x-for="issue in issues" :key="issue.id">
+            <a :href="'/issues/' + issue.issue_code"
+               class="issue-card grid grid-cols-1 md:grid-cols-12 gap-4 px-4 py-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 items-center"
+               :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged', 'bg-primary/5': selectedIssues.includes(issue.id)}">
+
+                <!-- Checkbox + Severity Bar -->
+                <div class="col-span-1 flex items-center gap-2">
+                    <input type="checkbox" :value="issue.id" x-model="selectedIssues"
+                           :disabled="issue.status === 'resolved' || issue.status === 'merged' || issue.status === 'ignored'"
+                           class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary disabled:opacity-50"
+                           @click.stop>
+                    <div class="w-1 h-8 rounded-full"
+                         :class="{
+                             'severity-critical': issue.severity === 'CRITICAL',
+                             'severity-high': issue.severity === 'HIGH',
+                             'severity-medium': issue.severity === 'MEDIUM',
+                             'severity-low': issue.severity === 'LOW'
+                         }"></div>
                 </div>
-                <button @click="selectedIssue = null" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
+
+                <!-- Issue Info -->
+                <div class="col-span-4">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <!-- AI Icons inline -->
+                        <template x-for="reviewer in (issue.flagged_by || []).slice(0, 2)" :key="reviewer">
+                            <div class="ai-icon" :class="getAiIconClass(reviewer)" :title="reviewer">
+                                <template x-if="reviewer.includes('gemini')">
+                                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                                </template>
+                                <template x-if="reviewer.includes('grok')">
+                                    <span class="text-white text-[10px] font-bold">X</span>
+                                </template>
+                                <template x-if="reviewer.includes('claude')">
+                                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                                </template>
+                                <template x-if="!reviewer.includes('gemini') && !reviewer.includes('grok') && !reviewer.includes('claude')">
+                                    <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                </template>
+                            </div>
+                        </template>
+                        <span class="font-mono text-sm font-medium text-gray-900 dark:text-white" x-text="issue.issue_code"></span>
+                        <!-- Quick actions inline -->
+                        <template x-if="issue.status === 'open' || issue.status === 'in_progress'">
+                            <button @click.stop.prevent="quickIgnore(issue)" class="quick-btn quick-btn-ignore" title="Ignora">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </template>
+                        <template x-if="issue.status === 'resolved' || issue.status === 'in_review'">
+                            <button @click.stop.prevent="quickMerge(issue)" class="quick-btn quick-btn-merge" title="Merged">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            </button>
+                        </template>
+                        <template x-if="issue.status === 'ignored'">
+                            <button @click.stop.prevent="quickReopen(issue)" class="quick-btn quick-btn-reopen" title="Riapri">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            </button>
+                        </template>
+                    </div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400 truncate mt-1" x-text="issue.title"></div>
+                </div>
+
+                <!-- File -->
+                <div class="col-span-2">
+                    <div class="text-xs font-mono text-gray-500 truncate" x-text="issue.file"></div>
+                    <div class="text-xs text-primary" x-text="issue.line ? ':' + issue.line : ''"></div>
+                </div>
+
+                <!-- Severity -->
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs font-bold text-white"
+                          :class="{
+                              'severity-critical': issue.severity === 'CRITICAL',
+                              'severity-high': issue.severity === 'HIGH',
+                              'severity-medium': issue.severity === 'MEDIUM',
+                              'severity-low': issue.severity === 'LOW'
+                          }"
+                          x-text="issue.severity"></span>
+                </div>
+
+                <!-- Status -->
+                <div class="col-span-1">
+                    <span class="px-2 py-1 rounded-full text-xs border"
+                          :class="'status-' + issue.status"
+                          x-text="issue.status"></span>
+                </div>
+
+                <!-- Linear -->
+                <div class="col-span-1">
+                    <template x-if="issue.linear_identifier">
+                        <span @click.stop class="px-2 py-1 rounded text-xs font-medium text-white linear-brand inline-flex items-center gap-1">
+                            <svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+                                <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                            </svg>
+                            <span x-text="issue.linear_identifier.split('-')[1]"></span>
+                        </span>
+                    </template>
+                    <template x-if="!issue.linear_identifier">
+                        <button @click.stop.prevent="openLinkLinearModal(issue)"
+                                class="px-2 py-1 rounded text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 transition-colors">
+                            + Link
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Effort -->
+                <div class="col-span-1">
+                    <template x-if="issue.estimated_effort">
+                        <div class="flex items-center gap-1">
+                            <div class="w-12 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div class="h-full bg-yellow-500 rounded-full" :style="'width: ' + (issue.estimated_effort * 20) + '%'"></div>
+                            </div>
+                            <span class="text-xs text-gray-500" x-text="issue.estimated_effort"></span>
+                        </div>
+                    </template>
+                    <template x-if="!issue.estimated_effort">
+                        <span class="text-xs text-gray-400">-</span>
+                    </template>
+                </div>
+
+                <!-- Date -->
+                <div class="col-span-1 text-xs text-gray-500" x-text="formatDate(issue.created_at)"></div>
+            </a>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- ISSUES CARDS VIEW -->
+    <!-- ============================================== -->
+    <div x-show="!loading && issues.length > 0 && viewMode === 'cards'"
+         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="issue in issues" :key="issue.id">
+            <a :href="'/issues/' + issue.issue_code"
+               class="issue-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 block"
+               :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged'}">
+                <!-- Header row -->
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <!-- AI Icons -->
+                        <template x-for="reviewer in (issue.flagged_by || []).slice(0, 2)" :key="reviewer">
+                            <div class="ai-icon" :class="getAiIconClass(reviewer)" :title="reviewer">
+                                <template x-if="reviewer.includes('gemini')">
+                                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                                </template>
+                                <template x-if="reviewer.includes('grok')">
+                                    <span class="text-white text-[10px] font-bold">X</span>
+                                </template>
+                                <template x-if="reviewer.includes('claude')">
+                                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                                </template>
+                            </div>
+                        </template>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold text-white"
+                              :class="{
+                                  'severity-critical': issue.severity === 'CRITICAL',
+                                  'severity-high': issue.severity === 'HIGH',
+                                  'severity-medium': issue.severity === 'MEDIUM',
+                                  'severity-low': issue.severity === 'LOW'
+                              }"
+                              x-text="issue.severity"></span>
+                        <span class="px-2 py-0.5 rounded-full text-xs border"
+                              :class="'status-' + issue.status"
+                              x-text="issue.status"></span>
+                    </div>
+                    <!-- Quick action -->
+                    <template x-if="issue.status === 'open' || issue.status === 'in_progress'">
+                        <button @click.stop.prevent="quickIgnore(issue)" class="quick-btn quick-btn-ignore" title="Ignora">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </template>
+                    <template x-if="issue.status === 'resolved' || issue.status === 'in_review'">
+                        <button @click.stop.prevent="quickMerge(issue)" class="quick-btn quick-btn-merge" title="Merged">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        </button>
+                    </template>
+                    <template x-if="issue.status === 'ignored'">
+                        <button @click.stop.prevent="quickReopen(issue)" class="quick-btn quick-btn-reopen" title="Riapri">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        </button>
+                    </template>
+                </div>
+                <!-- Issue code & title -->
+                <div class="font-mono text-sm font-medium text-gray-900 dark:text-white" x-text="issue.issue_code"></div>
+                <div class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2" x-text="issue.title"></div>
+                <!-- File -->
+                <div class="text-xs font-mono text-gray-400 mt-2 truncate" x-text="issue.file + (issue.line ? ':' + issue.line : '')"></div>
+                <!-- Footer -->
+                <div class="flex items-center justify-between text-xs text-gray-400 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                    <div class="flex items-center gap-2">
+                        <template x-if="issue.linear_identifier">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-medium text-white linear-brand inline-flex items-center gap-1">
+                                <svg class="w-2.5 h-2.5" viewBox="0 0 100 100" fill="currentColor">
+                                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                                </svg>
+                                <span x-text="issue.linear_identifier.split('-')[1]"></span>
+                            </span>
+                        </template>
+                        <template x-if="issue.comments && issue.comments.length > 0">
+                            <span class="flex items-center gap-0.5">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                                </svg>
+                                <span x-text="issue.comments.length"></span>
+                            </span>
+                        </template>
+                    </div>
+                    <span x-text="formatDate(issue.created_at)"></span>
+                </div>
+            </a>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- LINK LINEAR MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showLinkLinearModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showLinkLinearModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 class="font-semibold text-lg mb-4">Collega a Linear</h3>
+            <p class="text-sm text-gray-500 mb-4">Inserisci l'identificatore Linear (es. TEAM-123) o l'URL</p>
+            <input type="text" x-model="linkLinearInput"
+                   placeholder="TEAM-123 o https://linear.app/..."
+                   class="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg mb-4 bg-gray-50 dark:bg-gray-900">
+            <div class="flex justify-end gap-3">
+                <button @click="showLinkLinearModal = false" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
+                <button @click="linkLinear()" :disabled="!linkLinearInput || linkingLinear"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50">
+                    <span x-show="!linkingLinear">Collega</span>
+                    <span x-show="linkingLinear">Collegamento...</span>
                 </button>
             </div>
-            <div class="p-4 overflow-y-auto flex-1">
-                <template x-if="selectedIssue">
-                    <div class="space-y-4">
-                        <h2 class="text-xl font-semibold" x-text="selectedIssue.title"></h2>
-
-                        <div class="flex gap-2 flex-wrap">
-                            <span class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded" x-text="selectedIssue.category"></span>
-                            <span class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded" x-text="'Status: ' + selectedIssue.status"></span>
-                            <span x-show="selectedIssue.rule" class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded font-mono" x-text="selectedIssue.rule"></span>
-                        </div>
-
-                        <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                            <div class="text-sm text-gray-500">File</div>
-                            <div class="font-mono text-sm" x-text="selectedIssue.file + (selectedIssue.line ? ':' + selectedIssue.line : '')"></div>
-                        </div>
-
-                        <div>
-                            <h4 class="font-medium mb-2">Descrizione</h4>
-                            <p class="text-gray-600 dark:text-gray-300 whitespace-pre-wrap" x-text="selectedIssue.description"></p>
-                        </div>
-
-                        <div x-show="selectedIssue.current_code">
-                            <h4 class="font-medium mb-2">Codice Attuale</h4>
-                            <pre class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-xs overflow-x-auto font-mono"
-                                 x-text="selectedIssue.current_code"></pre>
-                        </div>
-
-                        <div x-show="selectedIssue.suggested_fix">
-                            <h4 class="font-medium mb-2">Fix Suggerito</h4>
-                            <pre class="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg text-xs overflow-x-auto font-mono"
-                                 x-text="selectedIssue.suggested_fix"></pre>
-                        </div>
-
-                        <div x-show="selectedIssue.references?.length > 0">
-                            <h4 class="font-medium mb-2">Riferimenti</h4>
-                            <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300">
-                                <template x-for="ref in selectedIssue.references" :key="ref">
-                                    <li><a :href="ref" target="_blank" class="text-primary hover:underline" x-text="ref"></a></li>
-                                </template>
-                            </ul>
-                        </div>
-
-                        <div x-show="selectedIssue.resolution_note">
-                            <h4 class="font-medium mb-2">Nota Risoluzione</h4>
-                            <p class="text-gray-600 dark:text-gray-300" x-text="selectedIssue.resolution_note"></p>
-                        </div>
-
-                        <!-- Fix Details (for resolved issues) -->
-                        <div x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_explanation" class="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                            <h4 class="font-medium mb-2 text-green-700 dark:text-green-400">Spiegazione Fix</h4>
-                            <div class="text-sm text-gray-600 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none"
-                                 x-html="selectedIssue.fix_explanation?.replace(/\n/g, '<br>')"></div>
-                        </div>
-
-                        <div x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_code" class="mt-4">
-                            <h4 class="font-medium mb-2">Codice Modificato</h4>
-                            <pre class="bg-gray-900 text-green-400 p-3 rounded-lg text-xs overflow-x-auto max-h-48"><code x-text="selectedIssue.fix_code"></code></pre>
-                        </div>
-
-                        <div x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_commit_sha" class="mt-4 flex items-center gap-4">
-                            <div>
-                                <span class="text-xs text-gray-500">Commit: </span>
-                                <code class="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="selectedIssue.fix_commit_sha?.substring(0, 10)"></code>
-                            </div>
-                            <div x-show="selectedIssue.fix_branch">
-                                <span class="text-xs text-gray-500">Branch: </span>
-                                <code class="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="selectedIssue.fix_branch"></code>
-                            </div>
-                        </div>
-
-                        <!-- Merge Result Notification -->
-                        <div x-show="mergeResult" class="mt-4 p-3 rounded-lg" :class="mergeResult?.success ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'">
-                            <div class="flex items-center gap-2">
-                                <svg x-show="mergeResult?.success" class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                <svg x-show="!mergeResult?.success" class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                </svg>
-                                <span :class="mergeResult?.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'" x-text="mergeResult?.message"></span>
-                            </div>
-                        </div>
-
-                        <!-- Fix Log (Prompts) Section -->
-                        <div x-show="selectedIssue?.fix_session_id" class="mt-4">
-                            <button @click="loadFixLog(selectedIssue.id)"
-                                    :disabled="loadingFixLog"
-                                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm">
-                                <svg x-show="!loadingFixLog" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                </svg>
-                                <svg x-show="loadingFixLog" class="w-4 h-4 animate-spin" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                                </svg>
-                                <span x-text="fixLog ? 'Aggiorna Fix Log' : 'Carica Fix Log (Prompt)'"></span>
-                            </button>
-
-                            <!-- Fix Log Content -->
-                            <div x-show="fixLog" class="mt-4 space-y-4">
-                                <!-- Session Info -->
-                                <div class="text-xs text-gray-500 flex gap-4">
-                                    <span>Session: <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded" x-text="fixLog?.session_id?.substring(0, 8)"></code></span>
-                                    <span x-text="'Timestamp: ' + fixLog?.timestamp"></span>
-                                    <span x-text="'Status: ' + fixLog?.status"></span>
-                                </div>
-
-                                <!-- Claude Prompts -->
-                                <div x-show="fixLog?.claude_prompts?.length > 0">
-                                    <h4 class="font-medium mb-2 flex items-center gap-2">
-                                        <span class="text-orange-500">Claude CLI Prompts</span>
-                                        <span class="text-xs text-gray-500" x-text="'(' + fixLog?.claude_prompts?.length + ' batch)'"></span>
-                                    </h4>
-                                    <template x-for="(cp, idx) in fixLog?.claude_prompts || []" :key="idx">
-                                        <div class="mb-3">
-                                            <div class="text-xs text-gray-500 mb-1 flex items-center gap-2">
-                                                <span class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded" x-text="cp.type?.toUpperCase()"></span>
-                                                <span x-text="'Batch ' + cp.batch"></span>
-                                                <span x-text="'Issues: ' + cp.issues?.join(', ')"></span>
-                                            </div>
-                                            <details class="bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                                <summary class="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm">
-                                                    Mostra prompt (<span x-text="cp.prompt?.length || 0"></span> chars)
-                                                </summary>
-                                                <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="cp.prompt"></pre>
-                                            </details>
-                                        </div>
-                                    </template>
-                                </div>
-
-                                <!-- Gemini Prompt -->
-                                <div x-show="fixLog?.gemini_prompt">
-                                    <h4 class="font-medium mb-2 flex items-center gap-2">
-                                        <span class="text-purple-500">Gemini CLI Prompt</span>
-                                    </h4>
-                                    <details class="bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                        <summary class="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm">
-                                            Mostra prompt (<span x-text="fixLog?.gemini_prompt?.length || 0"></span> chars)
-                                        </summary>
-                                        <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.gemini_prompt"></pre>
-                                    </details>
-                                </div>
-
-                                <!-- Gemini Review Output -->
-                                <div x-show="fixLog?.gemini_review">
-                                    <h4 class="font-medium mb-2 flex items-center gap-2">
-                                        <span class="text-purple-500">Gemini Review Output</span>
-                                    </h4>
-                                    <details class="bg-purple-50 dark:bg-purple-900/20 rounded-lg" open>
-                                        <summary class="px-3 py-2 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg text-sm">
-                                            Review risultato (<span x-text="fixLog?.gemini_review?.length || 0"></span> chars)
-                                        </summary>
-                                        <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.gemini_review"></pre>
-                                    </details>
-                                </div>
-
-                                <!-- Grok Prompt -->
-                                <div x-show="fixLog?.grok_prompt">
-                                    <h4 class="font-medium mb-2 flex items-center gap-2">
-                                        <span class="text-cyan-500">Grok CLI Prompt</span>
-                                    </h4>
-                                    <details class="bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                        <summary class="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm">
-                                            Mostra prompt (<span x-text="fixLog?.grok_prompt?.length || 0"></span> chars)
-                                        </summary>
-                                        <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.grok_prompt"></pre>
-                                    </details>
-                                </div>
-
-                                <!-- Grok Review Output -->
-                                <div x-show="fixLog?.grok_review">
-                                    <h4 class="font-medium mb-2 flex items-center gap-2">
-                                        <span class="text-cyan-500">Grok Review Output</span>
-                                    </h4>
-                                    <details class="bg-cyan-50 dark:bg-cyan-900/20 rounded-lg" open>
-                                        <summary class="px-3 py-2 cursor-pointer hover:bg-cyan-100 dark:hover:bg-cyan-900/30 rounded-lg text-sm">
-                                            Review risultato (<span x-text="fixLog?.grok_review?.length || 0"></span> chars)
-                                        </summary>
-                                        <pre class="p-3 text-xs overflow-x-auto whitespace-pre-wrap font-mono max-h-96 overflow-y-auto" x-text="fixLog?.grok_review"></pre>
-                                    </details>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Actions -->
-                        <div class="flex gap-2 pt-4 border-t dark:border-gray-700">
-                            <button x-show="selectedIssue.status === 'open'"
-                                    @click="fixSingle(selectedIssue); selectedIssue = null"
-                                    :disabled="isFixing"
-                                    class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50">
-                                Risolvi
-                            </button>
-                            <button x-show="selectedIssue.status === 'open'"
-                                    @click="ignoreIssue(selectedIssue.id); selectedIssue = null"
-                                    class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
-                                Ignora
-                            </button>
-                            <button x-show="selectedIssue.status === 'resolved' || selectedIssue.status === 'ignored'"
-                                    @click="reopenIssue(selectedIssue.id); selectedIssue = null"
-                                    class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors">
-                                Riapri
-                            </button>
-                            <button x-show="selectedIssue.status === 'resolved'"
-                                    @click="markAsMerged(selectedIssue.id); selectedIssue = null"
-                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                Segna Merged
-                            </button>
-                            <button x-show="selectedIssue.status === 'resolved' && selectedIssue.fix_commit_sha && selectedIssue.fix_branch"
-                                    @click="mergeAndPush(selectedIssue)"
-                                    :disabled="isMerging"
-                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2">
-                                <svg x-show="!isMerging" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                                </svg>
-                                <svg x-show="isMerging" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                </svg>
-                                <span x-text="isMerging ? 'Merging...' : 'Merge to Main'"></span>
-                            </button>
-                        </div>
-                    </div>
-                </template>
-            </div>
         </div>
     </div>
 
-    <!-- Fix Progress Modal -->
-    <div x-show="showFixModal"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-         @click.self="closeFixModal()">
-
+    <!-- ============================================== -->
+    <!-- FIX PROGRESS MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showFixModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeFixModal()">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
-            <!-- Header with Issue Chips -->
+            <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700">
                 <div class="flex items-center justify-between mb-3">
                     <div class="flex items-center gap-3">
@@ -865,35 +609,28 @@
                         </div>
                         <div>
                             <h3 class="font-semibold">Fix Issues</h3>
-                            <!-- Branch name in italic -->
                             <p x-show="fixProgress.branchName" class="text-xs text-gray-500 italic">
                                 <code class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded" x-text="fixProgress.branchName"></code>
                             </p>
                         </div>
                     </div>
-                    <button @click="showFixModal = false"
-                            class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                            :title="isFixing ? 'Chiudi (il fix continua in background)' : 'Chiudi'">
+                    <button @click="showFixModal = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
                     </button>
                 </div>
-
-                <!-- Issue Chips - Horizontal Scroll -->
-                <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                <!-- Issue Chips -->
+                <div class="flex gap-2 overflow-x-auto pb-2">
                     <template x-for="issueId in fixProgress.fixingIssueIds" :key="issueId">
-                        <div class="shrink-0 px-2.5 py-1 rounded-full text-xs font-mono flex items-center gap-1.5 transition-all duration-300"
+                        <div class="shrink-0 px-2.5 py-1 rounded-full text-xs font-mono flex items-center gap-1.5"
                              :class="{
-                                 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300': fixProgress.issueStates[issueId]?.status === 'pending',
-                                 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 ring-2 ring-yellow-400 animate-pulse': fixProgress.issueStates[issueId]?.status === 'in_progress',
-                                 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300': fixProgress.issueStates[issueId]?.status === 'completed',
-                                 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400': fixProgress.issueStates[issueId]?.status === 'failed'
+                                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': fixProgress.issueStates[issueId]?.status === 'pending',
+                                 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 ring-2 ring-yellow-400': fixProgress.issueStates[issueId]?.status === 'in_progress',
+                                 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300': fixProgress.issueStates[issueId]?.status === 'completed',
+                                 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300': fixProgress.issueStates[issueId]?.status === 'failed'
                              }">
                             <span x-text="fixProgress.issueStates[issueId]?.code || issueId.slice(0,8)"></span>
-                            <span x-show="fixProgress.issueStates[issueId]?.status === 'completed' && fixProgress.issueStates[issueId]?.score"
-                                  class="text-[10px] font-bold"
-                                  x-text="fixProgress.issueStates[issueId]?.score + '%'"></span>
                             <svg x-show="fixProgress.issueStates[issueId]?.status === 'in_progress'" class="w-3 h-3 animate-spin" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -906,23 +643,15 @@
                 </div>
             </div>
 
-            <!-- BILLING ERROR BANNER - Very prominent! -->
-            <div x-show="fixProgress.billingError"
-                 x-transition:enter="transition ease-out duration-300"
-                 x-transition:enter-start="opacity-0 transform -translate-y-2"
-                 x-transition:enter-end="opacity-100 transform translate-y-0"
-                 class="mx-4 mt-4 p-4 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg shadow-lg">
+            <!-- Billing Error Banner -->
+            <div x-show="fixProgress.billingError" class="mx-4 mt-4 p-4 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg">
                 <div class="flex items-start gap-3">
-                    <div class="text-white text-3xl">💳</div>
-                    <div class="flex-1">
-                        <h4 class="text-white font-bold text-lg mb-1">Credito Anthropic Esaurito!</h4>
-                        <p class="text-white/90 text-sm mb-3" x-text="fixProgress.billingError"></p>
-                        <a href="https://console.anthropic.com/settings/billing"
-                           target="_blank"
-                           class="inline-flex items-center gap-2 px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                            </svg>
+                    <div class="text-white text-2xl">&#128179;</div>
+                    <div>
+                        <h4 class="text-white font-bold">Credito Anthropic Esaurito!</h4>
+                        <p class="text-white/90 text-sm" x-text="fixProgress.billingError"></p>
+                        <a href="https://console.anthropic.com/settings/billing" target="_blank"
+                           class="inline-block mt-2 px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold text-sm hover:bg-orange-50">
                             Ricarica Credito
                         </a>
                     </div>
@@ -939,57 +668,17 @@
                                 <span class="text-xs text-gray-400 shrink-0 font-mono" x-text="log.timestamp"></span>
                                 <span class="text-sm flex-1" :class="log.color" x-text="log.message"></span>
                             </div>
-                            <!-- Quality Scores with icons -->
-                            <div x-show="log.quality_scores" class="mt-1.5 ml-6 flex flex-wrap gap-2 text-xs">
-                                <template x-if="log.quality_scores">
-                                    <template x-for="(score, key) in log.quality_scores" :key="key">
-                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
-                                              :class="score >= 80 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                      score >= 60 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                                      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'">
-                                            <span x-text="key === 'correctness' ? '✓' :
-                                                          key === 'safety' ? '🛡️' :
-                                                          key === 'dependency_safety' ? '📦' :
-                                                          key === 'efficiency' ? '⚡' :
-                                                          key === 'style_consistency' ? '🎨' : '📊'"></span>
-                                            <span class="capitalize" x-text="key.replace(/_/g, ' ')"></span>
-                                            <span class="font-semibold" x-text="score"></span>
-                                        </span>
-                                    </template>
-                                </template>
-                            </div>
                         </div>
                     </template>
                     <div x-show="fixProgress.logs.length === 0" class="text-gray-400 text-center py-8">
-                        <svg class="w-8 h-8 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
                         Avvio del fix in corso...
-                    </div>
-                </div>
-
-                <!-- Streaming Details (collapsible) -->
-                <div x-show="fixProgress.streamingContent" class="mt-3 border-t dark:border-gray-700 pt-3">
-                    <button @click="fixProgress.showStreamingDetails = !fixProgress.showStreamingDetails"
-                            class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-                        <svg class="w-3 h-3 transition-transform duration-200"
-                             :class="{'rotate-90': fixProgress.showStreamingDetails}"
-                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                        <span>Dettagli Agent Output</span>
-                    </button>
-                    <div x-show="fixProgress.showStreamingDetails"
-                         x-transition
-                         class="mt-2 p-2 bg-gray-900 rounded text-xs font-mono text-gray-400 max-h-40 overflow-auto">
-                        <pre class="whitespace-pre-wrap" x-text="fixProgress.streamingContent"></pre>
                     </div>
                 </div>
             </div>
 
             <!-- Footer -->
             <div class="p-4 border-t dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800">
-                <div class="text-sm flex items-center gap-2">
+                <div class="text-sm">
                     <template x-if="fixProgress.status === 'running'">
                         <span class="text-blue-500 flex items-center gap-2">
                             <span class="relative flex h-2 w-2">
@@ -1000,24 +689,13 @@
                         </span>
                     </template>
                     <template x-if="fixProgress.status === 'completed'">
-                        <span class="text-green-500 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            Completato! Score: <span class="font-bold" x-text="fixProgress.lastScore || '-'"></span>%
-                        </span>
+                        <span class="text-green-500">Completato! Score: <span class="font-bold" x-text="fixProgress.lastScore || '-'"></span>%</span>
                     </template>
                     <template x-if="fixProgress.status === 'error'">
-                        <span class="text-red-500 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                            Errore durante il fix
-                        </span>
+                        <span class="text-red-500">Errore durante il fix</span>
                     </template>
                 </div>
-                <button @click="showFixModal = false"
-                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                <button @click="showFixModal = false" class="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90">
                     <span x-show="!isFixing">Chiudi</span>
                     <span x-show="isFixing">Chiudi (continua in background)</span>
                 </button>
@@ -1025,102 +703,16 @@
         </div>
     </div>
 
-    <!-- Scope Violation Modal -->
-    <div x-show="fixProgress.scopeViolation.show"
-         x-transition:enter="transition ease-out duration-200"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-150"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-
-        <div x-show="fixProgress.scopeViolation.show"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0 scale-95"
-             x-transition:enter-end="opacity-100 scale-100"
-             class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
-
-            <!-- Header -->
-            <div class="p-4 border-b dark:border-gray-700 bg-amber-50 dark:bg-amber-900/20">
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
-                        <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <h3 class="font-semibold text-lg text-amber-900 dark:text-amber-100">Modifiche Fuori Scope</h3>
-                        <p class="text-sm text-amber-700 dark:text-amber-300">L'agente ha modificato file fuori dalla workspace</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Content -->
-            <div class="p-4 space-y-4">
-                <p class="text-gray-700 dark:text-gray-300">
-                    Le seguenti directory sono state modificate al di fuori del workspace scope:
-                </p>
-
-                <div class="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 space-y-1">
-                    <template x-for="dir in fixProgress.scopeViolation.dirs" :key="dir">
-                        <div class="flex items-center gap-2 text-sm font-mono">
-                            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-                            </svg>
-                            <span x-text="dir" class="text-gray-800 dark:text-gray-200"></span>
-                        </div>
-                    </template>
-                </div>
-
-                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Aggiungere all'allowlist?</strong><br>
-                    Se confermi, queste directory saranno aggiunte ai path permessi per questa repo e il fix continuerà.
-                </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="p-4 border-t dark:border-gray-700 flex gap-3 justify-end">
-                <button @click="respondToScopeViolation(false)"
-                        :disabled="fixProgress.scopeViolation.responding"
-                        class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:opacity-50">
-                    <span x-show="!fixProgress.scopeViolation.responding">Annulla Fix</span>
-                    <span x-show="fixProgress.scopeViolation.responding">...</span>
-                </button>
-                <button @click="respondToScopeViolation(true)"
-                        :disabled="fixProgress.scopeViolation.responding"
-                        class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 flex items-center gap-2">
-                    <svg x-show="fixProgress.scopeViolation.responding" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                    </svg>
-                    <span>Aggiungi e Prosegui</span>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Lint Analysis Modal -->
-    <div x-show="showLintModal"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-         @click.self="closeLintModal()">
-
+    <!-- ============================================== -->
+    <!-- LINT MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showLintModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeLintModal()">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden">
-            <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
                         <svg class="w-6 h-6 text-indigo-600" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
                         </svg>
                     </div>
                     <div>
@@ -1128,49 +720,39 @@
                         <p class="text-sm text-gray-500" x-text="lintProgress.message || 'Linting e analisi statica...'"></p>
                     </div>
                 </div>
-                <button @click="closeLintModal()"
-                        :disabled="isAnalyzing"
-                        class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50">
+                <button @click="closeLintModal()" :disabled="isAnalyzing" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                 </button>
             </div>
-
-            <!-- Progress -->
             <div class="p-4">
-                <div class="flex items-center justify-center py-8" x-show="isAnalyzing">
+                <div x-show="isAnalyzing" class="flex items-center justify-center py-8">
                     <div class="text-center">
                         <svg class="animate-spin w-12 h-12 mx-auto text-indigo-500 mb-4" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                         </svg>
-                        <p class="text-gray-500" x-text="lintProgress.phase === 'analysis' ? 'Esecuzione linting tools...' : lintProgress.phase === 'parsing' ? 'Parsing risultati...' : lintProgress.phase === 'creating' ? 'Creazione issues...' : 'Inizializzazione...'"></p>
+                        <p class="text-gray-500" x-text="lintProgress.phase || 'Elaborazione...'"></p>
                     </div>
                 </div>
-
-                <!-- Results -->
                 <div x-show="!isAnalyzing && lintProgress.status === 'completed'" class="text-center py-8">
                     <svg class="w-16 h-16 mx-auto text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <h4 class="text-xl font-semibold mb-2">Analisi Completata!</h4>
-                    <p class="text-gray-500 mb-4">
+                    <p class="text-gray-500">
                         <span x-text="lintProgress.issuesFound || 0"></span> issues trovate,
                         <span x-text="lintProgress.issuesCreated || 0"></span> nuove create
                     </p>
                 </div>
-
-                <!-- Error -->
                 <div x-show="!isAnalyzing && lintProgress.status === 'error'" class="text-center py-8">
                     <svg class="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <h4 class="text-xl font-semibold mb-2 text-red-600">Errore</h4>
-                    <p class="text-gray-500" x-text="lintProgress.error || 'Si e\' verificato un errore'"></p>
+                    <p class="text-gray-500" x-text="lintProgress.error"></p>
                 </div>
-
-                <!-- Logs -->
                 <div x-show="lintProgress.logs.length > 0" class="mt-4 max-h-48 overflow-y-auto font-mono text-xs space-y-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
                     <template x-for="(log, idx) in lintProgress.logs" :key="idx">
                         <div class="flex items-start gap-2 py-0.5">
@@ -1180,36 +762,21 @@
                     </template>
                 </div>
             </div>
-
-            <!-- Footer -->
             <div class="p-4 border-t dark:border-gray-700 flex justify-end">
-                <button @click="closeLintModal()"
-                        x-show="!isAnalyzing"
-                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                    Chiudi
-                </button>
+                <button @click="closeLintModal()" x-show="!isAnalyzing" class="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90">Chiudi</button>
             </div>
         </div>
     </div>
 
-    <!-- Notes Modal (before fix) -->
-    <div x-show="showNotesModal"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-         @click.self="showNotesModal = false">
-
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full overflow-hidden">
-            <!-- Header -->
-            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
+    <!-- ============================================== -->
+    <!-- NOTES MODAL (before fix) -->
+    <!-- ============================================== -->
+    <div x-show="showNotesModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showNotesModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6">
+            <div class="flex items-center gap-3 mb-4">
                 <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                     <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
                 </div>
                 <div>
@@ -1217,37 +784,17 @@
                     <p class="text-sm text-gray-500">Aggiungi istruzioni o contesto per l'AI</p>
                 </div>
             </div>
-
-            <!-- Content -->
-            <div class="p-4">
-                <div class="mb-4">
-                    <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                        <span class="font-medium text-green-600 dark:text-green-400" x-text="selectedIssues.length"></span>
-                        <span x-text="selectedIssues.length === 1 ? 'issue selezionata' : 'issues selezionate'"></span>
-                    </p>
-
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Note aggiuntive <span class="text-gray-400 font-normal">(opzionale)</span>
-                    </label>
-                    <textarea x-model="fixNotes"
-                              rows="4"
-                              class="w-full px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                              placeholder="Es: Usa l'endpoint /api/v2/users invece di /api/users&#10;Es: Mantieni la compatibilità con Python 3.9&#10;Es: Non modificare il file config.py"></textarea>
-
-                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Queste note verranno passate all'AI che risolverà le issues.
-                    </p>
-                </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="p-4 border-t dark:border-gray-700 flex justify-end gap-3">
-                <button @click="showNotesModal = false; fixNotes = ''"
-                        class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                    Annulla
-                </button>
-                <button @click="showNotesModal = false; confirmFixWithNotes()"
-                        class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2">
+            <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                <span class="font-medium text-green-600" x-text="selectedIssues.length"></span>
+                <span x-text="selectedIssues.length === 1 ? 'issue selezionata' : 'issues selezionate'"></span>
+            </p>
+            <textarea x-model="fixNotes" rows="4"
+                      class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 resize-none"
+                      placeholder="Es: Usa l'endpoint /api/v2/users invece di /api/users&#10;Es: Mantieni la compatibilità con Python 3.9"></textarea>
+            <p class="mt-2 text-xs text-gray-400">Queste note verranno passate all'AI che risolverà le issues.</p>
+            <div class="flex justify-end gap-3 mt-4">
+                <button @click="showNotesModal = false; fixNotes = ''" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
+                <button @click="showNotesModal = false; confirmFixWithNotes()" class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
@@ -1257,24 +804,15 @@
         </div>
     </div>
 
-    <!-- Pending Branch Modal -->
-    <div x-show="showPendingBranchModal"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-         @click.self="showPendingBranchModal = false">
-
+    <!-- ============================================== -->
+    <!-- PENDING BRANCH MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showPendingBranchModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showPendingBranchModal = false">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full overflow-hidden">
-            <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
                 <div class="w-10 h-10 rounded-lg bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
                     <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                     </svg>
                 </div>
                 <div>
@@ -1282,83 +820,168 @@
                     <p class="text-sm text-gray-500">Ci sono fix precedenti non ancora mergiati</p>
                 </div>
             </div>
-
-            <!-- Content -->
             <div class="p-4">
                 <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 mb-4">
                     <div class="text-sm text-gray-500 mb-1">Branch:</div>
-                    <code class="text-sm font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded"
-                          x-text="pendingBranch?.branch_name"></code>
+                    <code class="text-sm font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="pendingBranch?.branch_name"></code>
                     <div class="mt-2 text-sm">
-                        <span class="text-gray-500">Repository:</span>
-                        <span x-text="pendingBranch?.repository_name"></span>
-                    </div>
-                    <div class="mt-1 text-sm">
                         <span class="text-gray-500">Issues fixate:</span>
                         <span x-text="pendingBranch?.issues_count"></span>
-                        <span class="text-xs text-gray-400 ml-1" x-text="'(' + (pendingBranch?.issue_codes?.slice(0, 5).join(', ') || '') + (pendingBranch?.issues_count > 5 ? '...' : '') + ')'"></span>
                     </div>
                 </div>
-
-                <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                    Cosa vuoi fare prima di lanciare i nuovi fix?
-                </p>
+                <p class="text-sm text-gray-600 dark:text-gray-300">Cosa vuoi fare prima di lanciare i nuovi fix?</p>
             </div>
-
-            <!-- Actions -->
             <div class="p-4 border-t dark:border-gray-700 flex flex-col gap-2">
-                <!-- Open PR (GREEN - safe option) -->
-                <button @click="handlePendingBranch('open-pr')"
-                        :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                <button @click="handlePendingBranch('open-pr')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                     </svg>
                     <span x-text="pendingBranchLoading ? 'Creating PR...' : 'Open PR'"></span>
                 </button>
-
-                <!-- Main Merge (RED - dangerous, requires confirmation) -->
-                <button x-show="!confirmMerge"
-                        @click="confirmMerge = true"
-                        :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
+                <button @click="handlePendingBranch('merge')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
                     Main Merge
                 </button>
-                <button x-show="confirmMerge"
-                        @click="handlePendingBranch('merge'); confirmMerge = false"
-                        :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 animate-pulse">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    <span x-text="pendingBranchLoading ? 'Merging...' : 'Conferma Merge in Main'"></span>
+                <button @click="handlePendingBranch('continue')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">
+                    Continua sul Branch Esistente
                 </button>
-
-                <!-- Continue on existing branch -->
-                <button @click="handlePendingBranch('continue')"
-                        :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex flex-col items-center gap-1 disabled:opacity-50">
-                    <div class="flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                        Continua sul Branch Esistente
-                    </div>
-                    <code class="text-xs opacity-80 font-mono" x-text="pendingBranch?.branch_name"></code>
-                </button>
-
-                <!-- Cancel -->
-                <button @click="handlePendingBranch('cancel'); confirmMerge = false"
-                        :disabled="pendingBranchLoading"
-                        class="w-full px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50">
+                <button @click="handlePendingBranch('cancel')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                     Annulla
                 </button>
             </div>
         </div>
     </div>
+
+    <!-- ============================================== -->
+    <!-- SCOPE VIOLATION MODAL -->
+    <!-- ============================================== -->
+    <div x-show="fixProgress.scopeViolation.show" x-transition class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div class="p-4 border-b dark:border-gray-700 bg-amber-50 dark:bg-amber-900/20">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg text-amber-900 dark:text-amber-100">Modifiche Fuori Scope</h3>
+                        <p class="text-sm text-amber-700 dark:text-amber-300">L'agente ha modificato file fuori dalla workspace</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 space-y-4">
+                <p class="text-gray-700 dark:text-gray-300">Le seguenti directory sono state modificate al di fuori del workspace scope:</p>
+                <div class="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 space-y-1">
+                    <template x-for="dir in fixProgress.scopeViolation.dirs" :key="dir">
+                        <div class="flex items-center gap-2 text-sm font-mono">
+                            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <span x-text="dir" class="text-gray-800 dark:text-gray-200"></span>
+                        </div>
+                    </template>
+                </div>
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Aggiungere all'allowlist?</strong><br>
+                    Se confermi, queste directory saranno aggiunte ai path permessi per questa repo e il fix continuerà.
+                </div>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex gap-3 justify-end">
+                <button @click="respondToScopeViolation(false)" :disabled="fixProgress.scopeViolation.responding"
+                        class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50">
+                    Annulla Fix
+                </button>
+                <button @click="respondToScopeViolation(true)" :disabled="fixProgress.scopeViolation.responding"
+                        class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2">
+                    <svg x-show="fixProgress.scopeViolation.responding" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Aggiungi e Prosegui
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- IGNORE ISSUE MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showIgnoreModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showIgnoreModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" @click.stop>
+            <!-- Header with gradient -->
+            <div class="bg-gradient-to-r from-gray-100 to-gray-50 dark:from-gray-700 dark:to-gray-800 p-5 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-gray-500 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg text-gray-900 dark:text-white">Ignora Issue</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 font-mono" x-text="ignoreIssue?.issue_code"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Motivo <span class="text-gray-400 font-normal">(opzionale)</span>
+                    </label>
+                    <textarea x-model="ignoreReason" rows="3"
+                              placeholder="Es: False positive, già gestito altrove, non rilevante per questo progetto..."
+                              class="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-600 focus:border-transparent resize-none transition-all"></textarea>
+                </div>
+
+                <!-- Quick reasons -->
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" @click="ignoreReason = 'False positive'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        False positive
+                    </button>
+                    <button type="button" @click="ignoreReason = 'Gestito altrove'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Gestito altrove
+                    </button>
+                    <button type="button" @click="ignoreReason = 'Non rilevante'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Non rilevante
+                    </button>
+                    <button type="button" @click="ignoreReason = 'Wont fix'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Won't fix
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
+                <button @click="showIgnoreModal = false; ignoreIssue = null; ignoreReason = ''"
+                        class="px-4 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium">
+                    Annulla
+                </button>
+                <button @click="confirmIgnore()" :disabled="ignoringIssue"
+                        class="px-5 py-2.5 bg-gray-700 dark:bg-gray-600 text-white rounded-xl hover:bg-gray-800 dark:hover:bg-gray-500 transition-colors font-medium flex items-center gap-2 disabled:opacity-50">
+                    <template x-if="ignoringIssue">
+                        <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </template>
+                    <svg x-show="!ignoringIssue" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                    </svg>
+                    <span x-text="ignoringIssue ? 'Ignorando...' : 'Ignora Issue'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -1369,25 +992,29 @@ function issuesApp() {
         loading: true,
         issues: [],
         summary: {},
-        selectedIssue: null,
         selectedIssues: [],
+        viewMode: 'list',
+        selectAllChecked: false,
         isFixing: false,
-        isMerging: false,
         isAnalyzing: false,
-        loadingFixLog: false,
-        fixLog: null,
-        mergeResult: null,
-        toasts: [],  // Log notifications: {id, level, message, timestamp}
+        toasts: [],
         showFixModal: false,
         showLintModal: false,
-        showPendingBranchModal: false,
         showNotesModal: false,
+        showPendingBranchModal: false,
+        showLinkLinearModal: false,
+        showIgnoreModal: false,
+        linkLinearInput: '',
+        linkingLinear: false,
+        currentIssueForLink: null,
+        ignoreIssue: null,
+        ignoreReason: '',
+        ignoringIssue: false,
         fixNotes: '',
         pendingBranch: null,
         pendingBranchLoading: false,
-        confirmMerge: false,  // Double opt-in for Main Merge
-        pendingFixRequest: null,  // Store the fix request to resume after handling pending
-        lintFixCategory: 'BE',  // Default to Backend linting
+        pendingFixRequest: null,
+        lintFixCategory: 'BE',
         lintProgress: {
             status: 'idle',
             phase: '',
@@ -1403,43 +1030,33 @@ function issuesApp() {
             currentIssue: null,
             logs: [],
             status: 'idle',
-            // New fields for improved UI
             branchName: null,
-            issueStates: {},  // { issueId: { code, status, score } }
-            fixingIssueIds: [],  // Preserved issue IDs for chip display
+            issueStates: {},
+            fixingIssueIds: [],
             streamingContent: '',
             showStreamingDetails: false,
             lastScore: null,
-            billingError: null,  // Billing error message if any
-            // Scope violation prompt state
-            scopeViolation: {
-                show: false,
-                sessionId: null,
-                dirs: [],
-                responding: false
-            }
+            billingError: null,
+            scopeViolation: { show: false, sessionId: null, dirs: [], responding: false }
         },
-        // Throttling state for streaming updates (prevents UI freeze)
         _streamingBuffer: '',
         _updateScheduled: false,
-        _eventBuffer: [],  // Buffer for non-streaming events
+        _eventBuffer: [],
         filters: {
             repository_id: '',
             severity: '',
             status: 'open',
             category: '',
             search: '',
-            order_by: 'severity'
+            order_by: 'severity',
+            linear_linked: ''
         },
 
         async init() {
-            // Sync with global context store
             const store = Alpine.store('globalContext');
             if (store?.selectedRepoId) {
                 this.filters.repository_id = store.selectedRepoId;
             }
-
-            // Watch for global context changes
             window.addEventListener('global-context-changed', (e) => {
                 const newRepoId = e.detail.repoId || '';
                 if (newRepoId !== this.filters.repository_id) {
@@ -1447,11 +1064,9 @@ function issuesApp() {
                     this.refresh();
                 }
             });
-
             await this.refresh();
         },
 
-        // Throttled update methods to prevent UI freeze during streaming
         _scheduleUpdate() {
             if (this._updateScheduled) return;
             this._updateScheduled = true;
@@ -1462,17 +1077,13 @@ function issuesApp() {
         },
 
         _flushBuffers() {
-            // Flush streaming content buffer
             if (this._streamingBuffer) {
                 this.fixProgress.streamingContent += this._streamingBuffer;
-                // Keep only last 2000 chars
                 if (this.fixProgress.streamingContent.length > 2000) {
                     this.fixProgress.streamingContent = this.fixProgress.streamingContent.slice(-2000);
                 }
                 this._streamingBuffer = '';
             }
-
-            // Flush event buffer (process all pending events)
             if (this._eventBuffer.length > 0) {
                 const events = this._eventBuffer;
                 this._eventBuffer = [];
@@ -1483,7 +1094,6 @@ function issuesApp() {
         async refresh() {
             this.loading = true;
             try {
-                // Build query params
                 const params = new URLSearchParams();
                 if (this.filters.repository_id) params.set('repository_id', this.filters.repository_id);
                 if (this.filters.severity) params.set('severity', this.filters.severity);
@@ -1491,6 +1101,7 @@ function issuesApp() {
                 if (this.filters.category) params.set('category', this.filters.category);
                 if (this.filters.search) params.set('search', this.filters.search);
                 if (this.filters.order_by) params.set('order_by', this.filters.order_by);
+                if (this.filters.linear_linked) params.set('linear_linked', this.filters.linear_linked);
 
                 const [issuesRes, summaryRes] = await Promise.all([
                     fetch('/api/issues?' + params.toString()),
@@ -1504,257 +1115,113 @@ function issuesApp() {
             this.loading = false;
         },
 
-        async resolveIssue(issueId) {
-            try {
-                await fetch(`/api/issues/${issueId}/resolve`, { method: 'POST' });
-                await this.refresh();
-            } catch (error) {
-                console.error('Error resolving issue:', error);
+        toggleSelectAll() {
+            if (this.selectAllChecked) {
+                this.selectedIssues = this.issues
+                    .filter(i => i.status === 'open' || i.status === 'in_progress')
+                    .map(i => i.id);
+            } else {
+                this.selectedIssues = [];
             }
-        },
-
-        async ignoreIssue(issueId) {
-            try {
-                await fetch(`/api/issues/${issueId}/ignore`, { method: 'POST' });
-                await this.refresh();
-            } catch (error) {
-                console.error('Error ignoring issue:', error);
-            }
-        },
-
-        async reopenIssue(issueId) {
-            try {
-                await fetch(`/api/issues/${issueId}/reopen`, { method: 'POST' });
-                await this.refresh();
-            } catch (error) {
-                console.error('Error reopening issue:', error);
-            }
-        },
-
-        async markAsMerged(issueId) {
-            try {
-                await fetch(`/api/issues/${issueId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'merged' })
-                });
-                await this.refresh();
-            } catch (error) {
-                console.error('Error marking issue as merged:', error);
-            }
-        },
-
-        async resetToOpen(issueId) {
-            try {
-                await fetch(`/api/issues/${issueId}/reopen`, { method: 'POST' });
-                await this.refresh();
-            } catch (error) {
-                console.error('Error resetting issue:', error);
-            }
-        },
-
-        async resetAllInProgress() {
-            const inProgressIssues = this.issues.filter(i => i.status === 'in_progress');
-            if (inProgressIssues.length === 0) return;
-
-            try {
-                await Promise.all(
-                    inProgressIssues.map(issue =>
-                        fetch(`/api/issues/${issue.id}/reopen`, { method: 'POST' })
-                    )
-                );
-                await this.refresh();
-            } catch (error) {
-                console.error('Error resetting in_progress issues:', error);
-            }
-        },
-
-        viewIssue(issue) {
-            this.selectedIssue = issue;
-            this.fixLog = null;  // Reset fix log when viewing new issue
-        },
-
-        async loadFixLog(issueId) {
-            if (this.loadingFixLog) return;
-
-            this.loadingFixLog = true;
-            try {
-                const response = await fetch(`/api/issues/${issueId}/fix-log`);
-                if (response.ok) {
-                    this.fixLog = await response.json();
-                } else {
-                    const error = await response.json();
-                    console.error('Error loading fix log:', error.detail);
-                    alert('Errore nel caricamento del fix log: ' + error.detail);
-                }
-            } catch (error) {
-                console.error('Error loading fix log:', error);
-                alert('Errore nel caricamento del fix log');
-            }
-            this.loadingFixLog = false;
-        },
-
-        get currentIssueIndex() {
-            if (!this.selectedIssue) return -1;
-            return this.issues.findIndex(i => i.id === this.selectedIssue.id);
-        },
-
-        canGoPrev() {
-            return this.selectedIssue && this.currentIssueIndex > 0;
-        },
-
-        canGoNext() {
-            return this.selectedIssue && this.currentIssueIndex < this.issues.length - 1;
-        },
-
-        prevIssue() {
-            if (!this.canGoPrev()) return;
-            this.selectedIssue = this.issues[this.currentIssueIndex - 1];
-        },
-
-        nextIssue() {
-            if (!this.canGoNext()) return;
-            this.selectedIssue = this.issues[this.currentIssueIndex + 1];
-        },
-
-        selectAll() {
-            // Select all open issues (not resolved or ignored)
-            this.selectedIssues = this.issues
-                .filter(i => i.status === 'open' || i.status === 'in_progress')
-                .map(i => i.id);
-        },
-
-        selectAllCritical() {
-            this.selectedIssues = this.issues
-                .filter(i => (i.severity === 'CRITICAL' || i.severity === 'HIGH') && i.status === 'open')
-                .map(i => i.id);
         },
 
         clearSelection() {
             this.selectedIssues = [];
+            this.selectAllChecked = false;
         },
 
-        async fixSingle(issue) {
-            this.selectedIssues = [issue.id];
-            await this.fixSelected();
+        openLinkLinearModal(issue) {
+            this.currentIssueForLink = issue;
+            this.linkLinearInput = '';
+            this.showLinkLinearModal = true;
+        },
+
+        async linkLinear() {
+            if (!this.linkLinearInput || !this.currentIssueForLink) return;
+            this.linkingLinear = true;
+            try {
+                const res = await fetch(`/api/issues/${this.currentIssueForLink.id}/link-linear`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linear_identifier: this.linkLinearInput })
+                });
+                if (res.ok) {
+                    this.showLinkLinearModal = false;
+                    await this.refresh();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to link'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
+            this.linkingLinear = false;
         },
 
         async fixSelected() {
-            if (this.selectedIssues.length === 0 || this.isFixing) {
-                console.warn('[FIX] No issues selected or already fixing');
-                return;
-            }
-
-            // Show notes modal before fixing
-            this.fixNotes = '';  // Reset notes
+            if (this.selectedIssues.length === 0 || this.isFixing) return;
+            this.fixNotes = '';
             this.showNotesModal = true;
         },
 
         async confirmFixWithNotes() {
-            // Called after notes modal is confirmed
-            if (this.selectedIssues.length === 0 || this.isFixing) {
-                return;
-            }
-
-            // Get repository_id from first selected issue
+            if (this.selectedIssues.length === 0 || this.isFixing) return;
             const firstIssue = this.issues.find(i => i.id === this.selectedIssues[0]);
-            if (!firstIssue) {
-                console.error('[FIX] Issue not found in list:', this.selectedIssues[0]);
-                alert('Errore: Issue non trovata nella lista');
+            if (!firstIssue || !firstIssue.repository_id || !firstIssue.task_id) {
+                alert('Errore: Dati issue incompleti');
                 return;
             }
 
-            if (!firstIssue.repository_id || !firstIssue.task_id) {
-                console.error('[FIX] Missing repository_id or task_id:', firstIssue);
-                alert('Errore: Dati issue incompleti (repository_id o task_id mancante)');
-                return;
-            }
-
-            // Check for pending (unmerged) branches first
             try {
                 const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
                 if (pendingRes.ok) {
                     const pendingData = await pendingRes.json();
                     if (pendingData.has_pending && pendingData.branches.length > 0) {
-                        // Store the fix request for later (include notes)
                         this.pendingFixRequest = {
                             repository_id: firstIssue.repository_id,
                             task_id: firstIssue.task_id,
                             issue_ids: [...this.selectedIssues],
                             user_notes: this.fixNotes || null,
                         };
-                        this.pendingBranch = pendingData.branches[0];  // Show first pending branch
+                        this.pendingBranch = pendingData.branches[0];
                         this.showPendingBranchModal = true;
-                        return;  // Wait for user decision
+                        return;
                     }
                 }
             } catch (e) {
                 console.warn('[FIX] Could not check pending branches:', e);
-                // Continue anyway
             }
-
-            // No pending branches, proceed with fix
             await this._startFixProcess(firstIssue);
         },
 
         async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false) {
-            console.log('[FIX] Starting fix for:', {
-                issue_id: firstIssue.id,
-                repository_id: firstIssue.repository_id,
-                task_id: firstIssue.task_id,
-                branchOptions: branchOptions,
-                forceRestart: forceRestart
-            });
-
             this.isFixing = true;
             this.showFixModal = true;
 
-            // Initialize issue states for chip display
             const issueStates = {};
             this.selectedIssues.forEach(id => {
                 const issue = this.issues.find(i => i.id === id);
-                issueStates[id] = {
-                    code: issue?.issue_code || id.slice(0, 8),
-                    status: 'pending',
-                    score: null
-                };
+                issueStates[id] = { code: issue?.issue_code || id.slice(0, 8), status: 'pending', score: null };
             });
 
             this.fixProgress = {
-                current: 0,
-                total: this.selectedIssues.length,
-                currentIssue: null,
-                logs: [],
-                status: 'running',
-                branchName: branchOptions?.existing_branch_name || null,
-                issueStates: issueStates,
-                fixingIssueIds: [...this.selectedIssues],  // Preserve IDs before they get cleared
-                streamingContent: '',
-                showStreamingDetails: false,
-                lastScore: null,
-                billingError: null  // Reset billing error
+                current: 0, total: this.selectedIssues.length, currentIssue: null, logs: [], status: 'running',
+                branchName: branchOptions?.existing_branch_name || null, issueStates: issueStates,
+                fixingIssueIds: [...this.selectedIssues], streamingContent: '', showStreamingDetails: false,
+                lastScore: null, billingError: null, scopeViolation: { show: false, sessionId: null, dirs: [], responding: false }
             };
-
-            // Reset throttling buffers
             this._streamingBuffer = '';
             this._eventBuffer = [];
             this._updateScheduled = false;
 
             try {
-                // Build request body with optional branch options
                 const requestBody = {
                     repository_id: firstIssue.repository_id,
                     task_id: firstIssue.task_id,
                     issue_ids: this.selectedIssues,
-                    force: forceRestart,  // Force restart if requested
+                    force: forceRestart,
                 };
-
-                // Add user notes if provided
-                if (this.fixNotes && this.fixNotes.trim()) {
-                    requestBody.user_notes = this.fixNotes.trim();
-                }
-
-                // Add branch options if provided (for continuing on existing branch)
+                if (this.fixNotes && this.fixNotes.trim()) requestBody.user_notes = this.fixNotes.trim();
                 if (branchOptions) {
                     requestBody.use_existing_branch = branchOptions.use_existing_branch || false;
                     requestBody.existing_branch_name = branchOptions.existing_branch_name || null;
@@ -1766,63 +1233,34 @@ function issuesApp() {
                     body: JSON.stringify(requestBody),
                 });
 
-                // Handle 409 Conflict - session already in progress
                 if (response.status === 409) {
                     const errorData = await response.json();
-                    console.warn('[FIX] Session conflict:', errorData);
-
-                    // Ask user if they want to force restart
                     const stuckSession = errorData.detail;
-                    const sessionId = stuckSession.session_id;
-                    const startedAt = new Date(stuckSession.started_at).toLocaleString();
-
-                    const confirmForce = confirm(
-                        `Una sessione di fix è già in corso:\n\n` +
-                        `Session ID: ${sessionId.slice(0, 8)}...\n` +
-                        `Iniziata: ${startedAt}\n\n` +
-                        `Se la sessione è bloccata, premi OK per forzare il riavvio.\n` +
-                        `(Questo cancellerà la sessione precedente)`
-                    );
-
-                    if (confirmForce) {
-                        // Close modal and retry with force=true
+                    if (confirm(`Una sessione di fix è già in corso (${stuckSession.session_id.slice(0, 8)}...).\n\nForzare il riavvio?`)) {
                         this.showFixModal = false;
                         this.isFixing = false;
                         await this._startFixProcess(firstIssue, branchOptions, true);
                         return;
                     } else {
-                        throw new Error('Sessione già in corso. Attendi il completamento o forza il riavvio.');
+                        throw new Error('Sessione già in corso');
                     }
                 }
 
-                if (!response.ok) {
-                    const error = await response.text();
-                    console.error('[FIX] API error:', response.status, error);
-                    throw new Error(`API error: ${response.status} - ${error}`);
-                }
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
 
-                // Fix started successfully - notify banner and refresh issue status
-                console.log('[FIX] Fix started, dispatching operation-started event');
                 window.dispatchEvent(new CustomEvent('operation-started'));
-
-                // Update local issue statuses to IN_PROGRESS immediately (without full refresh)
                 this.selectedIssues.forEach(id => {
                     const issue = this.issues.find(i => i.id === id);
-                    if (issue) {
-                        issue.status = 'in_progress';
-                    }
+                    if (issue) issue.status = 'in_progress';
                 });
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
                     const text = decoder.decode(value);
                     const lines = text.split('\n');
-
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             try {
@@ -1832,14 +1270,12 @@ function issuesApp() {
                         }
                     }
                 }
-
                 this.fixProgress.status = 'completed';
             } catch (error) {
                 console.error('Fix error:', error);
                 this.fixProgress.status = 'error';
-                this.fixProgress.logs.push({ type: 'error', message: error.message });
+                this.fixProgress.logs.push({ type: 'error', message: error.message, icon: '&#10060;', color: 'text-red-500', timestamp: new Date().toLocaleTimeString() });
             }
-
             this.isFixing = false;
             this.selectedIssues = [];
             await this.refresh();
@@ -1847,448 +1283,137 @@ function issuesApp() {
 
         handleFixEvent(event) {
             const eventType = event.type || event.event;
-
-            // FAST PATH: Buffer streaming content (high-frequency) and schedule RAF update
-            // This prevents UI freeze by batching many rapid updates into single frame
             if (event.content && (eventType === 'fix_issue_streaming' || eventType === 'fix_challenger_evaluating')) {
                 this._streamingBuffer += event.content;
                 this._scheduleUpdate();
-                return; // Don't process further
+                return;
             }
-
-            // CRITICAL EVENTS: Process immediately (errors, completion)
             const criticalEvents = ['fix_session_error', 'fix_billing_error', 'fix_session_completed'];
             if (criticalEvents.includes(eventType)) {
                 this._processEvent(event);
                 return;
             }
-
-            // ALL OTHER EVENTS: Buffer and schedule for next frame
             this._eventBuffer.push(event);
             this._scheduleUpdate();
         },
 
-        // Process a single event (called from _flushBuffers)
         _processEvent(event) {
             const eventType = event.type || event.event;
-
-            // 1. Capture branch name from session start
-            if (eventType === 'fix_session_started') {
-                if (event.branch_name) {
-                    this.fixProgress.branchName = event.branch_name;
-                }
-            }
-
-            // 2. Track issue states from batch messages
-            if (eventType === 'fix_issue_streaming' && event.message) {
-                // Extract issue codes from "Issues: BE-001, BE-002" pattern
-                const issuesMatch = event.message.match(/Issues:\s*(.+?)$/m);
-                if (issuesMatch) {
-                    const codes = issuesMatch[1].split(',').map(s => s.trim());
-                    // Mark these issues as in_progress
-                    Object.keys(this.fixProgress.issueStates).forEach(id => {
-                        const state = this.fixProgress.issueStates[id];
-                        if (codes.includes(state.code)) {
-                            state.status = 'in_progress';
-                        }
-                    });
-                }
-            }
-
-            // 3. Capture score from challenger result
+            if (eventType === 'fix_session_started' && event.branch_name) this.fixProgress.branchName = event.branch_name;
             if (eventType === 'fix_challenger_result' && event.message) {
-                // Try new format: "📊 BE-1 score: 100/100 | Per-issue: CODE: 100 | ..."
                 const batchScoreMatch = event.message.match(/score:\s*(\d+)/);
-                if (batchScoreMatch) {
-                    this.fixProgress.lastScore = parseInt(batchScoreMatch[1]);
-                } else {
-                    // Old format: "Score: XX/100"
-                    const scoreMatch = event.message.match(/Score:\s*(\d+)/);
-                    if (scoreMatch) {
-                        this.fixProgress.lastScore = parseInt(scoreMatch[1]);
-                    }
-                }
+                if (batchScoreMatch) this.fixProgress.lastScore = parseInt(batchScoreMatch[1]);
             }
-
-            // 3b. Mark batch issues as COMPLETED when batch passes Gemini review
-            if (eventType === 'fix_challenger_approved' && event.issue_ids && event.issue_ids.length > 0) {
-                // Batch passed! Mark all issues in this batch as completed
+            if (eventType === 'fix_challenger_approved' && event.issue_ids) {
                 event.issue_ids.forEach(issueId => {
                     if (this.fixProgress.issueStates[issueId]) {
                         this.fixProgress.issueStates[issueId].status = 'completed';
                         this.fixProgress.issueStates[issueId].score = this.fixProgress.lastScore;
                     }
                 });
-                console.log(`[FIX] Batch passed, marked ${event.issue_ids.length} issues as completed`);
             }
-
-            // 3c. Log batch commit (atomic commit per-batch)
-            if (eventType === 'fix_batch_committed' && event.commit_sha) {
-                console.log(`[FIX] Batch committed: ${event.commit_sha.slice(0, 7)} (${event.issue_codes?.length || 0} issues)`);
-            }
-
-            // 3d. Handle batch failure (after max retries)
-            if (eventType === 'fix_batch_failed' && event.issue_ids && event.issue_ids.length > 0) {
+            if (eventType === 'fix_batch_failed' && event.issue_ids) {
                 event.issue_ids.forEach(issueId => {
-                    if (this.fixProgress.issueStates[issueId]) {
-                        this.fixProgress.issueStates[issueId].status = 'failed';
-                    }
+                    if (this.fixProgress.issueStates[issueId]) this.fixProgress.issueStates[issueId].status = 'failed';
                 });
-                console.log(`[FIX] Batch failed after retries, marked ${event.issue_ids.length} issues as failed`);
             }
-
-            // 4. Complete issues on session completed
             if (eventType === 'fix_session_completed') {
                 Object.keys(this.fixProgress.issueStates).forEach(id => {
                     const state = this.fixProgress.issueStates[id];
-                    if (state.status !== 'failed') {
-                        state.status = 'completed';
-                        state.score = this.fixProgress.lastScore;
-                    }
+                    if (state.status !== 'failed') { state.status = 'completed'; state.score = this.fixProgress.lastScore; }
                 });
             }
-
-            // 5. Mark failed on error
             if (eventType === 'fix_session_error') {
                 Object.keys(this.fixProgress.issueStates).forEach(id => {
-                    const state = this.fixProgress.issueStates[id];
-                    if (state.status === 'in_progress') {
-                        state.status = 'failed';
-                    }
+                    if (this.fixProgress.issueStates[id].status === 'in_progress') this.fixProgress.issueStates[id].status = 'failed';
                 });
             }
-
-            // 5b. Handle billing error - show prominently
             if (eventType === 'fix_billing_error') {
                 this.fixProgress.billingError = event.error || event.message || 'Credit balance is too low';
-                // Also mark all in_progress issues as failed
                 Object.keys(this.fixProgress.issueStates).forEach(id => {
                     const state = this.fixProgress.issueStates[id];
-                    if (state.status === 'in_progress' || state.status === 'pending') {
-                        state.status = 'failed';
-                    }
+                    if (state.status === 'in_progress' || state.status === 'pending') state.status = 'failed';
                 });
             }
-
-            // 5c. Handle scope violation prompt - show modal for user decision
             if (eventType === 'fix_scope_violation_prompt') {
-                this.fixProgress.scopeViolation = {
-                    show: true,
-                    sessionId: event.session_id,
-                    dirs: event.scope_violation_dirs || [],
-                    responding: false
-                };
-                console.log('[FIX] Scope violation prompt:', event.scope_violation_dirs);
+                this.fixProgress.scopeViolation = { show: true, sessionId: event.session_id, dirs: event.scope_violation_dirs || [], responding: false };
             }
-
-            // 6b. LOG EVENTS -> Toast notifications
             if (eventType === 'fix_log' && event.message) {
                 const toastId = Date.now();
-                this.toasts.push({
-                    id: toastId,
-                    level: event.log_level || 'INFO',
-                    message: event.message,
-                    timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'})
-                });
-                // Auto-dismiss after 3 seconds
-                setTimeout(() => {
-                    this.toasts = this.toasts.filter(t => t.id !== toastId);
-                }, 3000);
-                // Keep max 5 toasts
-                if (this.toasts.length > 5) {
-                    this.toasts = this.toasts.slice(-5);
-                }
+                this.toasts.push({ id: toastId, level: event.log_level || 'INFO', message: event.message, timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}) });
+                setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== toastId); }, 3000);
+                if (this.toasts.length > 5) this.toasts = this.toasts.slice(-5);
                 return;
             }
-
-            // 7. STRUCTURED MESSAGES -> main logs
             if (event.message) {
-                // Reset streaming when new phase starts
                 if (eventType === 'fix_issue_generating' || eventType === 'fix_challenger_evaluating') {
                     this.fixProgress.streamingContent = '';
-                    this._streamingBuffer = '';  // Also clear buffer
+                    this._streamingBuffer = '';
                 }
-
-                const logEntry = {
-                    type: eventType,
-                    message: event.message,
-                    timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
-                    icon: this.getEventIcon(eventType),
-                    color: this.getEventColor(eventType),
-                    // Include quality_scores for challenger results
-                    quality_scores: event.quality_scores || null
-                };
-
-                this.fixProgress.logs.push(logEntry);
-
-                // Keep only last 30 logs (fewer now that we filter streaming)
-                if (this.fixProgress.logs.length > 30) {
-                    this.fixProgress.logs = this.fixProgress.logs.slice(-30);
-                }
+                this.fixProgress.logs.push({
+                    type: eventType, message: event.message, timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
+                    icon: this.getEventIcon(eventType), color: this.getEventColor(eventType), quality_scores: event.quality_scores || null
+                });
+                if (this.fixProgress.logs.length > 30) this.fixProgress.logs = this.fixProgress.logs.slice(-30);
             }
         },
 
         getEventIcon(type) {
-            const icons = {
-                'fix_session_started': '🚀',
-                'fix_issue_generating': '📋',
-                'fix_issue_streaming': '🔧',
-                'fix_challenger_evaluating': '🧪',
-                'fix_challenger_result': '📊',
-                'fix_challenger_approved': '✅',
-                'fix_batch_committed': '💾',
-                'fix_batch_failed': '⚠️',
-                'fix_regenerating': '🔄',
-                'fix_issue_committing': '💾',
-                'fix_session_completed': '🎉',
-                'fix_session_error': '❌',
-                'fix_billing_error': '💳',
-                'fix_scope_violation_prompt': '⚠️'
-            };
-            return icons[type] || '📝';
+            const icons = { 'fix_session_started': '&#128640;', 'fix_issue_generating': '&#128203;', 'fix_issue_streaming': '&#128295;', 'fix_challenger_evaluating': '&#129514;', 'fix_challenger_result': '&#128202;', 'fix_challenger_approved': '&#9989;', 'fix_batch_committed': '&#128190;', 'fix_batch_failed': '&#9888;', 'fix_regenerating': '&#128260;', 'fix_session_completed': '&#127881;', 'fix_session_error': '&#10060;', 'fix_billing_error': '&#128179;' };
+            return icons[type] || '&#128221;';
         },
 
         getEventColor(type) {
-            if (type === 'fix_billing_error') return 'text-orange-500';  // Billing errors get orange
+            if (type === 'fix_billing_error') return 'text-orange-500';
             if (type.includes('error') || type.includes('failed')) return 'text-red-500';
             if (type.includes('approved') || type.includes('completed')) return 'text-green-500';
             if (type.includes('challenger')) return 'text-purple-500';
             return 'text-gray-700 dark:text-gray-300';
         },
 
-        closeFixModal() {
-            if (!this.isFixing) {
-                this.showFixModal = false;
-            }
-        },
+        closeFixModal() { if (!this.isFixing) this.showFixModal = false; },
 
         async respondToScopeViolation(allow) {
-            const scopeViolation = this.fixProgress.scopeViolation;
-            if (!scopeViolation.sessionId || scopeViolation.responding) return;
-
-            scopeViolation.responding = true;
-
+            const sv = this.fixProgress.scopeViolation;
+            if (!sv.sessionId || sv.responding) return;
+            sv.responding = true;
             try {
-                const response = await fetch(`/api/fix/sessions/${scopeViolation.sessionId}/scope-response`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ allow })
+                const response = await fetch(`/api/fix/sessions/${sv.sessionId}/scope-response`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow })
                 });
-
-                if (response.ok) {
-                    console.log(`[FIX] Scope violation response sent: allow=${allow}`);
-                    // Hide modal - the orchestrator will continue or abort
-                    this.fixProgress.scopeViolation.show = false;
-                } else {
-                    console.error('[FIX] Failed to send scope response:', await response.text());
-                }
-            } catch (error) {
-                console.error('[FIX] Error sending scope response:', error);
-            } finally {
-                scopeViolation.responding = false;
-            }
-        },
-
-        async mergeAndPush(issue) {
-            if (!issue.fix_branch || this.isMerging) return;
-
-            this.isMerging = true;
-            this.mergeResult = null;
-
-            try {
-                const response = await fetch('/api/fix/merge', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        repository_id: issue.repository_id,
-                        branch_name: issue.fix_branch,
-                        task_id: issue.task_id
-                    })
-                });
-
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    this.mergeResult = { success: true, message: result.message || 'Merge completato!' };
-                    // Aggiorna l'issue nella lista
-                    await this.refresh();
-                    // Chiudi il modal dopo successo
-                    setTimeout(() => {
-                        this.selectedIssue = null;
-                        this.mergeResult = null;
-                    }, 2000);
-                } else {
-                    this.mergeResult = { success: false, message: result.error || 'Errore durante il merge' };
-                }
-            } catch (error) {
-                console.error('Merge error:', error);
-                this.mergeResult = { success: false, message: error.message };
-            }
-
-            this.isMerging = false;
-        },
-
-        async runLintAnalysis() {
-            if (!this.filters.repository_id || this.isAnalyzing) return;
-
-            this.isAnalyzing = true;
-            this.showLintModal = true;
-            this.lintProgress = {
-                status: 'running',
-                phase: '',
-                message: 'Avvio analisi...',
-                issuesFound: 0,
-                issuesCreated: 0,
-                error: null,
-                logs: []
-            };
-
-            try {
-                const response = await fetch('/api/analysis/lint', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        repository_id: this.filters.repository_id
-                    })
-                });
-
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(`API error: ${response.status} - ${error}`);
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const text = decoder.decode(value);
-                    const lines = text.split('\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            // Parse event type
-                            const eventType = line.slice(7).trim();
-                            this.lintProgress.currentEvent = eventType;
-                        } else if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                this.handleLintEvent(data);
-                            } catch (e) {}
-                        }
-                    }
-                }
-
-                if (this.lintProgress.status !== 'error') {
-                    this.lintProgress.status = 'completed';
-                }
-            } catch (error) {
-                console.error('Lint analysis error:', error);
-                this.lintProgress.status = 'error';
-                this.lintProgress.error = error.message;
-            }
-
-            this.isAnalyzing = false;
-            await this.refresh();
-        },
-
-        handleLintEvent(data) {
-            // Update progress based on event data
-            if (data.phase) {
-                this.lintProgress.phase = data.phase;
-            }
-            if (data.message) {
-                this.lintProgress.message = data.message;
-                this.lintProgress.logs.push({
-                    type: data.error ? 'error' : 'info',
-                    message: data.message,
-                    timestamp: new Date().toLocaleTimeString()
-                });
-            }
-            if (data.issues_found !== undefined) {
-                this.lintProgress.issuesFound = data.issues_found;
-            }
-            if (data.issues_created !== undefined) {
-                this.lintProgress.issuesCreated = data.issues_created;
-            }
-            if (data.error) {
-                this.lintProgress.status = 'error';
-                this.lintProgress.error = data.error;
-            }
-
-            // Keep only last 30 logs
-            if (this.lintProgress.logs.length > 30) {
-                this.lintProgress.logs = this.lintProgress.logs.slice(-30);
-            }
-        },
-
-        closeLintModal() {
-            if (!this.isAnalyzing) {
-                this.showLintModal = false;
-            }
+                if (response.ok) this.fixProgress.scopeViolation.show = false;
+            } catch (error) { console.error('[FIX] Error sending scope response:', error); }
+            sv.responding = false;
         },
 
         async runLintFix() {
             if (!this.filters.repository_id || this.isAnalyzing) return;
-
             this.isAnalyzing = true;
             this.showLintModal = true;
-            this.lintProgress = {
-                status: 'running',
-                phase: '',
-                message: `Avvio Lint+Fix (${this.lintFixCategory})...`,
-                issuesFound: 0,
-                issuesCreated: 0,
-                error: null,
-                logs: []
-            };
-
+            this.lintProgress = { status: 'running', phase: '', message: `Avvio Lint+Fix (${this.lintFixCategory})...`, issuesFound: 0, issuesCreated: 0, error: null, logs: [] };
             try {
                 const response = await fetch('/api/analysis/lint-fix', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        repository_id: this.filters.repository_id,
-                        category: this.lintFixCategory
-                    })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repository_id: this.filters.repository_id, category: this.lintFixCategory })
                 });
-
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(`API error: ${response.status} - ${error}`);
-                }
-
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
                     const text = decoder.decode(value);
-                    const lines = text.split('\n');
-
-                    for (const line of lines) {
+                    for (const line of text.split('\n')) {
                         if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                this.handleLintFixEvent(data);
-                            } catch (e) {}
+                            try { this.handleLintFixEvent(JSON.parse(line.slice(6))); } catch (e) {}
                         }
                     }
                 }
-
-                if (this.lintProgress.status !== 'error') {
-                    this.lintProgress.status = 'completed';
-                }
+                if (this.lintProgress.status !== 'error') this.lintProgress.status = 'completed';
             } catch (error) {
-                console.error('Lint-fix error:', error);
                 this.lintProgress.status = 'error';
                 this.lintProgress.error = error.message;
             }
-
             this.isAnalyzing = false;
             await this.refresh();
         },
@@ -2296,112 +1421,52 @@ function issuesApp() {
         handleLintFixEvent(data) {
             if (data.message) {
                 this.lintProgress.message = data.message;
-                this.lintProgress.logs.push({
-                    type: data.phase === 'error' ? 'error' : 'info',
-                    message: data.message,
-                    timestamp: new Date().toLocaleTimeString()
-                });
+                this.lintProgress.logs.push({ type: data.phase === 'error' ? 'error' : 'info', message: data.message, timestamp: new Date().toLocaleTimeString() });
             }
-            if (data.total_fixed !== undefined) {
-                this.lintProgress.issuesCreated = data.total_fixed;
-            }
-            if (data.error) {
-                this.lintProgress.status = 'error';
-                this.lintProgress.error = data.error;
-            }
-            // Keep only last 30 logs
-            if (this.lintProgress.logs.length > 30) {
-                this.lintProgress.logs = this.lintProgress.logs.slice(-30);
-            }
+            if (data.total_fixed !== undefined) this.lintProgress.issuesCreated = data.total_fixed;
+            if (data.error) { this.lintProgress.status = 'error'; this.lintProgress.error = data.error; }
+            if (this.lintProgress.logs.length > 30) this.lintProgress.logs = this.lintProgress.logs.slice(-30);
         },
 
+        closeLintModal() { if (!this.isAnalyzing) this.showLintModal = false; },
+
         async handlePendingBranch(action) {
-            if (action === 'cancel') {
-                this.showPendingBranchModal = false;
-                this.pendingBranch = null;
-                this.pendingFixRequest = null;
-                return;
-            }
-
+            if (action === 'cancel') { this.showPendingBranchModal = false; this.pendingBranch = null; this.pendingFixRequest = null; return; }
             this.pendingBranchLoading = true;
-
             try {
                 if (action === 'open-pr') {
-                    // Open PR instead of merging
                     const prRes = await fetch('/api/fix/open-pr', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            repository_id: this.pendingBranch.repository_id,
-                            branch_name: this.pendingBranch.branch_name,
-                            task_id: this.pendingBranch.task_id,
-                        }),
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ repository_id: this.pendingBranch.repository_id, branch_name: this.pendingBranch.branch_name, task_id: this.pendingBranch.task_id })
                     });
-
-                    if (!prRes.ok) {
-                        const error = await prRes.json();
-                        throw new Error(error.detail || 'Failed to create PR');
-                    }
-
+                    if (!prRes.ok) throw new Error((await prRes.json()).detail || 'Failed to create PR');
                     const prResult = await prRes.json();
-
-                    // Open PR in new tab
                     window.open(prResult.pr_url, '_blank');
-
-                    // Close modal and return (don't continue with fix)
                     this.showPendingBranchModal = false;
                     this.pendingBranchLoading = false;
                     this.pendingBranch = null;
                     this.pendingFixRequest = null;
                     return;
                 }
-
                 if (action === 'merge') {
-                    // Merge the pending branch first
                     const mergeRes = await fetch('/api/fix/merge', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            repository_id: this.pendingBranch.repository_id,
-                            branch_name: this.pendingBranch.branch_name,
-                        }),
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ repository_id: this.pendingBranch.repository_id, branch_name: this.pendingBranch.branch_name })
                     });
-
-                    if (!mergeRes.ok) {
-                        const error = await mergeRes.json();
-                        throw new Error(error.detail || 'Merge failed');
-                    }
-
-                    await this.refresh();  // Refresh to update issue statuses
+                    if (!mergeRes.ok) throw new Error((await mergeRes.json()).detail || 'Merge failed');
+                    await this.refresh();
                 }
-
-                // Close modal
                 this.showPendingBranchModal = false;
-
-                // Resume the fix with stored request
                 if (this.pendingFixRequest) {
                     const firstIssue = this.issues.find(i => i.id === this.pendingFixRequest.issue_ids[0]);
                     if (firstIssue) {
                         this.selectedIssues = this.pendingFixRequest.issue_ids;
-
-                        // If user chose 'continue', use existing branch
-                        const branchOptions = action === 'continue' ? {
-                            use_existing_branch: true,
-                            existing_branch_name: this.pendingBranch.branch_name
-                        } : null;
-
+                        const branchOptions = action === 'continue' ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name } : null;
                         await this._startFixProcess(firstIssue, branchOptions);
                     }
                 }
-
-            } catch (error) {
-                console.error('[PENDING] Error handling pending branch:', error);
-                alert('Errore: ' + error.message);
-            } finally {
-                this.pendingBranchLoading = false;
-                this.pendingBranch = null;
-                this.pendingFixRequest = null;
-            }
+            } catch (error) { alert('Errore: ' + error.message); }
+            finally { this.pendingBranchLoading = false; this.pendingBranch = null; this.pendingFixRequest = null; }
         },
 
         formatDate(dateStr) {
@@ -2409,30 +1474,95 @@ function issuesApp() {
             const date = new Date(dateStr);
             const now = new Date();
             const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
             const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            if (diffMins < 60) return `${diffMins}m fa`;
+            if (diffHours < 24) return `${diffHours}h fa`;
+            if (diffDays < 7) return `${diffDays}g fa`;
+            return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+        },
 
-            if (diffDays === 0) {
-                // Today: show time
-                return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-            } else if (diffDays === 1) {
-                return 'Ieri';
-            } else if (diffDays < 7) {
-                return `${diffDays}g fa`;
-            } else {
-                // Older: show date
-                return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+        getAiIconClass(reviewer) {
+            if (!reviewer) return 'bg-gray-200 dark:bg-gray-700';
+            const r = reviewer.toLowerCase();
+            if (r.includes('gemini')) return 'ai-icon-gemini';
+            if (r.includes('grok')) return 'ai-icon-grok';
+            if (r.includes('claude')) return 'ai-icon-claude';
+            if (r.includes('openai') || r.includes('gpt')) return 'ai-icon-openai';
+            return 'bg-gray-200 dark:bg-gray-700';
+        },
+
+        quickIgnore(issue) {
+            this.ignoreIssue = issue;
+            this.ignoreReason = '';
+            this.showIgnoreModal = true;
+        },
+
+        async confirmIgnore() {
+            if (!this.ignoreIssue || this.ignoringIssue) return;
+            this.ignoringIssue = true;
+            try {
+                const body = { status: 'ignored' };
+                if (this.ignoreReason.trim()) {
+                    body.resolution_note = this.ignoreReason.trim();
+                }
+                const res = await fetch(`/api/issues/${this.ignoreIssue.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    this.showIgnoreModal = false;
+                    this.ignoreIssue = null;
+                    this.ignoreReason = '';
+                    await this.refresh();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to ignore'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
+            this.ignoringIssue = false;
+        },
+
+        async quickMerge(issue) {
+            try {
+                const res = await fetch(`/api/issues/${issue.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'merged' })
+                });
+                if (res.ok) {
+                    issue.status = 'merged';
+                    await this.refresh();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to mark as merged'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
             }
         },
 
-        getEffortLabel(effort) {
-            const labels = {
-                1: 'Trivial',
-                2: 'Easy',
-                3: 'Medium',
-                4: 'Hard',
-                5: 'Major'
-            };
-            return labels[effort] || `E${effort}`;
+        async quickReopen(issue) {
+            try {
+                const res = await fetch(`/api/issues/${issue.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'open' })
+                });
+                if (res.ok) {
+                    issue.status = 'open';
+                    await this.refresh();
+                } else {
+                    const data = await res.json();
+                    alert('Errore: ' + (data.detail || 'Failed to reopen'));
+                }
+            } catch (e) {
+                alert('Errore di rete: ' + e.message);
+            }
         }
     }
 }
