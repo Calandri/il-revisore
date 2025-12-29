@@ -49,7 +49,7 @@
                 <!-- Separator -->
                 <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
                 <!-- Previous Issue -->
-                <a :href="prevIssue ? '/issues/' + prevIssue.issue_code : '#'"
+                <a :href="prevIssue ? '/issues/' + prevIssue.issue_code + (filterParams ? '?' + filterParams : '') : '#'"
                    :class="prevIssue ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
                    class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
                    :title="prevIssue ? prevIssue.issue_code : 'Nessuna issue precedente'">
@@ -61,7 +61,7 @@
                 <!-- Current position -->
                 <span class="px-2 text-xs text-gray-500" x-show="currentIndex >= 0" x-text="(currentIndex + 1) + '/' + totalIssues"></span>
                 <!-- Next Issue -->
-                <a :href="nextIssue ? '/issues/' + nextIssue.issue_code : '#'"
+                <a :href="nextIssue ? '/issues/' + nextIssue.issue_code + (filterParams ? '?' + filterParams : '') : '#'"
                    :class="nextIssue ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
                    class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
                    :title="nextIssue ? nextIssue.issue_code : 'Nessuna issue successiva'">
@@ -726,6 +726,7 @@ function issueDetailApp() {
         nextIssue: null,
         currentIndex: -1,
         totalIssues: 0,
+        filterParams: '',
 
         async init() {
             this.$watch('showFixLog', async (value) => {
@@ -739,27 +740,48 @@ function issueDetailApp() {
             document.addEventListener('keydown', (e) => {
                 // Skip if user is typing in an input
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                const params = this.filterParams ? '?' + this.filterParams : '';
                 if (e.key === 'ArrowLeft' && this.prevIssue) {
-                    window.location.href = '/issues/' + this.prevIssue.issue_code;
+                    window.location.href = '/issues/' + this.prevIssue.issue_code + params;
                 } else if (e.key === 'ArrowRight' && this.nextIssue) {
-                    window.location.href = '/issues/' + this.nextIssue.issue_code;
+                    window.location.href = '/issues/' + this.nextIssue.issue_code + params;
                 }
             });
         },
 
         async loadAdjacentIssues() {
             try {
-                // Fetch issues for the same repository, ordered by severity
-                const res = await fetch(`/api/issues?repository_id=${this.repositoryId}&limit=500`);
+                // Build API URL with same filters from URL params (passed from list page)
+                const urlParams = new URLSearchParams(window.location.search);
+                const apiParams = new URLSearchParams();
+
+                // Always filter by repository from context or URL
+                const repoId = urlParams.get('repository_id') || this.repositoryId;
+                if (repoId) apiParams.set('repository_id', repoId);
+
+                // Preserve filters from list page
+                if (urlParams.get('status')) apiParams.set('status', urlParams.get('status'));
+                if (urlParams.get('severity')) apiParams.set('severity', urlParams.get('severity'));
+                if (urlParams.get('category')) apiParams.set('category', urlParams.get('category'));
+                if (urlParams.get('search')) apiParams.set('search', urlParams.get('search'));
+                if (urlParams.get('linear_linked')) apiParams.set('linear_linked', urlParams.get('linear_linked'));
+
+                apiParams.set('limit', '500');
+
+                const res = await fetch(`/api/issues?${apiParams.toString()}`);
                 if (!res.ok) return;
                 const issues = await res.json();
                 this.totalIssues = issues.length;
+
                 // Find current issue index
                 const idx = issues.findIndex(i => i.issue_code === this.issueCode);
                 if (idx === -1) return;
                 this.currentIndex = idx;
                 this.prevIssue = idx > 0 ? issues[idx - 1] : null;
                 this.nextIssue = idx < issues.length - 1 ? issues[idx + 1] : null;
+
+                // Store filter params for navigation links
+                this.filterParams = urlParams.toString();
             } catch (e) {
                 console.warn('Failed to load adjacent issues:', e);
             }

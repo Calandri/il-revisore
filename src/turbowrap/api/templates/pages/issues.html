@@ -362,7 +362,7 @@
 
         <!-- Issue Rows -->
         <template x-for="issue in issues" :key="issue.id">
-            <a :href="'/issues/' + issue.issue_code"
+            <a :href="'/issues/' + issue.issue_code + getFilterParams()"
                class="issue-card grid grid-cols-1 md:grid-cols-12 gap-4 px-4 py-4 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 items-center"
                :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged', 'bg-primary/5': selectedIssues.includes(issue.id)}">
 
@@ -511,7 +511,7 @@
     <div x-show="!loading && issues.length > 0 && viewMode === 'cards'"
          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <template x-for="issue in issues" :key="issue.id">
-            <a :href="'/issues/' + issue.issue_code"
+            <a :href="'/issues/' + issue.issue_code + getFilterParams()"
                class="issue-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 block"
                :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged'}">
                 <!-- Header row -->
@@ -1109,6 +1109,19 @@ function issuesApp() {
                 }
             });
             await this.refresh();
+        },
+
+        // Build URL params from current filters for navigation preservation
+        getFilterParams() {
+            const params = new URLSearchParams();
+            if (this.filters.repository_id) params.set('repository_id', this.filters.repository_id);
+            if (this.filters.severity) params.set('severity', this.filters.severity);
+            if (this.filters.status) params.set('status', this.filters.status);
+            if (this.filters.category) params.set('category', this.filters.category);
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.linear_linked) params.set('linear_linked', this.filters.linear_linked);
+            const str = params.toString();
+            return str ? '?' + str : '';
         },
 
         _scheduleUpdate() {

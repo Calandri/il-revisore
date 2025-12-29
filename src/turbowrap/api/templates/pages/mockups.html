@@ -266,6 +266,20 @@ function mockupsPage() {
                     this.selectedElement = e.data.selector;
                 }
             });
+
+            // Reload mockups when page becomes visible (after chat creates mockup)
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible') {
+                    console.log('[mockupsPage] Page visible, reloading mockups');
+                    await this.loadMockups();
+                }
+            });
+
+            // Also reload on window focus (for same-tab navigation)
+            window.addEventListener('focus', async () => {
+                console.log('[mockupsPage] Window focused, reloading mockups');
+                await this.loadMockups();
+            });
         },
 
         async loadProjects() {
