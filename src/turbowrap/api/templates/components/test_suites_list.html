@@ -52,6 +52,16 @@
 
                 <!-- Actions -->
                 <div class="flex items-center gap-1">
+                    <button hx-get="/htmx/tests/suites/{{ suite.id }}/details"
+                            hx-target="#suite-details-drawer-content"
+                            hx-swap="innerHTML"
+                            @click="$dispatch('open-suite-drawer')"
+                            class="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-600"
+                            title="Esplora test">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                        </svg>
+                    </button>
                     <button hx-post="/htmx/tests/run/{{ suite.id }}"
                             hx-swap="none"
                             class="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg text-green-600"

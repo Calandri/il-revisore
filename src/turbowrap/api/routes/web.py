@@ -997,12 +997,12 @@ async def htmx_get_suite_details(
     from ...tasks.test_scanner import scan_test_suite
 
     suite = (
-        db.query(TestSuite)
-        .filter(TestSuite.id == suite_id, TestSuite.deleted_at.is_(None))
-        .first()
+        db.query(TestSuite).filter(TestSuite.id == suite_id, TestSuite.deleted_at.is_(None)).first()
     )
     if not suite:
-        return Response(content="<div class='text-red-500'>Suite non trovata</div>", status_code=404)
+        return Response(
+            content="<div class='text-red-500'>Suite non trovata</div>", status_code=404
+        )
 
     repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
     if not repo or not repo.local_path:
@@ -1017,6 +1017,7 @@ async def htmx_get_suite_details(
         framework=suite.framework,
     )
 
+    templates = request.app.state.templates
     return templates.TemplateResponse(
         "components/test_suite_details.html",
         {
@@ -1043,11 +1044,15 @@ async def htmx_get_test_file_code(
 
     suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
     if not suite:
-        return Response(content="<div class='text-red-500'>Suite non trovata</div>", status_code=404)
+        return Response(
+            content="<div class='text-red-500'>Suite non trovata</div>", status_code=404
+        )
 
     repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
     if not repo or not repo.local_path:
-        return Response(content="<div class='text-red-500'>Repository non trovata</div>", status_code=404)
+        return Response(
+            content="<div class='text-red-500'>Repository non trovata</div>", status_code=404
+        )
 
     full_path = Path(repo.local_path) / file_path
     if not full_path.exists():
@@ -1060,6 +1065,7 @@ async def htmx_get_test_file_code(
     except Exception as e:
         return Response(content=f"<div class='text-red-500'>Errore: {e}</div>", status_code=500)
 
+    templates = request.app.state.templates
     return templates.TemplateResponse(
         "components/test_file_code.html",
         {
@@ -1132,7 +1138,7 @@ async def _execute_test_run(run_id: str, repo_path: str) -> None:
     from pathlib import Path
 
     from ...db.session import get_session_local
-    from ...tasks import TestTask, TaskContext
+    from ...tasks import TaskContext, TestTask
 
     logger = logging.getLogger(__name__)
 
