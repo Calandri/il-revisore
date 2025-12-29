@@ -249,6 +249,7 @@ class GeminiModelUsage:
     input_tokens: int = 0
     cache_reads: int = 0
     output_tokens: int = 0
+    cost_usd: float = 0.0
 
 
 @dataclass
@@ -376,6 +377,7 @@ def _parse_stream_json_stats(result_data: dict[str, Any]) -> GeminiSessionStats:
                 input_tokens=s.get("input_tokens", 0),
                 cache_reads=s.get("cached", 0),
                 output_tokens=s.get("output_tokens", 0),
+                cost_usd=s.get("costUSD", 0.0),  # Read directly from Gemini output if available
             )
         )
 
@@ -816,6 +818,20 @@ class GeminiCLI(OperationTrackingMixin):
                 result["total_output_tokens"] = session_stats.total_output_tokens
                 result["tool_calls"] = session_stats.tool_calls_total
                 result["models_used"] = [m.model for m in session_stats.model_usage]
+                # Read cost directly from model usage (if provided by Gemini CLI)
+                result["cost_usd"] = sum(m.cost_usd for m in session_stats.model_usage)
+                # Include detailed model usage with costs
+                result["model_usage"] = [
+                    {
+                        "model": m.model,
+                        "requests": m.requests,
+                        "input_tokens": m.input_tokens,
+                        "cache_reads": m.cache_reads,
+                        "output_tokens": m.output_tokens,
+                        "cost_usd": m.cost_usd,
+                    }
+                    for m in session_stats.model_usage
+                ]
 
             result["tools_used"] = sorted(tools_used) if tools_used else []
 

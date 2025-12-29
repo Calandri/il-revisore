@@ -461,6 +461,21 @@ class Orchestrator:
                         ]
                     )
 
+                    # Calculate total cost for this specialist across all LLMs
+                    specialist_cost = 0.0
+                    if reviewer_name in seq_result.claude_reviews:
+                        specialist_cost += sum(
+                            m.cost_usd for m in seq_result.claude_reviews[reviewer_name].model_usage
+                        )
+                    if reviewer_name in seq_result.gemini_reviews:
+                        specialist_cost += sum(
+                            m.cost_usd for m in seq_result.gemini_reviews[reviewer_name].model_usage
+                        )
+                    if reviewer_name in seq_result.grok_reviews:
+                        specialist_cost += sum(
+                            m.cost_usd for m in seq_result.grok_reviews[reviewer_name].model_usage
+                        )
+
                     reviewer_results.append(
                         ReviewerResult(
                             name=reviewer_name,
@@ -469,7 +484,7 @@ class Orchestrator:
                             duration_seconds=seq_result.total_duration_seconds / len(reviewers),
                             iterations=1,
                             final_satisfaction=llms_ok * 33.33,
-                            cost_usd=0.0,  # TODO: Calculate per-specialist cost
+                            cost_usd=specialist_cost,  # Read directly from model_usage
                         )
                     )
 
