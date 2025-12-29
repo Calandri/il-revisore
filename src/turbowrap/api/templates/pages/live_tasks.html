@@ -546,45 +546,10 @@ function liveTasksApp() {
             return result.tools_used || [];
         },
 
-        // Calculate operation cost (rough estimate)
+        // Get operation cost (read from API output, not calculated)
         getCost(op) {
             const result = op.result || {};
-            const model = op.details?.model || result.model || '';
-
-            // Token counts
-            const input = result.total_input_tokens || result.input_tokens || 0;
-            const output = result.total_output_tokens || result.output_tokens || 0;
-            const cached = result.total_cache_read_tokens || result.cache_read_tokens || 0;
-            const cacheCreate = result.total_cache_creation_tokens || result.cache_creation_tokens || 0;
-
-            // Pricing per 1M tokens (approximate)
-            let inputPrice = 3.0;    // Default (Sonnet)
-            let outputPrice = 15.0;
-            let cachedPrice = 0.30;
-            let cacheCreatePrice = 3.75;
-
-            if (model.includes('opus')) {
-                inputPrice = 15.0;
-                outputPrice = 75.0;
-                cachedPrice = 1.50;
-                cacheCreatePrice = 18.75;
-            } else if (model.includes('haiku')) {
-                inputPrice = 0.25;
-                outputPrice = 1.25;
-                cachedPrice = 0.025;
-                cacheCreatePrice = 0.30;
-            } else if (model.includes('gemini')) {
-                inputPrice = 0.075;
-                outputPrice = 0.30;
-                cachedPrice = 0.01875;
-                cacheCreatePrice = 0;
-            }
-
-            const cost = (input * inputPrice / 1000000) +
-                         (output * outputPrice / 1000000) +
-                         (cached * cachedPrice / 1000000) +
-                         (cacheCreate * cacheCreatePrice / 1000000);
-            return cost;
+            return result.cost_usd || 0;
         },
 
         // Calculate elapsed seconds from start time
