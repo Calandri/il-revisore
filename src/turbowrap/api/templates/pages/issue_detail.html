@@ -464,6 +464,18 @@
                             <span class="font-mono text-gray-700 dark:text-gray-300">{{ issue.fix_commit_sha[:8] }}</span>
                         </div>
                         {% endif %}
+                        {% if issue.fix_self_score is not none %}
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-500">Self Score:</span>
+                            <span class="font-semibold {% if issue.fix_self_score >= 90 %}text-green-600 dark:text-green-400{% elif issue.fix_self_score >= 70 %}text-yellow-600 dark:text-yellow-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ issue.fix_self_score }}%</span>
+                        </div>
+                        {% endif %}
+                        {% if issue.fix_gemini_score is not none %}
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-500">Gemini Score:</span>
+                            <span class="font-semibold {% if issue.fix_gemini_score >= 90 %}text-green-600 dark:text-green-400{% elif issue.fix_gemini_score >= 70 %}text-yellow-600 dark:text-yellow-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ issue.fix_gemini_score }}%</span>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>

@@ -89,6 +89,8 @@ class Issue(Base, SoftDeleteMixin):
     fix_session_id = Column(String(36), nullable=True, index=True)  # UUID sessione fix (per log S3)
     fixed_at = Column(DateTime, nullable=True)  # Quando e stato fixato
     fixed_by = Column(String(50), nullable=True)  # Agent che ha fixato (e.g., "fixer_claude")
+    fix_self_score = Column(Integer, nullable=True)  # Self-evaluation score (0-100)
+    fix_gemini_score = Column(Integer, nullable=True)  # Gemini challenger score (0-100)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

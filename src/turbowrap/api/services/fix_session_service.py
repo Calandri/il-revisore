@@ -355,6 +355,9 @@ class FixSessionService:
                         db_issue.fix_session_id = session_id  # type: ignore[assignment]
                         db_issue.fixed_at = datetime.utcnow()  # type: ignore[assignment]
                         db_issue.fixed_by = "fixer_claude"  # type: ignore[assignment]
+                        # Save evaluation scores
+                        db_issue.fix_self_score = issue_result.fix_self_score  # type: ignore[assignment]
+                        db_issue.fix_gemini_score = issue_result.fix_gemini_score  # type: ignore[assignment]
                         completed_count += 1
                     elif issue_result.status.value == "failed":
                         db_issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]

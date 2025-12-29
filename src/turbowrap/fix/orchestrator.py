@@ -964,6 +964,8 @@ class FixOrchestrator:
                                 session_context=group_session_ctx,
                                 parent_session_id=session_id,
                                 agent_type="fixer",
+                                issue_codes=[str(i.issue_code) for i in batch],
+                                issue_ids=[str(i.id) for i in batch],
                             )
                             if not claude_result.success:
                                 error_detail = claude_result.error or "Unknown error"
@@ -1522,6 +1524,19 @@ class FixOrchestrator:
                         else f"Fixed {issue.title}"
                     )
 
+                # Extract scores
+                # Self-evaluation score from Claude (confidence 0-100)
+                self_eval = issue_fix_data.get("self_evaluation", {})
+                self_score = self_eval.get("confidence") if isinstance(self_eval, dict) else None
+                if self_score is not None:
+                    self_score = int(self_score)
+
+                # Gemini score from challenger
+                issue_status = issue_status_map.get(issue_code, {})
+                gemini_score = issue_status.get("score")
+                if gemini_score is not None:
+                    gemini_score = int(gemini_score)
+
                 # Use issue's own file, not batch's modified_files
                 per_issue_files = [issue_file] if issue_file else []
 
@@ -1542,6 +1557,8 @@ class FixOrchestrator:
                     started_at=result.started_at,
                     completed_at=datetime.utcnow(),
                     false_positive=is_false_positive,
+                    fix_self_score=self_score,
+                    fix_gemini_score=gemini_score,
                 )
                 result.results.append(issue_result)
 
@@ -2156,6 +2173,8 @@ The automated code reviewer (Gemini) evaluated your previous fix and found issue
         session_context: FixSessionContext | None = None,
         parent_session_id: str | None = None,
         agent_type: str | None = None,
+        issue_codes: list[str] | None = None,
+        issue_ids: list[str] | None = None,
     ) -> ClaudeCLIResult:
         """Run Claude CLI with prompt and optional streaming callback.
 
@@ -2172,6 +2191,8 @@ The automated code reviewer (Gemini) evaluated your previous fix and found issue
             session_context: Optional session context for persistence between batches
             parent_session_id: Parent session ID for linking sub-operations
             agent_type: Type of agent (fixer, committer, branch_creator) for tracking
+            issue_codes: List of issue codes being fixed (for live-tasks display)
+            issue_ids: List of issue IDs being fixed (for live-tasks links)
         """
         # Check if compaction is needed before this call (based on context_size = cache_read)
         if session_context and session_context.needs_compaction():
@@ -2202,6 +2223,8 @@ The automated code reviewer (Gemini) evaluated your previous fix and found issue
                 "parent_session_id": parent_session_id,
                 "session_id": parent_session_id,  # For UI display
                 "agent_type": agent_type or "fixer",
+                "issue_codes": issue_codes or [],
+                "issue_ids": issue_ids or [],
             },
             resume_session_id=session_context.claude_session_id if session_context else None,
         )

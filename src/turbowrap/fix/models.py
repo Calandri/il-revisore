@@ -304,6 +304,14 @@ class IssueFixResult(BaseModel):
         default=False, description="True if issue was a false positive (no fix needed)"
     )
 
+    # Scores from evaluation
+    fix_self_score: int | None = Field(
+        default=None, description="Self-evaluation score from Claude (0-100)"
+    )
+    fix_gemini_score: int | None = Field(
+        default=None, description="Gemini challenger score (0-100)"
+    )
+
 
 class FixSessionResult(BaseModel):
     """Result of a complete fix session."""
