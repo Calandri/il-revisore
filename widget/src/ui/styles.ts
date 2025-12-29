@@ -604,6 +604,44 @@ export const WIDGET_STYLES = `
   text-decoration: underline;
 }
 
+/* Issue Type Selector */
+.iw-type-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.iw-type-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border: 1px solid var(--iw-border);
+  border-radius: 8px;
+  background: var(--iw-bg);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--iw-font);
+  font-size: 13px;
+  color: var(--iw-text);
+}
+
+.iw-type-btn:hover {
+  border-color: var(--iw-accent);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.iw-type-btn.active {
+  border-color: var(--iw-accent);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--iw-accent);
+}
+
+.iw-type-icon {
+  font-size: 20px;
+}
+
 @media (max-width: 480px) {
   .iw-modal {
     width: 100%;

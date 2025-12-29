@@ -1,3 +1,5 @@
+export type IssueType = 'bug' | 'suggestion' | 'question';
+
 export interface WidgetConfig {
   apiUrl: string;
   apiKey: string;
@@ -25,6 +27,7 @@ export interface ElementInfo {
 export interface AnalyzeRequest {
   title: string;
   description: string;
+  issueType: IssueType;
   screenshots: Blob[];
   figmaLink?: string;
   websiteLink?: string;
@@ -46,6 +49,7 @@ export interface AnalyzeResult {
 export interface FinalizeRequest {
   title: string;
   description: string;
+  issueType: IssueType;
   userAnswers: Record<number, string>;
   geminiInsights: string;
   teamId: string;

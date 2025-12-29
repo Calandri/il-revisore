@@ -92,6 +92,9 @@ class FinalizeIssueRequest(BaseModel):
 
     title: str
     description: str
+    issue_type: str = Field(
+        default="bug", description="Type of issue: bug, suggestion, or question"
+    )
     figma_link: str | None = None
     website_link: str | None = None
     gemini_insights: str
@@ -730,6 +733,7 @@ async def get_linear_states(
 async def analyze_for_creation(
     title: str = Form(...),
     description: str = Form(...),
+    issue_type: str = Form("bug"),
     figma_link: str = Form(None),
     website_link: str = Form(None),
     screenshots: list[UploadFile] = File([]),
@@ -818,8 +822,17 @@ async def analyze_for_creation(
                 "data": json.dumps({"message": "🤖 Claude sta generando le domande..."}),
             }
 
+            # Map issue_type to Italian label
+            issue_type_labels = {
+                "bug": "Bug Report",
+                "suggestion": "Suggerimento/Feature Request",
+                "question": "Domanda/Dubbio",
+            }
+            issue_type_label = issue_type_labels.get(issue_type, issue_type)
+
             prompt_content = f"""Genera 5-10 domande per chiarire questa issue Linear.
 
+Tipo: {issue_type_label}
 Titolo: {title}
 Descrizione: {description}
 Figma: {figma_link or "N/A"}
@@ -913,8 +926,17 @@ async def finalize_creation(
 
             answers_text = "\n".join([f"{k}: {v}" for k, v in request.user_answers.items()])
 
+            # Map issue_type to Italian label
+            issue_type_labels = {
+                "bug": "🐛 Bug Report",
+                "suggestion": "💡 Feature Request / Suggerimento",
+                "question": "❓ Domanda / Dubbio",
+            }
+            issue_type_label = issue_type_labels.get(request.issue_type, request.issue_type)
+
             prompt_content = f"""Genera descrizione completa per issue Linear.
 
+Tipo: {issue_type_label}
 Titolo: {request.title}
 Descrizione iniziale: {request.description}
 Figma: {request.figma_link or "N/A"}
@@ -926,10 +948,10 @@ Analisi Gemini:
 Risposte utente:
 {answers_text}
 
-Genera descrizione markdown con:
-1. Problema
+Genera descrizione markdown con sezione iniziale che indica il tipo ({issue_type_label}), poi:
+1. Problema/Richiesta
 2. Acceptance Criteria
-3. Approccio Tecnico
+3. Approccio Tecnico (se applicabile)
 4. Rischi
 """
 

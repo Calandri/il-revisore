@@ -27,6 +27,7 @@ export class IssueAPIClient {
     const formData = new FormData();
     formData.append('title', data.title);
     formData.append('description', data.description);
+    formData.append('issue_type', data.issueType);
 
     data.screenshots.forEach((blob, index) => {
       formData.append('screenshots', blob, `screenshot-${index}-${Date.now()}.png`);
@@ -81,6 +82,7 @@ export class IssueAPIClient {
         body: JSON.stringify({
           title: data.title,
           description: data.description,
+          issue_type: data.issueType,
           user_answers: data.userAnswers,
           gemini_insights: data.geminiInsights,
           team_id: data.teamId || this.teamId,

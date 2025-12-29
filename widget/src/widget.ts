@@ -4,6 +4,7 @@ import type {
   IssueCreatedResult,
   Question,
   ElementInfo,
+  IssueType,
 } from './api/types';
 import { IssueAPIClient } from './api/client';
 import { captureScreen, compressImage, blobToDataUrl } from './capture/screen-capture';
@@ -16,6 +17,7 @@ type Step = 'details' | 'questions' | 'creating' | 'success';
 interface WidgetState {
   isOpen: boolean;
   step: Step;
+  issueType: IssueType;
   title: string;
   description: string;
   screenshots: Blob[];
@@ -52,6 +54,7 @@ export class IssueWidget {
     this.state = {
       isOpen: false,
       step: 'details',
+      issueType: 'bug',
       title: '',
       description: '',
       screenshots: [],
@@ -185,8 +188,27 @@ export class IssueWidget {
   private renderDetailsStep(): string {
     const hasScreenshot = this.state.screenshotPreviews.length > 0;
     const hasElement = this.state.selectedElement !== null;
+    const { issueType } = this.state;
 
     return `
+      <div class="iw-form-group">
+        <label class="iw-label">Feedback Type</label>
+        <div class="iw-type-selector">
+          <button type="button" class="iw-type-btn ${issueType === 'bug' ? 'active' : ''}" data-type="bug">
+            <span class="iw-type-icon">🐛</span>
+            <span>Bug</span>
+          </button>
+          <button type="button" class="iw-type-btn ${issueType === 'suggestion' ? 'active' : ''}" data-type="suggestion">
+            <span class="iw-type-icon">💡</span>
+            <span>Suggestion</span>
+          </button>
+          <button type="button" class="iw-type-btn ${issueType === 'question' ? 'active' : ''}" data-type="question">
+            <span class="iw-type-icon">❓</span>
+            <span>Question</span>
+          </button>
+        </div>
+      </div>
+
       <div class="iw-form-group">
         <label class="iw-label">Title *</label>
         <input type="text" class="iw-input" id="iw-title"
@@ -375,6 +397,13 @@ export class IssueWidget {
       } else if (target.id === 'iw-remove-element') {
         this.handleRemoveElement();
       }
+
+      // Handle issue type selection
+      const typeBtn = target.closest('.iw-type-btn') as HTMLElement;
+      if (typeBtn && typeBtn.dataset.type) {
+        this.state.issueType = typeBtn.dataset.type as IssueType;
+        this.update();
+      }
     });
 
     this.shadow.addEventListener('change', (e) => {
@@ -414,6 +443,7 @@ export class IssueWidget {
     this.state = {
       isOpen: false,
       step: 'details',
+      issueType: 'bug',
       title: '',
       description: '',
       screenshots: [],
@@ -547,6 +577,7 @@ export class IssueWidget {
         {
           title: this.state.title,
           description: this.state.description,
+          issueType: this.state.issueType,
           screenshots: this.state.screenshots,
           websiteLink: window.location.href,
           selectedElement: this.state.selectedElement || undefined,
@@ -589,6 +620,7 @@ export class IssueWidget {
         {
           title: this.state.title,
           description: this.state.description,
+          issueType: this.state.issueType,
           userAnswers: this.state.answers,
           geminiInsights: this.state.geminiInsights,
           teamId: this.config.teamId,
