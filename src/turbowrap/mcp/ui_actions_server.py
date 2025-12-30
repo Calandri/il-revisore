@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
-"""TurboWrap UI Actions MCP Server.
+"""TurboWrap MCP Server.
 
-This MCP server exposes tools for AI to interact with the TurboWrap UI:
+This MCP server exposes tools for AI to interact with TurboWrap:
+
+UI Actions:
 - navigate: Navigate user to a specific page
 - highlight: Highlight DOM elements
 - show_toast: Show notification toast
 - open_modal: Open a specific modal
 
-The server communicates with the TurboWrap API which broadcasts
-actions to connected frontends via WebSocket.
+Issues API:
+- list_issues: List code review issues for a repository
+- get_issue: Get details of a specific issue
+- resolve_issue: Mark an issue as resolved
+
+Tests API:
+- list_test_suites: List test suites for a repository
+- get_test_summary: Get test statistics
+- run_test_suite: Run a specific test suite
+
+Fix API:
+- list_fixable_issues: List issues that can be auto-fixed
+- start_fix: Start an AI fix session
+- get_active_fix_sessions: Get currently running fix sessions
 """
 
 import asyncio
@@ -58,6 +72,58 @@ async def execute_ui_action(action_type: str, params: dict[str, Any]) -> dict[st
             return response.json()
         except httpx.HTTPError as e:
             logger.error(f"Failed to execute UI action: {e}")
+            return {"success": False, "error": str(e)}
+
+
+async def api_get(endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Make a GET request to TurboWrap API.
+
+    Args:
+        endpoint: API endpoint path (e.g., "/api/issues")
+        params: Query parameters
+
+    Returns:
+        API response as dict, or error dict
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{TURBOWRAP_API_URL}{endpoint}",
+                params=params,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except httpx.HTTPError as e:
+            logger.error(f"API GET {endpoint} failed: {e}")
+            return {"success": False, "error": str(e)}
+
+
+async def api_post(
+    endpoint: str, data: dict[str, Any] | None = None, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Make a POST request to TurboWrap API.
+
+    Args:
+        endpoint: API endpoint path
+        data: JSON body
+        params: Query parameters
+
+    Returns:
+        API response as dict, or error dict
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{TURBOWRAP_API_URL}{endpoint}",
+                json=data,
+                params=params,
+                timeout=60.0,  # Longer timeout for operations
+            )
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except httpx.HTTPError as e:
+            logger.error(f"API POST {endpoint} failed: {e}")
             return {"success": False, "error": str(e)}
 
 
@@ -167,6 +233,200 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
             },
         ),
+        # ============================================================
+        # Issues API Tools
+        # ============================================================
+        Tool(
+            name="list_issues",
+            description=(
+                "List code review issues for a repository. "
+                "Returns issues with their status, severity, and file location."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of the repository",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["open", "resolved", "ignored", "fixing", "all"],
+                        "description": "Filter by status (default: open)",
+                        "default": "open",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max number of issues to return (default: 50)",
+                        "default": 50,
+                    },
+                },
+                "required": ["repository_id"],
+            },
+        ),
+        Tool(
+            name="get_issue",
+            description="Get detailed information about a specific issue.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "issue_id": {
+                        "type": "string",
+                        "description": "UUID of the issue",
+                    },
+                },
+                "required": ["issue_id"],
+            },
+        ),
+        Tool(
+            name="get_issues_summary",
+            description=(
+                "Get summary statistics of issues for a repository. "
+                "Returns counts by status, severity, and category."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of the repository",
+                    },
+                },
+                "required": ["repository_id"],
+            },
+        ),
+        Tool(
+            name="resolve_issue",
+            description="Mark an issue as resolved.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "issue_id": {
+                        "type": "string",
+                        "description": "UUID of the issue to resolve",
+                    },
+                },
+                "required": ["issue_id"],
+            },
+        ),
+        # ============================================================
+        # Tests API Tools
+        # ============================================================
+        Tool(
+            name="list_test_suites",
+            description=(
+                "List test suites for a repository. "
+                "Returns suite names, test counts, and last run status."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of the repository",
+                    },
+                },
+                "required": ["repository_id"],
+            },
+        ),
+        Tool(
+            name="get_test_summary",
+            description=(
+                "Get test statistics for a repository. "
+                "Returns pass/fail counts, coverage, and recent run info."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of the repository",
+                    },
+                },
+                "required": ["repository_id"],
+            },
+        ),
+        Tool(
+            name="run_test_suite",
+            description=(
+                "Run a specific test suite. "
+                "Returns immediately with run ID; tests run in background."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "suite_id": {
+                        "type": "string",
+                        "description": "UUID of the test suite to run",
+                    },
+                },
+                "required": ["suite_id"],
+            },
+        ),
+        Tool(
+            name="get_test_run",
+            description="Get details and results of a specific test run.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "run_id": {
+                        "type": "string",
+                        "description": "UUID of the test run",
+                    },
+                },
+                "required": ["run_id"],
+            },
+        ),
+        # ============================================================
+        # Fix API Tools
+        # ============================================================
+        Tool(
+            name="list_fixable_issues",
+            description=(
+                "List issues that can be auto-fixed by AI for a repository. "
+                "Returns open issues with fix suggestions."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of the repository",
+                    },
+                },
+                "required": ["repository_id"],
+            },
+        ),
+        Tool(
+            name="start_fix",
+            description=(
+                "Start an AI fix session to automatically fix selected issues. "
+                "The fix runs in background; use get_active_fix_sessions to monitor."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of the repository",
+                    },
+                    "issue_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of issue UUIDs to fix",
+                    },
+                },
+                "required": ["repository_id", "issue_ids"],
+            },
+        ),
+        Tool(
+            name="get_active_fix_sessions",
+            description="Get list of currently running AI fix sessions.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
     ]
 
 
@@ -224,6 +484,144 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 )
             ]
         return [TextContent(type="text", text="Could not get current page info")]
+
+    # ================================================================
+    # Issues API Handlers
+    # ================================================================
+
+    if name == "list_issues":
+        repo_id = arguments.get("repository_id", "")
+        status = arguments.get("status", "open")
+        limit = arguments.get("limit", 50)
+        params = {"repository_id": repo_id, "limit": limit}
+        if status != "all":
+            params["status"] = status
+        result = await api_get("/api/issues", params)
+        if result.get("success"):
+            issues = result["data"]
+            summary = [
+                {
+                    "id": i.get("id"),
+                    "code": i.get("code"),
+                    "title": i.get("title"),
+                    "severity": i.get("severity"),
+                    "status": i.get("status"),
+                    "file": i.get("file_path"),
+                    "line": i.get("line_number"),
+                }
+                for i in issues[:limit]
+            ]
+            return [TextContent(type="text", text=json.dumps(summary, indent=2))]
+        return [TextContent(type="text", text=f"Failed to list issues: {result.get('error')}")]
+
+    if name == "get_issue":
+        issue_id = arguments.get("issue_id", "")
+        result = await api_get(f"/api/issues/{issue_id}")
+        if result.get("success"):
+            return [TextContent(type="text", text=json.dumps(result["data"], indent=2))]
+        return [TextContent(type="text", text=f"Failed to get issue: {result.get('error')}")]
+
+    if name == "get_issues_summary":
+        repo_id = arguments.get("repository_id", "")
+        result = await api_get("/api/issues/summary", {"repository_id": repo_id})
+        if result.get("success"):
+            return [TextContent(type="text", text=json.dumps(result["data"], indent=2))]
+        return [TextContent(type="text", text=f"Failed to get summary: {result.get('error')}")]
+
+    if name == "resolve_issue":
+        issue_id = arguments.get("issue_id", "")
+        result = await api_post(f"/api/issues/{issue_id}/resolve")
+        if result.get("success"):
+            return [TextContent(type="text", text=f"Issue {issue_id} marked as resolved")]
+        return [TextContent(type="text", text=f"Failed to resolve: {result.get('error')}")]
+
+    # ================================================================
+    # Tests API Handlers
+    # ================================================================
+
+    if name == "list_test_suites":
+        repo_id = arguments.get("repository_id", "")
+        result = await api_get("/api/tests/suites", {"repository_id": repo_id})
+        if result.get("success"):
+            suites = result["data"]
+            summary = [
+                {
+                    "id": s.get("id"),
+                    "name": s.get("name"),
+                    "framework": s.get("framework"),
+                    "test_count": s.get("test_count"),
+                    "last_status": s.get("last_run_status"),
+                }
+                for s in suites
+            ]
+            return [TextContent(type="text", text=json.dumps(summary, indent=2))]
+        return [TextContent(type="text", text=f"Failed to list suites: {result.get('error')}")]
+
+    if name == "get_test_summary":
+        repo_id = arguments.get("repository_id", "")
+        result = await api_get("/api/tests/summary", {"repository_id": repo_id})
+        if result.get("success"):
+            return [TextContent(type="text", text=json.dumps(result["data"], indent=2))]
+        return [TextContent(type="text", text=f"Failed to get summary: {result.get('error')}")]
+
+    if name == "run_test_suite":
+        suite_id = arguments.get("suite_id", "")
+        result = await api_post(f"/api/tests/run/{suite_id}")
+        if result.get("success"):
+            data = result["data"]
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Test run started. Run ID: {data.get('run_id', 'unknown')}",
+                )
+            ]
+        return [TextContent(type="text", text=f"Failed to run tests: {result.get('error')}")]
+
+    if name == "get_test_run":
+        run_id = arguments.get("run_id", "")
+        result = await api_get(f"/api/tests/runs/{run_id}")
+        if result.get("success"):
+            return [TextContent(type="text", text=json.dumps(result["data"], indent=2))]
+        return [TextContent(type="text", text=f"Failed to get run: {result.get('error')}")]
+
+    # ================================================================
+    # Fix API Handlers
+    # ================================================================
+
+    if name == "list_fixable_issues":
+        repo_id = arguments.get("repository_id", "")
+        result = await api_get(f"/api/fix/issues/{repo_id}")
+        if result.get("success"):
+            issues = result["data"]
+            summary = [
+                {
+                    "id": i.get("id"),
+                    "code": i.get("code"),
+                    "title": i.get("title"),
+                    "severity": i.get("severity"),
+                    "file": i.get("file_path"),
+                }
+                for i in issues
+            ]
+            return [TextContent(type="text", text=json.dumps(summary, indent=2))]
+        return [TextContent(type="text", text=f"Failed to list issues: {result.get('error')}")]
+
+    if name == "start_fix":
+        repo_id = arguments.get("repository_id", "")
+        issue_ids = arguments.get("issue_ids", [])
+        result = await api_post(
+            "/api/fix/start",
+            data={"repository_id": repo_id, "issue_ids": issue_ids},
+        )
+        if result.get("success"):
+            return [TextContent(type="text", text="Fix session started successfully")]
+        return [TextContent(type="text", text=f"Failed to start fix: {result.get('error')}")]
+
+    if name == "get_active_fix_sessions":
+        result = await api_get("/api/fix/sessions/active")
+        if result.get("success"):
+            return [TextContent(type="text", text=json.dumps(result["data"], indent=2))]
+        return [TextContent(type="text", text=f"Failed to get sessions: {result.get('error')}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
