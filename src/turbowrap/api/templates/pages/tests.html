@@ -95,8 +95,10 @@
         }
     },
 
+    _initialLoadDone: false,
+
     init() {
-        // Watch for repo changes - fires when store initializes and when user changes repo
+        // Watch for repo changes - fires when user changes repo
         this.$watch('$store.globalContext.selectedRepoId', (repoId) => {
             if (repoId) {
                 this.refreshSuites();
@@ -105,14 +107,25 @@
             }
         });
 
-        // Initial load if repo already selected (watch doesn't fire for existing values)
-        this.$nextTick(() => {
-            if (this.repositoryId) {
+        // Initial load when global context is ready
+        window.addEventListener('global-context-ready', (e) => {
+            if (e.detail.repoId && !this._initialLoadDone) {
+                this._initialLoadDone = true;
                 this.refreshSuites();
                 this.refreshStats();
                 this.loadDatabases();
             }
-        });
+        }, { once: true });
+
+        // Fallback: if store is already ready (internal navigation)
+        setTimeout(() => {
+            if (this.repositoryId && !this._initialLoadDone) {
+                this._initialLoadDone = true;
+                this.refreshSuites();
+                this.refreshStats();
+                this.loadDatabases();
+            }
+        }, 150);
 
         // Listen for HTMX triggers from server
         document.body.addEventListener('refreshSuites', () => this.refreshSuites());

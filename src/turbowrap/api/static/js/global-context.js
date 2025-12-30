@@ -31,6 +31,10 @@ document.addEventListener('alpine:init', () => {
             if (this.selectedRepoId && this.hasClonedPath) {
                 await this.loadBranches();
             }
+            // Emit ready event for pages waiting on initial load
+            window.dispatchEvent(new CustomEvent('global-context-ready', {
+                detail: { repoId: this.selectedRepoId }
+            }));
         },
 
         // Load all repositories
@@ -182,4 +186,16 @@ document.addEventListener('alpine:init', () => {
             }
         }
     });
+
+    // Emit early ready event if repo was already in storage
+    // (for pages that init before footer calls store.init())
+    const storedRepoId = sessionStorage.getItem('globalRepoId') || localStorage.getItem('globalRepoId');
+    if (storedRepoId) {
+        // Use queueMicrotask to ensure store is registered first
+        queueMicrotask(() => {
+            window.dispatchEvent(new CustomEvent('global-context-ready', {
+                detail: { repoId: storedRepoId }
+            }));
+        });
+    }
 });
