@@ -48,7 +48,7 @@ class ErrorReportResponse(BaseModel):
 
     success: bool
     issue_id: str
-    issue_code: int
+    issue_code: str
     message: str
 
 
@@ -140,14 +140,25 @@ async def report_error(
             detail=f"Repository not found: {request.repository_id}",
         )
 
-    # Get next issue code for this repo
-    max_code = (
+    # Get next issue code for runtime errors (ERR-001, ERR-002, etc.)
+    existing_error_issues = (
         db.query(Issue)
-        .filter(Issue.repository_id == request.repository_id)
-        .order_by(Issue.issue_code.desc())
-        .first()
+        .filter(
+            Issue.repository_id == request.repository_id,
+            Issue.issue_code.like("ERR-%"),
+        )
+        .all()
     )
-    next_code = (max_code.issue_code + 1) if max_code else 1
+    # Extract numeric part from ERR-XXX codes
+    max_num = 0
+    for issue in existing_error_issues:
+        try:
+            num = int(issue.issue_code.split("-")[1])
+            max_num = max(max_num, num)
+        except (IndexError, ValueError):
+            pass
+    next_num = max_num + 1
+    next_code = f"ERR-{next_num:03d}"
 
     # Build issue title and description
     severity_emoji = {
@@ -188,13 +199,12 @@ async def report_error(
     issue = Issue(
         repository_id=request.repository_id,
         issue_code=next_code,
-        type="runtime_error",
-        category="error",
+        category="runtime_error",
         severity=request.severity,
         title=title,
         description=description,
-        file_path=request.context.get("path"),
-        raw_data={
+        file=request.context.get("path", "runtime"),  # file is required
+        attachments={
             "source": "turbowrap_errors",
             "command": request.command,
             "error": request.error.model_dump(),

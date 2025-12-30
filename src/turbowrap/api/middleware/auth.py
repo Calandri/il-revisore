@@ -27,6 +27,7 @@ PUBLIC_PATHS = {
     "/api/status",  # ALB health check
     "/api/deployments/status",  # Deployment status (public GitHub data)
     "/api/deployments/staging/status",  # Staging status (for promote button)
+    "/api/errors",  # Error reporting (uses its own Bearer token auth)
 }
 
 # Path prefixes that don't require authentication
