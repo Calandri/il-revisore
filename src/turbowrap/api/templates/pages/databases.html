@@ -148,6 +148,13 @@
                                 </svg>
                                 Duplica
                             </button>
+                            <button @click="openLinkRepoModal(conn); open = false"
+                                    class="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                </svg>
+                                Collega Repository
+                            </button>
                             <hr class="my-1 dark:border-gray-700">
                             <button @click="deleteConnection(conn.id); open = false"
                                     class="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2">
@@ -503,6 +510,87 @@
         </div>
     </div>
 
+    <!-- Link Repository Modal -->
+    <div x-show="showLinkRepoModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+         @keydown.escape.window="showLinkRepoModal = false">
+        <div @click.away="showLinkRepoModal = false"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+
+            <!-- Modal Header -->
+            <div class="p-6 border-b dark:border-gray-700 flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-semibold">Collega Repository</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" x-text="linkingConnection?.name"></p>
+                </div>
+                <button @click="showLinkRepoModal = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 overflow-y-auto flex-1">
+                <!-- Loading State -->
+                <div x-show="loadingRepos" class="flex justify-center py-8">
+                    <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                </div>
+
+                <!-- Empty State -->
+                <div x-show="!loadingRepos && repositories.length === 0" class="text-center py-8">
+                    <div class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                        </svg>
+                    </div>
+                    <p class="text-gray-500 dark:text-gray-400">Nessun repository disponibile</p>
+                </div>
+
+                <!-- Repository List -->
+                <div x-show="!loadingRepos && repositories.length > 0" class="space-y-2">
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Seleziona i repository da collegare a questo database:</p>
+                    <template x-for="repo in repositories" :key="repo.id">
+                        <label class="flex items-center gap-3 p-3 border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                               :class="isRepoLinked(repo.id) ? 'border-primary bg-primary/5' : ''">
+                            <input type="checkbox"
+                                   :checked="isRepoLinked(repo.id)"
+                                   @change="toggleRepoLink(repo.id)"
+                                   class="w-5 h-5 text-primary border-gray-300 rounded focus:ring-primary">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium truncate" x-text="repo.name"></span>
+                                    <span x-show="isRepoLinked(repo.id)" class="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">Collegato</span>
+                                </div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 truncate" x-text="repo.url || repo.local_path || 'Nessun path'"></p>
+                            </div>
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-end">
+                <button type="button" @click="showLinkRepoModal = false"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                    Chiudi
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications -->
     <div x-show="toast.show" x-transition
          :class="toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'"
@@ -532,6 +620,13 @@ function databasesApp() {
         showPassword: false,
         tagsInput: '',
         toast: { show: false, message: '', type: 'success' },
+
+        // Repository linking state
+        showLinkRepoModal: false,
+        linkingConnection: null,
+        repositories: [],
+        linkedRepos: [],
+        loadingRepos: false,
 
         dbTypes: [
             { type: 'mysql', name: 'MySQL' },
@@ -795,6 +890,86 @@ function databasesApp() {
         showToast(message, type = 'success') {
             this.toast = { show: true, message, type };
             setTimeout(() => this.toast.show = false, 4000);
+        },
+
+        // Repository linking functions
+        async openLinkRepoModal(conn) {
+            this.linkingConnection = conn;
+            this.showLinkRepoModal = true;
+            this.loadingRepos = true;
+            this.repositories = [];
+            this.linkedRepos = [];
+
+            try {
+                // Load all repositories and linked repos in parallel
+                const [reposRes, linkedRes] = await Promise.all([
+                    fetch('/api/repositories'),
+                    fetch(`/api/databases/${conn.id}/repositories`)
+                ]);
+
+                if (reposRes.ok) {
+                    this.repositories = await reposRes.json();
+                }
+                if (linkedRes.ok) {
+                    const linkedData = await linkedRes.json();
+                    this.linkedRepos = linkedData.map(link => link.repository_id);
+                }
+            } catch (error) {
+                this.showToast('Errore nel caricamento repository', 'error');
+            } finally {
+                this.loadingRepos = false;
+            }
+        },
+
+        isRepoLinked(repoId) {
+            return this.linkedRepos.includes(repoId);
+        },
+
+        async toggleRepoLink(repoId) {
+            if (!this.linkingConnection) return;
+
+            const isCurrentlyLinked = this.isRepoLinked(repoId);
+
+            try {
+                if (isCurrentlyLinked) {
+                    // Unlink
+                    const response = await fetch(
+                        `/api/databases/${this.linkingConnection.id}/unlink-repository/${repoId}`,
+                        { method: 'DELETE' }
+                    );
+                    if (response.ok) {
+                        this.linkedRepos = this.linkedRepos.filter(id => id !== repoId);
+                        this.showToast('Repository scollegato', 'success');
+                    } else {
+                        throw new Error('Unlink failed');
+                    }
+                } else {
+                    // Link
+                    const response = await fetch(
+                        `/api/databases/${this.linkingConnection.id}/link-repository`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                repository_id: repoId,
+                                usage_type: 'testing',
+                                is_default: false
+                            })
+                        }
+                    );
+                    if (response.ok) {
+                        this.linkedRepos.push(repoId);
+                        this.showToast('Repository collegato', 'success');
+                    } else {
+                        const data = await response.json();
+                        throw new Error(data.detail || 'Link failed');
+                    }
+                }
+            } catch (error) {
+                this.showToast(error.message || 'Errore nell\'operazione', 'error');
+                // Reload to sync state
+                await this.openLinkRepoModal(this.linkingConnection);
+            }
         },
     };
 }

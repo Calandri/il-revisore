@@ -1085,6 +1085,7 @@ async def htmx_run_test_suite(
     request: Request,
     suite_id: str,
     background_tasks: BackgroundTasks,
+    database_connection_id: str | None = None,
     db: Session = Depends(get_db),
 ) -> Response:
     """HTMX: trigger a test run for a suite."""
@@ -1109,6 +1110,7 @@ async def htmx_run_test_suite(
         suite_id=suite.id,
         repository_id=suite.repository_id,
         status="pending",
+        database_connection_id=database_connection_id,
     )
     db.add(run)
     db.commit()
@@ -1165,6 +1167,7 @@ async def htmx_run_all_tests(
     request: Request,
     repository_id: str,
     background_tasks: BackgroundTasks,
+    database_connection_id: str | None = None,
     db: Session = Depends(get_db),
 ) -> Response:
     """HTMX: run all test suites for a repository."""
@@ -1203,6 +1206,7 @@ async def htmx_run_all_tests(
             suite_id=suite.id,
             repository_id=repository_id,
             status="pending",
+            database_connection_id=database_connection_id,
         )
         db.add(run)
         db.flush()  # Get the ID

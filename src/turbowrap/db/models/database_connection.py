@@ -2,7 +2,19 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
@@ -77,3 +89,47 @@ class DatabaseConnection(Base, SoftDeleteMixin):
 
     def __repr__(self) -> str:
         return f"<DatabaseConnection {self.name} ({self.db_type})>"
+
+
+class RepositoryDatabaseConnection(Base):
+    """Links Repositories to DatabaseConnections (many-to-many).
+
+    Allows a database connection to be used by multiple repositories,
+    and a repository to have multiple database connections for different purposes.
+    """
+
+    __tablename__ = "repository_database_connections"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    repository_id = Column(
+        String(36),
+        ForeignKey("repositories.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    database_connection_id = Column(
+        String(36),
+        ForeignKey("database_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # Usage type: production, staging, development, testing
+    usage_type = Column(String(50), nullable=False, default="testing")
+
+    # Whether this is the default DB for tests in this repository
+    is_default = Column(Boolean, default=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    repository = relationship("Repository", backref="database_links")
+    database_connection = relationship("DatabaseConnection", backref="repository_links")
+
+    __table_args__ = (
+        Index("idx_repo_db_conn_repo", "repository_id"),
+        Index("idx_repo_db_conn_db", "database_connection_id"),
+        UniqueConstraint("repository_id", "database_connection_id", name="uq_repo_db_connection"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<RepositoryDatabaseConnection repo={self.repository_id[:8]} db={self.database_connection_id[:8]}>"

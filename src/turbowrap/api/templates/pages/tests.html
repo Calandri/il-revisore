@@ -27,6 +27,11 @@
     showSuiteDrawer: false,
     testType: 'all',
 
+    // Database selection for tests
+    availableDatabases: [],
+    selectedDatabaseId: '',
+    loadingDatabases: false,
+
     // Form data
     newSuite: {
         name: '',
@@ -42,6 +47,23 @@
 
     get hasRepo() {
         return this.repositoryId !== null;
+    },
+
+    async loadDatabases() {
+        if (!this.repositoryId) return;
+        this.loadingDatabases = true;
+        try {
+            const response = await fetch('/api/databases/by-repository/' + this.repositoryId);
+            if (response.ok) {
+                this.availableDatabases = await response.json();
+                // Auto-select default if exists
+                const defaultDb = this.availableDatabases.find(db => db.is_default);
+                if (defaultDb) this.selectedDatabaseId = defaultDb.id;
+            }
+        } catch (e) {
+            console.error('Failed to load databases:', e);
+        }
+        this.loadingDatabases = false;
     },
 
     refreshSuites() {
@@ -64,7 +86,11 @@
 
     runAllTests() {
         if (this.repositoryId) {
-            htmx.ajax('POST', '/htmx/tests/run-all/' + this.repositoryId, {swap: 'none'});
+            let url = '/htmx/tests/run-all/' + this.repositoryId;
+            if (this.selectedDatabaseId) {
+                url += '?database_connection_id=' + this.selectedDatabaseId;
+            }
+            htmx.ajax('POST', url, {swap: 'none'});
             this.showRunModal = false;
         }
     }
@@ -75,6 +101,7 @@ x-init="
         if (repoId) {
             this.refreshSuites();
             this.refreshStats();
+            this.loadDatabases();
         }
     });
 
@@ -294,6 +321,26 @@ x-init="
                 <p class="text-gray-600 dark:text-gray-400">
                     Vuoi eseguire tutti i test suite per questa repository?
                 </p>
+
+                <!-- Database Selection -->
+                <div>
+                    <label class="block text-sm font-medium mb-2">Database (opzionale)</label>
+                    <template x-if="availableDatabases.length > 0">
+                        <select x-model="selectedDatabaseId"
+                                class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
+                            <option value="">Nessun database</option>
+                            <template x-for="db in availableDatabases" :key="db.id">
+                                <option :value="db.id" x-text="db.name + ' (' + db.db_type + ')'"></option>
+                            </template>
+                        </select>
+                    </template>
+                    <template x-if="availableDatabases.length === 0">
+                        <p class="text-sm text-gray-500 dark:text-gray-400 italic">
+                            Nessun database collegato. <a href="/databases" class="text-primary hover:underline">Configura nella pagina Database</a>
+                        </p>
+                    </template>
+                </div>
+
                 <div class="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg text-sm text-yellow-700 dark:text-yellow-300">
                     I test TurboWrapperAI vengono lanciati dalla chat e analizzati con AI.
                 </div>

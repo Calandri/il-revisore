@@ -86,6 +86,11 @@ class TestRun(Base):
     )
     task_id = Column(String(36), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
 
+    # Database connection used for this test run (optional)
+    database_connection_id = Column(
+        String(36), ForeignKey("database_connections.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Status
     status = Column(String(50), default="pending")  # pending | running | passed | failed | error
     branch = Column(String(255), nullable=True)  # Git branch tested
@@ -130,6 +135,7 @@ class TestRun(Base):
     suite = relationship("TestSuite", back_populates="runs")
     repository = relationship("Repository", backref="test_runs")
     task = relationship("Task", backref="test_runs")
+    database_connection = relationship("DatabaseConnection", backref="test_runs")
     test_cases = relationship("TestCase", back_populates="run", cascade="all, delete-orphan")
 
     __table_args__ = (

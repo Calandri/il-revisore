@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ...db.models import DatabaseConnection, generate_uuid
+from ...db.models import (
+    DatabaseConnection,
+    Repository,
+    RepositoryDatabaseConnection,
+    generate_uuid,
+)
 from ..deps import get_db
 
 router = APIRouter(prefix="/databases", tags=["databases"])
@@ -758,3 +763,207 @@ def get_supported_types() -> list[dict[str, Any]]:
             "supports_ssh": True,
         },
     ]
+
+
+# ============================================================================
+# Repository-Database Connection Linking
+# ============================================================================
+
+
+class LinkRepositoryRequest(BaseModel):
+    """Request to link a database to a repository."""
+
+    repository_id: str
+    usage_type: Literal["production", "staging", "development", "testing"] = "testing"
+    is_default: bool = False
+
+
+class RepositoryDatabaseLinkResponse(BaseModel):
+    """Response for a repository-database link."""
+
+    id: str
+    repository_id: str
+    repository_name: str | None
+    database_connection_id: str
+    database_name: str
+    db_type: str
+    usage_type: str
+    is_default: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/by-repository/{repository_id}", response_model=list[DatabaseConnectionResponse])
+def get_databases_by_repository(
+    repository_id: str,
+    db: Session = Depends(get_db),
+) -> list[DatabaseConnectionResponse]:
+    """Get all database connections linked to a repository."""
+    # Verify repository exists
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Get linked database connections
+    links = (
+        db.query(RepositoryDatabaseConnection)
+        .filter(RepositoryDatabaseConnection.repository_id == repository_id)
+        .all()
+    )
+
+    # Get the actual database connections
+    db_ids = [link.database_connection_id for link in links]
+    connections = (
+        db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id.in_(db_ids),
+            DatabaseConnection.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    return [_model_to_response(c) for c in connections]
+
+
+@router.get("/{connection_id}/repositories", response_model=list[RepositoryDatabaseLinkResponse])
+def get_linked_repositories(
+    connection_id: str,
+    db: Session = Depends(get_db),
+) -> list[RepositoryDatabaseLinkResponse]:
+    """Get all repositories linked to a database connection."""
+    # Verify connection exists
+    conn = (
+        db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id == connection_id,
+            DatabaseConnection.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Database connection not found")
+
+    # Get all links
+    links = (
+        db.query(RepositoryDatabaseConnection)
+        .filter(RepositoryDatabaseConnection.database_connection_id == connection_id)
+        .all()
+    )
+
+    result = []
+    for link in links:
+        repo = db.query(Repository).filter(Repository.id == link.repository_id).first()
+        result.append(
+            RepositoryDatabaseLinkResponse(
+                id=cast(str, link.id),
+                repository_id=cast(str, link.repository_id),
+                repository_name=cast("str | None", repo.name) if repo else None,
+                database_connection_id=cast(str, link.database_connection_id),
+                database_name=cast(str, conn.name),
+                db_type=cast(str, conn.db_type),
+                usage_type=cast(str, link.usage_type),
+                is_default=bool(link.is_default),
+                created_at=cast(datetime, link.created_at),
+            )
+        )
+
+    return result
+
+
+@router.post("/{connection_id}/link-repository", response_model=RepositoryDatabaseLinkResponse)
+def link_repository(
+    connection_id: str,
+    req: LinkRepositoryRequest,
+    db: Session = Depends(get_db),
+) -> RepositoryDatabaseLinkResponse:
+    """Link a database connection to a repository."""
+    # Verify connection exists
+    conn = (
+        db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id == connection_id,
+            DatabaseConnection.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Database connection not found")
+
+    # Verify repository exists
+    repo = db.query(Repository).filter(Repository.id == req.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Check if link already exists
+    existing = (
+        db.query(RepositoryDatabaseConnection)
+        .filter(
+            RepositoryDatabaseConnection.repository_id == req.repository_id,
+            RepositoryDatabaseConnection.database_connection_id == connection_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="Database connection already linked to this repository",
+        )
+
+    # If this is set as default, unset other defaults for this repo
+    if req.is_default:
+        db.query(RepositoryDatabaseConnection).filter(
+            RepositoryDatabaseConnection.repository_id == req.repository_id,
+            RepositoryDatabaseConnection.is_default == True,  # noqa: E712
+        ).update({"is_default": False})
+
+    # Create link
+    link = RepositoryDatabaseConnection(
+        id=generate_uuid(),
+        repository_id=req.repository_id,
+        database_connection_id=connection_id,
+        usage_type=req.usage_type,
+        is_default=req.is_default,
+        created_at=datetime.utcnow(),
+    )
+
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+
+    return RepositoryDatabaseLinkResponse(
+        id=cast(str, link.id),
+        repository_id=cast(str, link.repository_id),
+        repository_name=cast("str | None", repo.name),
+        database_connection_id=cast(str, link.database_connection_id),
+        database_name=cast(str, conn.name),
+        db_type=cast(str, conn.db_type),
+        usage_type=cast(str, link.usage_type),
+        is_default=bool(link.is_default),
+        created_at=cast(datetime, link.created_at),
+    )
+
+
+@router.delete("/{connection_id}/unlink-repository/{repository_id}")
+def unlink_repository(
+    connection_id: str,
+    repository_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Unlink a database connection from a repository."""
+    link = (
+        db.query(RepositoryDatabaseConnection)
+        .filter(
+            RepositoryDatabaseConnection.repository_id == repository_id,
+            RepositoryDatabaseConnection.database_connection_id == connection_id,
+        )
+        .first()
+    )
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    db.delete(link)
+    db.commit()
+
+    return {"status": "unlinked", "connection_id": connection_id, "repository_id": repository_id}

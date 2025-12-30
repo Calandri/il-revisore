@@ -52,7 +52,7 @@ from .chat import ChatMessage, ChatSession
 from .cli_chat import CLIChatMessage, CLIChatSession
 
 # Database connection models
-from .database_connection import DatabaseConnection
+from .database_connection import DatabaseConnection, RepositoryDatabaseConnection
 
 # Endpoint models
 from .endpoint import Endpoint
@@ -138,6 +138,7 @@ __all__ = [
     "Endpoint",
     # Database Connection
     "DatabaseConnection",
+    "RepositoryDatabaseConnection",
     # Operation
     "Operation",
     # Mockup
