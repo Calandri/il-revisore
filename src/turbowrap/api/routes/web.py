@@ -1124,17 +1124,15 @@ async def htmx_get_suite_details(
         repo_path=repo.local_path,
     )
 
-    # Render AI analysis OOB if exists
-    if suite.ai_analysis:
-        ai_content = templates.get_template("components/test_ai_analysis.html").render(
-            request=request,
-            suite=suite,
-            analysis=suite.ai_analysis,
-        )
-        oob_content = f'<div id="suite-ai-analysis" hx-swap-oob="innerHTML">{ai_content}</div>'
-        return Response(content=main_content + oob_content, media_type="text/html")
-
-    return Response(content=main_content, media_type="text/html")
+    # SEMPRE render AI analysis OOB (reset o mostra analisi esistente)
+    # Se la suite non ha analisi, il template mostra l'empty state
+    ai_content = templates.get_template("components/test_ai_analysis.html").render(
+        request=request,
+        suite=suite,
+        analysis=suite.ai_analysis,  # None se non esiste
+    )
+    oob_content = f'<div id="suite-ai-analysis" hx-swap-oob="innerHTML">{ai_content}</div>'
+    return Response(content=main_content + oob_content, media_type="text/html")
 
 
 @router.get("/htmx/tests/file/{suite_id}", response_class=HTMLResponse)
