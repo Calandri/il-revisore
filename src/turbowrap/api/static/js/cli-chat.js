@@ -1186,6 +1186,9 @@ Contesto: ${contextStr}`;
             // Strikethrough ~~text~~
             html = html.replace(/~~([^~]+)~~/g, '<del class="line-through text-gray-500">$1</del>');
 
+            // Highlight ==text== (yellow background)
+            html = html.replace(/==([^=]+)==/g, '<mark class="bg-yellow-200 dark:bg-yellow-500/30 text-yellow-900 dark:text-yellow-100 px-1 rounded">$1</mark>');
+
             // Questions with input fields (lines ending with ? that are actual questions)
             // ONLY for assistant messages - user messages should not have question cards
             const questionId = Math.random().toString(36).substr(2, 9);
@@ -1206,8 +1209,23 @@ Contesto: ${contextStr}`;
                 }
             }
 
-            // Line breaks (but not inside pre/code blocks)
+            // Paragraphs: double newlines become paragraph breaks with spacing
+            html = html.replace(/\n\n+/g, '</p><p class="my-4">');
+
+            // Single line breaks
             html = html.replace(/\n/g, '<br>');
+
+            // Wrap content in paragraph if it starts with text (not a tag)
+            if (html && !html.startsWith('<')) {
+                html = '<p class="my-3 leading-relaxed">' + html + '</p>';
+            }
+
+            // Clean up empty paragraphs
+            html = html.replace(/<p[^>]*>\s*<\/p>/g, '');
+
+            // Fix paragraphs wrapping block elements
+            html = html.replace(/<p[^>]*>(\s*<(h[1-6]|blockquote|pre|ul|ol|hr|div|table|mark))/g, '$1');
+            html = html.replace(/(<\/(h[1-6]|blockquote|pre|ul|ol|hr|div|table|mark)>)\s*<\/p>/g, '$1');
 
             // Clean up extra <br> after block elements
             html = html.replace(/<\/(h[1-6]|blockquote|pre|ul|ol|hr|div|table|thead|tbody|tr|th|td)><br>/g, '</$1>');
