@@ -96,6 +96,33 @@
     },
 
     _initialLoadDone: false,
+    _pollingTimer: null,
+    _pollingInterval: 3000, // 3 seconds
+
+    // Check if any suite is running and start/stop polling
+    checkRunningAndPoll() {
+        const container = document.getElementById('test-suites-container');
+        if (!container) return;
+
+        // Check for running indicators (ring-blue-400 class or Running... text)
+        const hasRunning = container.querySelector('.ring-blue-400') !== null;
+
+        if (hasRunning) {
+            // Schedule next refresh
+            if (!this._pollingTimer) {
+                this._pollingTimer = setInterval(() => {
+                    this.refreshSuites();
+                    this.refreshStats();
+                }, this._pollingInterval);
+            }
+        } else {
+            // Stop polling
+            if (this._pollingTimer) {
+                clearInterval(this._pollingTimer);
+                this._pollingTimer = null;
+            }
+        }
+    },
 
     init() {
         // Watch for repo changes - fires when user changes repo
@@ -134,6 +161,21 @@
 
         // Listen for suite drawer open event
         window.addEventListener('open-suite-drawer', () => { this.showSuiteDrawer = true; });
+
+        // Check for running tests after HTMX swaps the suites container
+        document.body.addEventListener('htmx:afterSwap', (e) => {
+            if (e.detail.target && e.detail.target.id === 'test-suites-container') {
+                this.checkRunningAndPoll();
+            }
+        });
+
+        // Cleanup on page leave
+        document.addEventListener('turbo:before-visit', () => {
+            if (this._pollingTimer) {
+                clearInterval(this._pollingTimer);
+                this._pollingTimer = null;
+            }
+        });
     }
 }"
 @keydown.escape.window="showSuiteDrawer = false">

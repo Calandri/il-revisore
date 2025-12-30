@@ -1,0 +1,708 @@
+{% extends "base.html" %}
+
+{% block title %}README - TurboWrap{% endblock %}
+
+{% block head %}
+<!-- Mermaid.js -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+/* === SCORE RING === */
+.score-ring {
+    position: relative;
+    width: 100px;
+    height: 100px;
+}
+.score-ring svg {
+    transform: rotate(-90deg);
+}
+.score-ring-bg {
+    stroke: #e5e7eb;
+}
+.dark .score-ring-bg {
+    stroke: #374151;
+}
+.score-ring-progress {
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s ease-out;
+}
+
+/* === METRIC CARDS === */
+.metric-card {
+    @apply bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700;
+    transition: all 0.2s ease;
+}
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* === SECTION CARDS === */
+.section-card {
+    @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden;
+}
+.section-header {
+    @apply px-6 py-4 border-b border-gray-100 dark:border-gray-700;
+}
+
+/* === TAB NAVIGATION === */
+.tab-btn {
+    @apply px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200;
+}
+.tab-btn.active {
+    @apply bg-indigo-600 text-white shadow-lg shadow-indigo-500/25;
+}
+.tab-btn:not(.active) {
+    @apply text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700;
+}
+
+/* === PROGRESS BARS === */
+.progress-bar {
+    @apply h-2 rounded-full transition-all duration-500;
+    position: relative;
+}
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: inherit;
+    filter: blur(4px);
+    opacity: 0.4;
+    z-index: -1;
+}
+
+/* === MERMAID === */
+.mermaid-container {
+    @apply bg-gray-50 dark:bg-gray-900 rounded-xl p-6 overflow-x-auto;
+}
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* === FEATURE TAGS === */
+.feature-tag {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium;
+}
+
+/* === FLOW CARD === */
+.flow-card {
+    @apply p-4 rounded-xl border-l-4 bg-gray-50 dark:bg-gray-700/50;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="readmeMockup()" x-init="init()">
+
+    <!-- === HEADER === -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                README
+            </h1>
+            <p class="text-gray-500 mt-1">Documentazione automatica generata con AI</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full text-sm font-medium">
+                Generato il 30 Dic 2024
+            </span>
+            <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Rigenera
+            </button>
+        </div>
+    </div>
+
+    <!-- === SECTION 1: QUALITY SCORE === -->
+    <div class="section-card mb-6">
+        <div class="section-header bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/25">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Quality Score</h2>
+                        <p class="text-sm text-gray-500">Valutazione complessiva del codice</p>
+                    </div>
+                </div>
+
+                <!-- Overall Score Ring -->
+                <div class="score-ring">
+                    <svg viewBox="0 0 100 100" class="w-24 h-24">
+                        <circle class="score-ring-bg" cx="50" cy="50" r="40" fill="none" stroke-width="8"/>
+                        <circle class="score-ring-progress" cx="50" cy="50" r="40" fill="none" stroke-width="8"
+                                stroke="#22c55e"
+                                stroke-dasharray="251"
+                                stroke-dashoffset="63"/>
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                        <span class="text-3xl font-bold text-green-600">75</span>
+                        <span class="text-xs text-gray-400 uppercase tracking-wider">Score</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6 Metrics Grid -->
+        <div class="p-6">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                <!-- Architecture -->
+                <div class="metric-card text-center">
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Architettura</div>
+                    <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                        <div class="progress-bar bg-green-500" style="width: 82%"></div>
+                    </div>
+                    <div class="text-2xl font-bold text-green-600">82</div>
+                </div>
+
+                <!-- Code Quality -->
+                <div class="metric-card text-center">
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Qualita</div>
+                    <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                        <div class="progress-bar bg-green-500" style="width: 78%"></div>
+                    </div>
+                    <div class="text-2xl font-bold text-green-600">78</div>
+                </div>
+
+                <!-- Functionality -->
+                <div class="metric-card text-center">
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Funzionalita</div>
+                    <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                        <div class="progress-bar bg-yellow-500" style="width: 68%"></div>
+                    </div>
+                    <div class="text-2xl font-bold text-yellow-600">68</div>
+                </div>
+
+                <!-- Effectiveness -->
+                <div class="metric-card text-center">
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Efficacia</div>
+                    <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                        <div class="progress-bar bg-green-500" style="width: 75%"></div>
+                    </div>
+                    <div class="text-2xl font-bold text-green-600">75</div>
+                </div>
+
+                <!-- Comments -->
+                <div class="metric-card text-center">
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Commenti</div>
+                    <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                        <div class="progress-bar bg-yellow-500" style="width: 55%"></div>
+                    </div>
+                    <div class="text-2xl font-bold text-yellow-600">55</div>
+                </div>
+
+                <!-- DRY -->
+                <div class="metric-card text-center">
+                    <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">DRY</div>
+                    <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                        <div class="progress-bar bg-green-500" style="width: 88%"></div>
+                    </div>
+                    <div class="text-2xl font-bold text-green-600">88</div>
+                </div>
+            </div>
+
+            <!-- Strengths / Weaknesses -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
+                    <h4 class="font-semibold text-green-700 dark:text-green-400 mb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Punti di Forza
+                    </h4>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">+</span>
+                            <span>Architettura ben organizzata con separazione chiara dei layer</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">+</span>
+                            <span>Uso consistente di type hints e validazione Pydantic</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">+</span>
+                            <span>Pattern async/await applicato correttamente</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-green-500 mt-0.5">+</span>
+                            <span>Buona copertura di error handling</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+                    <h4 class="font-semibold text-red-700 dark:text-red-400 mb-3 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        Aree di Miglioramento
+                    </h4>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">-</span>
+                            <span>Documentazione insufficiente in alcune funzioni core</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">-</span>
+                            <span>Alcuni moduli potrebbero beneficiare di unit test aggiuntivi</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-red-500 mt-0.5">-</span>
+                            <span>Configurazione hardcoded in alcuni punti</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- === SECTION 2: DESCRIPTION TABS === -->
+    <div class="section-card mb-6">
+        <div class="section-header">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl shadow-lg shadow-blue-500/25">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold">Descrizione</h2>
+                    <p class="text-sm text-gray-500">Analisi dettagliata della repository</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="px-6 pt-4 flex gap-2 flex-wrap">
+            <button @click="activeTab = 'functionality'"
+                    :class="activeTab === 'functionality' ? 'active' : ''"
+                    class="tab-btn">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Funzionalita
+                </span>
+            </button>
+            <button @click="activeTab = 'logic'"
+                    :class="activeTab === 'logic' ? 'active' : ''"
+                    class="tab-btn">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                    Logica
+                </span>
+            </button>
+            <button @click="activeTab = 'structure'"
+                    :class="activeTab === 'structure' ? 'active' : ''"
+                    class="tab-btn">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    Struttura
+                </span>
+            </button>
+            <button @click="activeTab = 'code'"
+                    :class="activeTab === 'code' ? 'active' : ''"
+                    class="tab-btn">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                    </svg>
+                    Codice
+                </span>
+            </button>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="p-6">
+            <!-- Functionality Tab -->
+            <div x-show="activeTab === 'functionality'" x-transition>
+                <p class="text-lg mb-6 leading-relaxed">
+                    TurboWrap e un sistema avanzato di code review automatizzato che utilizza agenti AI multipli per analizzare repository di codice.
+                    Fornisce valutazioni dettagliate su qualita, architettura, sicurezza e best practices.
+                </p>
+
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+                    Features Principali
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                    <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <span class="text-indigo-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </span>
+                        <span>Code review multi-agent con Claude e Gemini</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <span class="text-indigo-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </span>
+                        <span>Analisi qualita su 6 dimensioni (0-100)</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <span class="text-indigo-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </span>
+                        <span>Fix automatici con challenger loop</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <span class="text-indigo-500">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </span>
+                        <span>Generazione documentazione automatica</span>
+                    </div>
+                </div>
+
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>
+                    Casi d'Uso
+                </h4>
+                <div class="flex flex-wrap gap-2">
+                    <span class="feature-tag bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">Code Review Automatico</span>
+                    <span class="feature-tag bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">Quality Assurance</span>
+                    <span class="feature-tag bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">Onboarding Sviluppatori</span>
+                    <span class="feature-tag bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">CI/CD Integration</span>
+                </div>
+            </div>
+
+            <!-- Logic Tab -->
+            <div x-show="activeTab === 'logic'" x-transition x-cloak>
+                <p class="text-lg mb-6 leading-relaxed">
+                    Il sistema utilizza un'architettura multi-agent dove diversi reviewer specializzati analizzano aspetti specifici del codice,
+                    seguiti da un challenger loop che valida e migliora iterativamente i risultati.
+                </p>
+
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-cyan-500 rounded-full"></span>
+                    Flussi Principali
+                </h4>
+                <div class="space-y-4">
+                    <div class="flow-card border-blue-500">
+                        <div class="font-semibold text-blue-600 dark:text-blue-400 mb-1">1. Code Review Pipeline</div>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                            Repository viene clonata, analizzata da 5 reviewer paralleli (architettura, qualita, sicurezza, performance, duplicazione),
+                            i risultati vengono aggregati e deduplicati
+                        </p>
+                    </div>
+                    <div class="flow-card border-purple-500">
+                        <div class="font-semibold text-purple-600 dark:text-purple-400 mb-1">2. Challenger Loop</div>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                            Un agente challenger valida ogni issue trovato, contestando falsi positivi fino a raggiungere 99% di soddisfazione
+                        </p>
+                    </div>
+                    <div class="flow-card border-green-500">
+                        <div class="font-semibold text-green-600 dark:text-green-400 mb-1">3. Auto-Fix Process</div>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                            Issues vengono raggruppati per file, un fixer agent applica correzioni, un re-fixer valida e migliora se necessario
+                        </p>
+                    </div>
+                </div>
+
+                <h4 class="font-semibold mt-6 mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-orange-500 rounded-full"></span>
+                    Algoritmi Chiave
+                </h4>
+                <div class="flex flex-wrap gap-2">
+                    <span class="feature-tag bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300">Issue Deduplication</span>
+                    <span class="feature-tag bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300">Weighted Score Calculation</span>
+                    <span class="feature-tag bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300">Parallel Agent Orchestration</span>
+                </div>
+            </div>
+
+            <!-- Structure Tab -->
+            <div x-show="activeTab === 'structure'" x-transition x-cloak>
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-teal-500 rounded-full"></span>
+                    Layer Architetturali
+                </h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl text-center border border-blue-200 dark:border-blue-800">
+                        <div class="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">api/</div>
+                        <div class="text-xs text-gray-500 mt-1">REST endpoints e web UI</div>
+                    </div>
+                    <div class="p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl text-center border border-purple-200 dark:border-purple-800">
+                        <div class="font-mono text-sm font-bold text-purple-600 dark:text-purple-400">review/</div>
+                        <div class="text-xs text-gray-500 mt-1">Core review logic</div>
+                    </div>
+                    <div class="p-4 bg-gradient-to-br from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 rounded-xl text-center border border-green-200 dark:border-green-800">
+                        <div class="font-mono text-sm font-bold text-green-600 dark:text-green-400">db/</div>
+                        <div class="text-xs text-gray-500 mt-1">Database models</div>
+                    </div>
+                    <div class="p-4 bg-gradient-to-br from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 rounded-xl text-center border border-orange-200 dark:border-orange-800">
+                        <div class="font-mono text-sm font-bold text-orange-600 dark:text-orange-400">llm/</div>
+                        <div class="text-xs text-gray-500 mt-1">LLM integrations</div>
+                    </div>
+                </div>
+
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-gray-500 rounded-full"></span>
+                    Directory Tree
+                </h4>
+                <pre class="p-4 bg-gray-900 text-green-400 rounded-xl text-sm overflow-x-auto font-mono">
+src/turbowrap/
+├── api/
+│   ├── routes/          # FastAPI routers
+│   ├── templates/       # Jinja2 HTML templates
+│   └── deps.py          # Dependencies
+├── review/
+│   ├── models/          # Pydantic schemas
+│   ├── reviewers/       # Agent implementations
+│   └── challenger_loop.py
+├── db/
+│   ├── models/          # SQLAlchemy models
+│   └── session.py       # DB connection
+├── llm/
+│   ├── claude.py        # Claude integration
+│   └── gemini.py        # Gemini integration
+└── tools/
+    └── structure_generator.py
+                </pre>
+            </div>
+
+            <!-- Code Tab -->
+            <div x-show="activeTab === 'code'" x-transition x-cloak>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Linguaggio</div>
+                        <div class="font-bold text-lg">Python 3.12</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Framework</div>
+                        <div class="font-bold text-lg">FastAPI</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Database</div>
+                        <div class="font-bold text-lg">SQLite + SQLAlchemy</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                        <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Frontend</div>
+                        <div class="font-bold text-lg">Alpine.js + Tailwind</div>
+                    </div>
+                </div>
+
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+                    Design Patterns
+                </h4>
+                <div class="flex flex-wrap gap-2 mb-6">
+                    <span class="feature-tag bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">Repository Pattern</span>
+                    <span class="feature-tag bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">Dependency Injection</span>
+                    <span class="feature-tag bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">Strategy Pattern (Reviewers)</span>
+                    <span class="feature-tag bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">Observer (SSE Events)</span>
+                    <span class="feature-tag bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">Factory (Agent Creation)</span>
+                </div>
+
+                <h4 class="font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                    Best Practices Osservate
+                </h4>
+                <ul class="space-y-2">
+                    <li class="flex items-center gap-2 text-sm">
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Type hints completi con Pydantic per validazione runtime
+                    </li>
+                    <li class="flex items-center gap-2 text-sm">
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Async/await per operazioni I/O non bloccanti
+                    </li>
+                    <li class="flex items-center gap-2 text-sm">
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        SSE per streaming real-time dei risultati
+                    </li>
+                    <li class="flex items-center gap-2 text-sm">
+                        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Separazione chiara tra business logic e presentation
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- === SECTION 3: MERMAID DIAGRAMS === -->
+    <div class="section-card">
+        <div class="section-header">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg shadow-emerald-500/25">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold">Diagrammi Architetturali</h2>
+                    <p class="text-sm text-gray-500">Visualizzazione delle relazioni tra componenti</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-8">
+            <!-- Diagram 1: Architecture -->
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="font-semibold text-lg">Architettura del Sistema</h4>
+                    <span class="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full font-medium">architecture</span>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">Mostra i layer principali e le loro interazioni</p>
+                <div class="mermaid-container">
+                    <pre class="mermaid">
+graph TB
+    subgraph Presentation["Presentation Layer"]
+        API["REST API<br/>FastAPI"]
+        WEB["Web UI<br/>Jinja2 + Alpine"]
+    end
+
+    subgraph Business["Business Layer"]
+        ORCH["Orchestrator"]
+        REV["Reviewers"]
+        CHAL["Challenger"]
+        FIX["Fixer"]
+    end
+
+    subgraph Data["Data Layer"]
+        DB[(SQLite)]
+        REPO["Repository<br/>Manager"]
+    end
+
+    subgraph External["External Services"]
+        CLAUDE["Claude API"]
+        GEMINI["Gemini API"]
+        GIT["Git/GitHub"]
+    end
+
+    API --> ORCH
+    WEB --> API
+    ORCH --> REV
+    ORCH --> CHAL
+    ORCH --> FIX
+    REV --> CLAUDE
+    REV --> GEMINI
+    CHAL --> GEMINI
+    FIX --> CLAUDE
+    ORCH --> REPO
+    REPO --> DB
+    REPO --> GIT
+                    </pre>
+                </div>
+            </div>
+
+            <!-- Diagram 2: Review Flow -->
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="font-semibold text-lg">Flusso di Code Review</h4>
+                    <span class="text-xs px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full font-medium">flowchart</span>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">Il processo completo dalla richiesta al report finale</p>
+                <div class="mermaid-container">
+                    <pre class="mermaid">
+flowchart LR
+    A[Start Review] --> B{Clone Repo}
+    B -->|Success| C[Generate Structure]
+    B -->|Fail| ERR[Error]
+    C --> D[Launch 5 Reviewers]
+    D --> E[Collect Issues]
+    E --> F[Deduplicate]
+    F --> G{Challenger Loop}
+    G -->|< 99%| H[Challenge Issues]
+    H --> G
+    G -->|>= 99%| I[Calculate Scores]
+    I --> J[Generate Report]
+    J --> K[Save to DB]
+    K --> L[End]
+                    </pre>
+                </div>
+            </div>
+
+            <!-- Diagram 3: Module Dependencies -->
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="font-semibold text-lg">Dipendenze tra Moduli</h4>
+                    <span class="text-xs px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full font-medium">dependency</span>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">Come i moduli principali dipendono l'uno dall'altro</p>
+                <div class="mermaid-container">
+                    <pre class="mermaid">
+graph TD
+    API[api] --> REVIEW[review]
+    API --> DB[db]
+    API --> LLM[llm]
+
+    REVIEW --> MODELS[review/models]
+    REVIEW --> REVIEWERS[review/reviewers]
+    REVIEW --> LLM
+
+    REVIEWERS --> MODELS
+    REVIEWERS --> LLM
+
+    DB --> MODELS_DB[db/models]
+
+    ORCH[orchestration] --> REVIEW
+    ORCH --> DB
+    ORCH --> LLM
+
+    TOOLS[tools] --> LLM
+                    </pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize Mermaid
+mermaid.initialize({
+    startOnLoad: true,
+    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+    securityLevel: 'loose',
+    flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis'
+    }
+});
+
+function readmeMockup() {
+    return {
+        activeTab: 'functionality',
+
+        init() {
+            // Re-render mermaid when theme changes
+            const observer = new MutationObserver(() => {
+                mermaid.initialize({
+                    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default'
+                });
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        }
+    };
+}
+</script>
+{% endblock %}

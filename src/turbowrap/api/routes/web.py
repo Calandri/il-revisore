@@ -1264,7 +1264,7 @@ async def htmx_discover_tests(
     import json
 
     from ...db.models import Repository
-    from ..services.operation_tracker import get_operation_tracker
+    from ..services.operation_tracker import OperationTracker
 
     repo = db.query(Repository).filter(Repository.id == repository_id).first()
     if not repo:
@@ -1282,7 +1282,7 @@ async def htmx_discover_tests(
         return response
 
     # Check if there's already an active operation for this repository
-    tracker = get_operation_tracker()
+    tracker = OperationTracker()
     active_ops = tracker.get_active(repo_id=repository_id)
     cli_ops = [op for op in active_ops if op.operation_type in ("cli_task", "test_discovery")]
     if cli_ops:

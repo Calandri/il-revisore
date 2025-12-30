@@ -60,6 +60,9 @@ class TestSuite(Base, SoftDeleteMixin):
     #   "analyzed_at": "2024-01-01T00:00:00Z"
     # }
 
+    # Test count (from scanner, updated when drawer is opened)
+    test_count = Column(Integer, default=0)
+
     # Discovery metadata
     is_auto_discovered = Column(Boolean, default=False)
     discovered_at = Column(DateTime, nullable=True)

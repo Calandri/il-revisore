@@ -1,287 +1,544 @@
 {% extends "base.html" %}
 
-{% block title %}Readme - TurboWrap{% endblock %}
+{% block title %}README - TurboWrap{% endblock %}
 
 {% block head %}
-<!-- Mermaid.js via CDN -->
+<!-- Mermaid.js -->
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
-    .mermaid {
-        display: flex;
-        justify-content: center;
-    }
-    .mermaid svg {
-        max-width: 100%;
-        height: auto;
-    }
+/* === SCORE RING === */
+.score-ring {
+    position: relative;
+    width: 100px;
+    height: 100px;
+}
+.score-ring svg {
+    transform: rotate(-90deg);
+}
+.score-ring-bg {
+    stroke: #e5e7eb;
+}
+.dark .score-ring-bg {
+    stroke: #374151;
+}
+.score-ring-progress {
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s ease-out;
+}
+
+/* === METRIC CARDS === */
+.metric-card {
+    @apply bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700;
+    transition: all 0.2s ease;
+}
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* === SECTION CARDS === */
+.section-card {
+    @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden;
+}
+.section-header {
+    @apply px-6 py-4 border-b border-gray-100 dark:border-gray-700;
+}
+
+/* === TAB NAVIGATION === */
+.tab-btn {
+    @apply px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200;
+}
+.tab-btn.active {
+    @apply bg-indigo-600 text-white shadow-lg shadow-indigo-500/25;
+}
+.tab-btn:not(.active) {
+    @apply text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700;
+}
+
+/* === PROGRESS BARS === */
+.progress-bar {
+    @apply h-2 rounded-full transition-all duration-500;
+    position: relative;
+}
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: inherit;
+    filter: blur(4px);
+    opacity: 0.4;
+    z-index: -1;
+}
+
+/* === MERMAID === */
+.mermaid-container {
+    @apply bg-gray-50 dark:bg-gray-900 rounded-xl p-6 overflow-x-auto;
+}
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* === FEATURE TAGS === */
+.feature-tag {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium;
+}
+
+/* === FLOW CARD === */
+.flow-card {
+    @apply p-4 rounded-xl border-l-4 bg-gray-50 dark:bg-gray-700/50;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="h-[calc(100vh-3rem)] flex flex-col" x-data="readmePage()" x-init="init()">
+<div x-data="readmeUI()" x-init="init()">
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-4 shrink-0">
+    <!-- === HEADER === -->
+    <div class="flex items-center justify-between mb-8">
         <div>
-            <h1 class="text-2xl font-bold flex items-center gap-2 flex-wrap">
-                <span>Readme</span>
-                <template x-if="$store.globalContext?.selectedRepo">
-                    <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
-                        per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
-                    </span>
-                </template>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                README
             </h1>
-            <p class="text-gray-500 dark:text-gray-400">Genera diagrammi architetturali con AI</p>
+            <p class="text-gray-500 mt-1">Documentazione automatica generata con AI</p>
         </div>
-        <div class="flex gap-2">
-            <button @click="openReadmeChat()"
-                    :disabled="!selectedRepoId"
-                    :title="!selectedRepoId ? 'Seleziona prima un repository dal footer' : 'Genera Readme'"
-                    class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                <span class="flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    Genera Readme
+        <div class="flex items-center gap-3">
+            <template x-if="analysis?.generated_at">
+                <span class="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full text-sm font-medium">
+                    Generato il <span x-text="formatDate(analysis.generated_at)"></span>
                 </span>
+            </template>
+            <button @click="generateReadme()"
+                    :disabled="!selectedRepoId || isGenerating"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                <template x-if="!isGenerating">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </template>
+                <template x-if="isGenerating">
+                    <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </template>
+                <span x-text="isGenerating ? 'Generazione...' : (analysis ? 'Rigenera' : 'Genera README')"></span>
             </button>
         </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col min-h-0">
-
-        <!-- Loading State -->
-        <div x-show="loading" class="flex-1 flex justify-center items-center">
-            <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    <!-- Loading State -->
+    <div x-show="isGenerating" x-cloak class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
+        <div class="flex items-center gap-3">
+            <svg class="animate-spin w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-        </div>
-
-        <!-- Empty State - No Repository Selected -->
-        <div x-show="!loading && !selectedRepoId"
-             class="flex-1 flex items-center justify-center">
-            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center max-w-md">
-                <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                </div>
-                <h3 class="text-lg font-medium mb-2">Seleziona un Repository</h3>
-                <p class="text-gray-500 dark:text-gray-400 mb-4">Seleziona un repository dal footer per generare il diagramma architetturale</p>
-            </div>
-        </div>
-
-        <!-- Empty State - No Readme Yet -->
-        <div x-show="!loading && selectedRepoId && !mermaidCode"
-             class="flex-1 flex items-center justify-center">
-            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center max-w-md">
-                <div class="w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                </div>
-                <h3 class="text-lg font-medium mb-2">Nessun Readme Generato</h3>
-                <p class="text-gray-500 dark:text-gray-400 mb-4">Clicca sul pulsante per generare un diagramma architetturale del repository</p>
-                <button @click="openReadmeChat()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                    Genera Readme
-                </button>
-            </div>
-        </div>
-
-        <!-- Diagram View -->
-        <div x-show="!loading && selectedRepoId && mermaidCode"
-             class="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-
-            <!-- Toolbar -->
-            <div class="p-3 border-b dark:border-gray-700 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-900">
-                <div class="flex items-center gap-3">
-                    <span class="font-medium">Architettura</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <!-- View Toggle -->
-                    <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                        <button @click="viewMode = 'diagram'"
-                                :class="viewMode === 'diagram' ? 'bg-white dark:bg-gray-800 shadow-sm' : ''"
-                                class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
-                            Diagramma
-                        </button>
-                        <button @click="viewMode = 'code'"
-                                :class="viewMode === 'code' ? 'bg-white dark:bg-gray-800 shadow-sm' : ''"
-                                class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors">
-                            Codice
-                        </button>
-                    </div>
-                    <!-- Copy Button -->
-                    <button @click="copyMermaidCode()"
-                            class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                            title="Copia codice Mermaid">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                        </svg>
-                    </button>
-                    <!-- Regenerate Button -->
-                    <button @click="openReadmeChat()"
-                            class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                            title="Rigenera">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Diagram View -->
-            <div x-show="viewMode === 'diagram'" class="flex-1 overflow-auto p-6">
-                <div class="mermaid" x-ref="mermaidContainer"></div>
-            </div>
-
-            <!-- Code View -->
-            <div x-show="viewMode === 'code'" class="flex-1 overflow-hidden">
-                <textarea x-model="mermaidCode"
-                          @input.debounce.500ms="renderDiagram()"
-                          class="w-full h-full p-4 font-mono text-sm bg-gray-900 text-green-400 focus:outline-none resize-none"
-                          placeholder="graph TD..."></textarea>
-            </div>
-        </div>
-
-        <!-- Legend -->
-        <div x-show="!loading && selectedRepoId && mermaidCode"
-             class="mt-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 shrink-0">
-            <h3 class="font-semibold mb-3 text-sm">Legenda</h3>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded bg-blue-500"></div>
-                    <span class="text-sm text-gray-600 dark:text-gray-400">API / Backend</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded bg-green-500"></div>
-                    <span class="text-sm text-gray-600 dark:text-gray-400">Database</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded bg-purple-500"></div>
-                    <span class="text-sm text-gray-600 dark:text-gray-400">Frontend</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded bg-orange-500"></div>
-                    <span class="text-sm text-gray-600 dark:text-gray-400">External Services</span>
-                </div>
-            </div>
+            <span x-text="progressMessage" class="text-blue-700 dark:text-blue-300"></span>
         </div>
     </div>
+
+    <!-- Content: Only show when analysis exists -->
+    <template x-if="analysis">
+    <div class="space-y-6">
+
+        <!-- SECTION 1: QUALITY SCORES -->
+        <div class="section-card" x-show="evaluation">
+            <div class="section-header bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/25">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold">Quality Score</h2>
+                            <p class="text-sm text-gray-500">Valutazione complessiva del codice</p>
+                        </div>
+                    </div>
+
+                    <!-- Overall Score Ring -->
+                    <div class="score-ring">
+                        <svg viewBox="0 0 100 100" class="w-24 h-24">
+                            <circle class="score-ring-bg" cx="50" cy="50" r="40" fill="none" stroke-width="8"/>
+                            <circle class="score-ring-progress" cx="50" cy="50" r="40" fill="none" stroke-width="8"
+                                    :stroke="getScoreColor(evaluation?.overall_score)"
+                                    stroke-dasharray="251"
+                                    :stroke-dashoffset="251 - (251 * (evaluation?.overall_score || 0) / 100)"/>
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span class="text-3xl font-bold" :class="getScoreTextColor(evaluation?.overall_score)" x-text="evaluation?.overall_score || '--'"></span>
+                            <span class="text-xs text-gray-400 uppercase tracking-wider">Score</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6 Metrics Grid -->
+            <div class="p-6">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                    <template x-for="metric in metrics" :key="metric.key">
+                        <div class="metric-card text-center">
+                            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3" x-text="metric.label"></div>
+                            <div class="relative h-2 bg-gray-200 dark:bg-gray-700 rounded-full mb-3">
+                                <div class="progress-bar"
+                                     :class="getScoreBarColor(evaluation?.[metric.key])"
+                                     :style="`width: ${evaluation?.[metric.key] || 0}%`"></div>
+                            </div>
+                            <div class="text-2xl font-bold" :class="getScoreTextColor(evaluation?.[metric.key])" x-text="evaluation?.[metric.key] || '--'"></div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Strengths / Weaknesses -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6" x-show="evaluation?.strengths?.length || evaluation?.weaknesses?.length">
+                    <div class="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800" x-show="evaluation?.strengths?.length">
+                        <h4 class="font-semibold text-green-700 dark:text-green-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Punti di Forza
+                        </h4>
+                        <ul class="space-y-2 text-sm">
+                            <template x-for="s in evaluation?.strengths || []" :key="s">
+                                <li class="flex items-start gap-2">
+                                    <span class="text-green-500 mt-0.5">+</span>
+                                    <span x-text="s"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+
+                    <div class="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800" x-show="evaluation?.weaknesses?.length">
+                        <h4 class="font-semibold text-red-700 dark:text-red-400 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            Aree di Miglioramento
+                        </h4>
+                        <ul class="space-y-2 text-sm">
+                            <template x-for="w in evaluation?.weaknesses || []" :key="w">
+                                <li class="flex items-start gap-2">
+                                    <span class="text-red-500 mt-0.5">-</span>
+                                    <span x-text="w"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 2: DESCRIPTION TABS -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl shadow-lg shadow-blue-500/25">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Descrizione</h2>
+                        <p class="text-sm text-gray-500">Analisi dettagliata della repository</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="px-6 pt-4 flex gap-2 flex-wrap">
+                <button @click="activeTab = 'functionality'" :class="activeTab === 'functionality' ? 'active' : ''" class="tab-btn">Funzionalita</button>
+                <button @click="activeTab = 'logic'" :class="activeTab === 'logic' ? 'active' : ''" class="tab-btn">Logica</button>
+                <button @click="activeTab = 'structure'" :class="activeTab === 'structure' ? 'active' : ''" class="tab-btn">Struttura</button>
+                <button @click="activeTab = 'code'" :class="activeTab === 'code' ? 'active' : ''" class="tab-btn">Codice</button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="p-6">
+                <!-- Functionality Tab -->
+                <div x-show="activeTab === 'functionality'" x-transition>
+                    <p class="text-lg mb-6 leading-relaxed" x-text="analysis.functionality?.summary"></p>
+                    <template x-if="analysis.functionality?.main_features?.length">
+                        <div class="mb-6">
+                            <h4 class="font-semibold mb-4">Features Principali</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <template x-for="f in analysis.functionality.main_features" :key="f">
+                                    <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                                        <span class="text-indigo-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg></span>
+                                        <span x-text="f"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="analysis.functionality?.use_cases?.length">
+                        <div>
+                            <h4 class="font-semibold mb-4">Casi d'Uso</h4>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="u in analysis.functionality.use_cases" :key="u">
+                                    <span class="feature-tag bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300" x-text="u"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Logic Tab -->
+                <div x-show="activeTab === 'logic'" x-transition x-cloak>
+                    <p class="text-lg mb-6 leading-relaxed" x-text="analysis.logic?.overview"></p>
+                    <template x-if="analysis.logic?.main_flows?.length">
+                        <div class="space-y-4">
+                            <template x-for="(flow, idx) in analysis.logic.main_flows" :key="idx">
+                                <div class="flow-card" :class="['border-blue-500', 'border-purple-500', 'border-green-500'][idx % 3]">
+                                    <div class="font-semibold mb-1" x-text="flow.name"></div>
+                                    <p class="text-sm text-gray-600 dark:text-gray-300" x-text="flow.description"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Structure Tab -->
+                <div x-show="activeTab === 'structure'" x-transition x-cloak>
+                    <template x-if="analysis.structure?.layers?.length">
+                        <div class="mb-6">
+                            <h4 class="font-semibold mb-4">Layer Architetturali</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <template x-for="layer in analysis.structure.layers" :key="layer.name">
+                                    <div class="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl text-center border border-blue-200 dark:border-blue-800">
+                                        <div class="font-mono text-sm font-bold text-blue-600 dark:text-blue-400" x-text="layer.name"></div>
+                                        <div class="text-xs text-gray-500 mt-1" x-text="layer.purpose"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="analysis.structure?.directory_tree">
+                        <div>
+                            <h4 class="font-semibold mb-4">Directory Tree</h4>
+                            <pre class="p-4 bg-gray-900 text-green-400 rounded-xl text-sm overflow-x-auto font-mono" x-text="analysis.structure.directory_tree"></pre>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Code Tab -->
+                <div x-show="activeTab === 'code'" x-transition x-cloak>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                            <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Linguaggio</div>
+                            <div class="font-bold text-lg" x-text="analysis.code?.language || '--'"></div>
+                        </div>
+                        <div class="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                            <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Framework</div>
+                            <div class="font-bold text-lg" x-text="analysis.code?.framework || '--'"></div>
+                        </div>
+                    </div>
+                    <template x-if="analysis.code?.patterns?.length">
+                        <div class="mb-6">
+                            <h4 class="font-semibold mb-4">Design Patterns</h4>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="p in analysis.code.patterns" :key="p">
+                                    <span class="feature-tag bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300" x-text="p"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="analysis.code?.best_practices?.length">
+                        <ul class="space-y-2">
+                            <template x-for="bp in analysis.code.best_practices" :key="bp">
+                                <li class="flex items-center gap-2 text-sm">
+                                    <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    <span x-text="bp"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 3: MERMAID DIAGRAMS -->
+        <div class="section-card" x-show="analysis.diagrams?.length">
+            <div class="section-header">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg shadow-emerald-500/25">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold">Diagrammi Architetturali</h2>
+                        <p class="text-sm text-gray-500">Visualizzazione delle relazioni tra componenti</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6 space-y-8">
+                <template x-for="(diagram, idx) in analysis.diagrams" :key="idx">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="font-semibold text-lg" x-text="diagram.title"></h4>
+                            <span class="text-xs px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full font-medium" x-text="diagram.type"></span>
+                        </div>
+                        <p class="text-sm text-gray-500 mb-4" x-text="diagram.description"></p>
+                        <div class="mermaid-container">
+                            <div class="mermaid" :id="'mermaid-' + idx"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    </div>
+    </template>
+
+    <!-- Empty State -->
+    <div x-show="!analysis && !isGenerating && selectedRepoId" x-cloak class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+        <div class="w-16 h-16 mx-auto mb-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center">
+            <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Nessuna analisi disponibile</h3>
+        <p class="text-gray-500 mb-4">Clicca "Genera README" per creare la documentazione automatica</p>
+    </div>
+
+    <!-- No Repo Selected -->
+    <div x-show="!selectedRepoId" x-cloak class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+        <div class="w-16 h-16 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">Seleziona una repository</h3>
+        <p class="text-gray-500">Usa il selettore nella sidebar per scegliere una repository</p>
+    </div>
+
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Initialize Mermaid with dark mode support
 mermaid.initialize({
     startOnLoad: false,
     theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
     securityLevel: 'loose',
-    flowchart: {
-        useMaxWidth: true,
-        htmlLabels: true,
-        curve: 'basis'
-    }
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
 });
 
-function readmePage() {
+function readmeUI() {
     return {
-        loading: false,
-        viewMode: 'diagram',
-        mermaidCode: '',
         selectedRepoId: '',
+        isGenerating: false,
+        progressMessage: '',
+        analysis: null,
+        evaluation: null,
+        activeTab: 'functionality',
+        metrics: [
+            { key: 'architecture_quality', label: 'Architettura' },
+            { key: 'code_quality', label: 'Qualita' },
+            { key: 'functionality', label: 'Funzionalita' },
+            { key: 'effectiveness', label: 'Efficacia' },
+            { key: 'comment_quality', label: 'Commenti' },
+            { key: 'code_duplication', label: 'DRY' },
+        ],
 
         async init() {
-            // Sync with global context
             const store = Alpine.store('globalContext');
             if (store?.selectedRepoId) {
                 this.selectedRepoId = store.selectedRepoId;
+                await this.loadExisting();
             }
-
-            // Watch for changes
-            window.addEventListener('global-context-changed', (e) => {
+            window.addEventListener('global-context-changed', async (e) => {
                 this.selectedRepoId = e.detail.repoId || '';
-                // Reset when repo changes
-                this.mermaidCode = '';
+                this.analysis = null;
+                this.evaluation = null;
+                if (this.selectedRepoId) await this.loadExisting();
             });
+        },
 
-            // Listen for readme generation complete
-            window.addEventListener('readme-generated', (e) => {
-                if (e.detail.mermaidCode) {
-                    this.mermaidCode = e.detail.mermaidCode;
-                    this.$nextTick(() => this.renderDiagram());
+        async loadExisting() {
+            try {
+                const resp = await fetch(`/api/readme/${this.selectedRepoId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.analysis = data.analysis;
+                    this.$nextTick(() => this.renderAllDiagrams());
                 }
-            });
+                const evalResp = await fetch(`/api/repos/${this.selectedRepoId}/evaluation`);
+                if (evalResp.ok) this.evaluation = await evalResp.json();
+            } catch (e) { console.log('No existing analysis:', e); }
+        },
 
-            // Watch for dark mode changes
-            const observer = new MutationObserver(() => {
-                const isDark = document.documentElement.classList.contains('dark');
-                mermaid.initialize({
-                    startOnLoad: false,
-                    theme: isDark ? 'dark' : 'default',
-                    securityLevel: 'loose'
+        async generateReadme() {
+            this.isGenerating = true;
+            this.progressMessage = 'Inizializzazione...';
+            try {
+                const eventSource = new EventSource(`/api/readme/${this.selectedRepoId}/generate?regenerate=true`);
+                eventSource.addEventListener('progress', (e) => {
+                    const data = JSON.parse(e.data);
+                    this.progressMessage = data.message || data.step;
                 });
-                if (this.mermaidCode) {
-                    this.renderDiagram();
-                }
-            });
-            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+                eventSource.addEventListener('completed', (e) => {
+                    this.analysis = JSON.parse(e.data);
+                    this.isGenerating = false;
+                    eventSource.close();
+                    this.$nextTick(() => this.renderAllDiagrams());
+                });
+                eventSource.addEventListener('cached', (e) => {
+                    this.analysis = JSON.parse(e.data);
+                    this.isGenerating = false;
+                    eventSource.close();
+                    this.$nextTick(() => this.renderAllDiagrams());
+                });
+                eventSource.addEventListener('error', () => { this.isGenerating = false; eventSource.close(); });
+                eventSource.onerror = () => { this.isGenerating = false; eventSource.close(); };
+            } catch (e) { this.isGenerating = false; }
         },
 
-        openReadmeChat() {
-            if (!this.selectedRepoId) {
-                this.showToast('Seleziona prima un repository', 'error');
-                return;
-            }
-
-            const store = Alpine.store('globalContext');
-            const repoName = store?.selectedRepo?.name || '';
-            const command = `/readme`;
-
-            console.log('[readme] Opening chat with command:', command);
-            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
-                detail: { command, newSession: true }
-            }));
-        },
-
-        async renderDiagram() {
-            try {
-                const container = this.$refs.mermaidContainer;
-                if (!container || !this.mermaidCode) return;
-
-                // Clear previous
-                container.innerHTML = '';
-
-                // Generate unique ID
-                const id = 'mermaid-' + Date.now();
-
-                // Render
-                const { svg } = await mermaid.render(id, this.mermaidCode);
-                container.innerHTML = svg;
-            } catch (error) {
-                console.error('Mermaid render error:', error);
-                this.showToast('Errore nel rendering del diagramma', 'error');
+        async renderMermaid(idx, code) {
+            const el = document.getElementById(`mermaid-${idx}`);
+            if (el && code) {
+                try {
+                    el.innerHTML = '';
+                    const { svg } = await mermaid.render(`mermaid-svg-${idx}`, code);
+                    el.innerHTML = svg;
+                } catch (e) { el.innerHTML = `<pre class="text-red-500 text-sm">${code}</pre>`; }
             }
         },
 
-        async copyMermaidCode() {
-            try {
-                await navigator.clipboard.writeText(this.mermaidCode);
-                this.showToast('Codice copiato!', 'success');
-            } catch (error) {
-                this.showToast('Errore nella copia', 'error');
-            }
+        renderAllDiagrams() {
+            if (this.analysis?.diagrams) this.analysis.diagrams.forEach((d, i) => this.renderMermaid(i, d.code));
         },
 
-        showToast(message, type) {
-            window.dispatchEvent(new CustomEvent('show-toast', {
-                detail: { message, type }
-            }));
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            return new Date(dateStr).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+        },
+
+        getScoreColor(score) {
+            if (!score) return '#6b7280';
+            if (score >= 75) return '#22c55e';
+            if (score >= 50) return '#eab308';
+            return '#ef4444';
+        },
+
+        getScoreTextColor(score) {
+            if (!score) return 'text-gray-500';
+            if (score >= 75) return 'text-green-600 dark:text-green-400';
+            if (score >= 50) return 'text-yellow-600 dark:text-yellow-400';
+            return 'text-red-600 dark:text-red-400';
+        },
+
+        getScoreBarColor(score) {
+            if (!score) return 'bg-gray-400';
+            if (score >= 75) return 'bg-green-500';
+            if (score >= 50) return 'bg-yellow-500';
+            return 'bg-red-500';
         }
     };
 }
