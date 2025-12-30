@@ -1027,7 +1027,7 @@
     <!-- ============================================== -->
     <!-- CLARIFICATION MODAL -->
     <!-- ============================================== -->
-    <div x-show="clarification.show" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="cancelClarification()">
+    <div x-show="clarification.show" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
@@ -1615,8 +1615,14 @@ function issuesApp() {
                     this.clarification.answers[q.id] = '';
                 });
 
-                // If ready to fix, proceed
+                // If ready to fix, show confirmation message then proceed
                 if (data.ready_to_fix) {
+                    this.clarification.message = '✨ OPUS has everything clear! Starting to work on your fix...';
+                    this.clarification.loading = true;
+
+                    // Brief pause to show the message
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+
                     this.clarification.show = false;
                     await this._startFixProcess(
                         this.clarification.pendingRequest.firstIssue,
@@ -2019,6 +2025,7 @@ function issuesApp() {
                 if (this.ignoreReason.trim()) {
                     body.resolution_note = this.ignoreReason.trim();
                 }
+                const issueCode = this.ignoreIssue.issue_code;
                 const res = await fetch(`/api/issues/${this.ignoreIssue.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -2029,6 +2036,16 @@ function issuesApp() {
                 this.ignoreIssue = null;
                 this.ignoreReason = '';
                 await this.refresh();
+
+                // Show confirmation toast
+                const toastId = Date.now();
+                this.toasts.push({
+                    id: toastId,
+                    level: 'INFO',
+                    message: `Issue ${issueCode} ignored. Click "Ignored" filter to view.`,
+                    timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'})
+                });
+                setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== toastId); }, 5000);
             } catch (e) {
                 TurboWrapError.handle('Ignore Issue', e, { issueId: this.ignoreIssue?.id });
             }

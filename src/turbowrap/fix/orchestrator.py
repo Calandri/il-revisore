@@ -1518,6 +1518,108 @@ class FixOrchestrator:
                     )
                     break
 
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # COMMIT SOLVED ISSUES FROM FAILED BATCHES
+            # When batch score < threshold but individual issues are SOLVED (100%),
+            # we should still commit those changes.
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            for batch_id, batch_data in batch_results.items():
+                if batch_data["passed"]:
+                    continue  # Already committed
+
+                # Find SOLVED issues in this failed batch
+                solved_in_failed_batch = [
+                    i
+                    for i in batch_data["issues"]
+                    if issue_status_map.get(str(i.issue_code), {}).get("status") == "SOLVED"
+                ]
+
+                if not solved_in_failed_batch:
+                    continue  # No SOLVED issues to commit
+
+                # Check if there are uncommitted changes
+                uncommitted = await self._get_uncommitted_files()
+                if not uncommitted:
+                    # Files might have been committed in a previous partial commit
+                    logger.info(
+                        f"[FIX] {batch_id}: {len(solved_in_failed_batch)} SOLVED issues "
+                        "but no uncommitted files"
+                    )
+                    # Still mark them as successful since they were SOLVED
+                    for issue in solved_in_failed_batch:
+                        if issue not in successful_issues:
+                            successful_issues.append(issue)
+                    continue
+
+                # Commit the SOLVED issues
+                solved_issue_codes = ", ".join(str(i.issue_code) for i in solved_in_failed_batch)
+                commit_msg = f"[FIX] {solved_issue_codes}"
+
+                await emit_log(
+                    "INFO",
+                    f"{batch_id}: Committing {len(solved_in_failed_batch)} SOLVED issues "
+                    f"(batch score {batch_data.get('score', 0):.0f}% < {self.satisfaction_threshold}%)",
+                )
+
+                commit_prompt = self._load_agent(GIT_COMMITTER_AGENT)
+                commit_prompt = commit_prompt.replace("{commit_message}", commit_msg)
+                commit_prompt = commit_prompt.replace("{issue_codes}", solved_issue_codes)
+                files_to_commit = " ".join(uncommitted)
+                commit_prompt = commit_prompt.replace("{files}", files_to_commit)
+
+                try:
+                    commit_result = await self._run_claude_cli(
+                        commit_prompt,
+                        timeout=120,
+                        model="haiku",
+                        session_context=session_context,
+                        parent_session_id=session_id,
+                        agent_type="committer",
+                        issue_codes=[str(i.issue_code) for i in solved_in_failed_batch],
+                        issue_ids=[str(i.id) for i in solved_in_failed_batch],
+                    )
+
+                    if commit_result.success:
+                        commit_sha, modified_files, _ = await self._get_git_info()
+                        batch_data["commit_sha"] = commit_sha
+                        batch_data["modified_files"] = modified_files
+                        batch_data["passed"] = (
+                            True  # Mark as passed now that SOLVED issues committed
+                        )
+
+                        await emit_log(
+                            "INFO",
+                            f"{batch_id} SOLVED issues committed: "
+                            f"{commit_sha[:7] if commit_sha else 'unknown'}",
+                        )
+
+                        await safe_emit(
+                            FixProgressEvent(
+                                type=FixEventType.FIX_BATCH_COMMITTED,
+                                session_id=session_id,
+                                message=f"   💾 {batch_id} SOLVED COMMITTED "
+                                f"({commit_sha[:7] if commit_sha else 'unknown'})",
+                                issue_ids=[i.id for i in solved_in_failed_batch],
+                                issue_codes=[i.issue_code for i in solved_in_failed_batch],
+                                commit_sha=commit_sha,
+                            )
+                        )
+
+                        # Add SOLVED issues to successful list
+                        for issue in solved_in_failed_batch:
+                            if issue not in successful_issues:
+                                successful_issues.append(issue)
+                    else:
+                        await emit_log(
+                            "ERROR",
+                            f"{batch_id} SOLVED commit failed: {commit_result.error}",
+                        )
+                except Exception as e:
+                    await emit_log(
+                        "ERROR",
+                        f"{batch_id} SOLVED commit error: {str(e)[:100]}",
+                    )
+
             # Use per-issue status map to determine final status
             # This replaces batch-level pass/fail with individual issue tracking
             for _code, status_data in issue_status_map.items():

@@ -506,10 +506,10 @@ Se hai domande, sei libero di farle. Altrimenti conferma che sei pronto.
 Rispondi SOLO con JSON valido:
 {{"has_questions": bool, "questions": [...], "message": "...", "ready_to_fix": bool}}"""
 
-    # Run OPUS
+    # Run HAIKU for quick clarification (doesn't need complex reasoning)
     cli = ClaudeCLI(
         working_dir=Path(repo.local_path) if repo.local_path else None,
-        model="opus",
+        model="haiku",
         agent_md_path=FIX_CLARIFIER_AGENT if FIX_CLARIFIER_AGENT.exists() else None,
     )
 
