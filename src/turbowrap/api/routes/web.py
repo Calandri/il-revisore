@@ -1107,7 +1107,7 @@ async def htmx_run_test_suite(
     database_connection_id: str | None = None,
     db: Session = Depends(get_db),
 ) -> Response:
-    """HTMX: trigger a test run for a suite."""
+    """HTMX: trigger a test run for a suite using Gemini CLI."""
     import json
 
     from ...db.models import Repository, TestRun, TestSuite
@@ -1135,11 +1135,16 @@ async def htmx_run_test_suite(
     db.commit()
     db.refresh(run)
 
-    # Queue TestTask for background execution
+    # Queue GeminiCLI test execution in background
     background_tasks.add_task(
         _execute_test_run,
         run_id=str(run.id),
-        repo_path=repo.local_path,
+        repo_name=str(repo.name),
+        repo_path=str(repo.local_path),
+        suite_path=str(suite.path),
+        framework=str(suite.framework),
+        custom_command=suite.command,
+        database_connection_id=database_connection_id,
     )
 
     response = Response(content="")
@@ -1153,30 +1158,171 @@ async def htmx_run_test_suite(
     return response
 
 
-async def _execute_test_run(run_id: str, repo_path: str) -> None:
-    """Background task to execute a test run."""
+async def _execute_test_run(
+    run_id: str,
+    repo_name: str,
+    repo_path: str,
+    suite_path: str,
+    framework: str,
+    custom_command: str | None,
+    database_connection_id: str | None,
+) -> None:
+    """Background task to execute a test run using Gemini CLI."""
+    import base64
     import logging
+    import re
+    from datetime import datetime
     from pathlib import Path
 
+    from cryptography.fernet import Fernet
+
+    from ...db.models import DatabaseConnection, TestRun
     from ...db.session import get_session_local
-    from ...tasks import TaskContext, TestTask
+    from ...llm.gemini import GeminiCLI
+    from ...review.reviewers.utils.json_extraction import parse_llm_json
 
     logger = logging.getLogger(__name__)
-
     SessionLocal = get_session_local()
     db = SessionLocal()
 
     try:
-        task = TestTask()
-        context = TaskContext(
-            db=db,
-            repo_path=Path(repo_path),
-            config={"run_id": run_id, "repository_id": ""},
+        # Get the test run and update status
+        test_run = db.query(TestRun).filter(TestRun.id == run_id).first()
+        if not test_run:
+            logger.error(f"TestRun {run_id} not found")
+            return
+
+        test_run.status = "running"
+        test_run.started_at = datetime.utcnow()
+        db.commit()
+
+        # Build DATABASE_URL if connection provided
+        database_url = None
+        if database_connection_id:
+            db_conn = (
+                db.query(DatabaseConnection)
+                .filter(DatabaseConnection.id == database_connection_id)
+                .first()
+            )
+            if db_conn:
+                password = None
+                if db_conn.encrypted_password:
+                    from ...core.config import settings
+
+                    fernet_key = getattr(settings, "ENCRYPTION_KEY", None)
+                    if fernet_key:
+                        try:
+                            fernet = Fernet(fernet_key.encode())
+                            password = fernet.decrypt(db_conn.encrypted_password.encode()).decode()
+                        except Exception:
+                            try:
+                                password = base64.b64decode(
+                                    db_conn.encrypted_password.encode()
+                                ).decode()
+                            except Exception:
+                                pass
+
+                if db_conn.db_type == "sqlite":
+                    database_url = f"sqlite:///{db_conn.database}"
+                elif db_conn.db_type in ("mysql", "mariadb"):
+                    auth = f"{db_conn.username}:{password}@" if db_conn.username else ""
+                    host = f"{db_conn.host}:{db_conn.port}" if db_conn.port else db_conn.host
+                    database_url = f"mysql://{auth}{host}/{db_conn.database}"
+                elif db_conn.db_type == "postgresql":
+                    auth = f"{db_conn.username}:{password}@" if db_conn.username else ""
+                    host = f"{db_conn.host}:{db_conn.port}" if db_conn.port else db_conn.host
+                    database_url = f"postgresql://{auth}{host}/{db_conn.database}"
+
+        # Load agent prompt
+        agent_path = Path(__file__).parents[4] / "agents" / "test_runner.md"
+        agent_content = ""
+        if agent_path.exists():
+            agent_content = agent_path.read_text()
+
+        # Build prompt
+        db_context = ""
+        if database_url:
+            masked_url = re.sub(r":([^@]+)@", ":***@", database_url)
+            db_context = f"""
+## Database Configuration
+Set DATABASE_URL before running: export DATABASE_URL="{database_url}"
+(Masked: {masked_url})
+"""
+
+        prompt = f"""
+{agent_content}
+
+## Test Suite to Run
+- Repository: {repo_name}
+- Suite Path: {suite_path}
+- Framework: {framework}
+- Custom Command: {custom_command or "None - use framework default"}
+- Repository Path: {repo_path}
+{db_context}
+
+Run the tests and return JSON with test counts and status.
+"""
+
+        # Run Gemini CLI
+        cli = GeminiCLI(
+            working_dir=Path(repo_path),
+            model="flash",
+            timeout=300,
+            auto_accept=True,
         )
-        result = await task.execute_async(context)
-        logger.info(f"Test run {run_id} completed: {result.status}")
+
+        result = await cli.run(
+            prompt=prompt,
+            operation_type="test_execution",
+            repo_name=repo_name,
+            track_operation=True,
+        )
+
+        # Parse result
+        test_run.completed_at = datetime.utcnow()
+        if test_run.started_at:
+            test_run.duration_seconds = (
+                test_run.completed_at - test_run.started_at
+            ).total_seconds()
+
+        if not result.success:
+            test_run.status = "error"
+            test_run.error_message = result.error
+            db.commit()
+            logger.error(f"Test run failed: {result.error}")
+            return
+
+        json_data = parse_llm_json(result.output)
+
+        if json_data:
+            test_run.status = json_data.get("status", "error")
+            test_run.total_tests = json_data.get("total_tests", 0)
+            test_run.passed = json_data.get("passed", 0)
+            test_run.failed = json_data.get("failed", 0)
+            test_run.skipped = json_data.get("skipped", 0)
+            test_run.errors = json_data.get("errors", 0)
+            test_run.report_data = json_data
+            test_run.error_message = json_data.get("error_message")
+            logger.info(f"Test run completed: {test_run.passed}/{test_run.total_tests} passed")
+        else:
+            test_run.status = "error"
+            test_run.error_message = "Could not parse test results"
+            test_run.report_data = {"raw_output": result.output[:5000]}
+            logger.error("Could not parse test results from Gemini output")
+
+        db.commit()
+
     except Exception as e:
         logger.exception(f"Test run {run_id} failed: {e}")
+        try:
+            test_run = db.query(TestRun).filter(TestRun.id == run_id).first()
+            if test_run:
+                test_run.status = "error"
+                test_run.error_message = str(e)
+                test_run.completed_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass
     finally:
         db.close()
 
