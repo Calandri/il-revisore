@@ -553,7 +553,8 @@
     </div>
 
     <!-- Repository Evaluation Section -->
-    <div x-show="evaluation" x-transition class="mb-6">
+    <template x-if="evaluation">
+    <div x-transition class="mb-6">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
             <!-- Header with Overall Score -->
             <div class="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between bg-gradient-to-r from-purple-500/5 to-indigo-500/5">
@@ -688,6 +689,7 @@
             </div>
         </div>
     </div>
+    </template>
 
     <!-- Agents Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -1,10 +1,12 @@
 """FastAPI middleware for automatic error handling."""
 
+from __future__ import annotations
+
 import logging
 import traceback
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -14,28 +16,44 @@ from starlette.responses import Response
 from .exceptions import ErrorSeverity, TurboWrapError
 from .schema import ErrorDetail, TurboErrorResponse
 
+if TYPE_CHECKING:
+    from .client import TurboWrapClient
+
 logger = logging.getLogger("turbowrap_errors")
 
 
 class TurboWrapMiddleware(BaseHTTPMiddleware):
-    """Middleware that catches exceptions and formats them as TurboWrap errors.
+    """Middleware that catches exceptions and reports them to TurboWrap server.
 
     This middleware automatically converts all unhandled exceptions into
-    structured JSON responses that the frontend TurboWrapError handler
-    can parse and display.
+    structured JSON responses and optionally sends them to a TurboWrap
+    server for issue tracking.
 
-    Example:
+    Example (local only - just format errors):
         from fastapi import FastAPI
         from turbowrap_errors import TurboWrapMiddleware
 
         app = FastAPI()
         app.add_middleware(TurboWrapMiddleware)
+
+    Example (with server reporting):
+        from turbowrap_errors import TurboWrapMiddleware, TurboWrapClient
+
+        client = TurboWrapClient(
+            server_url="https://turbowrap.example.com",
+            api_key="tw_abc123",
+            repo_id="uuid-repo"
+        )
+
+        app = FastAPI()
+        app.add_middleware(TurboWrapMiddleware, client=client)
     """
 
     def __init__(
         self,
         app: Any,
         *,
+        client: TurboWrapClient | None = None,
         log_errors: bool = True,
         include_traceback: bool = False,
         on_error: Callable[[TurboWrapError, Request], None] | None = None,
@@ -44,11 +62,13 @@ class TurboWrapMiddleware(BaseHTTPMiddleware):
 
         Args:
             app: The FastAPI application.
+            client: TurboWrap client for sending errors to server.
             log_errors: Whether to log errors to console.
             include_traceback: Whether to include stack trace in response.
-            on_error: Optional callback for custom error handling (e.g., send to monitoring).
+            on_error: Optional callback for custom error handling.
         """
         super().__init__(app)
+        self.client = client
         self.log_errors = log_errors
         self.include_traceback = include_traceback
         self.on_error = on_error
@@ -63,7 +83,7 @@ class TurboWrapMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         except TurboWrapError as exc:
             # Already a TurboWrap error, just format it
-            return self._create_error_response(exc, request)
+            return await self._handle_error(exc, request)
         except Exception as exc:
             # Wrap generic exception
             wrapped = TurboWrapError.from_exception(
@@ -71,18 +91,22 @@ class TurboWrapMiddleware(BaseHTTPMiddleware):
                 command_name=self._get_command_name(request),
                 context=self._get_request_context(request),
             )
-            return self._create_error_response(wrapped, request, original_exc=exc)
+            return await self._handle_error(wrapped, request, original_exc=exc)
 
-    def _create_error_response(
+    async def _handle_error(
         self,
         error: TurboWrapError,
         request: Request,
         original_exc: Exception | None = None,
     ) -> JSONResponse:
-        """Create a standardized JSON error response."""
+        """Handle error: log, report to server, and return response."""
         # Log the error
         if self.log_errors:
             self._log_error(error, request, original_exc)
+
+        # Report to TurboWrap server (async, non-blocking)
+        if self.client:
+            await self._report_to_server(error, request, original_exc)
 
         # Call custom error handler
         if self.on_error:
@@ -91,7 +115,52 @@ class TurboWrapMiddleware(BaseHTTPMiddleware):
             except Exception as callback_exc:
                 logger.warning(f"Error in on_error callback: {callback_exc}")
 
-        # Build response
+        # Build and return response
+        return self._create_error_response(error, request, original_exc)
+
+    async def _report_to_server(
+        self,
+        error: TurboWrapError,
+        request: Request,
+        original_exc: Exception | None = None,
+    ) -> None:
+        """Report error to TurboWrap server."""
+        if not self.client:
+            return
+
+        try:
+            tb_str = None
+            if original_exc:
+                tb_str = "".join(
+                    traceback.format_exception(
+                        type(original_exc),
+                        original_exc,
+                        original_exc.__traceback__,
+                    )
+                )
+
+            await self.client.report_error(
+                command=error.command_name or self._get_command_name(request),
+                message=error.message,
+                severity=error.severity,
+                error_type=type(original_exc).__name__ if original_exc else "TurboWrapError",
+                error_code=error.code,
+                context={
+                    **error.context,
+                    **self._get_request_context(request),
+                },
+                traceback=tb_str,
+            )
+        except Exception as e:
+            logger.warning(f"[TurboWrapMiddleware] Failed to report error: {e}")
+
+    def _create_error_response(
+        self,
+        error: TurboWrapError,
+        request: Request,
+        original_exc: Exception | None = None,
+    ) -> JSONResponse:
+        """Create a standardized JSON error response."""
         response_data = TurboErrorResponse(
             turbo_error=True,
             command=error.command_name or self._get_command_name(request),

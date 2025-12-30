@@ -7,6 +7,7 @@ from .cli_chat import router as cli_chat_router
 from .databases import router as databases_router
 from .deployments import router as deployments_router
 from .endpoints import router as endpoints_router
+from .errors import router as errors_router
 from .features import router as features_router
 from .fix import router as fix_router
 from .git import router as git_router
@@ -48,6 +49,7 @@ __all__ = [
     "operations_router",
     "databases_router",
     "endpoints_router",
+    "errors_router",
     "mockups_router",
     "tests_router",
 ]

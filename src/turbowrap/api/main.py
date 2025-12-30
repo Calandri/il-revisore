@@ -27,6 +27,7 @@ from .routes import (
     databases_router,
     deployments_router,
     endpoints_router,
+    errors_router,
     features_router,
     fix_router,
     git_router,
@@ -290,6 +291,7 @@ def create_app() -> FastAPI:
     app.include_router(operations_router, prefix="/api")
     app.include_router(databases_router, prefix="/api")
     app.include_router(endpoints_router, prefix="/api")
+    app.include_router(errors_router, prefix="/api")
     app.include_router(mockups_router, prefix="/api")
     app.include_router(tests_router, prefix="/api")
 

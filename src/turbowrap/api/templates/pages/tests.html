@@ -93,35 +93,36 @@
             htmx.ajax('POST', url, {swap: 'none'});
             this.showRunModal = false;
         }
+    },
+
+    init() {
+        // Watch for repo changes - fires when store initializes and when user changes repo
+        this.$watch('$store.globalContext.selectedRepoId', (repoId) => {
+            if (repoId) {
+                this.refreshSuites();
+                this.refreshStats();
+                this.loadDatabases();
+            }
+        });
+
+        // Initial load if repo already selected (watch doesn't fire for existing values)
+        this.$nextTick(() => {
+            if (this.repositoryId) {
+                this.refreshSuites();
+                this.refreshStats();
+                this.loadDatabases();
+            }
+        });
+
+        // Listen for HTMX triggers from server
+        document.body.addEventListener('refreshSuites', () => this.refreshSuites());
+        document.body.addEventListener('refreshRuns', () => this.refreshStats());
+        document.body.addEventListener('closeModal', () => { this.showNewTestModal = false; this.showRunModal = false; });
+
+        // Listen for suite drawer open event
+        window.addEventListener('open-suite-drawer', () => { this.showSuiteDrawer = true; });
     }
 }"
-x-init="
-    // Watch for repo changes - fires when store initializes and when user changes repo
-    this.$watch('$store.globalContext.selectedRepoId', (repoId) => {
-        if (repoId) {
-            this.refreshSuites();
-            this.refreshStats();
-            this.loadDatabases();
-        }
-    });
-
-    // Initial load if repo already selected (watch doesn't fire for existing values)
-    this.$nextTick(() => {
-        if (this.repositoryId) {
-            this.refreshSuites();
-            this.refreshStats();
-            this.loadDatabases();
-        }
-    });
-
-    // Listen for HTMX triggers from server
-    document.body.addEventListener('refreshSuites', () => this.refreshSuites());
-    document.body.addEventListener('refreshRuns', () => this.refreshStats());
-    document.body.addEventListener('closeModal', () => { this.showNewTestModal = false; this.showRunModal = false; });
-
-    // Listen for suite drawer open event
-    window.addEventListener('open-suite-drawer', () => { this.showSuiteDrawer = true; });
-"
 @keydown.escape.window="showSuiteDrawer = false">
 
     <!-- No Repository Selected Warning -->
