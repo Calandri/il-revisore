@@ -105,6 +105,15 @@ x-init="
         }
     });
 
+    // Initial load if repo already selected (watch doesn't fire for existing values)
+    this.$nextTick(() => {
+        if (this.repositoryId) {
+            this.refreshSuites();
+            this.refreshStats();
+            this.loadDatabases();
+        }
+    });
+
     // Listen for HTMX triggers from server
     document.body.addEventListener('refreshSuites', () => this.refreshSuites());
     document.body.addEventListener('refreshRuns', () => this.refreshStats());
