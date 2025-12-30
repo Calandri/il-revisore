@@ -1485,6 +1485,203 @@ Now analyze this test suite and return the JSON response.
         )
 
 
+@router.post("/htmx/tests/analyze-repo/{repository_id}", response_class=HTMLResponse)
+async def htmx_analyze_repo_tests(
+    request: Request,
+    repository_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: analyze ALL test suites in a repository using Gemini CLI.
+
+    Aggregates test files from all suites and provides a repo-level analysis.
+    Uses the same test_analyzer.md agent but with different context.
+    """
+    import json
+    import logging
+    import re
+    from datetime import datetime
+    from pathlib import Path
+
+    from ...db.models import Repository, TestSuite
+    from ...llm.gemini import GeminiCLI
+
+    logger = logging.getLogger(__name__)
+
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo or not repo.local_path:
+        return Response(
+            content="<div class='text-red-500 p-4'>Repository non trovata</div>", status_code=404
+        )
+
+    # Get all test suites for this repo
+    suites = (
+        db.query(TestSuite)
+        .filter(
+            TestSuite.repository_id == repository_id,
+            TestSuite.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    if not suites:
+        return Response(
+            content="<div class='text-amber-500 p-4'>Nessuna test suite trovata. Usa Auto-Discovery per trovare i test.</div>",
+            status_code=200,
+        )
+
+    repo_path = Path(repo.local_path)
+
+    # Load agent prompt
+    agent_path = Path(__file__).parents[4] / "agents" / "test_analyzer.md"
+    if not agent_path.exists():
+        return Response(
+            content="<div class='text-red-500 p-4'>Agent file not found</div>", status_code=500
+        )
+
+    agent_content = agent_path.read_text()
+    # Remove YAML frontmatter
+    if agent_content.startswith("---"):
+        parts = agent_content.split("---", 2)
+        if len(parts) >= 3:
+            agent_content = parts[2].strip()
+
+    # Gather test files from ALL suites
+    all_test_files = []
+    suite_info = []
+    for suite in suites:
+        suite_path = repo_path / suite.path
+        suite_files = []
+        if suite_path.exists():
+            patterns = ["test_*.py", "*_test.py", "*.spec.ts", "*.test.ts", "*.test.tsx"]
+            for pattern in patterns:
+                suite_files.extend(suite_path.rglob(pattern))
+        all_test_files.extend(suite_files)
+        suite_info.append(
+            f"- {suite.name} ({suite.framework}): {suite.path} - {len(suite_files)} files"
+        )
+
+    # Build context for the agent - limit to 15 files across all suites
+    test_files_content = []
+    for tf in all_test_files[:15]:
+        try:
+            content = tf.read_text(encoding="utf-8")
+            rel_path = tf.relative_to(repo_path)
+            test_files_content.append(f"## File: {rel_path}\n```\n{content[:4000]}\n```")
+        except Exception:
+            pass
+
+    # Build prompt - emphasize REPO-level analysis
+    prompt = f"""
+{agent_content}
+
+## Context - REPOSITORY-LEVEL ANALYSIS
+
+This is a **repository-level analysis** covering ALL test suites in the repository.
+You should provide an aggregated view of test quality across the entire codebase.
+
+- Repository: {repo.name}
+- Total Test Suites: {len(suites)}
+- Total Test Files: {len(all_test_files)}
+
+### Test Suites in this Repository:
+{chr(10).join(suite_info)}
+
+## Test Files to Analyze (sample from all suites)
+
+{chr(10).join(test_files_content) if test_files_content else "No test files found - use tools to explore."}
+
+Now analyze ALL these test suites together and return the JSON response.
+Focus on:
+1. Overall test coverage and quality across the entire repo
+2. Consistency between different test suites
+3. Common patterns and anti-patterns
+4. Suggestions that apply to the whole codebase
+"""
+
+    try:
+        # Run Gemini CLI
+        cli = GeminiCLI(
+            working_dir=repo_path,
+            model="flash",
+            timeout=180,  # Longer timeout for repo-level
+            auto_accept=True,
+        )
+
+        result = await cli.run(
+            prompt=prompt,
+            operation_type="repo_test_analysis",
+            repo_name=repo.name,
+            track_operation=True,
+        )
+
+        if not result.success:
+            logger.error(f"Repo test analysis failed: {result.error}")
+            return Response(
+                content=f"<div class='text-red-500 p-4'>Analisi fallita: {result.error}</div>",
+                status_code=500,
+            )
+
+        # Parse JSON from output
+        output = result.output
+        json_data = None
+
+        try:
+            json_data = json.loads(output.strip())
+        except json.JSONDecodeError:
+            json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", output)
+            if json_match:
+                try:
+                    json_data = json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+
+            if not json_data:
+                json_match = re.search(r"\{[\s\S]*\"test_type\"[\s\S]*\}", output)
+                if json_match:
+                    try:
+                        json_data = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        pass
+
+        if not json_data:
+            logger.error(f"Could not parse JSON from output: {output[:500]}")
+            return Response(
+                content="<div class='text-red-500 p-4'>Impossibile estrarre JSON dalla risposta</div>",
+                status_code=500,
+            )
+
+        # Add repo-level metadata
+        json_data["analyzed_at"] = datetime.utcnow().isoformat()
+        json_data["total_suites"] = len(suites)
+        json_data["total_files"] = len(all_test_files)
+        json_data["suites_analyzed"] = [s.name for s in suites]
+
+        # Save to repository
+        repo.test_analysis = json_data
+        db.commit()
+        db.refresh(repo)
+
+        logger.info(f"Repo test analysis completed for {repo.name}: {json_data.get('test_type')}")
+
+        # Return analysis component (reuse same template)
+        templates = request.app.state.templates
+        return templates.TemplateResponse(
+            "components/test_ai_analysis.html",
+            {
+                "request": request,
+                "analysis": json_data,
+                "is_repo_level": True,
+            },
+        )
+
+    except Exception as e:
+        logger.exception(f"Repo test analysis error: {e}")
+        return Response(
+            content=f"<div class='text-red-500 p-4'>Errore: {str(e)}</div>",
+            status_code=500,
+        )
+
+
 @router.get("/htmx/tests/develop/{suite_id}", response_class=HTMLResponse)
 async def htmx_develop_tests(
     request: Request,

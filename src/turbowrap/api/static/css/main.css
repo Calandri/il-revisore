@@ -236,11 +236,8 @@ input:focus, button:focus, a:focus {
     background-clip: text;
 }
 
-/* Smooth page transitions */
-main {
-    animation: fadeIn 0.3s ease;
-}
-
+/* Smooth page transitions - REMOVED animation from main to prevent
+   creating a containing block for fixed positioned modals */
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }

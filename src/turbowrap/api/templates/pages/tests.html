@@ -203,6 +203,61 @@
                 </div>
             </div>
 
+            <!-- Repo-Level AI Analysis -->
+            <div class="border border-indigo-200 dark:border-indigo-800 rounded-xl overflow-hidden" x-data="{ showRepoAnalysis: false }">
+                <!-- Header with Analyze Button -->
+                <div class="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-indigo-900 dark:text-indigo-100">Analisi AI Repository</h3>
+                            <p class="text-xs text-indigo-600 dark:text-indigo-400">Analisi aggregata di tutte le test suite</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button @click="showRepoAnalysis = !showRepoAnalysis"
+                                class="p-2 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 transition-colors">
+                            <svg class="w-5 h-5 transition-transform" :class="{ 'rotate-180': showRepoAnalysis }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <button hx-post=""
+                                :hx-post="'/htmx/tests/analyze-repo/' + repositoryId"
+                                hx-target="#repo-analysis-content"
+                                hx-swap="innerHTML"
+                                @click="showRepoAnalysis = true"
+                                class="repo-analyze-btn px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 flex items-center gap-2 text-sm font-medium">
+                            <svg class="w-4 h-4 icon-normal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                            <svg class="w-4 h-4 animate-spin icon-loading hidden" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Analizza Repo</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Analysis Content (collapsible) -->
+                <div x-show="showRepoAnalysis" x-collapse id="repo-analysis-content" class="p-4 bg-white dark:bg-gray-900">
+                    <!-- Empty state -->
+                    <div class="text-center py-8 text-gray-500">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                        <p class="text-sm">Clicca "Analizza Repo" per generare l'analisi AI di tutte le test suite</p>
+                    </div>
+                </div>
+            </div>
+            <style>
+                .repo-analyze-btn.htmx-request .icon-normal { display: none; }
+                .repo-analyze-btn.htmx-request .icon-loading { display: block; }
+            </style>
+
             <!-- Filter Tabs -->
             <div class="flex items-center gap-2 border-b dark:border-gray-700 pb-4">
                 <button @click="testType = 'all'; refreshSuites()"

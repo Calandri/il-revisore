@@ -31,6 +31,20 @@ class Repository(Base, SoftDeleteMixin):
     allowed_extra_paths = Column(
         JSON, nullable=True
     )  # Monorepo: additional allowed paths for fix (e.g., ["frontend/", "shared/"])
+
+    # AI test analysis for all test suites in this repo
+    test_analysis = Column(JSON, nullable=True)
+    # {
+    #   "scores": {"overall": 7.5, "coverage": 8, ...},
+    #   "total_suites": 3,
+    #   "total_tests": 150,
+    #   "test_type_breakdown": {"unit": 100, "integration": 50},
+    #   "strengths": [...],
+    #   "weaknesses": [...],
+    #   "suggestions": [...],
+    #   "analyzed_at": "2024-01-01T00:00:00Z"
+    # }
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
