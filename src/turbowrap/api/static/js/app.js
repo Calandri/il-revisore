@@ -340,14 +340,50 @@ document.body.addEventListener('htmx:configRequest', function(evt) {
     // Add any custom headers here if needed
 });
 
-// Handle HTMX errors
+// Handle HTMX errors - integrate with TurboWrapError
 document.body.addEventListener('htmx:responseError', function(evt) {
-    window.dispatchEvent(new CustomEvent('show-toast', {
-        detail: {
-            message: 'Connection error. Please try again.',
-            type: 'error'
+    const xhr = evt.detail.xhr;
+    const path = evt.detail.pathInfo?.requestPath || evt.detail.elt?.getAttribute('hx-get') || evt.detail.elt?.getAttribute('hx-post') || 'Unknown';
+
+    let errorMessage = 'Connection error';
+    let errorDetails = {};
+
+    // Try to parse JSON error response from backend
+    if (xhr && xhr.responseText) {
+        try {
+            const response = JSON.parse(xhr.responseText);
+            errorMessage = response.detail || response.message || response.error || errorMessage;
+            errorDetails = response;
+        } catch (e) {
+            // Response is not JSON, use raw text
+            errorMessage = xhr.responseText.substring(0, 200) || errorMessage;
         }
-    }));
+    }
+
+    // Build context for TurboWrapError
+    const context = {
+        url: path,
+        status: xhr?.status,
+        statusText: xhr?.statusText,
+        method: evt.detail.elt?.getAttribute('hx-get') ? 'GET' :
+                evt.detail.elt?.getAttribute('hx-post') ? 'POST' :
+                evt.detail.elt?.getAttribute('hx-delete') ? 'DELETE' : 'UNKNOWN',
+        ...errorDetails
+    };
+
+    // Use TurboWrapError for intelligent handling
+    if (window.TurboWrapError) {
+        window.TurboWrapError.handle(`HTMX ${context.method} ${path}`, {
+            message: errorMessage,
+            status: xhr?.status,
+            name: `HTTP ${xhr?.status || 'Error'}`
+        }, context);
+    } else {
+        // Fallback to basic toast
+        window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: errorMessage, type: 'error' }
+        }));
+    }
 });
 
 // SSE event handling helper
