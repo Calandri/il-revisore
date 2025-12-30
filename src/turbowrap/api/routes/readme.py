@@ -50,10 +50,10 @@ def get_readme_analysis(
     }
 
 
-@router.post("/{repository_id}/generate")
+@router.get("/{repository_id}/generate")
 async def generate_readme_analysis(
     repository_id: str,
-    request: ReadmeGenerateRequest = ReadmeGenerateRequest(),
+    regenerate: bool = False,
     db: Session = Depends(get_db),
 ) -> EventSourceResponse:
     """Generate README analysis with SSE streaming."""
@@ -66,7 +66,7 @@ async def generate_readme_analysis(
         raise HTTPException(status_code=400, detail="Repository has no local path")
 
     # Check cache
-    if repo.readme_analysis and not request.regenerate:
+    if repo.readme_analysis and not regenerate:
         # Return cached result as SSE
         async def cached_stream() -> AsyncGenerator[dict[str, str], None]:
             yield {"event": "cached", "data": json.dumps(repo.readme_analysis)}
