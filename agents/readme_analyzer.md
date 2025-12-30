@@ -70,7 +70,22 @@ Focus on technical decisions and quality aspects.
 
 ## Mermaid Diagrams
 
-Generate 2-4 diagrams. Choose the most relevant types for this specific repository:
+Generate 2-4 diagrams. Choose the most relevant types for this specific repository.
+
+### Interactive Tooltips
+
+**IMPORTANT**: Add tooltips to all nodes in your diagrams for better interactivity. Use the `click` directive:
+
+```mermaid
+graph TD
+    A[api]
+    B[services]
+    A --> B
+    click A callback "Gestisce richieste HTTP REST"
+    click B callback "Logica di business principale"
+```
+
+Every node should have a tooltip with a brief description (10-20 words) explaining what that module/component does.
 
 ### Architecture Diagram (type: "architecture")
 
@@ -95,6 +110,12 @@ graph TB
     Services --> Models
     Models --> DB
     Models --> Cache
+    click API callback "Endpoint HTTP per client esterni"
+    click CLI callback "Interfaccia command-line"
+    click Services callback "Logica di business e orchestrazione"
+    click Models callback "Entità di dominio e validazione"
+    click DB callback "Persistenza dati PostgreSQL/SQLite"
+    click Cache callback "Cache in-memory per performance"
 ```
 
 ### Flow Chart (type: "flowchart")
@@ -119,6 +140,11 @@ graph TD
     B --> C[models]
     B --> D[utils]
     C --> E[db]
+    click A callback "Entry point per richieste HTTP"
+    click B callback "Servizi di business logic"
+    click C callback "Modelli dati e schemi"
+    click D callback "Funzioni di utilità condivise"
+    click E callback "Accesso al database"
 ```
 
 ### Sequence Diagram (type: "sequence")
