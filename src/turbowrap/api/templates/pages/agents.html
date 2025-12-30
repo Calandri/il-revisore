@@ -253,7 +253,7 @@
                          x-text="selectedAgent?.name?.substring(0, 2).toUpperCase()"></div>
                     <div>
                         <h2 class="font-semibold text-lg" x-text="selectedAgent?.name"></h2>
-                        <p class="text-sm text-gray-500" x-text="'agents/' + selectedAgent?.name + '.md'"></p>
+                        <p class="text-sm text-gray-500" x-text="selectedAgent?.path ? selectedAgent.path.split('/').slice(-2).join('/') : 'agents/' + selectedAgent?.name + '.md'"></p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -470,15 +470,23 @@ function agentsApp() {
             this.editorContent = 'Caricamento...';
             this.showEditor = true;
 
+            // Extract filename from path (without .md extension)
+            // e.g., "/path/to/agents/analyst_func.md" -> "analyst_func"
+            const fileName = agent.path ? agent.path.split('/').pop().replace('.md', '') : agent.name;
+
             try {
-                const response = await fetch(`/api/settings/agents/${agent.name}`);
+                const response = await fetch(`/api/settings/agents/${fileName}`);
                 if (response.ok) {
                     const data = await response.json();
                     this.editorContent = data.raw_content || '';
+                } else {
+                    const error = await response.json().catch(() => ({}));
+                    this.editorContent = `# Errore caricamento\n\n${error.detail || 'Errore sconosciuto'}`;
+                    console.error('API error:', response.status, error);
                 }
             } catch (e) {
                 console.error('Failed to load agent:', e);
-                this.editorContent = '# Errore caricamento';
+                this.editorContent = `# Errore caricamento\n\n${e.message}`;
             }
         },
 
@@ -486,8 +494,13 @@ function agentsApp() {
             if (!this.selectedAgent) return;
             this.saving = true;
 
+            // Extract filename from path (without .md extension)
+            const fileName = this.selectedAgent.path
+                ? this.selectedAgent.path.split('/').pop().replace('.md', '')
+                : this.selectedAgent.name;
+
             try {
-                const response = await fetch(`/api/settings/agents/${this.selectedAgent.name}`, {
+                const response = await fetch(`/api/settings/agents/${fileName}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content: this.editorContent })
@@ -510,7 +523,11 @@ function agentsApp() {
 
         openAIChat(agent) {
             // Redirect to chat with agent file as context
-            const agentPath = `agents/${agent.name}.md`;
+            // Extract filename from path or use name
+            const fileName = agent.path
+                ? agent.path.split('/').pop().replace('.md', '')
+                : agent.name;
+            const agentPath = `agents/${fileName}.md`;
             window.location.href = `/chat?file=${encodeURIComponent(agentPath)}`;
         },
 
