@@ -84,7 +84,7 @@ DEFAULT_GEMINI_PRICING = {
     "cached": 0.0375,
 }
 
-DEFAULT_GEMINI_TIMEOUT = 120
+DEFAULT_GEMINI_TIMEOUT = 300  # 5 minutes for CLI tasks
 
 
 def calculate_gemini_cost(

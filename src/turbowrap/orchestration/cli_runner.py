@@ -49,7 +49,7 @@ class CLIRunner:
         claude_model: str | None = None,
         gemini_model: str | None = None,
         claude_timeout: int = 900,
-        gemini_timeout: int = 120,
+        gemini_timeout: int = 300,
     ):
         """
         Initialize CLI runner.
