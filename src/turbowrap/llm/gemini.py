@@ -638,8 +638,8 @@ class GeminiCLI(OperationTrackingMixin):
             # Disable IDE/VS Code connection
             env["GEMINI_CODE_CONNECT"] = "false"
 
-            # Build command with stream-json output and sandbox mode
-            args = ["gemini", "--model", self.model, "-o", "stream-json", "--sandbox"]
+            # Build command with stream-json output
+            args = ["gemini", "--model", self.model, "-o", "stream-json"]
             if self.auto_accept:
                 args.extend(["--approval-mode", "yolo"])
             args.append(prompt)
