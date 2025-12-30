@@ -239,12 +239,12 @@
         </div>
     </div>
 
-    <!-- Editor Modal -->
+    <!-- Editor Modal (Fullscreen) -->
     <div x-show="showEditor" x-cloak
-         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
          @click.self="showEditor = false"
          @keydown.escape.window="showEditor = false">
-        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div class="bg-white dark:bg-gray-800 shadow-2xl w-full h-full flex flex-col">
 
             <!-- Modal Header -->
             <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
@@ -276,18 +276,18 @@
             </div>
 
             <!-- Modal Body -->
-            <div class="flex-1 overflow-hidden min-h-[400px]">
+            <div class="flex-1 overflow-hidden">
                 <!-- Edit Mode -->
                 <div x-show="editorMode === 'edit'" class="h-full">
                     <textarea x-model="editorContent"
-                              class="w-full h-full p-4 font-mono text-sm bg-gray-900 text-gray-100 resize-none focus:outline-none"
+                              class="w-full h-full p-6 font-mono text-sm bg-gray-900 text-gray-100 resize-none focus:outline-none leading-relaxed"
                               placeholder="# Agent Instructions..."></textarea>
                 </div>
 
                 <!-- Preview Mode -->
                 <div x-show="editorMode === 'preview'" class="h-full overflow-auto p-6">
                     <div class="prose dark:prose-invert max-w-none">
-                        <pre class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-sm overflow-auto" x-text="editorContent"></pre>
+                        <pre class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-sm overflow-auto whitespace-pre-wrap" x-text="editorContent"></pre>
                     </div>
                 </div>
             </div>
@@ -522,13 +522,20 @@ function agentsApp() {
         },
 
         openAIChat(agent) {
-            // Redirect to chat with agent file as context
+            // Open chat sidebar with slash command to modify the agent
             // Extract filename from path or use name
             const fileName = agent.path
                 ? agent.path.split('/').pop().replace('.md', '')
                 : agent.name;
             const agentPath = `agents/${fileName}.md`;
-            window.location.href = `/chat?file=${encodeURIComponent(agentPath)}`;
+
+            // Dispatch event to open chat with command pre-filled
+            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+                detail: {
+                    command: `/edit ${agentPath}`,
+                    reuseSession: true
+                }
+            }));
         },
 
         // Project Docs Functions
@@ -564,8 +571,13 @@ function agentsApp() {
         },
 
         openAIChatDoc(doc) {
-            // Redirect to chat with doc file as context
-            window.location.href = `/chat?file=${encodeURIComponent(doc.path)}`;
+            // Open chat sidebar with slash command to modify the doc
+            window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+                detail: {
+                    command: `/edit ${doc.path}`,
+                    reuseSession: true
+                }
+            }));
         },
 
         showToast(message, type = 'success') {
