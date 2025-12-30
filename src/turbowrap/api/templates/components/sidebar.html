@@ -504,9 +504,9 @@
 
         <!-- Commit Detail Modal -->
         <div x-show="selectedCommit"
+             x-cloak
              @click.away="selectedCommit = null"
-             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-             style="display: none;">
+             class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto"
                  @click.stop>
                 <div class="p-4 border-b dark:border-gray-700 flex justify-between items-start">
@@ -805,6 +805,7 @@
                 </button>
                 <!-- Deployments Dropdown -->
                 <div x-show="showDeploys"
+                     x-cloak
                      x-transition:enter="transition ease-out duration-100"
                      x-transition:enter-start="opacity-0 transform scale-95"
                      x-transition:enter-end="opacity-100 transform scale-100"

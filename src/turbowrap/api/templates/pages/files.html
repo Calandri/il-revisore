@@ -406,6 +406,7 @@
 
     <!-- Save with commit modal -->
     <div x-show="showCommitModal"
+         x-cloak
          x-transition
          class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
          @click.self="showCommitModal = false">
@@ -440,6 +441,7 @@
 
     <!-- AI Commit Modal -->
     <div x-show="showAiCommitModal"
+         x-cloak
          x-transition
          class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
          @click.self="showAiCommitModal = false"

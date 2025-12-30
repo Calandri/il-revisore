@@ -385,6 +385,7 @@
 
     <!-- Add repository modal -->
     <div x-show="showAddModal"
+         x-cloak
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"
@@ -395,6 +396,7 @@
          @click.self="showAddModal = false; resetFolderSelector(); resetBranchSelector(); resetRepoSearch()"
 
         <div x-show="showAddModal"
+             x-cloak
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="opacity-0 scale-95"
              x-transition:enter-end="opacity-100 scale-100"
@@ -772,6 +774,7 @@
 
     <!-- Structure viewer modal -->
     <div x-show="showStructureModal"
+         x-cloak
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"
@@ -783,6 +786,7 @@
          @keydown.escape.window="showStructureModal = false">
 
         <div x-show="showStructureModal"
+             x-cloak
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="opacity-0 scale-95"
              x-transition:enter-end="opacity-100 scale-100"
@@ -897,6 +901,7 @@
 
     <!-- Evaluation modal -->
     <div x-show="showEvaluationModal"
+         x-cloak
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"
@@ -908,6 +913,7 @@
          @keydown.escape.window="showEvaluationModal = false">
 
         <div x-show="showEvaluationModal"
+             x-cloak
              x-transition:enter="transition ease-out duration-300"
              x-transition:enter-start="opacity-0 scale-95"
              x-transition:enter-end="opacity-100 scale-100"

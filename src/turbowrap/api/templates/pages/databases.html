@@ -202,6 +202,7 @@
 
     <!-- Add/Edit Modal -->
     <div x-show="showAddModal || editingConnection"
+         x-cloak
          x-transition:enter="transition ease-out duration-200"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"
@@ -512,6 +513,7 @@
 
     <!-- Link Repository Modal -->
     <div x-show="showLinkRepoModal"
+         x-cloak
          x-transition:enter="transition ease-out duration-200"
          x-transition:enter-start="opacity-0"
          x-transition:enter-end="opacity-100"

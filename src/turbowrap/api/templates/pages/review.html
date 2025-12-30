@@ -1052,6 +1052,7 @@
 
     <!-- Fix Modal -->
     <div x-show="showFixModal"
+         x-cloak
          x-transition
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
          @click.self="closeFixModal()">
@@ -1151,6 +1152,7 @@
 
     <!-- Thinking Modal -->
     <div x-show="showThinkingModal"
+         x-cloak
          x-transition
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
          @click.self="closeThinkingModal()">
@@ -1214,6 +1216,7 @@
 
     <!-- Relationships Analysis Modal -->
     <div x-show="showRelationshipsModal"
+         x-cloak
          x-transition
          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
          @click.self="showRelationshipsModal = false">
