@@ -48,6 +48,10 @@ class OperationType(str, Enum):
     DEPLOY = "deploy"
     PROMOTE = "promote"
 
+    # Linear issue analysis
+    LINEAR_CLARIFY = "linear_clarify"  # Phase 1: generate clarifying questions
+    LINEAR_ANALYSIS = "linear_analysis"  # Phase 2: deep analysis with answers
+
     # Generic CLI task (for auto-tracking)
     CLI_TASK = "cli_task"
 
@@ -64,6 +68,8 @@ OPERATION_LABELS: dict[OperationType, str] = {
     OperationType.OPEN_PR: "opening PR for",
     OperationType.DEPLOY: "deploying",
     OperationType.PROMOTE: "promoting to production",
+    OperationType.LINEAR_CLARIFY: "clarifying",
+    OperationType.LINEAR_ANALYSIS: "analyzing issue",
     OperationType.CLI_TASK: "running task on",
 }
 
@@ -79,6 +85,8 @@ OPERATION_COLORS: dict[OperationType, str] = {
     OperationType.OPEN_PR: "purple",
     OperationType.DEPLOY: "red",
     OperationType.PROMOTE: "rose",
+    OperationType.LINEAR_CLARIFY: "amber",
+    OperationType.LINEAR_ANALYSIS: "indigo",
     OperationType.CLI_TASK: "slate",
 }
 
