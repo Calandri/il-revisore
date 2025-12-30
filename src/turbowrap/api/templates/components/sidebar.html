@@ -799,9 +799,19 @@
                                         <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300"
                                               x-text="proc.elapsed"></span>
                                     </div>
-                                    <span class="text-[10px] capitalize px-1.5 py-0.5 rounded"
-                                          :class="proc.status === 'running' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'"
-                                          x-text="proc.status"></span>
+                                    <div class="flex items-center gap-1">
+                                        <span class="text-[10px] capitalize px-1.5 py-0.5 rounded"
+                                              :class="proc.status === 'running' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'"
+                                              x-text="proc.status"></span>
+                                        <!-- Kill button -->
+                                        <button @click.stop="killProcess(proc.pid)"
+                                                class="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                title="Termina processo">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                            </svg>
+                                        </button>
+                                    </div>
                                 </div>
                                 <!-- Repo name if available -->
                                 <div x-show="proc.repo_name" class="flex items-center gap-1 mb-1">

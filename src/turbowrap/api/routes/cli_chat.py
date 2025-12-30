@@ -1034,6 +1034,63 @@ async def terminate_all() -> dict[str, int]:
     return {"terminated": count}
 
 
+@router.post("/kill/{pid}")
+async def kill_process_by_pid(pid: int) -> dict[str, Any]:
+    """Kill a CLI process by its PID.
+
+    First tries to find the process in the managed sessions and terminate gracefully.
+    If not found in sessions, forcefully kills the process by PID.
+
+    Args:
+        pid: Process ID to kill
+
+    Returns:
+        Status of the kill operation
+    """
+    import psutil
+
+    manager = get_process_manager()
+
+    # First, try to find this PID in our managed processes
+    for session_id, proc in list(manager._processes.items()):
+        if proc.pid == pid:
+            # Found it - terminate via manager for proper cleanup
+            terminated = await manager.terminate(session_id)
+            return {
+                "success": terminated,
+                "pid": pid,
+                "session_id": session_id,
+                "method": "managed",
+            }
+
+    # Not in managed processes - try direct kill
+    try:
+        process = psutil.Process(pid)
+        cmdline = " ".join(process.cmdline()).lower()
+
+        # Safety check: only kill claude/gemini processes
+        if "claude" not in cmdline and "gemini" not in cmdline:
+            return {
+                "success": False,
+                "pid": pid,
+                "error": "Not a CLI process (claude/gemini)",
+            }
+
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except psutil.TimeoutExpired:
+            process.kill()
+
+        return {"success": True, "pid": pid, "method": "direct"}
+    except psutil.NoSuchProcess:
+        return {"success": False, "pid": pid, "error": "Process not found"}
+    except psutil.AccessDenied:
+        return {"success": False, "pid": pid, "error": "Access denied"}
+    except Exception as e:
+        return {"success": False, "pid": pid, "error": str(e)}
+
+
 @router.get("/process-stats")
 def get_process_stats() -> dict[str, Any]:
     """Get detailed statistics about running CLI processes.

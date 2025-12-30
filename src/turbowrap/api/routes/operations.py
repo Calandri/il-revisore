@@ -337,20 +337,20 @@ async def complete_operation(operation_id: str) -> dict[str, str]:
 
 
 @router.delete("/{operation_id}")
-async def cancel_operation(operation_id: str) -> dict[str, str]:
+async def cancel_operation(operation_id: str) -> dict[str, Any]:
     """
     Cancel an operation.
 
-    Note: This only marks the operation as cancelled in the tracker.
-    The actual operation may continue running (e.g., a git push).
-    For operations that support true cancellation (like fix sessions),
-    use the dedicated cancel endpoint.
+    This marks the operation as cancelled in the tracker AND attempts
+    to terminate the underlying CLI process if a session_id is available.
     """
     logger.info(f"[OPERATIONS] Cancel request for operation: {operation_id}")
 
     try:
         tracker = get_tracker()
-        op = tracker.cancel(operation_id)
+
+        # Get operation first to extract session_id before cancelling
+        op = tracker.get(operation_id)
 
         if not op:
             logger.warning(f"[OPERATIONS] Operation not found: {operation_id}")
@@ -359,11 +359,28 @@ async def cancel_operation(operation_id: str) -> dict[str, str]:
                 detail=f"Operation {operation_id} not found in tracker",
             )
 
+        # Try to terminate the CLI process if session_id is available
+        process_terminated = False
+        session_id = op.details.get("session_id")
+
+        if session_id:
+            from ...chat_cli.process_manager import get_process_manager
+
+            manager = get_process_manager()
+            process_terminated = await manager.terminate(session_id)
+            logger.info(
+                f"[OPERATIONS] Process termination for session {session_id}: {process_terminated}"
+            )
+
+        # Mark operation as cancelled in tracker
+        tracker.cancel(operation_id)
+
         logger.info(f"[OPERATIONS] Cancelled operation: {operation_id}")
         return {
             "status": "cancelled",
-            "message": f"Operation {operation_id} marked as cancelled",
+            "message": f"Operation {operation_id} cancelled",
             "type": op.operation_type.value,
+            "process_terminated": process_terminated,
         }
     except HTTPException:
         raise

@@ -92,6 +92,32 @@ function systemMonitor() {
             }
         },
 
+        async killProcess(pid) {
+            if (!confirm(`Terminare il processo PID ${pid}?`)) return;
+
+            try {
+                const res = await fetch(`/api/cli-chat/kill/${pid}`, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Processo ${pid} terminato`, type: 'success' }
+                    }));
+                    // Refresh the process list
+                    await this.refresh();
+                } else {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: data.error || 'Errore terminazione', type: 'error' }
+                    }));
+                }
+            } catch (e) {
+                console.error('Kill process error:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Errore di rete', type: 'error' }
+                }));
+            }
+        },
+
         async refreshDeployments() {
             try {
                 const res = await fetch('/api/deployments/status');

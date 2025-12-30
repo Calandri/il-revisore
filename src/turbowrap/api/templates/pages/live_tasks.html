@@ -911,7 +911,10 @@ function liveTasksApp() {
                 const data = await response.json();
 
                 if (response.ok && data.status === 'cancelled') {
-                    this.showToast('Operazione cancellata', 'success');
+                    const msg = data.process_terminated
+                        ? 'Operazione cancellata e processo terminato'
+                        : 'Operazione cancellata';
+                    this.showToast(msg, 'success');
                 } else if (response.status === 404) {
                     this.showToast('Operazione non trovata nel tracker (già completata?)', 'warning');
                 } else {
