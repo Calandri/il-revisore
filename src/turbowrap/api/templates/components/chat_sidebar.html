@@ -293,7 +293,7 @@
                                     chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'
                                  ]"
                                  class="max-w-[90%]">
-                                <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content)"></div>
+                                <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content, msg.role)"></div>
                                 <div :class="msg.role === 'user' ? 'text-white/60' : 'text-gray-400'" class="text-xs mt-2"
                                      x-text="new Date(msg.created_at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})"></div>
                             </div>
@@ -305,7 +305,7 @@
                 <div x-show="activeSession && streaming" class="flex justify-start">
                     <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm max-w-[90%]"
                          :class="chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'">
-                        <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent)"></div>
+                        <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent, 'assistant')"></div>
                         <div class="flex items-center gap-1" :class="streamContent ? 'mt-2' : ''">
                             <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
                             <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>

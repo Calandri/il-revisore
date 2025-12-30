@@ -866,111 +866,146 @@ Be concise. Only list the most important elements (max 10).
         self,
         directories: list[DirectoryStructure],
         repo_type: RepoType,
+        compact: bool = True,
     ) -> Path:
         """
         Generate a single consolidated .llms/structure.xml file.
 
         This XML format is optimized for LLM consumption with semantic tags.
+
+        Args:
+            directories: List of directory structures to include
+            repo_type: Detected repository type
+            compact: Use compact format with short tags (reduces size ~50%)
         """
         import xml.etree.ElementTree as ET
-        from xml.dom import minidom
+
+        # Tag/attribute mappings for compact mode
+        # Compact: <r><m p="/"><f n="x.py" l="10"><fn n="foo"/></f></m></r>
+        # Normal:  <repository><module path="/"><file name="x.py" lines="10">...
+        if compact:
+            TAG_ROOT = "r"
+            TAG_META = "meta"
+            TAG_MODULE = "m"
+            TAG_FILE = "f"
+            TAG_FUNC = "fn"
+            TAG_CLASS = "cls"
+            TAG_COMP = "cmp"
+            ATTR_NAME = "n"
+            ATTR_PATH = "p"
+            ATTR_LINES = "l"
+            ATTR_DESC = "d"
+            ATTR_PURPOSE = "purpose"  # Keep readable
+            MAX_DESC_LEN = 30  # User prefers 30 chars for descriptions
+        else:
+            TAG_ROOT = "repository"
+            TAG_META = "metadata"
+            TAG_MODULE = "module"
+            TAG_FILE = "file"
+            TAG_FUNC = "function"
+            TAG_CLASS = "class"
+            TAG_COMP = "component"
+            ATTR_NAME = "name"
+            ATTR_PATH = "path"
+            ATTR_LINES = "lines"
+            ATTR_DESC = "desc"
+            ATTR_PURPOSE = "purpose"
+            MAX_DESC_LEN = 30
 
         # Create root element
-        # For monorepo workspace, use workspace name (e.g., "helpdesk") not repo name
         repo_name = self.scan_root.name if self.workspace_path else self.repo_path.name
-        root = ET.Element("repository")
-        root.set("name", repo_name)
+        root = ET.Element(TAG_ROOT)
+        root.set(ATTR_NAME, repo_name)
         root.set("type", repo_type.value)
         root.set("lang", self.metadata.language or "unknown")
 
-        # Add metadata section
-        metadata = ET.SubElement(root, "metadata")
+        # Add metadata section (compact: only essential info)
+        metadata = ET.SubElement(root, TAG_META)
 
         if self.metadata.framework:
-            framework = ET.SubElement(metadata, "framework")
-            framework.text = self.metadata.framework
+            metadata.set("fw", self.metadata.framework)
 
         if self.metadata.database:
-            database = ET.SubElement(metadata, "database")
-            database.text = self.metadata.database
+            metadata.set("db", self.metadata.database)
 
-        stats = ET.SubElement(metadata, "stats")
-        stats.set("files", str(self.be_file_count + self.fe_file_count))
-        stats.set("lines", str(self.total_lines))
-        stats.set("tokens", str(self.total_tokens))
+        # Stats as attributes (more compact)
+        metadata.set("files", str(self.be_file_count + self.fe_file_count))
+        metadata.set("lines", str(self.total_lines))
 
         if self.metadata.architecture_pattern:
-            arch = ET.SubElement(metadata, "architecture")
-            arch.set("pattern", self.metadata.architecture_pattern)
-            if self.metadata.architecture_description:
-                arch.text = self.metadata.architecture_description
+            metadata.set("arch", self.metadata.architecture_pattern)
 
-        # Add entry points
+        # Entry points as comma-separated attribute (compact)
         if self.metadata.entry_points:
-            entry_points = ET.SubElement(metadata, "entry-points")
-            for ep in self.metadata.entry_points:
-                entry = ET.SubElement(entry_points, "entry")
-                entry.text = ep
+            metadata.set("entry", ",".join(self.metadata.entry_points[:3]))
 
         # Add modules (directories with files)
         for dir_struct in directories:
             if not dir_struct.files:
                 continue
 
-            module = ET.SubElement(root, "module")
-            module.set("path", str(dir_struct.path) if str(dir_struct.path) != "." else "/")
+            module = ET.SubElement(root, TAG_MODULE)
+            module.set(ATTR_PATH, str(dir_struct.path) if str(dir_struct.path) != "." else "/")
 
             if dir_struct.purpose:
-                module.set("purpose", dir_struct.purpose)
+                module.set(ATTR_PURPOSE, dir_struct.purpose[:40])  # Limit purpose length
 
             # Add files
             for file_struct in sorted(dir_struct.files, key=lambda f: f.path.name):
-                file_elem = ET.SubElement(module, "file")
-                file_elem.set("name", file_struct.path.name)
-                file_elem.set("lines", str(file_struct.lines))
-                file_elem.set("tokens", str(file_struct.tokens))
+                file_elem = ET.SubElement(module, TAG_FILE)
+                file_elem.set(ATTR_NAME, file_struct.path.name)
+                file_elem.set(ATTR_LINES, str(file_struct.lines))
+                # Skip tokens in compact mode (can be estimated from lines)
 
                 # Add elements (functions, classes, components - skip constants/decorators)
                 for elem in file_struct.elements:
                     if elem.type.lower() in ("class",):
-                        class_elem = ET.SubElement(file_elem, "class")
-                        class_elem.set("name", elem.name)
+                        class_elem = ET.SubElement(file_elem, TAG_CLASS)
+                        class_elem.set(ATTR_NAME, elem.name)
                         if elem.description:
-                            class_elem.set("desc", elem.description)
+                            class_elem.set(ATTR_DESC, elem.description[:MAX_DESC_LEN])
                     elif elem.type.lower() in ("function", "hook", "utils"):
-                        func_elem = ET.SubElement(file_elem, "function")
-                        func_elem.set("name", elem.name)
+                        func_elem = ET.SubElement(file_elem, TAG_FUNC)
+                        func_elem.set(ATTR_NAME, elem.name)
                         if elem.description:
-                            func_elem.set("desc", elem.description)
+                            func_elem.set(ATTR_DESC, elem.description[:MAX_DESC_LEN])
                     elif elem.type.lower() in ("component",):
-                        comp_elem = ET.SubElement(file_elem, "component")
-                        comp_elem.set("name", elem.name)
+                        comp_elem = ET.SubElement(file_elem, TAG_COMP)
+                        comp_elem.set(ATTR_NAME, elem.name)
                         if elem.description:
-                            comp_elem.set("desc", elem.description)
-                    # Skip constants and decorators - they add bulk without much value
+                            comp_elem.set(ATTR_DESC, elem.description[:MAX_DESC_LEN])
 
-        # Pretty print XML (xml_string is self-generated, not untrusted input)
+        # Generate XML string
         xml_string = ET.tostring(root, encoding="unicode")
-        dom = minidom.parseString(xml_string)  # noqa: S318
-        pretty_xml = dom.toprettyxml(indent="  ", encoding=None)
 
-        # Remove extra blank lines and XML declaration (we'll add our own)
-        lines = pretty_xml.split("\n")
-        # Skip the XML declaration line from minidom
-        clean_lines = [line for line in lines[1:] if line.strip()]
+        # For compact mode: minimal indentation (1 space, newlines for modules)
+        # For normal mode: pretty print with 2-space indent
+        if compact:
+            # Add minimal formatting: newline before each module for readability
+            # This keeps it compact but scannable
+            formatted = xml_string.replace("><m ", ">\n <m ")  # Newline before modules
+            formatted = formatted.replace("</m><", "</m>\n<")  # Newline after modules
+            formatted = formatted.replace("</r>", "\n</r>")  # Newline before closing
 
-        # Add our own XML declaration with timestamp
-        output_lines = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            (
-                f"<!-- Generated by TurboWrap - {time.strftime('%Y-%m-%d %H:%M')} | "
-                f"ts:{int(time.time())} -->"
-            ),
-            *clean_lines,
-        ]
+            output_lines = [
+                '<?xml version="1.0" encoding="UTF-8"?>',
+                f"<!-- TurboWrap ts:{int(time.time())} -->",
+                formatted,
+            ]
+        else:
+            from xml.dom import minidom
+
+            dom = minidom.parseString(xml_string)  # noqa: S318
+            pretty_xml = dom.toprettyxml(indent="  ", encoding=None)
+            lines = pretty_xml.split("\n")
+            clean_lines = [line for line in lines[1:] if line.strip()]
+            output_lines = [
+                '<?xml version="1.0" encoding="UTF-8"?>',
+                f"<!-- Generated by TurboWrap - {time.strftime('%Y-%m-%d %H:%M')} | ts:{int(time.time())} -->",
+                *clean_lines,
+            ]
 
         # Create .llms directory and write file
-        # For monorepo: put in workspace/.llms/, otherwise repo_root/.llms/
         llms_dir = self.scan_root / ".llms"
         llms_dir.mkdir(parents=True, exist_ok=True)
 

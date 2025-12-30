@@ -1029,8 +1029,10 @@ Contesto: ${contextStr}`;
 
         /**
          * Format message content (full markdown support)
+         * @param {string} content - Message content
+         * @param {string} role - Message role ('user' or 'assistant')
          */
-        formatMessage(content) {
+        formatMessage(content, role = 'assistant') {
             if (!content) return '';
 
             try {
@@ -1124,32 +1126,43 @@ Contesto: ${contextStr}`;
             html = html.replace(/`([^`]+)`/g,
                 '<code class="bg-gray-200 dark:bg-gray-700 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
 
-            // Headers (process before other inline elements)
-            html = html.replace(/^######\s+(.+)$/gm, '<h6 class="text-xs font-bold mt-3 mb-1 text-gray-600 dark:text-gray-400">$1</h6>');
-            html = html.replace(/^#####\s+(.+)$/gm, '<h5 class="text-xs font-bold mt-3 mb-1">$1</h5>');
-            html = html.replace(/^####\s+(.+)$/gm, '<h4 class="text-sm font-bold mt-3 mb-1">$1</h4>');
-            html = html.replace(/^###\s+(.+)$/gm, '<h3 class="text-sm font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">$1</h3>');
-            html = html.replace(/^##\s+(.+)$/gm, '<h2 class="text-base font-bold mt-4 mb-2 text-gray-900 dark:text-gray-100">$1</h2>');
-            html = html.replace(/^#\s+(.+)$/gm, '<h1 class="text-lg font-bold mt-4 mb-2 text-gray-900 dark:text-gray-100">$1</h1>');
+            // Headers with improved styling
+            html = html.replace(/^######\s+(.+)$/gm, '<h6 class="text-xs font-semibold mt-3 mb-1 text-gray-500 dark:text-gray-400 uppercase tracking-wide">$1</h6>');
+            html = html.replace(/^#####\s+(.+)$/gm, '<h5 class="text-xs font-semibold mt-3 mb-1 text-gray-600 dark:text-gray-300">$1</h5>');
+            html = html.replace(/^####\s+(.+)$/gm, '<h4 class="text-sm font-semibold mt-4 mb-2 text-gray-700 dark:text-gray-200">$1</h4>');
+            html = html.replace(/^###\s+(.+)$/gm, '<h3 class="text-base font-semibold mt-5 mb-2 text-gray-800 dark:text-gray-100 flex items-center gap-2"><span class="w-1 h-4 bg-blue-500 rounded-full"></span>$1</h3>');
+            html = html.replace(/^##\s+(.+)$/gm, '<h2 class="text-lg font-bold mt-6 mb-3 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">$1</h2>');
+            html = html.replace(/^#\s+(.+)$/gm, '<h1 class="text-xl font-bold mt-6 mb-3 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">$1</h1>');
 
-            // Blockquotes
+            // Callout boxes (must be before blockquotes) - support [!TYPE] syntax
+            html = html.replace(/^&gt;\s*\[!INFO\]\s*(.*)$/gm, '<div class="my-3 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded-r-lg"><div class="flex items-start gap-2"><svg class="w-5 h-5 text-blue-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg><span class="text-blue-800 dark:text-blue-200 text-sm">$1</span></div></div>');
+            html = html.replace(/^&gt;\s*\[!WARNING\]\s*(.*)$/gm, '<div class="my-3 p-3 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 rounded-r-lg"><div class="flex items-start gap-2"><svg class="w-5 h-5 text-amber-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg><span class="text-amber-800 dark:text-amber-200 text-sm">$1</span></div></div>');
+            html = html.replace(/^&gt;\s*\[!SUCCESS\]\s*(.*)$/gm, '<div class="my-3 p-3 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 rounded-r-lg"><div class="flex items-start gap-2"><svg class="w-5 h-5 text-green-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg><span class="text-green-800 dark:text-green-200 text-sm">$1</span></div></div>');
+            html = html.replace(/^&gt;\s*\[!TIP\]\s*(.*)$/gm, '<div class="my-3 p-3 bg-purple-50 dark:bg-purple-900/20 border-l-4 border-purple-500 rounded-r-lg"><div class="flex items-start gap-2"><svg class="w-5 h-5 text-purple-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z"/></svg><span class="text-purple-800 dark:text-purple-200 text-sm">$1</span></div></div>');
+            html = html.replace(/^&gt;\s*\[!ERROR\]\s*(.*)$/gm, '<div class="my-3 p-3 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded-r-lg"><div class="flex items-start gap-2"><svg class="w-5 h-5 text-red-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg><span class="text-red-800 dark:text-red-200 text-sm">$1</span></div></div>');
+
+            // Regular blockquotes
             html = html.replace(/^&gt;\s+(.+)$/gm,
-                '<blockquote class="border-l-4 border-gray-300 dark:border-gray-600 pl-3 py-1 my-2 text-gray-600 dark:text-gray-400 italic">$1</blockquote>');
+                '<blockquote class="border-l-4 border-gray-300 dark:border-gray-600 pl-4 py-2 my-3 text-gray-600 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-800/50 rounded-r-lg">$1</blockquote>');
 
-            // Horizontal rules
-            html = html.replace(/^---+$/gm, '<hr class="my-4 border-gray-300 dark:border-gray-600">');
-            html = html.replace(/^\*\*\*+$/gm, '<hr class="my-4 border-gray-300 dark:border-gray-600">');
+            // Horizontal rules with better styling
+            html = html.replace(/^---+$/gm, '<hr class="my-6 border-0 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent">');
+            html = html.replace(/^\*\*\*+$/gm, '<hr class="my-6 border-0 h-px bg-gradient-to-r from-transparent via-gray-300 dark:via-gray-600 to-transparent">');
 
-            // Unordered lists (simple single-level)
+            // Task lists (checkboxes) - must be before regular lists
+            html = html.replace(/^[-*]\s+\[x\]\s+(.+)$/gim, '<div class="flex items-start gap-2 my-1"><svg class="w-5 h-5 text-green-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg><span class="text-sm text-gray-500 dark:text-gray-400 line-through">$1</span></div>');
+            html = html.replace(/^[-*]\s+\[\s?\]\s+(.+)$/gm, '<div class="flex items-start gap-2 my-1"><svg class="w-5 h-5 text-gray-300 dark:text-gray-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/></svg><span class="text-sm text-gray-700 dark:text-gray-300">$1</span></div>');
+
+            // Unordered lists with better styling
             html = html.replace(/^[-*]\s+(.+)$/gm,
-                '<li class="ml-4 list-disc text-sm">$1</li>');
+                '<li class="ml-4 text-sm flex items-start gap-2"><span class="text-blue-500 mt-1.5">•</span><span>$1</span></li>');
 
             // Ordered lists
-            html = html.replace(/^\d+\.\s+(.+)$/gm,
-                '<li class="ml-4 list-decimal text-sm">$1</li>');
+            html = html.replace(/^(\d+)\.\s+(.+)$/gm,
+                '<li class="ml-4 text-sm flex items-start gap-2"><span class="text-blue-500 font-medium min-w-[1.25rem]">$1.</span><span>$2</span></li>');
 
             // Wrap consecutive list items
-            html = html.replace(/(<li class="ml-4 list-disc[^>]*>.*<\/li>\n?)+/g,
+            html = html.replace(/(<li class="ml-4 text-sm flex[^>]*>.*<\/li>\n?)+/g,
                 '<ul class="my-2 space-y-1">$&</ul>');
             html = html.replace(/(<li class="ml-4 list-decimal[^>]*>.*<\/li>\n?)+/g,
                 '<ol class="my-2 space-y-1">$&</ol>');
@@ -1174,21 +1187,23 @@ Contesto: ${contextStr}`;
             html = html.replace(/~~([^~]+)~~/g, '<del class="line-through text-gray-500">$1</del>');
 
             // Questions with input fields (lines ending with ? that are actual questions)
-            // Skip very short lines, code-like lines, or lines that are just punctuation
+            // ONLY for assistant messages - user messages should not have question cards
             const questionId = Math.random().toString(36).substr(2, 9);
             let hasQuestions = false;
-            html = html.replace(/^([A-Z][^<\n]{10,}\?)\s*$/gm, (match, question) => {
-                // Skip if inside a code block indicator or looks like code
-                if (question.includes('`') || question.includes('//') || question.includes('/*')) return match;
-                hasQuestions = true;
-                const escapedQ = question.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-                // Single line to avoid \n → <br> breaking the HTML
-                return `<div class="question-block my-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800"><div class="font-medium text-blue-800 dark:text-blue-200 mb-2 flex items-start gap-2"><svg class="w-5 h-5 mt-0.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>${question}</span></div><input type="text" data-question-id="${questionId}" data-question="${escapedQ}" placeholder="Scrivi la tua risposta..." class="question-input w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"></div>`;
-            });
+            if (role === 'assistant') {
+                html = html.replace(/^([A-Z][^<\n]{10,}\?)\s*$/gm, (match, question) => {
+                    // Skip if inside a code block indicator or looks like code
+                    if (question.includes('`') || question.includes('//') || question.includes('/*')) return match;
+                    hasQuestions = true;
+                    const escapedQ = question.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    // Single line to avoid \n → <br> breaking the HTML
+                    return `<div class="question-block my-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800"><div class="font-medium text-blue-800 dark:text-blue-200 mb-2 flex items-start gap-2"><svg class="w-5 h-5 mt-0.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>${question}</span></div><input type="text" data-question-id="${questionId}" data-question="${escapedQ}" placeholder="Scrivi la tua risposta..." class="question-input w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"></div>`;
+                });
 
-            // Add submit button if there are questions (single line to avoid \n → <br> breaking HTML)
-            if (hasQuestions) {
-                html += `<div class="mt-4 flex justify-end"><button onclick="window.dispatchEvent(new CustomEvent('submit-chat-answers', {detail: {id: '${questionId}'}}))" class="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Invia Risposte</button></div>`;
+                // Add submit button if there are questions (single line to avoid \n → <br> breaking HTML)
+                if (hasQuestions) {
+                    html += `<div class="mt-4 flex justify-end"><button onclick="window.dispatchEvent(new CustomEvent('submit-chat-answers', {detail: {id: '${questionId}'}}))" class="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>Invia Risposte</button></div>`;
+                }
             }
 
             // Line breaks (but not inside pre/code blocks)
