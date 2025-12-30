@@ -61,6 +61,7 @@ COPY src/ ./src/
 COPY config/ ./config/
 COPY agents/ ./agents/
 COPY commands/ ./commands/
+COPY docs_llm/ ./docs_llm/
 
 # Copy Alembic migrations
 COPY alembic.ini ./
