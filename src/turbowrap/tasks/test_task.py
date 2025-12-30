@@ -88,18 +88,18 @@ class TestTask(BaseTask):
                 raise ValueError(f"Repository path not found: {repo_path}")
 
             # Update run status
-            run.status = "running"
-            run.started_at = started_at
+            run.status = "running"  # type: ignore[assignment]
+            run.started_at = started_at  # type: ignore[assignment]
 
             # Get git info
             branch, commit_sha = self._get_git_info(repo_path)
-            run.branch = branch
-            run.commit_sha = commit_sha
+            run.branch = branch  # type: ignore[assignment]
+            run.commit_sha = commit_sha  # type: ignore[assignment]
 
             context.db.commit()
 
             # Get parser for framework
-            parser = self._get_parser(suite.framework)
+            parser = self._get_parser(suite.framework)  # type: ignore[arg-type]
 
             # Build command
             command = self._build_command(suite, parser, repo_path)
@@ -124,14 +124,14 @@ class TestTask(BaseTask):
             duration = time.time() - start_time
             completed_at = datetime.utcnow()
 
-            run.status = "passed" if parsed.failed == 0 and parsed.errors == 0 else "failed"
-            run.completed_at = completed_at
-            run.duration_seconds = parsed.duration_seconds or duration
-            run.total_tests = parsed.total
-            run.passed = parsed.passed
-            run.failed = parsed.failed
-            run.skipped = parsed.skipped
-            run.errors = parsed.errors
+            run.status = "passed" if parsed.failed == 0 and parsed.errors == 0 else "failed"  # type: ignore[assignment]
+            run.completed_at = completed_at  # type: ignore[assignment]
+            run.duration_seconds = parsed.duration_seconds or duration  # type: ignore[assignment]
+            run.total_tests = parsed.total  # type: ignore[assignment]
+            run.passed = parsed.passed  # type: ignore[assignment]
+            run.failed = parsed.failed  # type: ignore[assignment]
+            run.skipped = parsed.skipped  # type: ignore[assignment]
+            run.errors = parsed.errors  # type: ignore[assignment]
 
             context.db.commit()
 
@@ -275,10 +275,10 @@ class TestTask(BaseTask):
         try:
             run = context.db.query(TestRun).filter(TestRun.id == run_id).first()
             if run:
-                run.status = "error"
-                run.error_message = error_message
-                run.completed_at = completed_at
-                run.duration_seconds = duration
+                run.status = "error"  # type: ignore[assignment]
+                run.error_message = error_message  # type: ignore[assignment]
+                run.completed_at = completed_at  # type: ignore[assignment]
+                run.duration_seconds = duration  # type: ignore[assignment]
                 context.db.commit()
         except Exception as e:
             logger.error(f"Failed to update run status: {e}")
