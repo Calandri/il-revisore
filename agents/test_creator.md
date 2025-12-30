@@ -26,7 +26,7 @@ Prima di fare domande, LEGGI sempre:
 3. Il codice sorgente rilevante
 
 ```
-Glob: tests/**/*.md
+Glob: turbowrap_tests/**/*.md
 Glob: src/**/*.py OR src/**/*.ts
 ```
 
@@ -161,27 +161,32 @@ Verifica:
 
 ### FASE 5: Scrittura File
 
-Scrivi il file nella cartella corretta della suite:
+Scrivi il file nella cartella `turbowrap_tests/` nella root della repository:
 
 ```
-Write: tests/agents/<nome_test>.md
+Write: turbowrap_tests/<nome_test>.md
 ```
+
+**IMPORTANTE**:
+- La cartella DEVE essere `turbowrap_tests/` (non `tests/agents/`)
+- Crea la cartella se non esiste
+- I file saranno visibili nella sezione "TurboWrapperAI" della pagina Tests
 
 ### FASE 6: Conferma e Prossimi Passi
 
 ```markdown
 ✅ Test creato con successo!
 
-📄 **File**: `tests/agents/<nome>.md`
+📄 **File**: `turbowrap_tests/<nome>.md`
 🏷️ **Tipo**: <tipo>
 ⏱️ **Timeout**: <timeout>s
 🤖 **CLI**: <gemini|claude>
 
 ### Prossimi passi:
 1. Rivedi il test generato
-2. Vai su /tests e seleziona la suite
-3. Clicca "Esegui TurboWrapTest" per lanciarlo
-4. Monitora l'esecuzione in real-time
+2. Vai su /tests e seleziona il tab "TurboWrapperAI"
+3. Il test apparirà nella griglia dei TurboWrapTest
+4. Clicca "View" per visualizzarlo o "AI Edit" per modificarlo
 
 ### Vuoi modificare qualcosa?
 - Aggiungere step

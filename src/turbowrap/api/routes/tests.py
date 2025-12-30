@@ -782,3 +782,193 @@ def generate_tests(
         "status": "pending",
         "message": "Test generation will be implemented with test-generator agent.",
     }
+
+
+# =============================================================================
+# TurboWrapTest Endpoints
+# =============================================================================
+
+
+class TurboWrapTestInfo(BaseModel):
+    """Info about a TurboWrapTest file."""
+
+    name: str
+    path: str
+    description: str = ""
+    cli: str = "gemini"
+    timeout: int = 300
+    tags: list[str] = []
+    created_at: str | None = None
+
+
+class TurboWrapTestContent(BaseModel):
+    """Full content of a TurboWrapTest file."""
+
+    name: str
+    path: str
+    description: str = ""
+    cli: str = "gemini"
+    timeout: int = 300
+    tags: list[str] = []
+    raw_content: str
+    instructions: str = ""
+
+
+@router.get("/turbowrap-tests/{repository_id}", response_model=list[TurboWrapTestInfo])
+def list_turbowrap_tests(
+    repository_id: str,
+    db: Session = Depends(get_db),
+) -> list[TurboWrapTestInfo]:
+    """List all TurboWrapTest files in a repository.
+
+    Looks for .md files in the turbowrap_tests/ directory of the repository.
+    """
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    repo = get_or_404(db, Repository, repository_id)
+    repo_path = Path(repo.local_path)
+    turbowrap_dir = repo_path / "turbowrap_tests"
+
+    tests: list[TurboWrapTestInfo] = []
+
+    if not turbowrap_dir.exists():
+        return tests
+
+    for md_file in turbowrap_dir.glob("*.md"):
+        try:
+            content = md_file.read_text(encoding="utf-8")
+
+            # Parse YAML frontmatter
+            pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
+            match = re.match(pattern, content, re.DOTALL)
+
+            if match:
+                metadata = yaml.safe_load(match.group(1)) or {}
+                tests.append(
+                    TurboWrapTestInfo(
+                        name=metadata.get("name", md_file.stem),
+                        path=str(md_file.relative_to(repo_path)),
+                        description=metadata.get("description", ""),
+                        cli=metadata.get("cli", "gemini"),
+                        timeout=metadata.get("timeout", 300),
+                        tags=metadata.get("tags", []),
+                        created_at=metadata.get("created_at"),
+                    )
+                )
+            else:
+                # No frontmatter, just use filename
+                tests.append(
+                    TurboWrapTestInfo(
+                        name=md_file.stem,
+                        path=str(md_file.relative_to(repo_path)),
+                    )
+                )
+        except Exception as e:
+            logger.warning(f"Failed to parse TurboWrapTest {md_file}: {e}")
+            continue
+
+    return tests
+
+
+@router.get("/turbowrap-tests/{repository_id}/{test_name}", response_model=TurboWrapTestContent)
+def get_turbowrap_test(
+    repository_id: str,
+    test_name: str,
+    db: Session = Depends(get_db),
+) -> TurboWrapTestContent:
+    """Get a TurboWrapTest file content."""
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    repo = get_or_404(db, Repository, repository_id)
+    repo_path = Path(repo.local_path)
+    test_path = repo_path / "turbowrap_tests" / f"{test_name}.md"
+
+    if not test_path.exists():
+        raise HTTPException(status_code=404, detail=f"TurboWrapTest '{test_name}' not found")
+
+    content = test_path.read_text(encoding="utf-8")
+
+    # Parse YAML frontmatter
+    pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
+    match = re.match(pattern, content, re.DOTALL)
+
+    if match:
+        metadata = yaml.safe_load(match.group(1)) or {}
+        instructions = match.group(2).strip()
+    else:
+        metadata = {}
+        instructions = content
+
+    return TurboWrapTestContent(
+        name=metadata.get("name", test_name),
+        path=str(test_path.relative_to(repo_path)),
+        description=metadata.get("description", ""),
+        cli=metadata.get("cli", "gemini"),
+        timeout=metadata.get("timeout", 300),
+        tags=metadata.get("tags", []),
+        raw_content=content,
+        instructions=instructions,
+    )
+
+
+class TurboWrapTestUpdate(BaseModel):
+    """Request to update a TurboWrapTest."""
+
+    content: str
+
+
+@router.put("/turbowrap-tests/{repository_id}/{test_name}")
+def update_turbowrap_test(
+    repository_id: str,
+    test_name: str,
+    data: TurboWrapTestUpdate,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Update a TurboWrapTest file."""
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    repo = get_or_404(db, Repository, repository_id)
+    repo_path = Path(repo.local_path)
+    turbowrap_dir = repo_path / "turbowrap_tests"
+    test_path = turbowrap_dir / f"{test_name}.md"
+
+    # Ensure directory exists
+    turbowrap_dir.mkdir(parents=True, exist_ok=True)
+
+    # Validate content has proper frontmatter
+    pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
+    match = re.match(pattern, data.content, re.DOTALL)
+
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid format: content must have YAML frontmatter between --- delimiters",
+        )
+
+    # Validate YAML frontmatter
+    try:
+        metadata = yaml.safe_load(match.group(1)) or {}
+        if not metadata.get("name"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid frontmatter: 'name' field is required",
+            )
+    except yaml.YAMLError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid YAML frontmatter: {e}",
+        )
+
+    # Write content to file
+    test_path.write_text(data.content, encoding="utf-8")
+
+    return {"status": "ok", "message": f"TurboWrapTest '{test_name}' saved successfully"}

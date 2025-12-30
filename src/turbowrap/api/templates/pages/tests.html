@@ -32,6 +32,15 @@
     selectedDatabaseId: '',
     loadingDatabases: false,
 
+    // TurboWrapTest state
+    turbowrapTests: [],
+    loadingTurbowrapTests: false,
+    showTurbowrapModal: false,
+    selectedTurbowrapTest: null,
+    turbowrapEditorContent: '',
+    turbowrapEditorMode: 'preview', // 'preview' | 'edit'
+    savingTurbowrapTest: false,
+
     // Form data
     newSuite: {
         name: '',
@@ -95,6 +104,68 @@
         }
     },
 
+    async loadTurbowrapTests() {
+        if (!this.repositoryId) return;
+        this.loadingTurbowrapTests = true;
+        try {
+            const res = await fetch(`/api/tests/turbowrap-tests/${this.repositoryId}`);
+            if (res.ok) {
+                this.turbowrapTests = await res.json();
+            }
+        } catch (e) {
+            console.error('Failed to load TurboWrapTests:', e);
+        }
+        this.loadingTurbowrapTests = false;
+    },
+
+    async openTurbowrapTest(test) {
+        this.selectedTurbowrapTest = test;
+        try {
+            const res = await fetch(`/api/tests/turbowrap-tests/${this.repositoryId}/${test.name}`);
+            if (res.ok) {
+                const data = await res.json();
+                this.turbowrapEditorContent = data.raw_content;
+                this.turbowrapEditorMode = 'preview';
+                this.showTurbowrapModal = true;
+            }
+        } catch (e) {
+            console.error('Failed to load TurboWrapTest:', e);
+        }
+    },
+
+    async saveTurbowrapTest() {
+        if (!this.selectedTurbowrapTest) return;
+        this.savingTurbowrapTest = true;
+        try {
+            const res = await fetch(`/api/tests/turbowrap-tests/${this.repositoryId}/${this.selectedTurbowrapTest.name}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: this.turbowrapEditorContent })
+            });
+            if (res.ok) {
+                window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Test salvato', type: 'success' }}));
+                this.showTurbowrapModal = false;
+                this.loadTurbowrapTests();
+            } else {
+                const err = await res.json();
+                window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: err.detail || 'Errore', type: 'error' }}));
+            }
+        } catch (e) {
+            window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Errore salvataggio', type: 'error' }}));
+        }
+        this.savingTurbowrapTest = false;
+    },
+
+    openAIChatForTurbowrapTest(test) {
+        window.dispatchEvent(new CustomEvent('open-chat-with-command', {
+            detail: {
+                agent: 'test_creator',
+                cli: 'claude',
+                command: `Modifica il TurboWrapTest "${test.name}":\nPath: ${test.path}\n\nCosa vuoi modificare?`
+            }
+        }));
+    },
+
     _initialLoadDone: false,
     _pollingTimer: null,
     _pollingInterval: 3000, // 3 seconds
@@ -131,6 +202,14 @@
                 this.refreshSuites();
                 this.refreshStats();
                 this.loadDatabases();
+                if (this.testType === 'ai') this.loadTurbowrapTests();
+            }
+        });
+
+        // Watch for test type changes - load TurboWrapTests when 'ai' tab is selected
+        this.$watch('testType', (type) => {
+            if (type === 'ai' && this.repositoryId) {
+                this.loadTurbowrapTests();
             }
         });
 
@@ -319,6 +398,85 @@
                 </button>
             </div>
 
+            <!-- TurboWrapTest Files Section (shown only when ai tab is selected) -->
+            <div x-show="testType === 'ai'" x-cloak class="mb-6">
+                <div class="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl p-4 border border-indigo-200 dark:border-indigo-800">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 dark:text-white">TurboWrapTest Files</h3>
+                                <p class="text-sm text-gray-500" x-text="turbowrapTests.length + ' test agent files'"></p>
+                            </div>
+                        </div>
+                        <button @click="loadTurbowrapTests()" class="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors" title="Ricarica">
+                            <svg class="w-5 h-5 text-gray-600 dark:text-gray-400" :class="loadingTurbowrapTests ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Loading -->
+                    <div x-show="loadingTurbowrapTests" class="flex items-center justify-center py-8">
+                        <svg class="w-6 h-6 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div x-show="!loadingTurbowrapTests && turbowrapTests.length === 0" class="text-center py-8 text-gray-500">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <p class="font-medium text-gray-700 dark:text-gray-300">Nessun TurboWrapTest</p>
+                        <p class="text-sm">Crea un test usando il pulsante "Genera Nuovi Test" in una suite</p>
+                    </div>
+
+                    <!-- Tests Grid -->
+                    <div x-show="!loadingTurbowrapTests && turbowrapTests.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <template x-for="test in turbowrapTests" :key="test.name">
+                            <div class="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-600 hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors">
+                                <div class="flex items-start gap-3 mb-3">
+                                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0"
+                                         x-text="test.name.substring(0, 2).toUpperCase()"></div>
+                                    <div class="min-w-0 flex-1">
+                                        <h4 class="font-medium text-gray-900 dark:text-white truncate" x-text="test.name"></h4>
+                                        <p class="text-xs text-gray-500 truncate" x-text="test.path"></p>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3" x-text="test.description || 'Nessuna descrizione'"></p>
+                                <div class="flex items-center gap-1 mb-3">
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300" x-text="test.cli"></span>
+                                    <span class="text-xs text-gray-400" x-text="test.timeout + 's'"></span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button @click="openTurbowrapTest(test)"
+                                            class="flex-1 px-2 py-1.5 text-xs font-medium bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                        View
+                                    </button>
+                                    <button @click="openAIChatForTurbowrapTest(test)"
+                                            class="flex-1 px-2 py-1.5 text-xs font-medium bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition-colors flex items-center justify-center gap-1">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        </svg>
+                                        AI Edit
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
             <!-- Test Suites List (loaded via HTMX) -->
             <div id="test-suites-container">
                 <!-- Loading skeleton -->
@@ -469,6 +627,84 @@
                     <button @click="runAllTests()"
                             class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                         Esegui
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TurboWrapTest Modal (View/Edit) -->
+    <div x-show="showTurbowrapModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+         @click.self="showTurbowrapModal = false"
+         @keydown.escape.window="showTurbowrapModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col" @click.stop>
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-4 border-b dark:border-gray-700">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold"
+                         x-text="selectedTurbowrapTest?.name?.substring(0, 2).toUpperCase() || 'TW'"></div>
+                    <div>
+                        <h3 class="text-lg font-bold" x-text="selectedTurbowrapTest?.name || 'TurboWrapTest'"></h3>
+                        <p class="text-sm text-gray-500" x-text="selectedTurbowrapTest?.path || ''"></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Mode Toggle -->
+                    <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                        <button @click="turbowrapEditorMode = 'preview'"
+                                :class="turbowrapEditorMode === 'preview' ? 'bg-white dark:bg-gray-600 shadow' : ''"
+                                class="px-3 py-1.5 text-sm font-medium rounded-md transition-all">
+                            Preview
+                        </button>
+                        <button @click="turbowrapEditorMode = 'edit'"
+                                :class="turbowrapEditorMode === 'edit' ? 'bg-white dark:bg-gray-600 shadow' : ''"
+                                class="px-3 py-1.5 text-sm font-medium rounded-md transition-all">
+                            Edit
+                        </button>
+                    </div>
+                    <button @click="showTurbowrapModal = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="flex-1 overflow-hidden p-4">
+                <!-- Preview Mode -->
+                <div x-show="turbowrapEditorMode === 'preview'" class="h-full overflow-auto prose dark:prose-invert max-w-none">
+                    <pre class="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg text-sm overflow-auto whitespace-pre-wrap" x-text="turbowrapEditorContent"></pre>
+                </div>
+
+                <!-- Edit Mode -->
+                <div x-show="turbowrapEditorMode === 'edit'" class="h-full">
+                    <textarea x-model="turbowrapEditorContent"
+                              class="w-full h-full p-4 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 font-mono text-sm resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              placeholder="# TurboWrapTest content..."></textarea>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex items-center justify-between p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <span class="px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300" x-text="selectedTurbowrapTest?.cli || 'claude'"></span>
+                    <span x-text="'Timeout: ' + (selectedTurbowrapTest?.timeout || 300) + 's'"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button @click="showTurbowrapModal = false"
+                            class="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        Chiudi
+                    </button>
+                    <button @click="saveTurbowrapTest()"
+                            :disabled="savingTurbowrapTest"
+                            class="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 flex items-center gap-2">
+                        <svg x-show="savingTurbowrapTest" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="savingTurbowrapTest ? 'Salvando...' : 'Salva'"></span>
                     </button>
                 </div>
             </div>
