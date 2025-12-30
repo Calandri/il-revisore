@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -16,7 +17,7 @@ class TestCaseResult:
     duration_ms: int | None = None
     error_message: str | None = None
     stack_trace: str | None = None
-    metadata: dict | None = field(default_factory=dict)
+    metadata: dict[str, Any] | None = field(default_factory=dict)
 
 
 @dataclass

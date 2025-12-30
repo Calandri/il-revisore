@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from typing import Any
 
 from .base import BaseTestParser, ParsedTestResults, TestCaseResult
 
@@ -57,7 +58,7 @@ class PytestParser(BaseTestParser):
         # Fallback: parse plain text output
         return self._parse_plain_output(output, exit_code)
 
-    def _extract_json(self, output: str) -> dict | None:
+    def _extract_json(self, output: str) -> dict[str, Any] | None:
         """Extract JSON report from output."""
         # Look for JSON object in output
         # pytest-json-report outputs JSON as a single line
@@ -82,7 +83,7 @@ class PytestParser(BaseTestParser):
 
         return None
 
-    def _parse_json_report(self, data: dict, raw_output: str) -> ParsedTestResults:
+    def _parse_json_report(self, data: dict[str, Any], raw_output: str) -> ParsedTestResults:
         """Parse pytest-json-report format."""
         test_cases = []
         tests = data.get("tests", [])

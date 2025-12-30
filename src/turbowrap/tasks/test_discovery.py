@@ -8,6 +8,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ..llm.gemini import GeminiCLI
 
@@ -60,7 +61,7 @@ def _load_agent_prompt() -> str:
     return content
 
 
-def _extract_json_from_output(output: str) -> dict | None:
+def _extract_json_from_output(output: str) -> dict[str, Any] | None:
     """Extract JSON object from Gemini output.
 
     The output may contain markdown or other text, so we need to find
@@ -197,7 +198,7 @@ async def discover_and_save_tests(
     repo_path: Path,
     repo_name: str,
     repository_id: str,
-    db_session,
+    db_session: Any,
     context_id: str | None = None,
 ) -> DiscoveryResult:
     """Discover tests and save them to database.

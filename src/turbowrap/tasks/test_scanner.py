@@ -172,14 +172,15 @@ class JavaScriptTestScanner:
         return result
 
 
-def get_scanner_for_framework(framework: str):
+def get_scanner_for_framework(
+    framework: str,
+) -> PythonTestScanner | JavaScriptTestScanner:
     """Get the appropriate scanner for a test framework."""
     if framework in ("pytest", "python"):
         return PythonTestScanner()
-    elif framework in ("jest", "vitest", "playwright", "cypress"):
+    if framework in ("jest", "vitest", "playwright", "cypress"):
         return JavaScriptTestScanner(framework)
-    else:
-        return PythonTestScanner()  # Default to Python
+    return PythonTestScanner()  # Default to Python
 
 
 def scan_test_suite(
@@ -223,7 +224,9 @@ def scan_test_suite(
         result.files.append(scanned_file)
         result.total_tests += scanned_file.test_count
 
-    logger.info(f"[TEST SCANNER] Scanned {len(result.files)} files, found {result.total_tests} tests")
+    logger.info(
+        f"[TEST SCANNER] Scanned {len(result.files)} files, found {result.total_tests} tests"
+    )
 
     return result
 

@@ -65,7 +65,7 @@ class TestTask(BaseTask):
         """
         started_at = datetime.utcnow()
         start_time = time.time()
-        config = self.validate_config(context.config)
+        config: TestTaskConfig = self.validate_config(context.config)  # type: ignore[assignment]
 
         try:
             # Load TestRun
@@ -243,9 +243,7 @@ class TestTask(BaseTask):
         except subprocess.CalledProcessError:
             return None, None
 
-    def _save_test_cases(
-        self, db: Any, run: TestRun, test_cases: list
-    ) -> None:
+    def _save_test_cases(self, db: Any, run: TestRun, test_cases: list[Any]) -> None:
         """Save test case results to database."""
         for tc in test_cases:
             test_case = TestCase(

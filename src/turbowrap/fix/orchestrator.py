@@ -36,10 +36,54 @@ from turbowrap.llm.claude_cli import ClaudeCLI, ClaudeCLIResult
 
 # Import GeminiCLI from shared orchestration utilities
 from turbowrap.orchestration.cli_runner import GeminiCLI
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 S3_BUCKET = "turbowrap-thinking"
 
 logger = logging.getLogger(__name__)
+
+
+def generate_branch_name(issues: list[Issue], prefix: str = "fix") -> str:
+    """Generate a descriptive branch name from issue titles.
+
+    Args:
+        issues: List of issues to fix
+        prefix: Branch prefix (default: "fix")
+
+    Returns:
+        A descriptive branch name like "fix/missing-validation-user-input"
+    """
+    if not issues:
+        return f"{prefix}/{uuid.uuid4().hex[:12]}"
+
+    # Get the first issue title
+    first_title = issues[0].title if issues[0].title else ""
+
+    # Clean and slugify the title
+    # Remove common prefixes like "[BE]", "[FE]", "CRITICAL:", etc.
+    slug = re.sub(r"^\[?\w{2,4}\]?\s*:?\s*", "", first_title, flags=re.IGNORECASE)
+
+    # Convert to lowercase and replace non-alphanumeric with dashes
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", slug.lower())
+
+    # Remove leading/trailing dashes and collapse multiple dashes
+    slug = re.sub(r"-+", "-", slug).strip("-")
+
+    # Truncate to reasonable length (max 40 chars for the slug part)
+    if len(slug) > 40:
+        # Try to cut at a word boundary
+        slug = slug[:40].rsplit("-", 1)[0]
+
+    # Add suffix if multiple issues
+    if len(issues) > 1:
+        slug = f"{slug}-and-{len(issues) - 1}-more"
+
+    # Ensure we have something
+    if not slug:
+        slug = uuid.uuid4().hex[:12]
+
+    return f"{prefix}/{slug}"
+
 
 MAX_SESSION_TOKENS = 150_000  # 150k token limit (50k margin on 200k Opus)
 
@@ -156,6 +200,13 @@ class FixOrchestrator:
 
         self.s3_client = boto3.client("s3")
         self.s3_bucket = S3_BUCKET
+
+        # S3 saver for TODO lists (uses existing lifecycle policy)
+        self._todo_s3_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="fix-logs",  # Uses existing 10-day lifecycle rule
+        )
 
         self.gemini_cli = GeminiCLI(
             working_dir=repo_path,
@@ -404,7 +455,32 @@ class FixOrchestrator:
             json.dump(todo_list, f, indent=2)
 
         logger.info(f"Generated TODO list at {todo_file} with {len(groups)} groups")
+
+        # Upload to S3 in background (fire-and-forget for persistence)
+        self._upload_todo_to_s3(todo_list, session_id, "todo")
+
         return todo_file
+
+    def _upload_todo_to_s3(
+        self, content: dict[str, Any], session_id: str, artifact_type: str
+    ) -> None:
+        """Upload TODO list to S3 in background (fire-and-forget).
+
+        Does not block the main flow - S3 is for persistence/audit only.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Schedule upload without waiting
+                asyncio.create_task(
+                    self._todo_s3_saver.save_json(content, artifact_type, session_id)
+                )
+            else:
+                # Fallback for non-async context
+                asyncio.run(self._todo_s3_saver.save_json(content, artifact_type, session_id))
+        except Exception as e:
+            # Never fail the main flow due to S3 upload issues
+            logger.warning(f"[S3] TODO upload failed (non-blocking): {e}")
 
     def _generate_group_todo_list(
         self,
@@ -503,6 +579,10 @@ class FixOrchestrator:
             f"Generated {group_type} TODO list at {todo_file} "
             f"({len(parallel_issues)} parallel, {len(serial_groups)} serial groups)"
         )
+
+        # Upload to S3 in background (fire-and-forget for persistence)
+        self._upload_todo_to_s3(todo_list, session_id, f"todo_{group_type.lower()}")
+
         return todo_file
 
     def _get_challenger_prompt(self) -> str:
@@ -579,7 +659,7 @@ class FixOrchestrator:
             operation_id: Optional operation ID for tracker (uses session_id if not provided)
         """
         session_id = operation_id or str(uuid.uuid4())
-        branch_name = f"fix/{request.task_id[:20]}"
+        branch_name = generate_branch_name(issues)
 
         result = FixSessionResult(
             session_id=session_id,

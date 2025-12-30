@@ -177,3 +177,44 @@ class S3ArtifactSaver:
         except ClientError as e:
             logger.warning(f"[S3] Raw upload failed: {e}")
             return None
+
+    async def save_json(
+        self,
+        content: dict[str, Any],
+        artifact_type: str,
+        context_id: str,
+    ) -> str | None:
+        """Save JSON artifact to S3.
+
+        Args:
+            content: Dictionary to serialize as JSON
+            artifact_type: Type of artifact (todo, config, etc.)
+            context_id: Identifier for grouping artifacts
+
+        Returns:
+            S3 URL if successful, None otherwise
+        """
+        import json
+
+        if not self.bucket:
+            return None
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+        s3_key = f"{self.prefix}/{timestamp}/{context_id}_{artifact_type}.json"
+
+        try:
+            json_content = json.dumps(content, indent=2, ensure_ascii=False)
+            await asyncio.to_thread(
+                self.client.put_object,
+                Bucket=self.bucket,
+                Key=s3_key,
+                Body=json_content.encode("utf-8"),
+                ContentType="application/json",
+            )
+            # Generate pre-signed URL for authenticated browser access
+            presigned_url = self._generate_presigned_url(s3_key)
+            logger.info(f"[S3] Saved JSON {artifact_type} to {s3_key}")
+            return presigned_url
+        except ClientError as e:
+            logger.warning(f"[S3] JSON upload failed: {e}")
+            return None
