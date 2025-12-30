@@ -1994,8 +1994,8 @@ function issuesApp() {
             return Object.fromEntries(sorted);
         },
 
-        // Select all issues from a file for batch fix
-        createBatchFromFile(file, fileIssues) {
+        // Select all issues from a file for batch fix - directly opens clarification popup
+        async createBatchFromFile(file, fileIssues) {
             // Filter only fixable issues (open status)
             const fixableIds = fileIssues
                 .filter(i => i.status === 'open')
@@ -2004,11 +2004,46 @@ function issuesApp() {
                 this.showToast('Nessuna issue open da fixare in questo file', 'warning');
                 return;
             }
-            // Add to selection and trigger fix
+            // Set selection
             this.selectedIssues = fixableIds;
-            this.showToast(`Selezionate ${fixableIds.length} issue da ${file.split('/').pop()}`, 'success');
-            // Optionally auto-open fix modal
-            // this.openFixModal();
+            this.fixNotes = '';
+
+            // Find first issue for repository/task info
+            const firstIssue = fileIssues.find(i => i.status === 'open');
+            if (!firstIssue || !firstIssue.repository_id || !firstIssue.task_id) {
+                this.showToast('Errore: Dati issue incompleti', 'error');
+                return;
+            }
+
+            // Store pending request
+            this.clarification.pendingRequest = {
+                firstIssue,
+                branchOptions: null,
+            };
+
+            // Check for pending branches first
+            try {
+                const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
+                if (pendingRes.ok) {
+                    const pendingData = await pendingRes.json();
+                    if (pendingData.has_pending && pendingData.branches.length > 0) {
+                        this.pendingFixRequest = {
+                            repository_id: firstIssue.repository_id,
+                            task_id: firstIssue.task_id,
+                            issue_ids: [...this.selectedIssues],
+                            user_notes: null,
+                        };
+                        this.pendingBranch = pendingData.branches[0];
+                        this.showPendingBranchModal = true;
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[FIX] Could not check pending branches:', e);
+            }
+
+            // Go directly to clarification popup
+            await this._startClarification(firstIssue);
         },
 
         quickIgnore(issue) {
