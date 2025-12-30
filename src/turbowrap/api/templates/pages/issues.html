@@ -1025,6 +1025,106 @@
     </div>
 
     <!-- ============================================== -->
+    <!-- CLARIFICATION MODAL -->
+    <!-- ============================================== -->
+    <div x-show="clarification.show" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="cancelClarification()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-lg">Pre-Fix Clarification</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">OPUS sta analizzando le issue prima di procedere</p>
+                </div>
+                <button @click="cancelClarification()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="p-4 overflow-y-auto flex-1">
+                <!-- Loading state -->
+                <div x-show="clarification.loading" class="flex flex-col items-center py-8">
+                    <svg class="w-12 h-12 text-indigo-500 animate-spin mb-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-500 dark:text-gray-400" x-text="clarification.message"></p>
+                </div>
+
+                <!-- Message from OPUS -->
+                <div x-show="!clarification.loading && clarification.message" class="mb-4">
+                    <div class="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                                </svg>
+                            </div>
+                            <p class="text-sm text-indigo-700 dark:text-indigo-300" x-text="clarification.message"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Questions -->
+                <div x-show="!clarification.loading && clarification.questions.length > 0" class="space-y-4">
+                    <template x-for="(q, idx) in clarification.questions" :key="q.id">
+                        <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                            <div class="flex items-start gap-2 mb-2">
+                                <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-sm font-medium flex items-center justify-center shrink-0" x-text="idx + 1"></span>
+                                <p class="font-medium text-gray-900 dark:text-gray-100" x-text="q.question"></p>
+                            </div>
+                            <p x-show="q.context" class="text-xs text-gray-500 dark:text-gray-400 mb-2 ml-8" x-text="q.context"></p>
+                            <textarea
+                                x-model="clarification.answers[q.id]"
+                                rows="2"
+                                class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 resize-none ml-8 text-sm"
+                                placeholder="La tua risposta..."></textarea>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Ready to fix message (no questions) -->
+                <div x-show="!clarification.loading && clarification.questions.length === 0 && clarification.readyToFix" class="text-center py-8">
+                    <svg class="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-lg font-medium text-gray-900 dark:text-gray-100">Pronto per il fix!</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">OPUS ha confermato che le issue sono chiare.</p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div x-show="!clarification.loading" class="p-4 border-t dark:border-gray-700 flex justify-between items-center shrink-0">
+                <button @click="skipClarification()" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    Salta e procedi direttamente
+                </button>
+                <div class="flex gap-3">
+                    <button @click="cancelClarification()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        Annulla
+                    </button>
+                    <button
+                        x-show="clarification.questions.length > 0"
+                        @click="submitClarificationAnswers()"
+                        :disabled="clarification.loading"
+                        class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                        </svg>
+                        Invia Risposte
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
     <!-- PENDING BRANCH MODAL -->
     <!-- ============================================== -->
     <div x-show="showPendingBranchModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showPendingBranchModal = false">
@@ -1269,6 +1369,17 @@ function issuesApp() {
             billingError: null,
             scopeViolation: { show: false, sessionId: null, dirs: [], responding: false }
         },
+        // Pre-fix clarification state
+        clarification: {
+            show: false,
+            loading: false,
+            sessionId: null,
+            questions: [],
+            answers: {},
+            message: '',
+            readyToFix: false,
+            pendingRequest: null  // Stores the pending fix request details
+        },
         _streamingBuffer: '',
         _updateScheduled: false,
         _eventBuffer: [],
@@ -1435,6 +1546,13 @@ function issuesApp() {
                 return;
             }
 
+            // Store pending request for after clarification
+            this.clarification.pendingRequest = {
+                firstIssue,
+                branchOptions: null,
+            };
+
+            // Check for pending branches first
             try {
                 const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
                 if (pendingRes.ok) {
@@ -1454,7 +1572,99 @@ function issuesApp() {
             } catch (e) {
                 console.warn('[FIX] Could not check pending branches:', e);
             }
-            await this._startFixProcess(firstIssue);
+
+            // Start clarification phase
+            await this._startClarification(firstIssue);
+        },
+
+        // Pre-fix clarification with OPUS
+        async _startClarification(firstIssue) {
+            this.clarification.loading = true;
+            this.clarification.show = true;
+            this.clarification.message = 'OPUS sta analizzando le issue...';
+
+            try {
+                const response = await fetch('/api/fix/clarify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: firstIssue.repository_id,
+                        issue_ids: this.selectedIssues,
+                        session_id: this.clarification.sessionId,
+                        answers: Object.keys(this.clarification.answers).length > 0
+                            ? this.clarification.answers : null,
+                        previous_questions: this.clarification.questions.length > 0
+                            ? this.clarification.questions : null,
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Clarification failed');
+                }
+
+                const data = await response.json();
+                this.clarification.sessionId = data.session_id;
+                this.clarification.message = data.message;
+                this.clarification.questions = data.questions || [];
+                this.clarification.readyToFix = data.ready_to_fix;
+
+                // Reset answers for new questions
+                this.clarification.answers = {};
+                data.questions?.forEach(q => {
+                    this.clarification.answers[q.id] = '';
+                });
+
+                // If ready to fix, proceed
+                if (data.ready_to_fix) {
+                    this.clarification.show = false;
+                    await this._startFixProcess(
+                        this.clarification.pendingRequest.firstIssue,
+                        this.clarification.pendingRequest.branchOptions
+                    );
+                }
+            } catch (error) {
+                console.error('Clarification error:', error);
+                this.clarification.message = 'Errore: ' + error.message;
+            } finally {
+                this.clarification.loading = false;
+            }
+        },
+
+        // Submit clarification answers and continue
+        async submitClarificationAnswers() {
+            if (this.clarification.loading) return;
+
+            // Validate all answers are provided
+            const unanswered = this.clarification.questions.filter(
+                q => !this.clarification.answers[q.id]?.trim()
+            );
+            if (unanswered.length > 0) {
+                alert('Rispondi a tutte le domande prima di procedere.');
+                return;
+            }
+
+            // Continue clarification with answers
+            await this._startClarification(this.clarification.pendingRequest.firstIssue);
+        },
+
+        // Skip clarification and proceed directly to fix
+        skipClarification() {
+            this.clarification.show = false;
+            this._startFixProcess(
+                this.clarification.pendingRequest.firstIssue,
+                this.clarification.pendingRequest.branchOptions
+            );
+        },
+
+        // Cancel clarification
+        cancelClarification() {
+            this.clarification.show = false;
+            this.clarification.sessionId = null;
+            this.clarification.questions = [];
+            this.clarification.answers = {};
+            this.clarification.message = '';
+            this.clarification.pendingRequest = null;
         },
 
         async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false, forceNewBranch = false) {

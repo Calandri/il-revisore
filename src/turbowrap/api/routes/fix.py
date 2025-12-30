@@ -18,6 +18,8 @@ from sse_starlette.sse import EventSourceResponse
 from turbowrap.api.deps import get_current_user, get_db
 from turbowrap.db.models import Issue, IssueStatus, Repository
 from turbowrap.fix import ClarificationAnswer, ClarificationQuestion
+from turbowrap.llm.claude_cli import ClaudeCLI
+from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ router = APIRouter(prefix="/fix", tags=["fix"])
 
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "agents"
 GIT_MERGER_AGENT = AGENTS_DIR / "git_merger_gemini.md"
+FIX_CLARIFIER_AGENT = AGENTS_DIR / "fix_clarifier.md"
 
 
 def _load_agent(agent_path: Path) -> str:
@@ -267,6 +270,49 @@ class FixStartRequest(BaseModel):
         description="Optional user notes with additional context or instructions for the fixer",
     )
 
+    # Session from pre-fix clarification phase
+    clarify_session_id: str | None = Field(
+        default=None,
+        description="Session ID from pre-fix clarification phase (for resume with context)",
+    )
+
+
+# Pre-fix Clarification Models
+class PreFixClarifyQuestion(BaseModel):
+    """Question from pre-fix clarification phase."""
+
+    id: str = Field(..., description="Question ID (e.g., 'q1', 'q2')")
+    question: str = Field(..., description="The question text")
+    context: str | None = Field(default=None, description="Why this information is needed")
+
+
+class PreFixClarifyRequest(BaseModel):
+    """Request for pre-fix clarification."""
+
+    repository_id: str = Field(..., description="Repository ID")
+    issue_ids: list[str] = Field(..., min_length=1, description="Issue IDs to analyze")
+    session_id: str | None = Field(
+        default=None, description="Session ID for resume (from previous clarify call)"
+    )
+    answers: dict[str, str] | None = Field(
+        default=None, description="Answers to previous questions (key=question_id, value=answer)"
+    )
+    previous_questions: list[PreFixClarifyQuestion] | None = Field(
+        default=None, description="Previous questions for context in resume"
+    )
+
+
+class PreFixClarifyResponse(BaseModel):
+    """Response from pre-fix clarification."""
+
+    has_questions: bool = Field(..., description="Whether there are questions")
+    questions: list[PreFixClarifyQuestion] = Field(
+        default_factory=list, description="Questions for the user"
+    )
+    message: str = Field(..., description="AI message explaining the analysis")
+    session_id: str = Field(..., description="Session ID for resume")
+    ready_to_fix: bool = Field(..., description="Whether ready to proceed with fix")
+
 
 class ClarificationAnswerRequest(BaseModel):
     """Request with clarification answer."""
@@ -372,6 +418,147 @@ def update_issue(
     db.refresh(issue)
 
     return {"status": "updated", "issue_id": issue_id, "new_status": data.status}
+
+
+def _format_issues_for_clarify(issues: list[Issue]) -> str:
+    """Format issues for the clarification prompt."""
+    lines = []
+    for i, issue in enumerate(issues, 1):
+        lines.append(f"## Issue {i}: {issue.issue_code}")
+        lines.append(f"**Title:** {issue.title}")
+        lines.append(f"**File:** {issue.file}:{issue.line or '?'}")
+        lines.append(f"**Severity:** {issue.severity}")
+        lines.append(f"**Description:** {issue.description}")
+        if issue.suggested_fix:
+            lines.append(f"**Suggested Fix:** {issue.suggested_fix}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _format_answers_for_clarify(answers: dict[str, str]) -> str:
+    """Format user answers for the follow-up prompt."""
+    lines = []
+    for qid, answer in answers.items():
+        lines.append(f"- **{qid}:** {answer}")
+    return "\n".join(lines)
+
+
+@router.post("/clarify", response_model=PreFixClarifyResponse)
+async def clarify_before_fix(
+    request: PreFixClarifyRequest,
+    db: Session = Depends(get_db),
+) -> PreFixClarifyResponse:
+    """
+    Pre-fix clarification phase with OPUS.
+
+    Call this before /start to let OPUS analyze the issues and ask questions.
+    Loop until ready_to_fix=true, then proceed to /start with clarify_session_id.
+
+    Flow:
+    1. First call: OPUS analyzes issues, may ask questions
+    2. If has_questions=true: show questions to user, get answers
+    3. Call again with session_id + answers
+    4. Repeat until ready_to_fix=true
+    5. Call /start with clarify_session_id for context preservation
+    """
+    # Load repository
+    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Load issues
+    issues = db.query(Issue).filter(Issue.id.in_(request.issue_ids)).all()
+    if not issues:
+        raise HTTPException(status_code=404, detail="No issues found")
+
+    # Format issues for prompt
+    issues_text = _format_issues_for_clarify(issues)
+
+    # Build prompt based on whether this is first call or resume
+    if request.answers and request.session_id:
+        # Resume with answers
+        answers_text = _format_answers_for_clarify(request.answers)
+
+        # Format previous questions for context
+        prev_q_text = ""
+        if request.previous_questions:
+            prev_q_text = "\n".join(f"- {q.id}: {q.question}" for q in request.previous_questions)
+
+        prompt = f"""Le tue domande precedenti:
+{prev_q_text}
+
+Risposte dell'utente:
+{answers_text}
+
+Hai altre domande o sei pronto per procedere al fix?
+
+Rispondi SOLO con JSON valido:
+{{"has_questions": bool, "questions": [...], "message": "...", "ready_to_fix": bool}}"""
+    else:
+        # First call
+        prompt = f"""Dovrai risolvere queste issue:
+
+{issues_text}
+
+Cosa ne pensi? Sono tutte chiare? Hai il contesto necessario per procedere?
+Se hai domande, sei libero di farle. Altrimenti conferma che sei pronto.
+
+Rispondi SOLO con JSON valido:
+{{"has_questions": bool, "questions": [...], "message": "...", "ready_to_fix": bool}}"""
+
+    # Run OPUS
+    cli = ClaudeCLI(
+        working_dir=Path(repo.local_path) if repo.local_path else None,
+        model="opus",
+        agent_md_path=FIX_CLARIFIER_AGENT if FIX_CLARIFIER_AGENT.exists() else None,
+    )
+
+    try:
+        result = await cli.run(
+            prompt=prompt,
+            operation_type="fix_clarification",
+            repo_name=repo.name or "unknown",
+            resume_session_id=request.session_id,
+        )
+    except Exception as e:
+        logger.exception(f"Clarification failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Clarification failed: {e}")
+
+    # Parse JSON response
+    if not result.output:
+        raise HTTPException(status_code=500, detail="No response from OPUS")
+
+    data = parse_llm_json(result.output)
+    if not data:
+        # Fallback: assume ready to fix if parsing fails
+        logger.warning(f"Failed to parse clarify response: {result.output[:500]}")
+        return PreFixClarifyResponse(
+            has_questions=False,
+            questions=[],
+            message="Analisi completata. Procedi con il fix.",
+            session_id=result.session_id or "",
+            ready_to_fix=True,
+        )
+
+    # Build response
+    questions: list[PreFixClarifyQuestion] = []
+    for q in data.get("questions", []):
+        if isinstance(q, dict) and "question" in q:
+            questions.append(
+                PreFixClarifyQuestion(
+                    id=q.get("id", f"q{len(questions)+1}"),
+                    question=q["question"],
+                    context=q.get("context"),
+                )
+            )
+
+    return PreFixClarifyResponse(
+        has_questions=data.get("has_questions", False),
+        questions=questions,
+        message=data.get("message", ""),
+        session_id=result.session_id or "",
+        ready_to_fix=data.get("ready_to_fix", False),
+    )
 
 
 @router.post("/start", response_model=None)
