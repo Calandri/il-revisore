@@ -791,6 +791,7 @@ function issueDetailApp() {
         filterParams: '',
 
         async init() {
+            console.log('[IssueDetail] Initializing with issueId:', this.issueId, 'issueCode:', this.issueCode);
             this.$watch('showFixLog', async (value) => {
                 if (value && !this.fixLog) {
                     await this.loadFixLog();
@@ -830,22 +831,34 @@ function issueDetailApp() {
 
                 apiParams.set('limit', '500');
 
+                console.log('[Navigation] Fetching issues with params:', apiParams.toString());
                 const res = await fetch(`/api/issues?${apiParams.toString()}`);
-                if (!res.ok) return;
+                if (!res.ok) {
+                    console.error('[Navigation] API error:', res.status);
+                    return;
+                }
                 const issues = await res.json();
+                console.log('[Navigation] Found', issues.length, 'issues');
                 this.totalIssues = issues.length;
 
                 // Find current issue index
                 const idx = issues.findIndex(i => i.issue_code === this.issueCode);
-                if (idx === -1) return;
+                console.log('[Navigation] Current issue code:', this.issueCode, 'found at index:', idx);
+                if (idx === -1) {
+                    console.warn('[Navigation] Current issue not found in results');
+                    return;
+                }
                 this.currentIndex = idx;
                 this.prevIssue = idx > 0 ? issues[idx - 1] : null;
                 this.nextIssue = idx < issues.length - 1 ? issues[idx + 1] : null;
 
+                console.log('[Navigation] prevIssue:', this.prevIssue?.issue_code || null);
+                console.log('[Navigation] nextIssue:', this.nextIssue?.issue_code || null);
+
                 // Store filter params for navigation links
                 this.filterParams = urlParams.toString();
             } catch (e) {
-                console.warn('Failed to load adjacent issues:', e);
+                console.error('[Navigation] Failed to load adjacent issues:', e);
             }
         },
 
@@ -970,12 +983,18 @@ function issueDetailApp() {
 
         async toggleViewed() {
             const newState = !this.isViewed;
+            console.log('[Viewed] Toggling viewed state to:', newState, 'for issue:', this.issueId);
             try {
                 const res = await fetch(`/api/issues/${this.issueId}/toggle-viewed?viewed=${newState}`, { method: 'POST' });
+                console.log('[Viewed] API response:', res.status);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 this.isViewed = newState;
+                console.log('[Viewed] State updated successfully');
             } catch (e) {
-                TurboWrapError.warning('Toggle Viewed', e, { issueId: this.issueId });
+                console.error('[Viewed] Error:', e);
+                if (window.TurboWrapError) {
+                    TurboWrapError.warning('Toggle Viewed', e, { issueId: this.issueId });
+                }
             }
         },
 
