@@ -100,8 +100,12 @@ USER appuser
 # GitHub accepts 'x-access-token' as username when using PAT/tokens
 RUN git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=${GITHUB_TOKEN}"; }; f'
 
+# Copy entrypoint script
+COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')" || exit 1
 
-CMD ["python", "-m", "uvicorn", "turbowrap.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/entrypoint.sh"]
