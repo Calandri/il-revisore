@@ -530,3 +530,66 @@ html, body {
     background: #374151;
     color: #d1d5db;
 }
+
+/* =============================================================================
+   AI Highlight Animation - For CLI Chat Actions
+   ============================================================================= */
+
+/* AI highlight pulse animation */
+@keyframes ai-highlight-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3),
+                    0 0 0 8px rgba(99, 102, 241, 0.1);
+        outline: 3px solid rgba(99, 102, 241, 0.8);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(99, 102, 241, 0.4),
+                    0 0 0 16px rgba(99, 102, 241, 0.1);
+        outline: 3px solid rgba(99, 102, 241, 1);
+    }
+}
+
+/* AI highlight class - applied by CLI Chat actions */
+.ai-highlight {
+    position: relative;
+    z-index: 9999;
+    animation: ai-highlight-pulse 0.6s ease-in-out infinite;
+    outline: 3px solid rgba(99, 102, 241, 0.8);
+    outline-offset: 2px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+/* Darker mode adjustments */
+.dark .ai-highlight {
+    animation-name: ai-highlight-pulse-dark;
+}
+
+@keyframes ai-highlight-pulse-dark {
+    0%, 100% {
+        box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.4),
+                    0 0 0 8px rgba(129, 140, 248, 0.15);
+        outline: 3px solid rgba(129, 140, 248, 0.8);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(129, 140, 248, 0.5),
+                    0 0 0 16px rgba(129, 140, 248, 0.15);
+        outline: 3px solid rgba(129, 140, 248, 1);
+    }
+}
+
+/* Fade out animation when removing highlight */
+.ai-highlight-fadeout {
+    animation: ai-highlight-fadeout 0.3s ease-out forwards;
+}
+
+@keyframes ai-highlight-fadeout {
+    from {
+        outline: 3px solid rgba(99, 102, 241, 0.8);
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3);
+    }
+    to {
+        outline: 3px solid rgba(99, 102, 241, 0);
+        box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+    }
+}

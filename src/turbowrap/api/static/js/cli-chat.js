@@ -442,6 +442,11 @@ Contesto: ${contextStr}`;
                     }
                     break;
 
+                case 'ACTION':
+                    console.log('[chatSidebar] Worker: action received', data);
+                    this.executeAction(data.action);
+                    break;
+
                 default:
                     console.log('[chatSidebar] Worker: unknown message type:', type);
             }
@@ -905,6 +910,7 @@ Contesto: ${contextStr}`;
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
+                let currentEventType = 'chunk';  // Track current SSE event type
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -919,14 +925,22 @@ Contesto: ${contextStr}`;
                     for (const line of lines) {
                         // Handle SSE event format
                         if (line.startsWith('event: ')) {
-                            const eventType = line.slice(7).trim();
-                            console.log('[chatSidebar] SSE event:', eventType);
+                            currentEventType = line.slice(7).trim();
+                            console.log('[chatSidebar] SSE event:', currentEventType);
                             continue;
                         }
 
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.slice(6));
+
+                                // Handle action events from AI
+                                if (currentEventType === 'action') {
+                                    console.log('[chatSidebar] Action event:', data);
+                                    this.executeAction(data);
+                                    currentEventType = 'chunk';  // Reset after handling
+                                    continue;
+                                }
 
                                 // Handle system events - show collapsible
                                 if (data.type === 'system') {
@@ -1213,6 +1227,107 @@ Contesto: ${contextStr}`;
             window.dispatchEvent(new CustomEvent('show-toast', {
                 detail: { message, type }
             }));
+        },
+
+        /**
+         * Execute an action from the AI (navigate, highlight)
+         * @param {Object} action - Action object with type and target
+         */
+        executeAction(action) {
+            if (!action || !action.type) {
+                console.warn('[chatSidebar] Invalid action:', action);
+                return;
+            }
+
+            console.log('[chatSidebar] Executing action:', action);
+
+            switch (action.type) {
+                case 'navigate':
+                    this.executeNavigateAction(action.target);
+                    break;
+
+                case 'highlight':
+                    this.executeHighlightAction(action.target);
+                    break;
+
+                default:
+                    console.warn('[chatSidebar] Unknown action type:', action.type);
+            }
+        },
+
+        /**
+         * Navigate to a page
+         * @param {string} path - URL path to navigate to (e.g., '/tests', '/issues')
+         */
+        executeNavigateAction(path) {
+            if (!path) {
+                console.warn('[chatSidebar] Navigate action missing path');
+                return;
+            }
+
+            console.log('[chatSidebar] Navigating to:', path);
+
+            // Check if path is relative or absolute
+            const url = path.startsWith('http') ? path : path;
+
+            // Use HTMX boost if available for smoother navigation
+            const mainContent = document.querySelector('main');
+            if (mainContent && window.htmx) {
+                // Use HTMX to load the page content
+                window.htmx.ajax('GET', url, {
+                    target: 'body',
+                    swap: 'innerHTML'
+                }).then(() => {
+                    window.history.pushState({}, '', url);
+                    this.showToast(`Navigato a ${path}`, 'success');
+                }).catch(() => {
+                    // Fallback to regular navigation
+                    window.location.href = url;
+                });
+            } else {
+                // Fallback: regular navigation
+                window.location.href = url;
+            }
+        },
+
+        /**
+         * Highlight a DOM element temporarily
+         * @param {string} selector - CSS selector for the element(s) to highlight
+         */
+        executeHighlightAction(selector) {
+            if (!selector) {
+                console.warn('[chatSidebar] Highlight action missing selector');
+                return;
+            }
+
+            console.log('[chatSidebar] Highlighting:', selector);
+
+            // Find elements matching the selector
+            const elements = document.querySelectorAll(selector);
+
+            if (elements.length === 0) {
+                console.warn('[chatSidebar] No elements found for selector:', selector);
+                this.showToast(`Elemento non trovato: ${selector}`, 'warning');
+                return;
+            }
+
+            // Highlight each matching element
+            elements.forEach((el, index) => {
+                // Add highlight class
+                el.classList.add('ai-highlight');
+
+                // Scroll first element into view
+                if (index === 0) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+
+                // Remove highlight after animation completes (3 seconds)
+                setTimeout(() => {
+                    el.classList.remove('ai-highlight');
+                }, 3000);
+            });
+
+            this.showToast(`Evidenziato: ${elements.length} elemento/i`, 'success');
         },
 
         /**

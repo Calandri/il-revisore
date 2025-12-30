@@ -77,6 +77,49 @@ def extract_title_from_response(content: str) -> tuple[str | None, str]:
     return None, content
 
 
+def extract_actions_from_response(content: str) -> tuple[list[dict[str, Any]], str]:
+    """Extract action markers from AI response.
+
+    Looks for [[ACTION:type:target]] markers in the response.
+    Supported actions:
+    - [[ACTION:navigate:/path/to/page]] - Navigate user to a page
+    - [[ACTION:highlight:#element-id]] - Highlight a DOM element
+    - [[ACTION:highlight:.class-name]] - Highlight elements by class
+
+    Returns (actions_list, cleaned_content).
+    """
+    import re
+
+    actions: list[dict[str, Any]] = []
+
+    # Pattern: [[ACTION:type:target]]
+    pattern = r"\[\[ACTION:(\w+):([^\]]+)\]\]"
+
+    def extract_action(match: re.Match[str]) -> str:
+        action_type = match.group(1).lower()
+        target = match.group(2).strip()
+
+        if action_type in ("navigate", "highlight"):
+            actions.append(
+                {
+                    "type": action_type,
+                    "target": target,
+                }
+            )
+            logger.info(f"[ACTION] Extracted: {action_type} -> {target}")
+        else:
+            logger.warning(f"[ACTION] Unknown action type: {action_type}")
+
+        return ""  # Remove marker from content
+
+    cleaned = re.sub(pattern, extract_action, content)
+
+    # Clean up extra whitespace left by removed markers
+    cleaned = re.sub(r"\n\s*\n\s*\n", "\n\n", cleaned).strip()
+
+    return actions, cleaned
+
+
 async def generate_chat_title(
     cli_type: str,
     user_message: str,
@@ -724,6 +767,16 @@ async def send_message(
 
             # Save assistant message
             response_content = "".join(full_content)
+
+            # Extract actions from response (navigate, highlight)
+            extracted_actions, response_content = extract_actions_from_response(response_content)
+
+            # Emit action events to frontend
+            for action in extracted_actions:
+                yield {
+                    "event": "action",
+                    "data": json.dumps(action),
+                }
 
             # Extract title if we requested one (inline in the response)
             extracted_title: str | None = None

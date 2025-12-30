@@ -165,6 +165,7 @@ async function startStream(sessionId, content, userMessage, modelOverride = null
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEventType = 'chunk';  // Track current SSE event type
 
         while (true) {
             const { done, value } = await reader.read();
@@ -180,15 +181,17 @@ async function startStream(sessionId, content, userMessage, modelOverride = null
             buffer = lines.pop() || '';
 
             for (const line of lines) {
-                // Skip event type lines (we only care about data)
+                // Track event type for next data line
                 if (line.startsWith('event: ')) {
+                    currentEventType = line.slice(7).trim();
                     continue;
                 }
 
                 if (line.startsWith('data: ')) {
                     try {
                         const data = JSON.parse(line.slice(6));
-                        processEvent(sessionId, data);
+                        processEvent(sessionId, data, currentEventType);
+                        currentEventType = 'chunk';  // Reset after processing
                     } catch (e) {
                         // Ignore parse errors for incomplete chunks
                     }
@@ -225,9 +228,23 @@ async function startStream(sessionId, content, userMessage, modelOverride = null
 
 /**
  * Process a single SSE event
+ * @param {string} sessionId - Session ID
+ * @param {object} data - Event data
+ * @param {string} eventType - SSE event type (e.g., 'chunk', 'action', 'done')
  */
-function processEvent(sessionId, data) {
+function processEvent(sessionId, data, eventType = 'chunk') {
     const state = getSessionState(sessionId);
+
+    // Handle action events from AI (navigate, highlight)
+    if (eventType === 'action') {
+        log('Action event received:', data);
+        broadcast({
+            type: 'ACTION',
+            sessionId,
+            action: data
+        });
+        return;
+    }
 
     // System events
     if (data.type === 'system') {
