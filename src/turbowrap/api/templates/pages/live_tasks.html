@@ -509,6 +509,12 @@ function liveTasksApp() {
             return 'bg-gray-100 dark:bg-gray-500/20 text-gray-700 dark:text-gray-300';
         },
 
+        // Check if operation uses Grok CLI (which doesn't output token counts)
+        isGrokModel(op) {
+            const model = (op.details?.model || op.result?.model || '').toLowerCase();
+            return model.includes('grok');
+        },
+
         // Token extraction from operation data
         getTokens(op, tokenType) {
             const result = op.result || {};
@@ -526,16 +532,18 @@ function liveTasksApp() {
             }
         },
 
-        // Format tokens for compact display (K, M)
-        formatTokensShort(count) {
+        // Format tokens for compact display (K, M) - isGrok=true shows N/A for 0
+        formatTokensShort(count, isGrok = false) {
+            if (isGrok && (!count || count === 0)) return 'N/A';
             if (!count || count === 0) return '0';
             if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
             if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
             return count.toString();
         },
 
-        // Format tokens with commas
-        formatTokens(count) {
+        // Format tokens with commas - isGrok=true shows N/A for 0
+        formatTokens(count, isGrok = false) {
+            if (isGrok && (!count || count === 0)) return 'N/A';
             if (!count || count === 0) return '0';
             return count.toLocaleString();
         },
