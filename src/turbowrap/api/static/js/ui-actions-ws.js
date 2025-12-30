@@ -170,21 +170,9 @@
 
         console.log('[UIActions] Navigating to:', path);
 
-        // Use HTMX for smooth navigation if available
-        if (window.htmx) {
-            htmx.ajax('GET', path, {
-                target: 'body',
-                swap: 'innerHTML'
-            }).then(function() {
-                window.history.pushState({}, '', path);
-                showToast(`Navigato a ${path}`, 'success');
-            }).catch(function() {
-                // Fallback to regular navigation
-                window.location.href = path;
-            });
-        } else {
-            window.location.href = path;
-        }
+        // Always use full page navigation to ensure Alpine.js and all JS re-initialize
+        // HTMX swap would break component initialization
+        window.location.href = path;
     }
 
     /**

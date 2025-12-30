@@ -145,9 +145,12 @@ async def list_tools() -> list[Tool]:
                         "description": (
                             "The URL path to navigate to. Examples: "
                             "'/tests' for test suites, "
-                            "'/issues' for Linear issues, "
-                            "'/repositories' for repo list, "
-                            "'/reviews' for code reviews"
+                            "'/issues' for code review issues, "
+                            "'/linear' for Linear issues, "
+                            "'/repos' for repository list, "
+                            "'/review' for code reviews, "
+                            "'/files' for file editor, "
+                            "'/chat' for AI chat"
                         ),
                     },
                 },
@@ -167,10 +170,17 @@ async def list_tools() -> list[Tool]:
                     "selector": {
                         "type": "string",
                         "description": (
-                            "CSS selector for the element(s) to highlight. Examples: "
-                            "'#submit-btn' for ID, "
-                            "'.test-card' for class, "
-                            "'button[data-action=\"run\"]' for attribute"
+                            "CSS selector for the element(s) to highlight. "
+                            "TurboWrap UI selectors: "
+                            "'.repo-card' (/repos), "
+                            "'.test-suite-card' (/tests), "
+                            "'.issue-card' (/issues), "
+                            "'.endpoint-card' (/endpoints), "
+                            "'.mockup-card' (/mockups), "
+                            "'.file-tree-item' (/files), "
+                            "'button'. "
+                            "Data attributes: [data-repo-id], [data-suite-id], "
+                            "[data-issue-id], [data-file-path]"
                         ),
                     },
                 },
@@ -427,6 +437,21 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
             },
         ),
+        # ============================================================
+        # Repository API Tools
+        # ============================================================
+        Tool(
+            name="list_repositories",
+            description=(
+                "List all repositories registered in TurboWrap. "
+                "Returns repository IDs, names, and status. "
+                "Use this to get repository_id for other tools."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
     ]
 
 
@@ -622,6 +647,26 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if result.get("success"):
             return [TextContent(type="text", text=json.dumps(result["data"], indent=2))]
         return [TextContent(type="text", text=f"Failed to get sessions: {result.get('error')}")]
+
+    # ================================================================
+    # Repository API Handlers
+    # ================================================================
+
+    if name == "list_repositories":
+        result = await api_get("/api/repos")
+        if result.get("success"):
+            repos = result["data"]
+            summary = [
+                {
+                    "id": r.get("id"),
+                    "name": r.get("name"),
+                    "status": r.get("status"),
+                    "url": r.get("url"),
+                }
+                for r in repos
+            ]
+            return [TextContent(type="text", text=json.dumps(summary, indent=2))]
+        return [TextContent(type="text", text=f"Failed to list repos: {result.get('error')}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

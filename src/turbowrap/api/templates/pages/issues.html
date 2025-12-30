@@ -427,7 +427,8 @@
         <template x-for="issue in issues" :key="issue.id">
             <a :href="'/issues/' + issue.issue_code + getFilterParams()"
                class="issue-card block border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-               :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged', 'bg-primary/5': selectedIssues.includes(issue.id)}">
+               :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged', 'bg-primary/5': selectedIssues.includes(issue.id)}"
+               :data-issue-id="issue.id" :data-issue-code="issue.issue_code">
 
                 <!-- MOBILE LAYOUT -->
                 <div class="md:hidden p-3">
@@ -623,7 +624,8 @@
         <template x-for="issue in issues" :key="issue.id">
             <a :href="'/issues/' + issue.issue_code + getFilterParams()"
                class="issue-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 block"
-               :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged'}">
+               :class="{'opacity-60': issue.status === 'resolved' || issue.status === 'merged'}"
+               :data-issue-id="issue.id" :data-issue-code="issue.issue_code">
                 <!-- Header row -->
                 <div class="flex items-center justify-between gap-2 mb-2">
                     <div class="flex items-center gap-1.5 flex-wrap">

@@ -905,7 +905,7 @@ function databasesApp() {
             try {
                 // Load all repositories and linked repos in parallel
                 const [reposRes, linkedRes] = await Promise.all([
-                    fetch('/api/repositories'),
+                    fetch('/api/repos'),
                     fetch(`/api/databases/${conn.id}/repositories`)
                 ]);
 

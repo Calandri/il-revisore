@@ -1,7 +1,7 @@
 {% if suites %}
 <div class="space-y-4">
     {% for suite in suites %}
-    <div class="test-card bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5 {% if suite.last_run_status in ('pending', 'running') %}ring-2 ring-blue-400 ring-opacity-50{% endif %}">
+    <div class="test-suite-card test-card bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-5 {% if suite.last_run_status in ('pending', 'running') %}ring-2 ring-blue-400 ring-opacity-50{% endif %}" data-suite-id="{{ suite.id }}" data-suite-name="{{ suite.name }}">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
                 <!-- Framework Badge -->

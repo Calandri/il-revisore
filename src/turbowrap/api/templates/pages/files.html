@@ -165,6 +165,7 @@
                     <template x-for="file in changedFiles" :key="file.path">
                         <div class="file-tree-item flex items-center gap-2 px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer"
                              :class="currentFilePath === file.path ? 'bg-primary/10 border-l-2 border-primary' : ''"
+                             :data-file-path="file.path"
                              @click="!file.path.endsWith('/') && (loadFile(file.path), window.innerWidth < 1024 && (activeTab = 'editor'))">
                             <span class="w-1.5 h-1.5 rounded-full shrink-0"
                                   :class="file.status === 'modified' ? 'bg-orange-500' : 'bg-green-500'"></span>

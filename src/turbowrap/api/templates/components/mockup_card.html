@@ -1,5 +1,6 @@
 <!-- Mockup Card Component -->
-<div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden hover:shadow-md transition-shadow cursor-pointer group"
+<div class="mockup-card bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden hover:shadow-md transition-shadow cursor-pointer group"
+     :data-mockup-id="mockup.id" :data-mockup-name="mockup.name"
      @click="selectMockup(mockup)">
 
     <!-- Preview Thumbnail -->

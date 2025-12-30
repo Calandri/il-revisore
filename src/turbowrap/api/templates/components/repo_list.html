@@ -1,7 +1,7 @@
 {% if repos %}
 <div class="divide-y dark:divide-gray-700">
     {% for repo in repos %}
-    <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+    <div class="repo-card p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" data-repo-id="{{ repo.id }}" data-repo-name="{{ repo.name }}">
         <div class="flex items-center justify-between">
             <!-- Clickable area to select repo in global context -->
             <div class="flex items-center gap-4 cursor-pointer flex-1 min-w-0"
