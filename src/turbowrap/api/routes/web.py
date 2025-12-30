@@ -1256,6 +1256,7 @@ async def htmx_discover_tests(
     import json
 
     from ...db.models import Repository
+    from ..services.operation_tracker import get_operation_tracker
 
     repo = db.query(Repository).filter(Repository.id == repository_id).first()
     if not repo:
@@ -1269,6 +1270,17 @@ async def htmx_discover_tests(
         response = Response(content="")
         response.headers["HX-Trigger"] = json.dumps(
             {"showToast": {"message": "Repository non ha un path locale", "type": "error"}}
+        )
+        return response
+
+    # Check if there's already an active operation for this repository
+    tracker = get_operation_tracker()
+    active_ops = tracker.get_active(repo_id=repository_id)
+    cli_ops = [op for op in active_ops if op.operation_type in ("cli_task", "test_discovery")]
+    if cli_ops:
+        response = Response(content="")
+        response.headers["HX-Trigger"] = json.dumps(
+            {"showToast": {"message": "Discovery già in corso per questa repository", "type": "warning"}}
         )
         return response
 
@@ -1849,6 +1861,23 @@ Now enhance this test and return the JSON response with the improved code.
             content=f"<div class='text-red-500 p-4'>Errore: {str(e)}</div>",
             status_code=500,
         )
+
+
+@router.get("/readme-mockup", response_class=HTMLResponse)
+async def readme_mockup_page(request: Request) -> Response:
+    """README UI mockup page - static demo with sample data."""
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/readme_mockup.html",
+            {
+                "request": request,
+                "active_page": "readme",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
 
 
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
