@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 from ...config import get_settings
+from ...utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,18 @@ class ScreenshotService:
     def __init__(self) -> None:
         """Initialize screenshot service."""
         self.settings = get_settings()
+        self._saver: S3ArtifactSaver | None = None
+
+    @property
+    def saver(self) -> S3ArtifactSaver:
+        """Lazy-load S3 artifact saver."""
+        if self._saver is None:
+            self._saver = S3ArtifactSaver(
+                bucket=self.settings.s3_bucket,
+                region=self.settings.aws_region,
+                prefix="live-view-screenshots",
+            )
+        return self._saver
 
     async def capture_and_upload(
         self,
@@ -79,67 +92,20 @@ class ScreenshotService:
 
         logger.info(f"Captured screenshot of {url} ({len(screenshot_bytes)} bytes)")
 
-        # Upload to S3
-        return await self._upload_to_s3(screenshot_bytes, repo_slug, url)
+        # Upload to S3 using centralized S3ArtifactSaver
+        presigned_url = await self.saver.save_binary(
+            content=screenshot_bytes,
+            artifact_type="screenshot",
+            context_id=repo_slug,
+            content_type="image/png",
+            file_extension="png",
+            metadata={
+                "source_url": url[:256],
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
-    async def _upload_to_s3(
-        self,
-        screenshot_bytes: bytes,
-        repo_slug: str,
-        source_url: str,
-    ) -> str:
-        """Upload screenshot to S3.
+        if not presigned_url:
+            raise RuntimeError("S3_BUCKET not configured or upload failed")
 
-        Args:
-            screenshot_bytes: PNG screenshot data
-            repo_slug: Repository slug for path organization
-            source_url: Original URL (for metadata)
-
-        Returns:
-            S3 pre-signed URL
-        """
-        import asyncio
-
-        from botocore.exceptions import ClientError
-
-        from ...utils.aws_clients import get_s3_client
-
-        settings = self.settings
-        bucket = settings.s3_bucket
-
-        if not bucket:
-            raise RuntimeError("S3_BUCKET not configured")
-
-        # Generate S3 key
-        timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
-        s3_key = f"live-view-screenshots/{repo_slug}/{timestamp}.png"
-
-        # Upload
-        client = get_s3_client(region=settings.aws_region)
-
-        try:
-            await asyncio.to_thread(
-                client.put_object,
-                Bucket=bucket,
-                Key=s3_key,
-                Body=screenshot_bytes,
-                ContentType="image/png",
-                Metadata={
-                    "source_url": source_url[:256],  # Limit length
-                    "captured_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-
-            # Generate pre-signed URL (7 days expiry)
-            presigned_url = client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": bucket, "Key": s3_key},
-                ExpiresIn=7 * 24 * 60 * 60,  # 7 days
-            )
-
-            logger.info(f"Uploaded screenshot to s3://{bucket}/{s3_key}")
-            return presigned_url
-
-        except ClientError as e:
-            logger.error(f"S3 upload failed: {e}")
-            raise RuntimeError(f"S3 upload failed: {e}") from e
+        return presigned_url

@@ -24,6 +24,7 @@ class LiveViewScreenshot(Base):
     viewport_width = Column(Integer, default=1920)
     viewport_height = Column(Integer, default=1080)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     repository = relationship("Repository")

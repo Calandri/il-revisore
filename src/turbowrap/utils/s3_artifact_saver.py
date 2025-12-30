@@ -219,3 +219,49 @@ class S3ArtifactSaver:
         except ClientError as e:
             logger.warning(f"[S3] JSON upload failed: {e}")
             return None
+
+    async def save_binary(
+        self,
+        content: bytes,
+        artifact_type: str,
+        context_id: str,
+        content_type: str = "application/octet-stream",
+        file_extension: str = "bin",
+        metadata: dict[str, str] | None = None,
+    ) -> str | None:
+        """Save binary content to S3.
+
+        Args:
+            content: Binary content to save
+            artifact_type: Type of artifact (screenshot, image, etc.)
+            context_id: Identifier for grouping artifacts
+            content_type: MIME type (e.g., 'image/png')
+            file_extension: File extension without dot (e.g., 'png')
+            metadata: Optional S3 object metadata
+
+        Returns:
+            S3 pre-signed URL if successful, None otherwise
+        """
+        if not self.bucket:
+            return None
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+        s3_key = f"{self.prefix}/{timestamp}/{context_id}_{artifact_type}.{file_extension}"
+
+        try:
+            put_kwargs: dict[str, Any] = {
+                "Bucket": self.bucket,
+                "Key": s3_key,
+                "Body": content,
+                "ContentType": content_type,
+            }
+            if metadata:
+                put_kwargs["Metadata"] = metadata
+
+            await asyncio.to_thread(self.client.put_object, **put_kwargs)
+            presigned_url = self._generate_presigned_url(s3_key)
+            logger.info(f"[S3] Saved binary {artifact_type} to {s3_key}")
+            return presigned_url
+        except ClientError as e:
+            logger.warning(f"[S3] Binary upload failed: {e}")
+            return None

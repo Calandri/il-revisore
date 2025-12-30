@@ -7,6 +7,7 @@ Provides endpoints for:
 - Creating issues/features from live view interactions
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -339,8 +340,6 @@ def handle_live_view_action(
 
         if request.element_info:
             description += "**Element Info:**\n```json\n"
-            import json
-
             description += json.dumps(request.element_info, indent=2)
             description += "\n```\n\n"
 
