@@ -60,6 +60,7 @@ RUN pip install --no-cache-dir . email-validator
 COPY src/ ./src/
 COPY config/ ./config/
 COPY agents/ ./agents/
+COPY commands/ ./commands/
 
 # Copy Alembic migrations
 COPY alembic.ini ./
