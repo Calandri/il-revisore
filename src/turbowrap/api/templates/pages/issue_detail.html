@@ -655,7 +655,7 @@
     <!-- ============================================== -->
     <!-- FIX LOG MODAL -->
     <!-- ============================================== -->
-    <div x-show="showFixLog" x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showFixLog = false" style="display: none;">
+    <div x-show="showFixLog" x-cloak x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showFixLog = false">
         <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-4xl max-h-[90vh] flex flex-col">
             <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
                 <h3 class="text-base md:text-lg font-semibold truncate">Fix Log - Session {{ issue.fix_session_id[:8] if issue.fix_session_id else '' }}...</h3>
@@ -726,7 +726,7 @@
     <!-- ============================================== -->
     <!-- LINK LINEAR MODAL -->
     <!-- ============================================== -->
-    <div x-show="showLinkLinear" x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showLinkLinear = false" style="display: none;">
+    <div x-show="showLinkLinear" x-cloak x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showLinkLinear = false">
         <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-md">
             <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <h3 class="text-base md:text-lg font-semibold flex items-center gap-2">

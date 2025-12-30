@@ -8,6 +8,13 @@ function toastManager() {
     return {
         toasts: [],
 
+        init() {
+            // Listen for clear-toasts event (fired on HTMX page navigation)
+            window.addEventListener('clear-toasts', () => {
+                this.clear();
+            });
+        },
+
         show(detail) {
             const id = Date.now();
             this.toasts.push({
@@ -27,6 +34,11 @@ function toastManager() {
                     this.toasts = this.toasts.filter(t => t.id !== id);
                 }, 300);
             }, 4000);
+        },
+
+        clear() {
+            // Immediately clear all toasts
+            this.toasts = [];
         }
     }
 }
@@ -338,6 +350,15 @@ function systemMonitor() {
 // HTMX configuration
 document.body.addEventListener('htmx:configRequest', function(evt) {
     // Add any custom headers here if needed
+});
+
+// Clear toasts and reset state on HTMX page navigation
+document.body.addEventListener('htmx:beforeSwap', function(evt) {
+    // Only clear on main content swaps (not partial updates)
+    if (evt.detail.target.id === 'main-content' || evt.detail.target.tagName === 'MAIN') {
+        // Clear all toasts via custom event
+        window.dispatchEvent(new CustomEvent('clear-toasts'));
+    }
 });
 
 // Handle HTMX errors - integrate with TurboWrapError

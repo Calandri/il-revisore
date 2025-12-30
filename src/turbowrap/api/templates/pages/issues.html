@@ -787,7 +787,7 @@
     <!-- ============================================== -->
     <!-- LINK LINEAR MODAL -->
     <!-- ============================================== -->
-    <div x-show="showLinkLinearModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showLinkLinearModal = false">
+    <div x-show="showLinkLinearModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showLinkLinearModal = false">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
             <h3 class="font-semibold text-lg mb-4">Collega a Linear</h3>
             <p class="text-sm text-gray-500 mb-4">Inserisci l'identificatore Linear (es. TEAM-123) o l'URL</p>
@@ -808,7 +808,7 @@
     <!-- ============================================== -->
     <!-- FIX PROGRESS MODAL -->
     <!-- ============================================== -->
-    <div x-show="showFixModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeFixModal()">
+    <div x-show="showFixModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeFixModal()">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
             <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700">
@@ -926,7 +926,7 @@
     <!-- ============================================== -->
     <!-- LINT MODAL -->
     <!-- ============================================== -->
-    <div x-show="showLintModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeLintModal()">
+    <div x-show="showLintModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeLintModal()">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden">
             <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
                 <div class="flex items-center gap-3">
@@ -991,7 +991,7 @@
     <!-- ============================================== -->
     <!-- NOTES MODAL (before fix) -->
     <!-- ============================================== -->
-    <div x-show="showNotesModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showNotesModal = false">
+    <div x-show="showNotesModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showNotesModal = false">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6">
             <div class="flex items-center gap-3 mb-4">
                 <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
@@ -1027,7 +1027,7 @@
     <!-- ============================================== -->
     <!-- PENDING BRANCH MODAL -->
     <!-- ============================================== -->
-    <div x-show="showPendingBranchModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showPendingBranchModal = false">
+    <div x-show="showPendingBranchModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showPendingBranchModal = false">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full overflow-hidden">
             <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
                 <div class="w-10 h-10 rounded-lg bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
@@ -1087,7 +1087,7 @@
     <!-- ============================================== -->
     <!-- SCOPE VIOLATION MODAL -->
     <!-- ============================================== -->
-    <div x-show="fixProgress.scopeViolation.show" x-transition class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+    <div x-show="fixProgress.scopeViolation.show" x-cloak x-transition class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
             <div class="p-4 border-b dark:border-gray-700 bg-amber-50 dark:bg-amber-900/20">
                 <div class="flex items-center gap-3">
@@ -1139,7 +1139,7 @@
     <!-- ============================================== -->
     <!-- IGNORE ISSUE MODAL -->
     <!-- ============================================== -->
-    <div x-show="showIgnoreModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showIgnoreModal = false">
+    <div x-show="showIgnoreModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showIgnoreModal = false">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" @click.stop>
             <!-- Header with gradient -->
             <div class="bg-gradient-to-r from-gray-100 to-gray-50 dark:from-gray-700 dark:to-gray-800 p-5 border-b border-gray-200 dark:border-gray-700">
