@@ -1282,19 +1282,27 @@ Contesto: ${contextStr}`;
          * @returns {Promise<string|null>} - Command prompt or null if not found
          */
         async loadSlashCommand(commandName) {
+            console.log(`[chatSidebar] Loading slash command: /${commandName}`);
+
             // Check cache first
             if (this.slashCommands[commandName]) {
+                console.log(`[chatSidebar] Found in cache: /${commandName}`);
                 return this.slashCommands[commandName];
             }
 
             try {
-                const res = await fetch(`/api/cli-chat/commands/${commandName}`);
+                const url = `/api/cli-chat/commands/${commandName}`;
+                console.log(`[chatSidebar] Fetching: ${url}`);
+                const res = await fetch(url);
+                console.log(`[chatSidebar] Response status: ${res.status}`);
                 if (res.ok) {
                     const data = await res.json();
                     this.slashCommands[commandName] = data.prompt;
+                    console.log(`[chatSidebar] Loaded command /${commandName}, prompt length: ${data.prompt?.length}`);
                     return data.prompt;
                 } else {
-                    console.warn(`[chatSidebar] Slash command /${commandName} not found`);
+                    const errorText = await res.text();
+                    console.warn(`[chatSidebar] Slash command /${commandName} not found. Status: ${res.status}, Response: ${errorText}`);
                     return null;
                 }
             } catch (error) {

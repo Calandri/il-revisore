@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ...chat_cli import AgentInfo, get_agent_loader
 from ...config import get_settings as get_config
-from ...db.models import Setting
+from ...db.models import MermaidDiagram, Setting
 from ..deps import get_db
 from ..schemas.settings import (
     GitHubTokenUpdate,
@@ -335,6 +335,93 @@ def update_agent(name: str, data: AgentUpdateRequest) -> dict[str, str]:
     loader._cache.pop(name, None)
 
     return {"status": "ok", "message": f"Agent '{name}' updated successfully"}
+
+
+# =============================================================================
+# Mermaid Diagram Endpoints
+# =============================================================================
+
+
+class DiagramRequest(BaseModel):
+    """Request to save a diagram."""
+
+    mermaid_code: str
+    diagram_type: str = "flowchart"
+
+
+class DiagramResponse(BaseModel):
+    """Response with diagram data."""
+
+    document_key: str
+    mermaid_code: str
+    diagram_type: str
+
+
+@router.get("/diagrams/{document_key:path}")
+def get_diagram(
+    document_key: str,
+    db: Session = Depends(get_db),
+) -> DiagramResponse | None:
+    """Get a saved diagram by document key."""
+    diagram = db.query(MermaidDiagram).filter(MermaidDiagram.document_key == document_key).first()
+
+    if not diagram:
+        return None
+
+    return DiagramResponse(
+        document_key=diagram.document_key,
+        mermaid_code=diagram.mermaid_code,
+        diagram_type=diagram.diagram_type or "flowchart",
+    )
+
+
+@router.post("/diagrams/{document_key:path}")
+def save_diagram(
+    document_key: str,
+    data: DiagramRequest,
+    db: Session = Depends(get_db),
+) -> DiagramResponse:
+    """Save or update a diagram for a document."""
+    diagram = db.query(MermaidDiagram).filter(MermaidDiagram.document_key == document_key).first()
+
+    if diagram:
+        # Update existing
+        diagram.mermaid_code = data.mermaid_code
+        diagram.diagram_type = data.diagram_type
+    else:
+        # Create new
+        diagram = MermaidDiagram(
+            document_key=document_key,
+            mermaid_code=data.mermaid_code,
+            diagram_type=data.diagram_type,
+        )
+        db.add(diagram)
+
+    db.commit()
+    db.refresh(diagram)
+
+    return DiagramResponse(
+        document_key=diagram.document_key,
+        mermaid_code=diagram.mermaid_code,
+        diagram_type=diagram.diagram_type or "flowchart",
+    )
+
+
+@router.delete("/diagrams/{document_key:path}")
+def delete_diagram(
+    document_key: str,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Delete a saved diagram."""
+    diagram = db.query(MermaidDiagram).filter(MermaidDiagram.document_key == document_key).first()
+
+    if not diagram:
+        raise HTTPException(status_code=404, detail="Diagram not found")
+
+    db.delete(diagram)
+    db.commit()
+
+    return {"status": "ok", "message": f"Diagram for '{document_key}' deleted"}
 
 
 # =============================================================================

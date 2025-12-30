@@ -138,19 +138,20 @@
 
                                 <!-- Actions -->
                                 <div class="flex items-center gap-2">
-                                    <button @click="openEditor(agent)"
+                                    <button @click="openEditorPreview(agent)"
                                             class="flex-1 px-3 py-1.5 text-sm bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors flex items-center justify-center gap-1.5">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
                                         </svg>
-                                        <span>Modifica</span>
+                                        <span>Visualizza</span>
                                     </button>
                                     <button @click="openAIChat(agent)"
                                             class="flex-1 px-3 py-1.5 text-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition-colors flex items-center justify-center gap-1.5">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                                         </svg>
-                                        <span>AI Edit</span>
+                                        <span>Modifica AI</span>
                                     </button>
                                 </div>
                             </div>
@@ -182,7 +183,7 @@
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="text-xs text-gray-400" x-text="(doc.tokens || 0) + ' tokens'"></span>
-                        <button @click="openEditor(doc)"
+                        <button @click="openEditorPreview(doc)"
                                 class="px-4 py-2 text-sm bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -190,12 +191,12 @@
                             </svg>
                             <span>Visualizza</span>
                         </button>
-                        <button @click="openEditor(doc)"
-                                class="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-600 border border-gray-200 dark:border-gray-500 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-500 transition-colors flex items-center gap-2">
+                        <button @click="openAIChat(doc)"
+                                class="px-4 py-2 text-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition-colors flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                             </svg>
-                            <span>Modifica</span>
+                            <span>Modifica AI</span>
                         </button>
                     </div>
                 </div>
@@ -256,7 +257,7 @@
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                                 </svg>
-                                <span>AI Edit</span>
+                                <span>Modifica AI</span>
                             </button>
                         </div>
                     </div>
@@ -291,11 +292,6 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button @click="editorMode = 'edit'"
-                            :class="editorMode === 'edit' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
-                            class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
-                        Edit
-                    </button>
                     <button @click="setPreviewMode()"
                             :class="editorMode === 'preview' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
                             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
@@ -308,6 +304,11 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
                         </svg>
                         Diagram
+                    </button>
+                    <button @click="editorMode = 'edit'"
+                            :class="editorMode === 'edit' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
+                        Edit
                     </button>
                     <button @click="showEditor = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -593,11 +594,25 @@ function agentsApp() {
             return colors[color] || 'bg-gray-500';
         },
 
-        async openEditor(agent) {
+        getDocumentKey() {
+            // Generate a unique key for this document/agent
+            if (!this.selectedAgent) return '';
+            const fileName = this.selectedAgent.path
+                ? this.selectedAgent.path.split('/').pop().replace('.md', '')
+                : this.selectedAgent.name;
+            return fileName;
+        },
+
+        async openEditor(agent, defaultMode = 'edit') {
             this.selectedAgent = agent;
-            this.editorMode = 'edit';
+            this.editorMode = defaultMode;
             this.editorContent = 'Caricamento...';
             this.showEditor = true;
+
+            // Reset diagram state on new editor open
+            this.generatedMermaid = false;
+            this.generatedMermaidCode = '';
+            this.existingMermaid = null;
 
             // Extract filename from path (without .md extension)
             // e.g., "/path/to/agents/analyst_func.md" -> "analyst_func"
@@ -608,6 +623,10 @@ function agentsApp() {
                 if (response.ok) {
                     const data = await response.json();
                     this.editorContent = data.raw_content || '';
+                    // Render markdown if opening in preview mode
+                    if (defaultMode === 'preview') {
+                        this.$nextTick(() => this.renderMarkdown());
+                    }
                 } else {
                     const error = await response.json().catch(() => ({}));
                     this.editorContent = `# Errore caricamento\n\n${error.detail || 'Errore sconosciuto'}`;
@@ -617,6 +636,10 @@ function agentsApp() {
                 console.error('Failed to load agent:', e);
                 this.editorContent = `# Errore caricamento\n\n${e.message}`;
             }
+        },
+
+        openEditorPreview(agent) {
+            this.openEditor(agent, 'preview');
         },
 
         async saveAgent() {

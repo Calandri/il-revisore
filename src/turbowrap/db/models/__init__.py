@@ -54,6 +54,9 @@ from .cli_chat import CLIChatMessage, CLIChatSession
 # Database connection models
 from .database_connection import DatabaseConnection, RepositoryDatabaseConnection
 
+# Diagram models
+from .diagram import MermaidDiagram
+
 # Endpoint models
 from .endpoint import Endpoint
 
@@ -154,4 +157,6 @@ __all__ = [
     "TestSuite",
     "TestRun",
     "TestCase",
+    # Diagram
+    "MermaidDiagram",
 ]
