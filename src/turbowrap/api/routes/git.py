@@ -24,7 +24,7 @@ from ...utils.git_utils import (
 )
 from ...utils.git_utils import get_current_branch as get_current_branch_util
 from ...utils.git_utils import list_branches as list_branches_util
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 from ..services.operation_tracker import OperationType, get_tracker
 
 logger = logging.getLogger(__name__)
@@ -326,9 +326,7 @@ def get_commit_file_diff(
 
 def _get_repo_and_path(repo_id: str, db: Session) -> tuple[Repository, Path]:
     """Get repository and its path or raise 404."""
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, repo_id, "Repository not found")
 
     repo_path = Path(repo.local_path) if repo.local_path else None
     if not repo_path or not repo_path.exists():

@@ -17,7 +17,7 @@ from ...db.models import (
     Repository,
     is_valid_feature_transition,
 )
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -311,9 +311,7 @@ def create_feature(
 
     # Link primary repository if provided
     if data.repository_id:
-        repo = db.query(Repository).filter(Repository.id == data.repository_id).first()
-        if not repo:
-            raise HTTPException(status_code=404, detail="Repository not found")
+        get_or_404(db, Repository, data.repository_id, "Repository not found")
 
         link = FeatureRepository(
             feature_id=feature.id,
@@ -335,9 +333,7 @@ def get_feature(
 ) -> FeatureResponse:
     """Get feature details."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -362,9 +358,7 @@ def update_feature(
     - on_hold -> analysis, design, development, cancelled
     """
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -421,9 +415,7 @@ def delete_feature(
 ) -> None:
     """Soft delete a feature."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -445,9 +437,7 @@ def add_qa_item(
 ) -> FeatureResponse:
     """Add a Q&A item to a feature."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -478,9 +468,7 @@ def update_qa_answer(
 ) -> FeatureResponse:
     """Update the answer for a Q&A item."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -517,9 +505,7 @@ def add_comment(
 ) -> FeatureResponse:
     """Add a comment to a feature."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -554,17 +540,13 @@ def link_repository(
 ) -> FeatureResponse:
     """Link a repository to a feature."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
 
     # Check repository exists
-    repo = db.query(Repository).filter(Repository.id == data.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, data.repository_id, "Repository not found")
 
     # Check for duplicate link
     existing = (
@@ -576,16 +558,12 @@ def link_repository(
         .first()
     )
     if existing:
-        raise HTTPException(
-            status_code=409, detail="Repository is already linked to this feature"
-        )
+        raise HTTPException(status_code=409, detail="Repository is already linked to this feature")
 
     # Validate role
     valid_roles = [r.value for r in FeatureRepositoryRole]
     if data.role not in valid_roles:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
 
     # If setting as primary, demote existing primary to secondary
     if data.role == FeatureRepositoryRole.PRIMARY.value:
@@ -643,9 +621,7 @@ def update_repository_role(
 ) -> FeatureResponse:
     """Update the role of a linked repository."""
     feature = (
-        db.query(Feature)
-        .filter(Feature.id == feature_id, Feature.deleted_at.is_(None))
-        .first()
+        db.query(Feature).filter(Feature.id == feature_id, Feature.deleted_at.is_(None)).first()
     )
     if not feature:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -663,9 +639,7 @@ def update_repository_role(
 
     valid_roles = [r.value for r in FeatureRepositoryRole]
     if role not in valid_roles:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}"
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
 
     # If setting as primary, demote existing primary
     if role == FeatureRepositoryRole.PRIMARY.value:

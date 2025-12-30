@@ -5,11 +5,12 @@ Centralized functions for running linters and parsing their output.
 
 import json
 import logging
-import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,7 @@ def parse_lint_json_from_llm(output: str) -> list[dict[str, Any]]:
     """Parse JSON issues from LLM lint output.
 
     Handles markdown code blocks and finds JSON arrays in the output.
+    Uses centralized parse_llm_json for extraction.
 
     Args:
         output: Raw output from LLM containing JSON.
@@ -215,29 +217,10 @@ def parse_lint_json_from_llm(output: str) -> list[dict[str, Any]]:
     if not output:
         return []
 
-    json_text = output.strip()
-
-    # Handle markdown code blocks
-    if "```" in json_text:
-        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", json_text)
-        if json_match:
-            json_text = json_match.group(1).strip()
-
-    # Try to find JSON array directly
-    if not json_text.startswith("["):
-        array_match = re.search(r"\[\s*\{[\s\S]*\}\s*\]", json_text)
-        if array_match:
-            json_text = array_match.group()
-
-    try:
-        issues = json.loads(json_text)
-        if isinstance(issues, list):
-            return issues
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse lint output as JSON: {e}")
-        logger.debug(f"Raw output: {output[:1000]}")
-        return []
+    result = parse_llm_json(output, default=[])
+    if isinstance(result, list):
+        return result
+    return []
 
 
 def detect_project_linters(repo_path: Path) -> list[str]:

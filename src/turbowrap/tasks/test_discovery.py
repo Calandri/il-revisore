@@ -3,14 +3,13 @@
 Scans repositories to automatically discover test suites and frameworks.
 """
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..llm.gemini import GeminiCLI
+from ..review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -66,32 +65,10 @@ def _extract_json_from_output(output: str) -> dict[str, Any] | None:
 
     The output may contain markdown or other text, so we need to find
     the JSON object within it.
+
+    Uses centralized parse_llm_json for extraction.
     """
-    # Try direct JSON parse first
-    try:
-        return json.loads(output.strip())
-    except json.JSONDecodeError:
-        pass
-
-    # Look for JSON object in output
-    # Pattern: starts with { and ends with matching }
-    json_match = re.search(r"\{[\s\S]*\"discovered_suites\"[\s\S]*\}", output)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except json.JSONDecodeError:
-            pass
-
-    # Try to find any JSON object
-    for match in re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", output):
-        try:
-            data = json.loads(match.group())
-            if "discovered_suites" in data:
-                return data
-        except json.JSONDecodeError:
-            continue
-
-    return None
+    return parse_llm_json(output)
 
 
 async def discover_tests(

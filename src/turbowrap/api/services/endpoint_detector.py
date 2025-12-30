@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from turbowrap.orchestration.cli_runner import GeminiCLI
+from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -338,17 +339,11 @@ Respond ONLY with a valid JSON array (no markdown, no explanations):
 
         response_text = output.strip()
 
-        cleaned = response_text
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-            cleaned = re.sub(r"\s*```$", "", cleaned)
-
-        # Try to extract JSON from the response
-        json_match = re.search(r"\[[\s\S]*\]", cleaned)
-        if json_match:
-            cleaned = json_match.group(0)
-
-        endpoints_data = json.loads(cleaned)
+        # Parse JSON array from LLM response
+        endpoints_data = parse_llm_json(response_text, default=[])
+        if not endpoints_data:
+            logger.warning("Could not parse endpoints JSON from Gemini CLI response")
+            return []
 
         seen: set[tuple[str, str]] = set()
         endpoints: list[EndpointInfo] = []

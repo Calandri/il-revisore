@@ -11,7 +11,9 @@ Centralized modules for:
 from turbowrap.review.reviewers.utils.json_extraction import (
     JSONExtractionError,
     extract_json,
+    extract_json_from_llm,
     parse_json_safe,
+    parse_llm_json,
     repair_truncated_json,
 )
 from turbowrap.review.reviewers.utils.prompt_builders import (
@@ -28,8 +30,10 @@ from turbowrap.review.reviewers.utils.s3_logger import S3ArtifactMetadata, S3Log
 __all__ = [
     # JSON extraction
     "extract_json",
+    "extract_json_from_llm",
     "repair_truncated_json",
     "parse_json_safe",
+    "parse_llm_json",
     "JSONExtractionError",
     # S3 logging
     "S3Logger",

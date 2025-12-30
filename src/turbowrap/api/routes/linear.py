@@ -19,7 +19,7 @@ from sse_starlette.sse import EventSourceResponse
 from ...db.models import LinearIssue, LinearIssueRepositoryLink, Repository, Setting
 from ...linear.analyzer import LinearIssueAnalyzer
 from ...review.integrations.linear import LinearClient
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/linear", tags=["linear"])
@@ -402,9 +402,7 @@ async def improve_issue_phase1(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Phase 1: Generate clarifying questions for issue analysis."""
-    issue = db.query(LinearIssue).filter(LinearIssue.id == request.issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, LinearIssue, request.issue_id, "Issue not found")
 
     # Check if issue is in correct state
     if issue.turbowrap_state not in ["analysis", "repo_link"]:
@@ -433,9 +431,7 @@ async def improve_issue_phase2(
     db: Session = Depends(get_db),
 ) -> EventSourceResponse:
     """Phase 2: Deep analysis with user answers (SSE streaming)."""
-    issue = db.query(LinearIssue).filter(LinearIssue.id == request.issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, LinearIssue, request.issue_id, "Issue not found")
 
     # Check if issue is in correct state
     if issue.turbowrap_state not in ["analysis", "repo_link"]:
@@ -566,13 +562,8 @@ def link_repository(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """Manually link a repository to a Linear issue."""
-    issue = db.query(LinearIssue).filter(LinearIssue.id == request.issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
-
-    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    issue = get_or_404(db, LinearIssue, request.issue_id, "Issue not found")
+    repo = get_or_404(db, Repository, request.repository_id, "Repository not found")
 
     # Check if link exists
     existing = (
@@ -622,9 +613,7 @@ async def start_development(
 
     Enforces single-active-issue constraint.
     """
-    issue = db.query(LinearIssue).filter(LinearIssue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, LinearIssue, issue_id, "Issue not found")
 
     # Check if issue has repository links
     links = (

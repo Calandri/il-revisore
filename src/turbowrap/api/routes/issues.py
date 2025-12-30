@@ -13,7 +13,7 @@ from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from ...db.models import Issue, IssueStatus, is_valid_issue_transition
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -285,10 +285,7 @@ def get_issue(
     db: Session = Depends(get_db),
 ) -> Issue:
     """Get issue details."""
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
-    return issue
+    return get_or_404(db, Issue, issue_id)
 
 
 @router.patch("/{issue_id}", response_model=IssueResponse)
@@ -309,9 +306,7 @@ def update_issue(
 
     Use force=true to bypass transition validation (dangerous).
     """
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     if data.status:
         valid_statuses = [s.value for s in IssueStatus]
@@ -357,9 +352,7 @@ def resolve_issue(
     db: Session = Depends(get_db),
 ) -> Issue:
     """Quick action to mark an issue as merged (closed)."""
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
     issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
@@ -378,9 +371,7 @@ def ignore_issue(
     db: Session = Depends(get_db),
 ) -> Issue:
     """Quick action to mark an issue as ignored (false positive or won't fix)."""
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     issue.status = IssueStatus.IGNORED.value  # type: ignore[assignment]
     issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
@@ -402,9 +393,7 @@ def reopen_issue(
     Clears all fix-related data (commit SHA, branch) so the issue
     can be fixed again from scratch.
     """
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
     issue.resolved_at = None  # type: ignore[assignment]
@@ -424,9 +413,7 @@ def toggle_issue_viewed(
     db: Session = Depends(get_db),
 ) -> Issue:
     """Toggle the is_viewed flag on an issue (manual triage marker)."""
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     issue.is_viewed = viewed  # type: ignore[assignment]
 
@@ -460,9 +447,7 @@ def get_issue_fix_log(
     Returns prompts sent to Claude CLI and Gemini CLI during the fix session.
     Only available for issues that have been fixed (have fix_session_id).
     """
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     if not issue.fix_session_id:
         raise HTTPException(
@@ -552,9 +537,7 @@ def link_issue_to_linear(
     import re
     import uuid
 
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     linear_input = data.linear_identifier.strip()
 
@@ -594,9 +577,7 @@ def unlink_issue_from_linear(
     db: Session = Depends(get_db),
 ) -> Issue:
     """Remove Linear link from an issue."""
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     if not issue.linear_id:
         raise HTTPException(status_code=400, detail="Issue is not linked to Linear")
@@ -626,9 +607,7 @@ def add_comment_to_issue(
     """Add a comment to an issue."""
     import uuid
 
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     # Initialize comments list if None
     comments = issue.comments or []
@@ -658,9 +637,7 @@ def delete_comment_from_issue(
     db: Session = Depends(get_db),
 ) -> Issue:
     """Delete a comment from an issue."""
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if not issue:
-        raise HTTPException(status_code=404, detail="Issue not found")
+    issue = get_or_404(db, Issue, issue_id)
 
     comments = issue.comments or []
 

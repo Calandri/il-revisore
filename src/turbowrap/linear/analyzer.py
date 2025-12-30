@@ -3,7 +3,6 @@
 Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
 """
 
-import json
 import logging
 import re
 from collections.abc import AsyncIterator
@@ -13,6 +12,7 @@ from typing import Any, cast
 from turbowrap.db.models import LinearIssue
 from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.integrations.linear import LinearClient
+from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -235,15 +235,10 @@ Be specific with file paths and technical details.
         Returns:
             List of question dicts
         """
-        # Look for JSON block with questions
-        json_match = re.search(r"```json\s*(\{.*?\})\s*```", output, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(1))
-                if "questions" in data:
-                    return cast(list[dict[str, Any]], data["questions"])
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse JSON questions: {e}")
+        # Use centralized JSON extraction
+        data = parse_llm_json(output)
+        if data and isinstance(data, dict) and "questions" in data:
+            return cast(list[dict[str, Any]], data["questions"])
 
         # Fallback: look for questions pattern in text
         questions = []

@@ -19,7 +19,7 @@ from ...core.task_queue import QueuedTask, get_task_queue
 from ...db.models import Issue, Repository, ReviewCheckpoint, Task
 from ...review.models.progress import ProgressEvent, ProgressEventType
 from ...tasks import TaskContext, get_task_registry
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 from ..schemas.tasks import TaskCreate, TaskQueueStatus, TaskResponse
 
 logger = logging.getLogger(__name__)
@@ -157,10 +157,7 @@ def get_task(
     db: Session = Depends(get_db),
 ) -> Task:
     """Get task details."""
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    return get_or_404(db, Task, task_id)
 
 
 @router.delete("/{task_id}")
@@ -172,9 +169,7 @@ def delete_task(
 
     Use this to clean up old reviews before re-running.
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = get_or_404(db, Task, task_id)
 
     # Delete associated issues
     issues_deleted = db.query(Issue).filter(Issue.task_id == task_id).delete()
@@ -199,9 +194,7 @@ def get_task_progress(
     Returns progress percentage, elapsed time, and estimated remaining time.
     Useful for polling task status during execution.
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = get_or_404(db, Task, task_id)
 
     elapsed = None
     if task.started_at:
@@ -247,9 +240,7 @@ def get_task_evaluation(
     - code_duplication
     - overall_score (weighted average)
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = get_or_404(db, Task, task_id)
 
     if task.status != "completed":
         raise HTTPException(status_code=400, detail="Task not completed")
@@ -277,9 +268,7 @@ async def cancel_task(
     """Cancel a pending or running task."""
     from ..review_manager import get_review_manager
 
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = get_or_404(db, Task, task_id)
 
     if task.status not in ("pending", "running"):
         raise HTTPException(
@@ -357,9 +346,7 @@ async def stream_review(
     """
     from ..services.review_stream_service import get_review_stream_service
 
-    repo = db.query(Repository).filter(Repository.id == repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, repository_id)
 
     service = get_review_stream_service(db)
     session_info = await service.start_or_reconnect(
@@ -429,15 +416,9 @@ async def restart_reviewer(
             detail=f"Invalid reviewer: {reviewer_name}. Must be one of: {valid_reviewers}",
         )
 
-    # Get task
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Get repository
-    repo = db.query(Repository).filter(Repository.id == task.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    # Get task and repository
+    task = get_or_404(db, Task, task_id)
+    repo = get_or_404(db, Repository, cast(str, task.repository_id))
 
     manager = get_review_manager()
     display_name = get_reviewer_display_name(reviewer_name)
@@ -855,9 +836,7 @@ def get_task_checkpoints(
     Returns list of reviewers and their checkpoint status.
     Useful for UI to show which reviewers can be skipped on resume.
     """
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = get_or_404(db, Task, task_id)
 
     checkpoints = db.query(ReviewCheckpoint).filter(ReviewCheckpoint.task_id == task_id).all()
 

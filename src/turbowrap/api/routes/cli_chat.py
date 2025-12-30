@@ -27,7 +27,7 @@ from ...chat_cli import (
 from ...config import get_settings
 from ...db.models import CLIChatMessage, CLIChatSession, Repository
 from ...utils.git_utils import checkout_branch, list_branches
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 from ..schemas.cli_chat import (
     AgentListResponse,
     AgentResponse,
@@ -419,9 +419,7 @@ def get_session_branches(
             detail="Session is not linked to a repository",
         )
 
-    repo = db.query(Repository).filter(Repository.id == session.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, session.repository_id)
 
     try:
         return list_branches(Path(repo.local_path))
@@ -461,9 +459,7 @@ async def change_session_branch(
             detail="Session is not linked to a repository",
         )
 
-    repo = db.query(Repository).filter(Repository.id == session.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, session.repository_id)
 
     # Git checkout
     try:

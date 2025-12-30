@@ -16,7 +16,7 @@ from ...db.models import (
     RepositoryDatabaseConnection,
     generate_uuid,
 )
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 
 router = APIRouter(prefix="/databases", tags=["databases"])
 
@@ -802,9 +802,7 @@ def get_databases_by_repository(
 ) -> list[DatabaseConnectionResponse]:
     """Get all database connections linked to a repository."""
     # Verify repository exists
-    repo = db.query(Repository).filter(Repository.id == repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repository_id)
 
     # Get linked database connections
     links = (
@@ -892,9 +890,7 @@ def link_repository(
         raise HTTPException(status_code=404, detail="Database connection not found")
 
     # Verify repository exists
-    repo = db.query(Repository).filter(Repository.id == req.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, req.repository_id)
 
     # Check if link already exists
     existing = (

@@ -14,7 +14,7 @@ from ...db.models import (
     TestRun,
     TestSuite,
 )
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +179,7 @@ def list_test_suites(
 ) -> list[dict[str, Any]]:
     """List all test suites for a repository."""
     # Verify repository exists
-    repo = db.query(Repository).filter(Repository.id == repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repository_id)
 
     query = db.query(TestSuite).filter(TestSuite.repository_id == repository_id)
 
@@ -233,9 +231,7 @@ def get_test_suite(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Get a specific test suite."""
-    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
-    if not suite:
-        raise HTTPException(status_code=404, detail="Test suite not found")
+    suite = get_or_404(db, TestSuite, suite_id)
 
     runs_count = len(suite.runs) if suite.runs else 0
     last_run = None
@@ -269,9 +265,7 @@ def create_test_suite(
 ) -> dict[str, Any]:
     """Create a new test suite manually."""
     # Verify repository exists
-    repo = db.query(Repository).filter(Repository.id == data.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, data.repository_id)
 
     # Validate framework
     valid_frameworks = ["pytest", "playwright", "vitest", "jest", "cypress", "custom"]
@@ -350,9 +344,7 @@ def update_test_suite(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Update a test suite."""
-    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
-    if not suite:
-        raise HTTPException(status_code=404, detail="Test suite not found")
+    suite = get_or_404(db, TestSuite, suite_id)
 
     # Update fields
     if data.name is not None:
@@ -413,9 +405,7 @@ def delete_test_suite(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """Delete a test suite (soft delete by default)."""
-    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
-    if not suite:
-        raise HTTPException(status_code=404, detail="Test suite not found")
+    suite = get_or_404(db, TestSuite, suite_id)
 
     if hard_delete:
         db.delete(suite)
@@ -494,9 +484,7 @@ def get_test_run(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Get a specific test run."""
-    run = db.query(TestRun).filter(TestRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Test run not found")
+    run = get_or_404(db, TestRun, run_id)
 
     return {
         "id": run.id,
@@ -537,9 +525,7 @@ def get_test_run_cases(
     db: Session = Depends(get_db),
 ) -> list[TestCase]:
     """Get all test cases for a run."""
-    run = db.query(TestRun).filter(TestRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Test run not found")
+    get_or_404(db, TestRun, run_id)
 
     query = db.query(TestCase).filter(TestCase.run_id == run_id)
 
@@ -566,9 +552,7 @@ def run_test_suite(
     Creates a test run record and starts the test execution task.
     Returns the run ID and task ID for tracking progress.
     """
-    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
-    if not suite:
-        raise HTTPException(status_code=404, detail="Test suite not found")
+    suite = get_or_404(db, TestSuite, suite_id)
 
     # Create pending test run
     run = TestRun(
@@ -602,9 +586,7 @@ def run_all_tests(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute all test suites for a repository."""
-    repo = db.query(Repository).filter(Repository.id == repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repository_id)
 
     suites = (
         db.query(TestSuite)
@@ -657,9 +639,7 @@ def discover_tests(
     Scans common test directories and config files to identify test frameworks.
     Creates test suite records for discovered tests.
     """
-    repo = db.query(Repository).filter(Repository.id == repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repository_id)
 
     # TODO: Implement discovery agent
     # For now, return empty response
@@ -762,9 +742,7 @@ def analyze_test_run(
 
     Analyzes failed tests and generates suggestions for fixes.
     """
-    run = db.query(TestRun).filter(TestRun.id == run_id).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="Test run not found")
+    run = get_or_404(db, TestRun, run_id)
 
     if run.status not in ("passed", "failed"):
         raise HTTPException(
@@ -793,9 +771,7 @@ def generate_tests(
 
     Creates new test cases based on source code analysis.
     """
-    repo = db.query(Repository).filter(Repository.id == repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repository_id)
 
     # TODO: Implement test-generator agent
     logger.info(f"Test generation requested for repository {repository_id}")

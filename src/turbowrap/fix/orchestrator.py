@@ -36,6 +36,7 @@ from turbowrap.llm.claude_cli import ClaudeCLI, ClaudeCLIResult
 
 # Import GeminiCLI from shared orchestration utilities
 from turbowrap.orchestration.cli_runner import GeminiCLI
+from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 S3_BUCKET = "turbowrap-thinking"
@@ -1831,56 +1832,51 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
         per_issue_scores: dict[str, float] = {}
         per_issue_data: dict[str, Any] = {}
 
-        json_match = re.search(r"```json\s*([\s\S]*?)```", output)
-        if json_match:
-            try:
-                review_data = json.loads(json_match.group(1))
+        # Use centralized JSON extraction
+        review_data = parse_llm_json(output)
+        if review_data:
+            # NEW FORMAT: per-issue evaluation
+            if "issues" in review_data and isinstance(review_data["issues"], dict):
+                logger.info("Parsing new per-issue JSON format")
+                solved_count = 0
+                in_progress_count = 0
 
-                # NEW FORMAT: per-issue evaluation
-                if "issues" in review_data and isinstance(review_data["issues"], dict):
-                    logger.info("Parsing new per-issue JSON format")
-                    solved_count = 0
-                    in_progress_count = 0
+                for code, issue_data in review_data["issues"].items():
+                    score = float(issue_data.get("score", 0))
+                    status = issue_data.get("status", "IN_PROGRESS")
+                    per_issue_scores[code] = score
+                    per_issue_data[code] = issue_data
 
-                    for code, issue_data in review_data["issues"].items():
-                        score = float(issue_data.get("score", 0))
-                        status = issue_data.get("status", "IN_PROGRESS")
-                        per_issue_scores[code] = score
-                        per_issue_data[code] = issue_data
+                    # Determine status based on 90% threshold
+                    if score >= SOLVED_THRESHOLD or status == "SOLVED":
+                        solved_count += 1
+                        logger.debug(f"Issue {code}: SOLVED (score={score})")
+                    else:
+                        in_progress_issues.append(code)
+                        in_progress_count += 1
+                        logger.debug(f"Issue {code}: IN_PROGRESS (score={score})")
 
-                        # Determine status based on 90% threshold
-                        if score >= SOLVED_THRESHOLD or status == "SOLVED":
-                            solved_count += 1
-                            logger.debug(f"Issue {code}: SOLVED (score={score})")
-                        else:
-                            in_progress_issues.append(code)
-                            in_progress_count += 1
-                            logger.debug(f"Issue {code}: IN_PROGRESS (score={score})")
+                # Calculate batch score as average of per-issue scores
+                if per_issue_scores:
+                    batch_score = sum(per_issue_scores.values()) / len(per_issue_scores)
 
-                    # Calculate batch score as average of per-issue scores
-                    if per_issue_scores:
-                        batch_score = sum(per_issue_scores.values()) / len(per_issue_scores)
+                logger.info(
+                    f"Parsed {len(per_issue_scores)} issues: "
+                    f"{solved_count} SOLVED, {in_progress_count} IN_PROGRESS"
+                )
 
-                    logger.info(
-                        f"Parsed {len(per_issue_scores)} issues: "
-                        f"{solved_count} SOLVED, {in_progress_count} IN_PROGRESS"
-                    )
+                # Extract batch_summary if present
+                if "batch_summary" in review_data:
+                    per_issue_data["_batch_summary"] = review_data["batch_summary"]
 
-                    # Extract batch_summary if present
-                    if "batch_summary" in review_data:
-                        per_issue_data["_batch_summary"] = review_data["batch_summary"]
-
-                # OLD FORMAT: backwards compatibility
-                elif "quality_scores" in review_data or "satisfaction_score" in review_data:
-                    logger.info("Parsing old JSON format (backwards compatibility)")
-                    if "quality_scores" in review_data:
-                        per_issue_data["_quality_scores"] = review_data["quality_scores"]
-                    if "satisfaction_score" in review_data:
-                        batch_score = float(review_data["satisfaction_score"])
-                        logger.info(f"Parsed satisfaction_score from JSON: {batch_score}")
-
-            except json.JSONDecodeError as e:
-                logger.debug(f"Failed to parse JSON block: {e}")
+            # OLD FORMAT: backwards compatibility
+            elif "quality_scores" in review_data or "satisfaction_score" in review_data:
+                logger.info("Parsing old JSON format (backwards compatibility)")
+                if "quality_scores" in review_data:
+                    per_issue_data["_quality_scores"] = review_data["quality_scores"]
+                if "satisfaction_score" in review_data:
+                    batch_score = float(review_data["satisfaction_score"])
+                    logger.info(f"Parsed satisfaction_score from JSON: {batch_score}")
 
         # Fallback: BATCH_SCORE pattern (old format)
         if not per_issue_scores:
@@ -1955,49 +1951,16 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 
         per_issue_data: dict[str, dict[str, Any]] = {}
 
-        # Try to find JSON block in output
-        json_match = re.search(r"```json\s*([\s\S]*?)```", output)
-        if json_match:
-            try:
-                fix_data = json.loads(json_match.group(1))
-                if "issues" in fix_data and isinstance(fix_data["issues"], dict):
-                    for code, issue_data in fix_data["issues"].items():
-                        per_issue_data[code] = issue_data
-                        logger.debug(
-                            f"Parsed Claude fix data for {code}: "
-                            f"changes_summary={issue_data.get('changes_summary', 'N/A')[:50]}"
-                        )
-                    logger.info(f"Parsed Claude fix output: {len(per_issue_data)} issues")
-            except json.JSONDecodeError as e:
-                logger.debug(f"Failed to parse Claude fix JSON: {e}")
-
-        # Fallback: try to find raw JSON (no markdown code block)
-        if not per_issue_data:
-            try:
-                # Look for JSON starting with {
-                json_start = output.find('{"issues"')
-                if json_start >= 0:
-                    # Find matching closing brace
-                    brace_count = 0
-                    json_end = json_start
-                    for i, char in enumerate(output[json_start:]):
-                        if char == "{":
-                            brace_count += 1
-                        elif char == "}":
-                            brace_count -= 1
-                            if brace_count == 0:
-                                json_end = json_start + i + 1
-                                break
-                    if json_end > json_start:
-                        fix_data = json.loads(output[json_start:json_end])
-                        if "issues" in fix_data and isinstance(fix_data["issues"], dict):
-                            for code, issue_data in fix_data["issues"].items():
-                                per_issue_data[code] = issue_data
-                            logger.info(
-                                f"Parsed Claude fix output (raw JSON): {len(per_issue_data)} issues"
-                            )
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.debug(f"Failed to parse raw Claude fix JSON: {e}")
+        # Use centralized JSON extraction
+        fix_data = parse_llm_json(output)
+        if fix_data and "issues" in fix_data and isinstance(fix_data["issues"], dict):
+            for code, issue_data in fix_data["issues"].items():
+                per_issue_data[code] = issue_data
+                logger.debug(
+                    f"Parsed Claude fix data for {code}: "
+                    f"changes_summary={issue_data.get('changes_summary', 'N/A')[:50]}"
+                )
+            logger.info(f"Parsed Claude fix output: {len(per_issue_data)} issues")
 
         return per_issue_data
 

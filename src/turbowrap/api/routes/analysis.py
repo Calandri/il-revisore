@@ -18,10 +18,11 @@ from sse_starlette.sse import EventSourceResponse
 
 from ...db.models import Issue, IssueStatus, Repository, Task
 from ...orchestration.cli_runner import GeminiCLI
+from ...review.reviewers.utils.json_extraction import parse_llm_json
 from ...utils.aws_secrets import get_anthropic_api_key
 from ...utils.git_utils import get_current_branch
 from ...utils.lint_utils import parse_lint_json_from_llm
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +107,7 @@ async def run_lint_analysis(
     Returns SSE stream with progress updates.
     """
     # Verify repository
-    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, request.repository_id)
 
     repo_path = Path(str(repo.local_path))
     if not repo_path.exists():
@@ -117,9 +116,7 @@ async def run_lint_analysis(
     # Create or use task
     task_id: str
     if request.task_id:
-        task = db.query(Task).filter(Task.id == request.task_id).first()
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
+        task = get_or_404(db, Task, request.task_id)
         task_id = str(task.id)
     else:
         # Create a new task for this lint run
@@ -359,9 +356,7 @@ async def get_lint_results(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Get results of a lint analysis task."""
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = get_or_404(db, Task, task_id)
 
     issues = db.query(Issue).filter(Issue.task_id == task_id).all()
 
@@ -424,9 +419,7 @@ async def run_lint_fix(
     Returns SSE stream with progress updates.
     """
     # Verify repository
-    repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, request.repository_id)
 
     repo_path = Path(str(repo.local_path))
     if not repo_path.exists():
@@ -637,22 +630,8 @@ def _parse_lint_fix_output(output: str, lint_type: str) -> LintFixResult:
 
     Extracts the JSON summary from Gemini CLI output, handling markdown code blocks.
     """
-    json_text = output.strip()
-
-    # Handle markdown code blocks
-    if "```" in json_text:
-        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", json_text)
-        if json_match:
-            json_text = json_match.group(1).strip()
-
-    # Try to find JSON object
-    if not json_text.startswith("{"):
-        obj_match = re.search(r"\{[\s\S]*\"status\"[\s\S]*\}", json_text)
-        if obj_match:
-            json_text = obj_match.group()
-
-    try:
-        data = json.loads(json_text)
+    data = parse_llm_json(output)
+    if data:
         return LintFixResult(
             lint_type=data.get("lint_type", lint_type),
             issues_found=data.get("issues_found", 0),
@@ -661,12 +640,12 @@ def _parse_lint_fix_output(output: str, lint_type: str) -> LintFixResult:
             commit_sha=data.get("commit_sha"),
             status=data.get("status", "success"),
         )
-    except json.JSONDecodeError:
-        logger.warning(f"Could not parse lint-fix output for {lint_type}: {json_text[:200]}")
-        return LintFixResult(
-            lint_type=lint_type,
-            issues_found=0,
-            issues_fixed=0,
-            files_modified=[],
-            status="unknown",
-        )
+
+    logger.warning(f"Could not parse lint-fix output for {lint_type}: {output[:200]}")
+    return LintFixResult(
+        lint_type=lint_type,
+        issues_found=0,
+        issues_fixed=0,
+        files_modified=[],
+        status="unknown",
+    )

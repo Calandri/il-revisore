@@ -166,3 +166,56 @@ def parse_json_safe(text: str, repair_truncated: bool = True) -> dict[str, Any]:
     """
     json_str = extract_json(text, repair_truncated=repair_truncated)
     return cast(dict[str, Any], json.loads(json_str))
+
+
+def extract_json_from_llm(output: str) -> str | None:
+    """
+    Extract JSON from LLM output (handles ```json blocks and raw JSON).
+
+    This is a convenience wrapper that returns None instead of raising
+    on failure, suitable for cases where JSON may or may not be present.
+
+    Args:
+        output: Raw LLM response text
+
+    Returns:
+        Extracted JSON string, or None if no valid JSON found
+    """
+    try:
+        return extract_json(output, repair_truncated=True)
+    except JSONExtractionError:
+        # Try to find raw JSON array as fallback (extract_json focuses on objects)
+        import re
+
+        for pattern in [r"\[[\s\S]*\]"]:
+            match = re.search(pattern, output)
+            if match:
+                try:
+                    json.loads(match.group())
+                    return match.group()
+                except json.JSONDecodeError:
+                    continue
+        return None
+
+
+def parse_llm_json(output: str, default: Any = None) -> Any:
+    """
+    Parse JSON from LLM output, returning default on failure.
+
+    This is a convenience function for cases where you want graceful
+    degradation rather than exception handling.
+
+    Args:
+        output: Raw LLM response text
+        default: Value to return if JSON extraction/parsing fails
+
+    Returns:
+        Parsed JSON (dict or list), or default on failure
+    """
+    extracted = extract_json_from_llm(output)
+    if extracted:
+        try:
+            return json.loads(extracted)
+        except json.JSONDecodeError:
+            pass
+    return default

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ...core.repo_manager import RepoManager
 from ...db.models import LinkType, Repository, RepositoryLink
 from ...llm import GeminiClient
+from ...review.reviewers.utils.json_extraction import parse_llm_json
 from ..deps import get_db, require_auth
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
@@ -250,17 +251,11 @@ async def analyze_relationships(
             # Remove first and last lines (```json and ```)
             response_clean = "\n".join(lines[1:-1])
 
-        try:
-            result = json.loads(response_clean)
-        except json.JSONDecodeError as e:
-            # Try to find JSON in the response
-            import re
-
-            json_match = re.search(r"\{[\s\S]*\}", response)
-            if json_match:
-                result = json.loads(json_match.group())
-            else:
-                raise HTTPException(status_code=500, detail=f"Errore parsing risposta AI: {str(e)}")
+        result = parse_llm_json(response)
+        if not result:
+            raise HTTPException(
+                status_code=500, detail="Errore parsing risposta AI: nessun JSON trovato"
+            )
 
         connections = []
         for conn in result.get("connections", []):
@@ -346,25 +341,13 @@ async def analyze_relationships_stream(
             response = await asyncio.to_thread(client.generate, prompt, ANALYSIS_SYSTEM_PROMPT)
 
             # Parse response
-            response_clean = response.strip()
-            if response_clean.startswith("```"):
-                lines = response_clean.split("\n")
-                response_clean = "\n".join(lines[1:-1])
-
-            try:
-                result = json.loads(response_clean)
-            except json.JSONDecodeError:
-                import re
-
-                json_match = re.search(r"\{[\s\S]*\}", response)
-                if json_match:
-                    result = json.loads(json_match.group())
-                else:
-                    yield (
-                        f"event: error\ndata: "
-                        f"{json.dumps({'error': 'Errore parsing risposta AI'})}\n\n"
-                    )
-                    return
+            result = parse_llm_json(response)
+            if not result:
+                yield (
+                    f"event: error\ndata: "
+                    f"{json.dumps({'error': 'Errore parsing risposta AI'})}\n\n"
+                )
+                return
 
             connections = []
             for conn in result.get("connections", []):

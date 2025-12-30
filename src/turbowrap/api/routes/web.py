@@ -1327,14 +1327,13 @@ async def htmx_analyze_test_suite(
 
     Uses the test_analyzer.md agent to analyze the test suite and save results.
     """
-    import json
     import logging
-    import re
     from datetime import datetime
     from pathlib import Path
 
     from ...db.models import Repository, TestSuite
     from ...llm.gemini import GeminiCLI
+    from ...review.reviewers.utils.json_extraction import parse_llm_json
 
     logger = logging.getLogger(__name__)
 
@@ -1424,33 +1423,10 @@ Now analyze this test suite and return the JSON response.
                 status_code=500,
             )
 
-        # Parse JSON from output
-        output = result.output
-        json_data = None
-
-        # Try to extract JSON from output
-        try:
-            json_data = json.loads(output.strip())
-        except json.JSONDecodeError:
-            # Look for JSON in markdown code block
-            json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", output)
-            if json_match:
-                try:
-                    json_data = json.loads(json_match.group(1))
-                except json.JSONDecodeError:
-                    pass
-
-            # Look for raw JSON
-            if not json_data:
-                json_match = re.search(r"\{[\s\S]*\"test_type\"[\s\S]*\}", output)
-                if json_match:
-                    try:
-                        json_data = json.loads(json_match.group())
-                    except json.JSONDecodeError:
-                        pass
-
+        # Parse JSON from output using centralized utility
+        json_data = parse_llm_json(result.output)
         if not json_data:
-            logger.error(f"Could not parse JSON from output: {output[:500]}")
+            logger.error(f"Could not parse JSON from output: {result.output[:500]}")
             return Response(
                 content="<div class='text-red-500 p-4'>Impossibile estrarre JSON dalla risposta</div>",
                 status_code=500,
@@ -1496,14 +1472,13 @@ async def htmx_analyze_repo_tests(
     Aggregates test files from all suites and provides a repo-level analysis.
     Uses the same test_analyzer.md agent but with different context.
     """
-    import json
     import logging
-    import re
     from datetime import datetime
     from pathlib import Path
 
     from ...db.models import Repository, TestSuite
     from ...llm.gemini import GeminiCLI
+    from ...review.reviewers.utils.json_extraction import parse_llm_json
 
     logger = logging.getLogger(__name__)
 
@@ -1621,30 +1596,10 @@ Focus on:
                 status_code=500,
             )
 
-        # Parse JSON from output
-        output = result.output
-        json_data = None
-
-        try:
-            json_data = json.loads(output.strip())
-        except json.JSONDecodeError:
-            json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", output)
-            if json_match:
-                try:
-                    json_data = json.loads(json_match.group(1))
-                except json.JSONDecodeError:
-                    pass
-
-            if not json_data:
-                json_match = re.search(r"\{[\s\S]*\"test_type\"[\s\S]*\}", output)
-                if json_match:
-                    try:
-                        json_data = json.loads(json_match.group())
-                    except json.JSONDecodeError:
-                        pass
-
+        # Parse JSON from output using centralized utility
+        json_data = parse_llm_json(result.output)
         if not json_data:
-            logger.error(f"Could not parse JSON from output: {output[:500]}")
+            logger.error(f"Could not parse JSON from output: {result.output[:500]}")
             return Response(
                 content="<div class='text-red-500 p-4'>Impossibile estrarre JSON dalla risposta</div>",
                 status_code=500,

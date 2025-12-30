@@ -15,7 +15,7 @@ from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
 from ...utils.git_utils import get_repo_status as get_git_status
 from ...utils.github_browse import FolderListResponse, list_repo_folders
-from ..deps import get_db
+from ..deps import get_db, get_or_404
 from ..schemas.repos import (
     ExternalLinkCreate,
     ExternalLinkResponse,
@@ -318,10 +318,9 @@ def get_repo(
     db: Session = Depends(get_db),
 ) -> RepoResponse:
     """Get repository details."""
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
     return RepoResponse.model_validate(repo)
 
 
@@ -334,9 +333,7 @@ def update_repo(
     """Update repository metadata (project_name, repo_type)."""
     from ...db.models import Repository
 
-    repo = db.query(Repository).filter(Repository.id == repo_id).first()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, repo_id)
 
     if data.project_name is not None:
         repo.project_name = data.project_name if data.project_name else None  # type: ignore[assignment]
@@ -354,12 +351,12 @@ def sync_repo(
     db: Session = Depends(get_db),
 ) -> RepoResponse:
     """Sync (pull) repository."""
+    from ...db.models import Repository
+
     manager = RepoManager(db)
 
     # Get repo info for tracking
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = get_or_404(db, Repository, repo_id)
 
     # Extract repo name - cast to str to satisfy mypy
     repo_url = cast(str, repo.url) if repo.url else ""
@@ -552,12 +549,9 @@ def create_external_link(
     - `ci_cd`: CI/CD pipeline URL
     - `other`: Other custom URL
     """
-    from ...db.models import RepositoryExternalLink, generate_uuid
+    from ...db.models import Repository, RepositoryExternalLink, generate_uuid
 
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repo_id)  # Validate repo exists
 
     # Create external link
     external_link = RepositoryExternalLink(
@@ -588,12 +582,9 @@ def list_external_links(
         repo_id: Repository UUID
         link_type: Optional filter by link type (staging, production, docs, etc.)
     """
-    from ...db.models import RepositoryExternalLink
+    from ...db.models import Repository, RepositoryExternalLink
 
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repo_id)  # Validate repo exists
 
     query = db.query(RepositoryExternalLink).filter(RepositoryExternalLink.repository_id == repo_id)
     if link_type:
@@ -611,12 +602,9 @@ def update_external_link(
     db: Session = Depends(get_db),
 ) -> ExternalLinkResponse:
     """Update an external link."""
-    from ...db.models import RepositoryExternalLink
+    from ...db.models import Repository, RepositoryExternalLink
 
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repo_id)  # Validate repo exists
 
     link = (
         db.query(RepositoryExternalLink)
@@ -655,12 +643,9 @@ def delete_external_link(
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     """Delete an external link."""
-    from ...db.models import RepositoryExternalLink
+    from ...db.models import Repository, RepositoryExternalLink
 
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    get_or_404(db, Repository, repo_id)  # Validate repo exists
 
     link = (
         db.query(RepositoryExternalLink)
@@ -712,10 +697,9 @@ def list_files(
         path: Subdirectory path (relative to repo root)
         pattern: Glob pattern to filter files (e.g., '*.md', 'STRUCTURE*')
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     target_path = repo_path / path
@@ -781,10 +765,9 @@ def get_file_tree(
 
     Returns a flat list of all matching files in the repository.
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     ext_list = [ext.strip() for ext in extensions.split(",")]
@@ -878,10 +861,9 @@ def get_file_tree_hierarchy(
     Returns a nested tree structure suitable for VS Code-like file explorer.
     Directories come first, sorted alphabetically.
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     ext_list = [ext.strip() for ext in extensions.split(",")]
@@ -959,10 +941,9 @@ def get_file_diff(
     """
     import subprocess
 
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
@@ -1214,10 +1195,9 @@ def find_definition(
 
     Returns the file path and line number of definitions.
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     definitions: list[SymbolDefinition] = []
@@ -1303,10 +1283,9 @@ def get_structure_files(
     Returns a list of STRUCTURE.md files found in the repository,
     including their full content for display.
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
 
@@ -1353,10 +1332,9 @@ def read_file(
 
     Only text files are supported. Binary files will return an error.
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
@@ -1407,10 +1385,9 @@ def write_file(
     Updates an existing file or creates a new one.
     Optionally commits the change with the provided message.
     """
-    manager = RepoManager(db)
-    repo = manager.get(repo_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    from ...db.models import Repository
+
+    repo = get_or_404(db, Repository, repo_id)
 
     repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
