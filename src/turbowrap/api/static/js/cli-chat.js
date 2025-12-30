@@ -138,18 +138,20 @@ function chatSidebar() {
                         console.log('[chatSidebar] Changed chatMode to third');
                     }
 
+                    const repoId = Alpine.store('globalContext')?.selectedRepoId;
+                    const agentName = e.detail?.agent || null;
+                    const cliType = e.detail?.cli || 'claude';
+
                     // Handle session selection
-                    if (e.detail?.newSession) {
-                        // Create a new session
-                        console.log('[chatSidebar] Creating new session');
-                        const repoId = Alpine.store('globalContext')?.selectedRepoId;
-                        await this.createSession('claude', repoId);
+                    if (e.detail?.newSession || agentName) {
+                        // Create a new session (always new when agent is specified)
+                        console.log('[chatSidebar] Creating new session with agent:', agentName);
+                        await this.createSession(cliType, repoId, agentName);
                     } else if (e.detail?.reuseSession) {
                         // Reuse active session if exists, otherwise create new
                         if (!this.activeSession) {
                             console.log('[chatSidebar] No active session, creating new one');
-                            const repoId = Alpine.store('globalContext')?.selectedRepoId;
-                            await this.createSession('claude', repoId);
+                            await this.createSession(cliType, repoId);
                         } else {
                             console.log('[chatSidebar] Reusing active session:', this.activeSession.id);
                         }
@@ -592,15 +594,19 @@ Contesto: ${contextStr}`;
 
         /**
          * Create a new chat session
+         * @param {string} cliType - 'claude' or 'gemini'
+         * @param {string|null} repositoryId - Optional repository ID
+         * @param {string|null} agentName - Optional agent name (e.g., 'test_creator')
          */
-        async createSession(cliType, repositoryId = null) {
+        async createSession(cliType, repositoryId = null, agentName = null) {
             this.creating = true;
             try {
                 const payload = {
                     cli_type: cliType,
-                    display_name: cliType === 'claude' ? 'Claude Chat' : 'Gemini Chat',
+                    display_name: agentName ? `${agentName}` : (cliType === 'claude' ? 'Claude Chat' : 'Gemini Chat'),
                     color: cliType === 'claude' ? '#f97316' : '#3b82f6',
-                    ...(repositoryId && { repository_id: repositoryId })
+                    ...(repositoryId && { repository_id: repositoryId }),
+                    ...(agentName && { agent_name: agentName })
                 };
 
                 const res = await fetch('/api/cli-chat/sessions', {

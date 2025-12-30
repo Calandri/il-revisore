@@ -206,11 +206,12 @@
                 .enhance-btn.htmx-request .icon-loading { display: block; }
             </style>
 
-            <!-- Genera Nuovi Test Button (opens chat with /create_test command) -->
+            <!-- Genera Nuovi Test Button (opens chat with test_creator agent) -->
             <button
                 @click="$dispatch('open-chat-with-command', {
-                    command: '/create_test --suite-id {{ suite.id }} --suite-path {{ suite.path }} --framework {{ suite.framework }}',
-                    reuseSession: true
+                    agent: 'test_creator',
+                    cli: 'claude',
+                    command: 'Crea un nuovo TurboWrapTest per la suite:\n- Suite ID: {{ suite.id }}\n- Path: {{ suite.path }}\n- Framework: {{ suite.framework }}\n\nGuidami nella creazione del test.'
                 })"
                 class="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 font-medium text-sm"
                 title="Apre la chat AI per generare nuovi test in questa suite"
