@@ -1018,15 +1018,26 @@ async def htmx_get_suite_details(
     )
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        "components/test_suite_details.html",
-        {
-            "request": request,
-            "suite": suite,
-            "scan_result": scan_result,
-            "repo_path": repo.local_path,
-        },
+
+    # Render main content
+    main_content = templates.get_template("components/test_suite_details.html").render(
+        request=request,
+        suite=suite,
+        scan_result=scan_result,
+        repo_path=repo.local_path,
     )
+
+    # Render AI analysis OOB if exists
+    if suite.ai_analysis:
+        ai_content = templates.get_template("components/test_ai_analysis.html").render(
+            request=request,
+            suite=suite,
+            analysis=suite.ai_analysis,
+        )
+        oob_content = f'<div id="suite-ai-analysis" hx-swap-oob="innerHTML">{ai_content}</div>'
+        return Response(content=main_content + oob_content, media_type="text/html")
+
+    return Response(content=main_content, media_type="text/html")
 
 
 @router.get("/htmx/tests/file/{suite_id}", response_class=HTMLResponse)
@@ -1514,6 +1525,178 @@ Analizza i test esistenti e proponi nuovi test case che potrebbero migliorare la
         f"/chat?repo_id={repo.id}&initial_message={quote(initial_message)}"
     )
     return response
+
+
+@router.post("/htmx/tests/enhance/{suite_id}", response_class=HTMLResponse)
+async def htmx_enhance_test(
+    request: Request,
+    suite_id: str,
+    file_path: str = Form(...),
+    test_name: str = Form(...),
+    test_line: int = Form(...),
+    class_name: str = Form(None),
+    suggestions: str = Form(""),
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: enhance a single test using Claude CLI (Opus).
+
+    Uses the test_enhancer.md agent to improve the test based on user suggestions.
+    """
+    import json
+    import logging
+    import re
+    from pathlib import Path
+
+    from ...db.models import Repository, TestSuite
+    from ...llm.claude_cli import ClaudeCLI
+
+    logger = logging.getLogger(__name__)
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(
+            content="<div class='text-red-500 p-4'>Suite non trovata</div>", status_code=404
+        )
+
+    repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
+    if not repo or not repo.local_path:
+        return Response(
+            content="<div class='text-red-500 p-4'>Repository non trovata</div>", status_code=404
+        )
+
+    repo_path = Path(repo.local_path)
+    full_file_path = repo_path / file_path
+
+    if not full_file_path.exists():
+        return Response(
+            content="<div class='text-red-500 p-4'>File test non trovato</div>", status_code=404
+        )
+
+    # Read test file content
+    try:
+        test_file_content = full_file_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return Response(
+            content=f"<div class='text-red-500 p-4'>Errore lettura file: {e}</div>",
+            status_code=500,
+        )
+
+    # Load agent prompt
+    agent_path = Path(__file__).parents[4] / "agents" / "test_enhancer.md"
+    if not agent_path.exists():
+        return Response(
+            content="<div class='text-red-500 p-4'>Agent file not found</div>", status_code=500
+        )
+
+    agent_content = agent_path.read_text()
+    # Remove YAML frontmatter
+    if agent_content.startswith("---"):
+        parts = agent_content.split("---", 2)
+        if len(parts) >= 3:
+            agent_content = parts[2].strip()
+
+    # Build prompt
+    test_identifier = f"{class_name}.{test_name}" if class_name else test_name
+    prompt = f"""
+{agent_content}
+
+## Context
+
+- Repository: {repo.name}
+- Test Framework: {suite.framework}
+- File Path: {file_path}
+- Test Name: {test_identifier}
+- Test Line: {test_line}
+
+## Original Test Code
+
+```{suite.framework if suite.framework == 'pytest' else 'typescript'}
+{test_file_content}
+```
+
+## User Suggestions
+
+{suggestions if suggestions.strip() else "No specific suggestions provided. Apply general best practice improvements."}
+
+Now enhance this test and return the JSON response with the improved code.
+"""
+
+    try:
+        # Run Claude CLI with Opus
+        cli = ClaudeCLI(
+            working_dir=repo_path,
+            model="opus",
+            timeout=180,  # Opus may take longer
+            skip_permissions=True,
+        )
+
+        result = await cli.run(
+            prompt=prompt,
+            operation_type="test_enhancement",
+            repo_name=repo.name,
+            track_operation=True,
+        )
+
+        if not result.success:
+            logger.error(f"Test enhancement failed: {result.error}")
+            return Response(
+                content=f"<div class='text-red-500 p-4'>Enhancement fallito: {result.error}</div>",
+                status_code=500,
+            )
+
+        # Parse JSON from output
+        output = result.output
+        json_data = None
+
+        # Try to extract JSON from output
+        try:
+            json_data = json.loads(output.strip())
+        except json.JSONDecodeError:
+            # Look for JSON in markdown code block
+            json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", output)
+            if json_match:
+                try:
+                    json_data = json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+
+            # Look for raw JSON
+            if not json_data:
+                json_match = re.search(r"\{[\s\S]*\"enhanced_code\"[\s\S]*\}", output)
+                if json_match:
+                    try:
+                        json_data = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        pass
+
+        if not json_data:
+            logger.error(f"Could not parse JSON from output: {output[:500]}")
+            return Response(
+                content="<div class='text-red-500 p-4'>Impossibile estrarre JSON dalla risposta</div>",
+                status_code=500,
+            )
+
+        logger.info(f"Test enhanced: {test_name} with {json_data.get('new_test_count', 0)} tests")
+
+        # Return enhanced test component
+        templates = request.app.state.templates
+        return templates.TemplateResponse(
+            "components/test_enhanced_result.html",
+            {
+                "request": request,
+                "result": json_data,
+                "test_name": test_name,
+                "file_path": file_path,
+                "framework": suite.framework,
+            },
+        )
+
+    except Exception as e:
+        logger.exception(f"Test enhancement error: {e}")
+        return Response(
+            content=f"<div class='text-red-500 p-4'>Errore: {str(e)}</div>",
+            status_code=500,
+        )
 
 
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)

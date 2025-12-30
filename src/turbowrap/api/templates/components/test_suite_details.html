@@ -36,7 +36,7 @@
     {% endif %}
 
     <!-- File List -->
-    <div class="space-y-3" x-data="{ expandedFile: null, showCode: false, codeContent: '' }">
+    <div class="space-y-3" x-data="{ expandedFile: null, enhanceTest: null }">
         {% for file in scan_result.files %}
         <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
             <!-- File Header -->
@@ -70,36 +70,93 @@
                 {% elif file.tests %}
                 <div class="divide-y divide-gray-100 dark:divide-gray-800">
                     {% for test in file.tests %}
-                    <div class="flex items-center justify-between p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 group cursor-pointer transition-colors"
-                         hx-get="/htmx/tests/file/{{ suite.id }}?file_path={{ file.path }}&line={{ test.line }}"
-                         hx-target="#suite-code-viewer"
-                         hx-swap="innerHTML"
-                         title="Clicca per vedere il codice">
-                        <div class="flex items-center gap-3">
-                            <!-- Status icon (placeholder - will show last run status) -->
-                            <div class="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600"></div>
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    {% if test.class_name %}
-                                    <span class="text-xs text-gray-400">{{ test.class_name }}.</span>
-                                    {% endif %}
-                                    <span class="font-mono text-sm">{{ test.name }}</span>
-                                    {% if test.is_async %}
-                                    <span class="px-1.5 py-0.5 rounded text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">async</span>
+                    {% set test_id = file.path ~ ':' ~ test.name %}
+                    <div>
+                        <!-- Test Row -->
+                        <div class="flex items-center justify-between p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 group transition-colors">
+                            <div class="flex items-center gap-3 flex-1 cursor-pointer"
+                                 hx-get="/htmx/tests/file/{{ suite.id }}?file_path={{ file.path }}&line={{ test.line }}"
+                                 hx-target="#suite-code-viewer"
+                                 hx-swap="innerHTML"
+                                 title="Clicca per vedere il codice">
+                                <!-- Status icon -->
+                                <div class="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        {% if test.class_name %}
+                                        <span class="text-xs text-gray-400">{{ test.class_name }}.</span>
+                                        {% endif %}
+                                        <span class="font-mono text-sm">{{ test.name }}</span>
+                                        {% if test.is_async %}
+                                        <span class="px-1.5 py-0.5 rounded text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">async</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if test.docstring %}
+                                    <p class="text-xs text-gray-500 mt-0.5 truncate max-w-md">{{ test.docstring[:100] }}{% if test.docstring|length > 100 %}...{% endif %}</p>
                                     {% endif %}
                                 </div>
-                                {% if test.docstring %}
-                                <p class="text-xs text-gray-500 mt-0.5 truncate max-w-md">{{ test.docstring[:100] }}{% if test.docstring|length > 100 %}...{% endif %}</p>
-                                {% endif %}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-400">line {{ test.line }}</span>
+                                <!-- View Code Button -->
+                                <button class="p-1.5 rounded text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        hx-get="/htmx/tests/file/{{ suite.id }}?file_path={{ file.path }}&line={{ test.line }}"
+                                        hx-target="#suite-code-viewer"
+                                        hx-swap="innerHTML"
+                                        title="Vedi codice">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+                                    </svg>
+                                </button>
+                                <!-- Enhance Button -->
+                                <button @click.stop="enhanceTest = enhanceTest === '{{ test_id }}' ? null : '{{ test_id }}'"
+                                        class="p-1.5 rounded transition-all"
+                                        :class="enhanceTest === '{{ test_id }}' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' : 'text-amber-500 opacity-0 group-hover:opacity-100'"
+                                        title="Migliora con AI">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                </button>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs text-gray-400">line {{ test.line }}</span>
-                            <div class="p-1.5 rounded text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
-                                </svg>
-                            </div>
+                        <!-- Enhance Collapse -->
+                        <div x-show="enhanceTest === '{{ test_id }}'" x-collapse class="bg-amber-50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-800">
+                            <form class="p-3 space-y-3"
+                                  hx-post="/htmx/tests/enhance/{{ suite.id }}"
+                                  hx-target="#suite-code-viewer"
+                                  hx-swap="innerHTML">
+                                <input type="hidden" name="file_path" value="{{ file.path }}">
+                                <input type="hidden" name="test_name" value="{{ test.name }}">
+                                <input type="hidden" name="test_line" value="{{ test.line }}">
+                                {% if test.class_name %}
+                                <input type="hidden" name="class_name" value="{{ test.class_name }}">
+                                {% endif %}
+                                <div>
+                                    <label class="block text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">
+                                        Suggerimenti per il miglioramento (opzionale)
+                                    </label>
+                                    <textarea name="suggestions" rows="2"
+                                              class="w-full px-3 py-2 text-sm border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-800 focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                                              placeholder="Es: aggiungi test per input vuoto, testa il timeout..."></textarea>
+                                </div>
+                                <div class="flex justify-end gap-2">
+                                    <button type="button" @click="enhanceTest = null"
+                                            class="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded">
+                                        Annulla
+                                    </button>
+                                    <button type="submit"
+                                            class="enhance-btn px-3 py-1.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-1.5">
+                                        <svg class="w-3.5 h-3.5 icon-normal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        </svg>
+                                        <svg class="w-3.5 h-3.5 animate-spin icon-loading hidden" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span>Enhance con Opus</span>
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                     {% endfor %}
@@ -128,7 +185,7 @@
             <button
                 type="button"
                 hx-post="/htmx/tests/analyze/{{ suite.id }}"
-                hx-target="#ai-analysis-result"
+                hx-target="#suite-ai-analysis"
                 hx-swap="innerHTML"
                 class="analyze-btn flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 font-medium text-sm"
             >
@@ -145,6 +202,8 @@
                 .analyze-btn.htmx-request .icon-normal { display: none; }
                 .analyze-btn.htmx-request .icon-loading { display: block; }
                 .analyze-btn.htmx-request .btn-text::after { content: '...'; }
+                .enhance-btn.htmx-request .icon-normal { display: none; }
+                .enhance-btn.htmx-request .icon-loading { display: block; }
             </style>
 
             <!-- Sviluppa Nuovi Test Button -->
@@ -159,14 +218,6 @@
                 </svg>
                 Sviluppa Nuovi Test
             </button>
-        </div>
-
-        <!-- Analysis Result Container -->
-        <div id="ai-analysis-result">
-            {% if suite.ai_analysis %}
-            <!-- Show existing analysis -->
-            {% include 'components/test_ai_analysis.html' %}
-            {% endif %}
         </div>
     </div>
 </div>
