@@ -1,0 +1,148 @@
+<!-- AI Analysis Result Component -->
+{% set analysis = suite.ai_analysis if suite else analysis %}
+
+{% if analysis %}
+<div class="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 overflow-hidden">
+    <!-- Header -->
+    <div class="px-4 py-3 bg-white/50 dark:bg-gray-800/50 border-b border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+            <span class="font-semibold text-indigo-900 dark:text-indigo-100">Analisi AI</span>
+        </div>
+        {% if analysis.analyzed_at %}
+        <span class="text-xs text-gray-500">{{ analysis.analyzed_at[:10] }}</span>
+        {% endif %}
+    </div>
+
+    <div class="p-4 space-y-4">
+        <!-- Test Type Badge -->
+        <div class="flex items-center gap-3">
+            <span class="text-sm font-medium text-gray-600 dark:text-gray-400">Tipo:</span>
+            {% set type_colors = {
+                'unit': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+                'integration': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+                'e2e': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+                'api': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+                'performance': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+                'mixed': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+            } %}
+            <span class="px-3 py-1 rounded-full text-sm font-medium {{ type_colors.get(analysis.test_type, type_colors.mixed) }}">
+                {{ analysis.test_type | upper }}
+            </span>
+            {% if analysis.test_type_breakdown %}
+            <div class="flex gap-1">
+                {% for t, count in analysis.test_type_breakdown.items() %}
+                <span class="px-2 py-0.5 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    {{ t }}: {{ count }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Coverage Description -->
+        {% if analysis.coverage_description %}
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Copertura</h4>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ analysis.coverage_description }}</p>
+        </div>
+        {% endif %}
+
+        <!-- How It Works -->
+        {% if analysis.how_it_works %}
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Come funziona</h4>
+            <p class="text-sm text-gray-600 dark:text-gray-400">{{ analysis.how_it_works }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Tested Components -->
+        {% if analysis.tested_components %}
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Componenti testati</h4>
+            <div class="flex flex-wrap gap-2">
+                {% for comp in analysis.tested_components %}
+                <div class="px-3 py-1.5 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <span class="font-medium text-sm">{{ comp.component }}</span>
+                    {% if comp.tests_count %}
+                    <span class="text-xs text-gray-500 ml-1">({{ comp.tests_count }} test)</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Strengths & Weaknesses -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Strengths -->
+            {% if analysis.strengths %}
+            <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                <h4 class="text-sm font-medium text-green-800 dark:text-green-300 mb-2 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Punti di forza
+                </h4>
+                <ul class="space-y-1">
+                    {% for strength in analysis.strengths %}
+                    <li class="text-sm text-green-700 dark:text-green-400">{{ strength }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- Weaknesses -->
+            {% if analysis.weaknesses %}
+            <div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
+                <h4 class="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    Aree da migliorare
+                </h4>
+                <ul class="space-y-1">
+                    {% for weakness in analysis.weaknesses %}
+                    <li class="text-sm text-amber-700 dark:text-amber-400">{{ weakness }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Suggestions -->
+        {% if analysis.suggestions %}
+        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+            <h4 class="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+                Suggerimenti
+            </h4>
+            <ul class="space-y-1">
+                {% for suggestion in analysis.suggestions %}
+                <li class="text-sm text-blue-700 dark:text-blue-400">{{ suggestion }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <!-- Summary -->
+        {% if analysis.summary %}
+        <div class="pt-3 border-t border-indigo-200 dark:border-indigo-800">
+            <p class="text-sm text-gray-600 dark:text-gray-400 italic">{{ analysis.summary }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="text-center py-6 text-gray-500">
+    <svg class="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+    </svg>
+    <p>Nessuna analisi disponibile</p>
+    <p class="text-xs mt-1">Clicca "Analizza Test" per generare l'analisi AI</p>
+</div>
+{% endif %}

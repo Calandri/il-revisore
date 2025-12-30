@@ -48,6 +48,18 @@ class TestSuite(Base, SoftDeleteMixin):
     # Framework-specific config and user Q&A for AI-generated suites
     config = Column(JSON, nullable=True)
 
+    # AI analysis results (populated by "Analizza con AI" feature)
+    ai_analysis = Column(JSON, nullable=True)
+    # {
+    #   "test_type": "unit|integration|e2e|api|performance",
+    #   "coverage_description": "What this test suite covers",
+    #   "how_it_works": "Description of how tests work",
+    #   "strengths": ["..."],
+    #   "weaknesses": ["..."],
+    #   "suggestions": ["..."],
+    #   "analyzed_at": "2024-01-01T00:00:00Z"
+    # }
+
     # Discovery metadata
     is_auto_discovered = Column(Boolean, default=False)
     discovered_at = Column(DateTime, nullable=True)

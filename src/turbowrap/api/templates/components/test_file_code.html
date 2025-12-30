@@ -1,42 +1,44 @@
-<!-- Test File Code Viewer -->
-<div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+<!-- Test File Code Viewer (Right Panel) -->
+<div style="height: 100%; display: flex; flex-direction: column;">
     <!-- File Header -->
-    <div class="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+    <div class="flex items-center justify-between px-4 py-3 bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700" style="flex-shrink: 0;">
         <div class="flex items-center gap-2">
             <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
             </svg>
             <span class="font-mono text-sm text-gray-600 dark:text-gray-300">{{ file_path }}</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
             <span class="text-xs text-gray-500">{{ total_lines }} righe</span>
-            <button
-                onclick="this.closest('#test-code-panel').innerHTML = ''"
-                class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500"
-                title="Chiudi"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
+            {% if highlight_line > 0 %}
+            <span class="px-2 py-1 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 text-xs font-medium">
+                riga {{ highlight_line }}
+            </span>
+            {% endif %}
         </div>
     </div>
 
     <!-- Code Content -->
-    <div class="overflow-x-auto max-h-96 overflow-y-auto">
-        <pre class="text-sm"><code class="language-{% if framework == 'pytest' %}python{% else %}typescript{% endif %}">{% for line in lines %}<div class="flex hover:bg-gray-50 dark:hover:bg-gray-800/50 {% if loop.index == highlight_line %}bg-yellow-100 dark:bg-yellow-900/30{% endif %}"><span class="select-none w-12 text-right pr-4 text-gray-400 border-r border-gray-200 dark:border-gray-700 flex-shrink-0">{{ loop.index }}</span><span class="pl-4 whitespace-pre">{{ line }}</span></div>{% endfor %}</code></pre>
+    <div id="test-code-scroll-container" style="flex: 1; overflow: auto;">
+        <pre class="text-sm min-h-full"><code class="language-{% if framework == 'pytest' %}python{% else %}typescript{% endif %}">{% for line in lines %}<div id="{% if loop.index == highlight_line %}highlighted-line{% endif %}" class="flex hover:bg-gray-100 dark:hover:bg-gray-800/50 {% if loop.index == highlight_line %}bg-yellow-100 dark:bg-yellow-900/30 ring-2 ring-yellow-400 dark:ring-yellow-600{% endif %}"><span class="select-none w-12 text-right pr-4 text-gray-400 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 bg-gray-50 dark:bg-gray-800/50">{{ loop.index }}</span><span class="pl-4 whitespace-pre flex-1">{{ line }}</span></div>{% endfor %}</code></pre>
     </div>
 
-    <!-- Highlight Info -->
-    {% if highlight_line > 0 %}
-    <div class="px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 border-t border-gray-200 dark:border-gray-700 text-sm text-yellow-700 dark:text-yellow-300">
-        Test alla riga {{ highlight_line }}
-    </div>
-    {% endif %}
+    <!-- Auto-scroll to highlighted line -->
+    <script>
+        (function() {
+            const highlightedLine = document.getElementById('highlighted-line');
+            const container = document.getElementById('test-code-scroll-container');
+            if (highlightedLine && container) {
+                setTimeout(() => {
+                    highlightedLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 100);
+            }
+        })();
+    </script>
 </div>
 
 <style>
-/* Basic syntax highlighting - will be enhanced by Prism.js if available */
+/* Basic syntax highlighting */
 .language-python .keyword { color: #8B5CF6; }
 .language-python .function { color: #3B82F6; }
 .language-python .string { color: #10B981; }

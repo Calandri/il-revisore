@@ -1306,6 +1306,216 @@ async def _execute_test_discovery(repository_id: str, repo_name: str, repo_path:
         db.close()
 
 
+@router.post("/htmx/tests/analyze/{suite_id}", response_class=HTMLResponse)
+async def htmx_analyze_test_suite(
+    request: Request,
+    suite_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: analyze a test suite using Gemini CLI.
+
+    Uses the test_analyzer.md agent to analyze the test suite and save results.
+    """
+    import json
+    import logging
+    import re
+    from datetime import datetime
+    from pathlib import Path
+
+    from ...db.models import Repository, TestSuite
+    from ...llm.gemini import GeminiCLI
+
+    logger = logging.getLogger(__name__)
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(
+            content="<div class='text-red-500 p-4'>Suite non trovata</div>", status_code=404
+        )
+
+    repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
+    if not repo or not repo.local_path:
+        return Response(
+            content="<div class='text-red-500 p-4'>Repository non trovata</div>", status_code=404
+        )
+
+    repo_path = Path(repo.local_path)
+    suite_path = repo_path / suite.path
+
+    # Load agent prompt
+    agent_path = Path(__file__).parents[4] / "agents" / "test_analyzer.md"
+    if not agent_path.exists():
+        return Response(
+            content="<div class='text-red-500 p-4'>Agent file not found</div>", status_code=500
+        )
+
+    agent_content = agent_path.read_text()
+    # Remove YAML frontmatter
+    if agent_content.startswith("---"):
+        parts = agent_content.split("---", 2)
+        if len(parts) >= 3:
+            agent_content = parts[2].strip()
+
+    # Gather test files to analyze
+    test_files = []
+    if suite_path.exists():
+        patterns = ["test_*.py", "*_test.py", "*.spec.ts", "*.test.ts", "*.test.tsx"]
+        for pattern in patterns:
+            test_files.extend(suite_path.rglob(pattern))
+
+    # Build context for the agent
+    test_files_content = []
+    for tf in test_files[:10]:  # Limit to first 10 files
+        try:
+            content = tf.read_text(encoding="utf-8")
+            rel_path = tf.relative_to(repo_path)
+            test_files_content.append(f"## File: {rel_path}\n```\n{content[:5000]}\n```")
+        except Exception:
+            pass
+
+    # Build prompt
+    prompt = f"""
+{agent_content}
+
+## Context
+
+- Repository: {repo.name}
+- Test Suite Path: {suite.path}
+- Framework: {suite.framework}
+
+## Test Files to Analyze
+
+{chr(10).join(test_files_content) if test_files_content else "No test files found - use tools to explore."}
+
+Now analyze this test suite and return the JSON response.
+"""
+
+    try:
+        # Run Gemini CLI
+        cli = GeminiCLI(
+            working_dir=repo_path,
+            model="flash",  # gemini-3-flash-preview
+            timeout=120,
+            auto_accept=True,
+        )
+
+        result = await cli.run(
+            prompt=prompt,
+            operation_type="test_analysis",
+            repo_name=repo.name,
+            track_operation=True,
+        )
+
+        if not result.success:
+            logger.error(f"Test analysis failed: {result.error}")
+            return Response(
+                content=f"<div class='text-red-500 p-4'>Analisi fallita: {result.error}</div>",
+                status_code=500,
+            )
+
+        # Parse JSON from output
+        output = result.output
+        json_data = None
+
+        # Try to extract JSON from output
+        try:
+            json_data = json.loads(output.strip())
+        except json.JSONDecodeError:
+            # Look for JSON in markdown code block
+            json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", output)
+            if json_match:
+                try:
+                    json_data = json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+
+            # Look for raw JSON
+            if not json_data:
+                json_match = re.search(r"\{[\s\S]*\"test_type\"[\s\S]*\}", output)
+                if json_match:
+                    try:
+                        json_data = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        pass
+
+        if not json_data:
+            logger.error(f"Could not parse JSON from output: {output[:500]}")
+            return Response(
+                content="<div class='text-red-500 p-4'>Impossibile estrarre JSON dalla risposta</div>",
+                status_code=500,
+            )
+
+        # Add timestamp
+        json_data["analyzed_at"] = datetime.utcnow().isoformat()
+
+        # Save to database
+        suite.ai_analysis = json_data
+        db.commit()
+        db.refresh(suite)
+
+        logger.info(f"Test analysis completed for suite {suite.name}: {json_data.get('test_type')}")
+
+        # Return analysis component
+        templates = request.app.state.templates
+        return templates.TemplateResponse(
+            "components/test_ai_analysis.html",
+            {
+                "request": request,
+                "suite": suite,
+                "analysis": json_data,
+            },
+        )
+
+    except Exception as e:
+        logger.exception(f"Test analysis error: {e}")
+        return Response(
+            content=f"<div class='text-red-500 p-4'>Errore: {str(e)}</div>",
+            status_code=500,
+        )
+
+
+@router.get("/htmx/tests/develop/{suite_id}", response_class=HTMLResponse)
+async def htmx_develop_tests(
+    request: Request,
+    suite_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: redirect to chat for interactive test development.
+
+    Opens the chat page with context about the test suite for AI-guided development.
+    """
+    from urllib.parse import quote
+
+    from ...db.models import Repository, TestSuite
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(
+            content="<div class='text-red-500 p-4'>Suite non trovata</div>", status_code=404
+        )
+
+    repo = db.query(Repository).filter(Repository.id == suite.repository_id).first()
+    if not repo:
+        return Response(
+            content="<div class='text-red-500 p-4'>Repository non trovata</div>", status_code=404
+        )
+
+    # Build initial message for chat
+    initial_message = f"""Aiutami a sviluppare nuovi test per la suite "{suite.name}" nel path {suite.path}.
+
+Framework: {suite.framework}
+Repository: {repo.name}
+
+Analizza i test esistenti e proponi nuovi test case che potrebbero migliorare la copertura. Fammi domande per capire meglio cosa testare."""
+
+    # Redirect to chat with context
+    response = Response(content="")
+    response.headers["HX-Redirect"] = (
+        f"/chat?repo_id={repo.id}&initial_message={quote(initial_message)}"
+    )
+    return response
+
+
 @router.post("/htmx/repos/{repo_id}/push", response_class=HTMLResponse)
 async def htmx_push_repo(request: Request, repo_id: str, db: Session = Depends(get_db)) -> Response:
     """HTMX: push repository changes with automatic conflict resolution via Claude CLI."""
