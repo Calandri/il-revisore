@@ -25,6 +25,7 @@ from .status import router as status_router
 from .tasks import router as tasks_router
 from .tests import router as tests_router
 from .thinking import router as thinking_router
+from .ui_actions import router as ui_actions_router
 from .users import router as users_router
 from .web import router as web_router
 
@@ -56,4 +57,5 @@ __all__ = [
     "readme_router",
     "tests_router",
     "live_view_router",
+    "ui_actions_router",
 ]

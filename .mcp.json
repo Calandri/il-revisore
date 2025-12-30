@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "turbowrap-ui": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "turbowrap.mcp.ui_actions_server"],
+      "env": {
+        "TURBOWRAP_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}

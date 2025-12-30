@@ -21,5 +21,16 @@
   "ui": {
     "hideBanner": true,
     "hideTips": true
+  },
+  "mcpServers": {
+    "turbowrap-ui": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "turbowrap.mcp.ui_actions_server"
+      ]
+    }
   }
 }

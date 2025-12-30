@@ -46,6 +46,7 @@ from .routes import (
     tasks_router,
     tests_router,
     thinking_router,
+    ui_actions_router,
     users_router,
     web_router,
 )
@@ -316,6 +317,7 @@ def create_app() -> FastAPI:
     app.include_router(readme_router, prefix="/api")
     app.include_router(tests_router, prefix="/api")
     app.include_router(live_view_router, prefix="/api")
+    app.include_router(ui_actions_router, prefix="/api")
 
     # Web routes (no prefix - these are the HTML pages)
     app.include_router(web_router)
