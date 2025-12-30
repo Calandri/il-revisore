@@ -1224,3 +1224,74 @@ async def fetch_server_logs(
         },
         "markdown": result.to_markdown(),
     }
+
+
+# ==================== Mermaid Generation ====================
+
+MERMAID_SYSTEM_PROMPT = """You are an expert at creating Mermaid diagrams from documentation.
+Your task is to analyze the provided content and generate a clear, well-structured Mermaid diagram.
+
+Guidelines:
+1. Use the appropriate diagram type (flowchart, sequence, class, etc.) based on the content
+2. Keep node labels concise but descriptive
+3. Use appropriate styling and subgraphs to group related elements
+4. Ensure the diagram is syntactically correct Mermaid code
+5. For agent/workflow documentation, use flowchart TD (top-down) or LR (left-right)
+6. Use meaningful node IDs and descriptive edge labels
+
+Output ONLY the Mermaid code, nothing else. No markdown fences, no explanations."""
+
+
+@router.post("/generate-mermaid")
+async def generate_mermaid_diagram(
+    request: dict[str, Any],
+) -> dict[str, str]:
+    """Generate a Mermaid diagram from content using AI.
+
+    Args:
+        request: Dict with 'content', optional 'type', and optional 'context'
+
+    Returns:
+        Dict with 'mermaid_code' containing the generated diagram
+    """
+    content = request.get("content", "")
+    diagram_type = request.get("type", "flowchart")
+    context_name = request.get("context", "document")
+
+    if not content:
+        raise HTTPException(status_code=400, detail="Content is required")
+
+    # Build the prompt
+    prompt = f"""Analyze this {context_name} and create a {diagram_type} Mermaid diagram that visualizes its structure, flow, or key relationships.
+
+CONTENT:
+```
+{content[:8000]}
+```
+
+Generate a Mermaid {diagram_type} diagram. Output ONLY the Mermaid code."""
+
+    try:
+        from ...llm import GeminiClient
+
+        client = GeminiClient()
+        response = await asyncio.to_thread(client.generate, prompt, MERMAID_SYSTEM_PROMPT)
+
+        # Clean the response - remove any markdown fences if present
+        mermaid_code = response.strip()
+        if mermaid_code.startswith("```mermaid"):
+            mermaid_code = mermaid_code[10:]
+        if mermaid_code.startswith("```"):
+            mermaid_code = mermaid_code[3:]
+        if mermaid_code.endswith("```"):
+            mermaid_code = mermaid_code[:-3]
+        mermaid_code = mermaid_code.strip()
+
+        return {"mermaid_code": mermaid_code}
+
+    except Exception as e:
+        logger.error(f"Error generating Mermaid diagram: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate diagram: {e!s}",
+        ) from e

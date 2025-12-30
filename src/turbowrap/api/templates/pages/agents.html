@@ -3,6 +3,10 @@
 {% block title %}Agenti AI - TurboWrap{% endblock %}
 
 {% block head %}
+<!-- Mermaid.js for diagrams -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<!-- Marked.js for markdown -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 /* Agent card hover effects */
 .agent-card {
@@ -15,6 +19,36 @@
 .dark .agent-card:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
+
+/* Mermaid container */
+.mermaid-container {
+    @apply bg-gray-100 dark:bg-gray-900 rounded-xl p-6 overflow-x-auto my-4;
+}
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Markdown preview prose styles */
+.preview-content h1 { @apply text-2xl font-bold mt-6 mb-4 text-gray-900 dark:text-white; }
+.preview-content h2 { @apply text-xl font-bold mt-5 mb-3 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2; }
+.preview-content h3 { @apply text-lg font-semibold mt-4 mb-2 text-gray-800 dark:text-gray-200; }
+.preview-content h4 { @apply text-base font-semibold mt-3 mb-2 text-gray-800 dark:text-gray-200; }
+.preview-content p { @apply my-3 leading-relaxed text-gray-700 dark:text-gray-300; }
+.preview-content ul { @apply my-3 pl-6 list-disc space-y-1; }
+.preview-content ol { @apply my-3 pl-6 list-decimal space-y-1; }
+.preview-content li { @apply text-gray-700 dark:text-gray-300; }
+.preview-content code:not(pre code) { @apply bg-gray-200 dark:bg-gray-700 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded text-sm font-mono; }
+.preview-content pre { @apply bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto my-4 text-sm font-mono; }
+.preview-content pre code { @apply bg-transparent text-gray-100 p-0; }
+.preview-content blockquote { @apply border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-4 italic text-gray-600 dark:text-gray-400; }
+.preview-content a { @apply text-indigo-600 dark:text-indigo-400 hover:underline; }
+.preview-content hr { @apply my-6 border-gray-200 dark:border-gray-700; }
+.preview-content table { @apply w-full my-4 border-collapse; }
+.preview-content th { @apply bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 px-4 py-2 text-left font-semibold; }
+.preview-content td { @apply border border-gray-300 dark:border-gray-600 px-4 py-2; }
+.preview-content strong { @apply font-semibold text-gray-900 dark:text-white; }
+.preview-content em { @apply italic; }
 </style>
 {% endblock %}
 
@@ -262,10 +296,18 @@
                             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
                         Edit
                     </button>
-                    <button @click="editorMode = 'preview'"
+                    <button @click="setPreviewMode()"
                             :class="editorMode === 'preview' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
                             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
                         Preview
+                    </button>
+                    <button @click="setDiagramMode()"
+                            :class="editorMode === 'diagram' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                        </svg>
+                        Diagram
                     </button>
                     <button @click="showEditor = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -284,10 +326,82 @@
                               placeholder="# Agent Instructions..."></textarea>
                 </div>
 
-                <!-- Preview Mode -->
-                <div x-show="editorMode === 'preview'" class="h-full overflow-auto p-6">
-                    <div class="prose dark:prose-invert max-w-none">
-                        <pre class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-sm overflow-auto whitespace-pre-wrap" x-text="editorContent"></pre>
+                <!-- Preview Mode (Markdown Rendered) -->
+                <div x-show="editorMode === 'preview'" class="h-full overflow-auto p-6 bg-white dark:bg-gray-800">
+                    <div class="preview-content max-w-4xl mx-auto" x-html="renderedMarkdown"></div>
+                </div>
+
+                <!-- Diagram Mode -->
+                <div x-show="editorMode === 'diagram'" class="h-full overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
+                    <div class="max-w-5xl mx-auto">
+                        <!-- Diagram Header with Generate Button -->
+                        <div class="flex items-center justify-between mb-6">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Diagramma Mermaid</h3>
+                                <p class="text-sm text-gray-500">Visualizza o genera un diagramma di flusso</p>
+                            </div>
+                            <button @click="generateDiagram()"
+                                    :disabled="generatingDiagram"
+                                    class="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg hover:from-purple-600 hover:to-indigo-600 transition-all flex items-center gap-2 disabled:opacity-50 shadow-lg">
+                                <svg x-show="!generatingDiagram" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                                <svg x-show="generatingDiagram" class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <span x-text="generatingDiagram ? 'Generazione...' : 'Genera con AI'"></span>
+                            </button>
+                        </div>
+
+                        <!-- Existing Mermaid from Content -->
+                        <template x-if="existingMermaid">
+                            <div class="mermaid-container bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div class="text-xs text-gray-500 mb-3 font-medium">Diagramma esistente nel documento:</div>
+                                <div class="mermaid" id="existing-mermaid-diagram"></div>
+                            </div>
+                        </template>
+
+                        <!-- AI Generated Diagram -->
+                        <template x-if="generatedMermaid">
+                            <div class="mermaid-container bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 border border-purple-200 dark:border-purple-800 mt-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="text-xs text-purple-600 dark:text-purple-400 font-medium flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        </svg>
+                                        Generato con AI
+                                    </div>
+                                    <button @click="copyMermaidCode()" class="text-xs text-purple-600 hover:text-purple-700 flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                                        </svg>
+                                        Copia codice
+                                    </button>
+                                </div>
+                                <div class="mermaid" id="generated-mermaid-diagram"></div>
+                            </div>
+                        </template>
+
+                        <!-- No Diagram State -->
+                        <div x-show="!existingMermaid && !generatedMermaid && !generatingDiagram"
+                             class="text-center py-16 text-gray-500">
+                            <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/>
+                            </svg>
+                            <p class="font-medium text-gray-700 dark:text-gray-300 mb-2">Nessun diagramma</p>
+                            <p class="text-sm">Clicca "Genera con AI" per creare un diagramma di flusso del documento</p>
+                        </div>
+
+                        <!-- Mermaid Code (collapsible) -->
+                        <template x-if="generatedMermaidCode">
+                            <details class="mt-4">
+                                <summary class="cursor-pointer text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                                    Mostra codice Mermaid
+                                </summary>
+                                <pre class="mt-2 bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto font-mono" x-text="generatedMermaidCode"></pre>
+                            </details>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -329,6 +443,14 @@
 </div>
 
 <script>
+// Initialize Mermaid
+mermaid.initialize({
+    startOnLoad: false,
+    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+});
+
 function agentsApp() {
     return {
         loading: true,
@@ -343,6 +465,13 @@ function agentsApp() {
         categories: [],
         contextDocs: [],
         projectDocs: [],
+
+        // Preview & Diagram state
+        renderedMarkdown: '',
+        existingMermaid: null,
+        generatedMermaid: false,
+        generatedMermaidCode: '',
+        generatingDiagram: false,
 
         get totalAgents() {
             return this.categories.reduce((sum, cat) => sum + cat.agents.length, 0) + this.contextDocs.length;
@@ -583,6 +712,133 @@ function agentsApp() {
         showToast(message, type = 'success') {
             this.toast = { show: true, message, type };
             setTimeout(() => { this.toast.show = false; }, 3000);
+        },
+
+        // Preview & Diagram Functions
+        setPreviewMode() {
+            this.editorMode = 'preview';
+            this.renderMarkdown();
+        },
+
+        setDiagramMode() {
+            this.editorMode = 'diagram';
+            this.extractExistingMermaid();
+            this.$nextTick(() => {
+                if (this.existingMermaid) {
+                    this.renderMermaidDiagram('existing-mermaid-diagram', this.existingMermaid);
+                }
+                if (this.generatedMermaidCode) {
+                    this.renderMermaidDiagram('generated-mermaid-diagram', this.generatedMermaidCode);
+                }
+            });
+        },
+
+        renderMarkdown() {
+            if (!this.editorContent) {
+                this.renderedMarkdown = '';
+                return;
+            }
+
+            // Configure marked
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({
+                    breaks: true,
+                    gfm: true,
+                    headerIds: true,
+                    mangle: false
+                });
+
+                // Custom renderer for mermaid code blocks
+                const renderer = new marked.Renderer();
+                const originalCode = renderer.code.bind(renderer);
+                renderer.code = (code, language) => {
+                    if (language === 'mermaid') {
+                        const id = 'md-mermaid-' + Math.random().toString(36).substr(2, 9);
+                        // Render mermaid inline
+                        setTimeout(() => this.renderMermaidDiagram(id, code), 100);
+                        return `<div class="mermaid-container"><div class="mermaid" id="${id}"></div></div>`;
+                    }
+                    return originalCode(code, language);
+                };
+
+                marked.use({ renderer });
+                this.renderedMarkdown = marked.parse(this.editorContent);
+            } else {
+                // Fallback: basic formatting
+                this.renderedMarkdown = this.editorContent
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/\n/g, '<br>');
+            }
+        },
+
+        extractExistingMermaid() {
+            // Extract first mermaid code block from content
+            const mermaidMatch = this.editorContent.match(/```mermaid\n([\s\S]*?)```/);
+            this.existingMermaid = mermaidMatch ? mermaidMatch[1].trim() : null;
+        },
+
+        async renderMermaidDiagram(elementId, code) {
+            const el = document.getElementById(elementId);
+            if (!el || !code) return;
+
+            try {
+                el.innerHTML = '';
+                const { svg } = await mermaid.render(`svg-${elementId}`, code);
+                el.innerHTML = svg;
+            } catch (e) {
+                console.error('Mermaid render error:', e);
+                el.innerHTML = `<pre class="text-red-500 text-sm p-4 bg-red-50 dark:bg-red-900/20 rounded">${e.message || 'Errore nel rendering del diagramma'}\n\n${code}</pre>`;
+            }
+        },
+
+        async generateDiagram() {
+            if (this.generatingDiagram || !this.editorContent) return;
+
+            this.generatingDiagram = true;
+            this.generatedMermaid = false;
+            this.generatedMermaidCode = '';
+
+            try {
+                const response = await fetch('/api/cli-chat/generate-mermaid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: this.editorContent,
+                        type: 'flowchart',
+                        context: this.selectedAgent?.name || 'document'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    this.generatedMermaidCode = data.mermaid_code;
+                    this.generatedMermaid = true;
+
+                    // Render the diagram
+                    this.$nextTick(() => {
+                        this.renderMermaidDiagram('generated-mermaid-diagram', this.generatedMermaidCode);
+                    });
+
+                    this.showToast('Diagramma generato con successo', 'success');
+                } else {
+                    const error = await response.json().catch(() => ({}));
+                    this.showToast(error.detail || 'Errore nella generazione', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to generate diagram:', e);
+                this.showToast('Errore nella generazione del diagramma', 'error');
+            } finally {
+                this.generatingDiagram = false;
+            }
+        },
+
+        copyMermaidCode() {
+            if (this.generatedMermaidCode) {
+                navigator.clipboard.writeText('```mermaid\n' + this.generatedMermaidCode + '\n```');
+                this.showToast('Codice copiato negli appunti', 'success');
+            }
         }
     }
 }
