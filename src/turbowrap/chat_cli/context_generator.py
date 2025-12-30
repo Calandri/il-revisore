@@ -20,109 +20,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Path to TurboWrap docs folder
-DOCS_DIR = Path(__file__).parent.parent.parent.parent / "docs"
-
-# Key documentation files to include (ordered by importance)
-KEY_DOCS = [
-    "ARCHITECTURE.md",
-    "REVIEW_SYSTEM.md",
-    "FIX_SYSTEM.md",
-    "CHAT_CLI.md",
-    "TURBOWRAP_TEST.md",
-]
-
-# Max chars per doc (to avoid context overflow)
-MAX_DOC_CHARS = 4000
+# Path to LLM-optimized docs
+DOCS_LLM_DIR = Path(__file__).parent.parent.parent.parent / "docs_llm"
+SYSTEM_GUIDE_PATH = DOCS_LLM_DIR / "SYSTEM_GUIDE.md"
 
 
-def list_system_documentation() -> str:
-    """List available system documentation files with paths.
+def load_system_guide() -> str:
+    """Load the LLM-optimized system guide.
 
-    Returns a catalog of TurboWrap documentation that the CLI can read
-    using the Read tool when needed.
+    Returns the compact SYSTEM_GUIDE.md content that describes
+    TurboWrap pages, endpoints, and functionality.
     """
-    if not DOCS_DIR.exists():
-        logger.warning(f"Docs directory not found: {DOCS_DIR}")
+    if not SYSTEM_GUIDE_PATH.exists():
+        logger.warning(f"System guide not found: {SYSTEM_GUIDE_PATH}")
         return ""
 
-    doc_list = []
-
-    # Describe each key doc
-    doc_descriptions = {
-        "ARCHITECTURE.md": "Sistema architettura, dual-LLM pattern, pipeline review/fix",
-        "REVIEW_SYSTEM.md": "Come funziona il code review multi-agente",
-        "FIX_SYSTEM.md": "Come funziona il fixing automatico delle issue",
-        "CHAT_CLI.md": "Sistema chat CLI, gestione sessioni, agenti",
-        "TURBOWRAP_TEST.md": "TurboWrapTest AI-powered testing system",
-        "MOCKUP_SYSTEM.md": "Sistema generazione mockup HTML",
-        "LIVE_VIEW.md": "Sistema live view per frontend development",
-        "FILES_EDITOR.md": "File editor integrato con syntax highlighting",
-        "CLI_CONFIGURATION.md": "Configurazione Claude/Gemini CLI",
-        "EC2_ACCESS.md": "Accesso SSH alla EC2 di produzione",
-    }
-
-    for doc_path in sorted(DOCS_DIR.glob("*.md")):
-        if doc_path.name.startswith("."):
-            continue
-
-        desc = doc_descriptions.get(doc_path.name, "")
-        doc_list.append(f"- `{doc_path}` - {desc}" if desc else f"- `{doc_path}`")
-
-    if not doc_list:
+    try:
+        content = SYSTEM_GUIDE_PATH.read_text(encoding="utf-8")
+        logger.info(f"Loaded system guide: {len(content)} chars")
+        return content
+    except Exception as e:
+        logger.warning(f"Failed to read system guide: {e}")
         return ""
-
-    return """## Documentazione TurboWrap
-
-Per capire come funziona TurboWrap, leggi questi file usando il Read tool:
-
-""" + "\n".join(doc_list)
-
-
-def list_api_routes() -> str:
-    """List available API route files with paths.
-
-    Returns a catalog of API route files that the CLI can read
-    using the Read tool when needed.
-    """
-    routes_dir = Path(__file__).parent.parent / "api" / "routes"
-
-    if not routes_dir.exists():
-        return ""
-
-    # Group routes by functionality
-    route_descriptions = {
-        "repos.py": "CRUD repository, clone, sync",
-        "cli_chat.py": "Chat CLI sessions, messages, agents",
-        "tasks.py": "Task management, review/fix orchestration",
-        "fix.py": "Fix automatico issue",
-        "linear.py": "Integrazione Linear.app",
-        "tests.py": "Test suite management, TurboWrapTest",
-        "issues.py": "Code review issues",
-        "mockups.py": "Mockup generation",
-        "live_view.py": "Live view sessions",
-        "web.py": "HTMX endpoints per UI",
-        "databases.py": "Database connections",
-        "settings.py": "App settings",
-        "git.py": "Git operations",
-    }
-
-    route_list = []
-    for py_file in sorted(routes_dir.glob("*.py")):
-        if py_file.name.startswith("_"):
-            continue
-
-        desc = route_descriptions.get(py_file.name, "")
-        route_list.append(f"- `{py_file}` - {desc}" if desc else f"- `{py_file}`")
-
-    if not route_list:
-        return ""
-
-    return """## API Routes
-
-Per vedere gli endpoint disponibili, leggi questi file:
-
-""" + "\n".join(route_list[:15])  # Limit to main routes
 
 
 def load_structure_documentation(
@@ -339,14 +258,10 @@ def generate_context(
         code_issues_section=code_section,
     )
 
-    # Add documentation links and API routes
-    docs_section = list_system_documentation()
-    if docs_section:
-        context += "\n\n---\n\n" + docs_section
-
-    api_section = list_api_routes()
-    if api_section:
-        context += "\n\n---\n\n" + api_section
+    # Add LLM-optimized system guide (pages, endpoints, functionality)
+    system_guide = load_system_guide()
+    if system_guide:
+        context += "\n\n---\n\n" + system_guide
 
     return context
 
