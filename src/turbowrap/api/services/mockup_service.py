@@ -522,11 +522,12 @@ while ensuring the rest of the page remains functional.
 
         from datetime import datetime, timezone
 
-        import boto3
         from botocore.exceptions import ClientError
 
+        from ...utils.aws_clients import get_s3_client
+
         try:
-            client = boto3.client("s3", region_name=self.settings.thinking.s3_region)
+            client = get_s3_client(region=self.settings.thinking.s3_region)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y/%m/%d")
             s3_key = f"mockups/{timestamp}/{mockup_id}/mockup.{file_type}"
@@ -558,8 +559,9 @@ while ensuring the rest of the page remains functional.
         if not s3_url:
             return None
 
-        import boto3
         from botocore.exceptions import ClientError
+
+        from ...utils.aws_clients import get_s3_client
 
         try:
             # Parse S3 URL to get bucket and key
@@ -575,7 +577,7 @@ while ensuring the rest of the page remains functional.
                 return None
 
             bucket, region, key = match.groups()
-            client = boto3.client("s3", region_name=region)
+            client = get_s3_client(region=region)
 
             response = await asyncio.to_thread(
                 client.get_object,

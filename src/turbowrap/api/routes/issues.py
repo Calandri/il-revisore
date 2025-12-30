@@ -5,7 +5,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -13,6 +12,7 @@ from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from ...db.models import Issue, IssueStatus, is_valid_issue_transition
+from ...utils.aws_clients import get_s3_client
 from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
@@ -459,7 +459,7 @@ def get_issue_fix_log(
     # We need to find the log since we don't know the date
     # Try to find it by listing prefix with session_id
 
-    s3_client = boto3.client("s3")
+    s3_client = get_s3_client()
 
     try:
         # List all objects with the fix-logs prefix to find our session

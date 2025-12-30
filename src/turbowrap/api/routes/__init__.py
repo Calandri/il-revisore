@@ -16,6 +16,7 @@ from .issues import router as issues_router
 from .linear import router as linear_router
 from .mockups import router as mockups_router
 from .operations import router as operations_router
+from .readme import router as readme_router
 from .relationships import router as relationships_router
 from .repos import router as repos_router
 from .settings import router as settings_router
@@ -51,5 +52,6 @@ __all__ = [
     "endpoints_router",
     "errors_router",
     "mockups_router",
+    "readme_router",
     "tests_router",
 ]

@@ -740,15 +740,18 @@ async def htmx_test_suites(
     for suite in suites:
         runs_count = len(suite.runs) if suite.runs else 0
         last_run = None
-        total_tests = 0
         passed = 0
         failed = 0
 
         if suite.runs:
             last_run = sorted(suite.runs, key=lambda r: r.created_at, reverse=True)[0]
-            total_tests = last_run.total_tests or 0
             passed = last_run.passed or 0
             failed = last_run.failed or 0
+
+        # Use test_count from scanner as fallback if no runs or run has 0 tests
+        total_tests = (
+            last_run.total_tests if last_run and last_run.total_tests else (suite.test_count or 0)
+        )
 
         suites_data.append(
             {
@@ -1017,6 +1020,11 @@ async def htmx_get_suite_details(
         framework=suite.framework,
     )
 
+    # Update test_count in suite if scan was successful
+    if scan_result.success and scan_result.total_tests > 0:
+        suite.test_count = scan_result.total_tests
+        db.commit()
+
     templates = request.app.state.templates
 
     # Render main content
@@ -1280,7 +1288,12 @@ async def htmx_discover_tests(
     if cli_ops:
         response = Response(content="")
         response.headers["HX-Trigger"] = json.dumps(
-            {"showToast": {"message": "Discovery già in corso per questa repository", "type": "warning"}}
+            {
+                "showToast": {
+                    "message": "Discovery già in corso per questa repository",
+                    "type": "warning",
+                }
+            }
         )
         return response
 
@@ -1873,6 +1886,25 @@ async def readme_mockup_page(request: Request) -> Response:
             "pages/readme_mockup.html",
             {
                 "request": request,
+                "active_page": "readme",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
+@router.get("/readme", response_class=HTMLResponse)
+async def readme_page(request: Request, db: Session = Depends(get_db)) -> Response:
+    """README UI page - dynamic documentation for repositories."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/readme.html",
+            {
+                "request": request,
+                "repos": repos,
                 "active_page": "readme",
                 "current_user": get_current_user(request),
             },

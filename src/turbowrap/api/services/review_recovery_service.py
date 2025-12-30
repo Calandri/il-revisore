@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
@@ -29,6 +28,7 @@ from ...config import get_settings
 from ...db.models import Issue, Repository, Task
 from ...review.models.review import Issue as ReviewIssue
 from ...review.models.review import IssueCategory, IssueSeverity
+from ...utils.aws_clients import get_s3_client
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class ReviewRecoveryService:
     def __init__(self, db: Session):
         self.db = db
         self.settings = get_settings()
-        self.s3_client = boto3.client("s3", region_name=self.settings.thinking.s3_region)
+        self.s3_client = get_s3_client(region=self.settings.thinking.s3_region)
 
     async def recover_review(
         self,

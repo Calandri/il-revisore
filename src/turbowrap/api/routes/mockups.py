@@ -32,6 +32,7 @@ from ..schemas.mockups import (
     MockupUpdate,
 )
 from ..services.mockup_service import get_mockup_service
+from ..utils.sse import sse_ping
 
 router = APIRouter(prefix="/mockups", tags=["mockups"])
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ async def mockup_events(request: Request) -> StreamingResponse:
                     yield f"data: {message}\n\n"
                 except asyncio.TimeoutError:
                     # Send keepalive
-                    yield ": keepalive\n\n"
+                    yield sse_ping()
         finally:
             if queue in _sse_clients:
                 _sse_clients.remove(queue)

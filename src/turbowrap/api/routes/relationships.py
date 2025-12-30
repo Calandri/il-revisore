@@ -1,7 +1,6 @@
 """Repository relationship analysis routes."""
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from ...db.models import LinkType, Repository, RepositoryLink
 from ...llm import GeminiClient
 from ...review.reviewers.utils.json_extraction import parse_llm_json
 from ..deps import get_db, require_auth
+from ..utils.sse import sse_error, sse_event, sse_progress
 
 router = APIRouter(prefix="/relationships", tags=["relationships"])
 
@@ -290,22 +290,19 @@ async def analyze_relationships_stream(
     """Stream the relationship analysis progress."""
 
     async def generate() -> AsyncGenerator[str, None]:
-        yield f"event: started\ndata: {json.dumps({'message': 'Avvio analisi relazioni...'})}\n\n"
+        yield sse_event("started", {"message": "Avvio analisi relazioni..."})
 
         manager = RepoManager(db)
         repos = manager.list_all(status="active")
 
-        yield (
-            f"event: progress\ndata: "
-            f"{json.dumps({'message': f'Trovati {len(repos)} repository'})}\n\n"
-        )
+        yield sse_progress(f"Trovati {len(repos)} repository")
 
         if len(repos) < 2:
-            yield f"event: error\ndata: {json.dumps({'error': 'Servono almeno 2 repository'})}\n\n"
+            yield sse_error("Servono almeno 2 repository")
             return
 
         # Load structures
-        yield f"event: progress\ndata: {json.dumps({'message': 'Caricamento STRUCTURE.md...'})}\n\n"
+        yield sse_progress("Caricamento STRUCTURE.md...")
 
         repo_structures: list[RepoStructure] = []
         for repo in repos:
@@ -319,20 +316,13 @@ async def analyze_relationships_stream(
                         structure_content=content,
                     )
                 )
-                yield (
-                    f"event: progress\ndata: "
-                    f"{json.dumps({'message': f'Caricato: {repo.name}'})}\n\n"
-                )
+                yield sse_progress(f"Caricato: {repo.name}")
 
         if len(repo_structures) < 2:
-            yield (
-                f"event: error\ndata: "
-                f"{json.dumps({'error': 'Servono almeno 2 repository con STRUCTURE.md'})}"
-                f"\n\n"
-            )
+            yield sse_error("Servono almeno 2 repository con STRUCTURE.md")
             return
 
-        yield f"event: progress\ndata: {json.dumps({'message': 'Analisi con Gemini Flash...'})}\n\n"
+        yield sse_progress("Analisi con Gemini Flash...")
 
         try:
             client = GeminiClient()
@@ -343,10 +333,7 @@ async def analyze_relationships_stream(
             # Parse response
             result = parse_llm_json(response)
             if not result:
-                yield (
-                    f"event: error\ndata: "
-                    f"{json.dumps({'error': 'Errore parsing risposta AI'})}\n\n"
-                )
+                yield sse_error("Errore parsing risposta AI")
                 return
 
             connections = []
@@ -363,18 +350,18 @@ async def analyze_relationships_stream(
                     }
                 )
 
-            completed_data = json.dumps(
+            yield sse_event(
+                "completed",
                 {
                     "total_repos": len(repos),
                     "repos_analyzed": len(repo_structures),
                     "connections": connections,
                     "summary": result.get("summary", ""),
-                }
+                },
             )
-            yield f"event: completed\ndata: {completed_data}\n\n"
 
         except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            yield sse_error(str(e))
 
     return StreamingResponse(
         generate(),

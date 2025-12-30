@@ -22,6 +22,8 @@ from enum import Enum
 from threading import RLock
 from typing import Any
 
+from turbowrap.utils.datetime_utils import format_iso
+
 logger = logging.getLogger(__name__)
 
 
@@ -148,8 +150,8 @@ class Operation:
             "user_name": self.user_name,
             "details": self.details,
             "result": self.result,
-            "started_at": (self.created_at.isoformat() + "Z") if self.created_at else None,
-            "completed_at": (self.completed_at.isoformat() + "Z") if self.completed_at else None,
+            "started_at": format_iso(self.created_at) if self.created_at else None,
+            "completed_at": format_iso(self.completed_at) if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
             "is_stale": self.is_stale,
             "error": self.error,

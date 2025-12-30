@@ -45,6 +45,17 @@ class Repository(Base, SoftDeleteMixin):
     #   "analyzed_at": "2024-01-01T00:00:00Z"
     # }
 
+    # AI-generated README analysis with descriptions and diagrams
+    readme_analysis = Column(JSON, nullable=True)
+    # {
+    #   "functionality": {"summary": "...", "main_features": [...], "use_cases": [...]},
+    #   "logic": {"overview": "...", "main_flows": [...], "key_algorithms": [...]},
+    #   "structure": {"layers": [...], "key_modules": [...], "directory_tree": "..."},
+    #   "code": {"language": "...", "framework": "...", "patterns": [...], ...},
+    #   "diagrams": [{"type": "...", "title": "...", "code": "...", "description": "..."}],
+    #   "generated_at": "2024-01-01T00:00:00Z"
+    # }
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -7,6 +7,7 @@ from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, String,
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
+from turbowrap.utils.datetime_utils import format_iso
 
 from .base import OperationStatus, generate_uuid
 
@@ -107,8 +108,8 @@ class Operation(Base):
             "details": self.details or {},
             "result": self.result,
             "error": self.error,
-            "started_at": (self.started_at.isoformat() + "Z") if self.started_at else None,
-            "completed_at": (self.completed_at.isoformat() + "Z") if self.completed_at else None,
+            "started_at": format_iso(self.started_at) if self.started_at else None,
+            "completed_at": format_iso(self.completed_at) if self.completed_at else None,
             "duration_seconds": self.duration_seconds,
             "is_stale": self.is_stale,
         }

@@ -9,6 +9,7 @@ from github import Auth, Github, GithubException
 from pydantic import BaseModel
 
 from ...config import get_settings
+from ...utils.datetime_utils import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def _time_ago(dt: datetime | None) -> str:
         # Ensure timezone-aware
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+        now = now_utc()
         delta = now - dt
 
         seconds = delta.total_seconds()

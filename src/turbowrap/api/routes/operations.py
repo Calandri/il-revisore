@@ -437,8 +437,6 @@ async def get_operation_prompt(operation_id: str) -> dict[str, Any]:
     """
     import traceback
 
-    import boto3
-
     try:
         tracker = get_tracker()
         s3_url = None
@@ -498,12 +496,14 @@ async def get_operation_prompt(operation_id: str) -> dict[str, Any]:
 
                 # Legacy s3:// URL - fetch via boto3
                 if s3_url.startswith("s3://"):
+                    from ...utils.aws_clients import get_s3_client
+
                     parts = s3_url.replace("s3://", "").split("/", 1)
                     bucket = parts[0]
                     key = parts[1] if len(parts) > 1 else ""
 
                     logger.info(f"[PROMPT] Fetching from S3: bucket={bucket}, key={key}")
-                    s3 = boto3.client("s3")
+                    s3 = get_s3_client()
                     response = s3.get_object(Bucket=bucket, Key=key)
                     content = response["Body"].read().decode("utf-8")
                     logger.info(f"[PROMPT] S3 fetch successful, content_len={len(content)}")
@@ -557,7 +557,6 @@ async def get_operation_output(operation_id: str) -> dict[str, Any]:
 
     Fetches from S3 if s3_output_url is available.
     """
-    import boto3
 
     tracker = get_tracker()
 
@@ -610,11 +609,13 @@ async def get_operation_output(operation_id: str) -> dict[str, Any]:
 
             # Legacy s3:// URL - fetch via boto3
             if s3_url.startswith("s3://"):
+                from ...utils.aws_clients import get_s3_client
+
                 parts = s3_url.replace("s3://", "").split("/", 1)
                 bucket = parts[0]
                 key = parts[1] if len(parts) > 1 else ""
 
-                s3 = boto3.client("s3")
+                s3 = get_s3_client()
                 response = s3.get_object(Bucket=bucket, Key=key)
                 content = response["Body"].read().decode("utf-8")
 

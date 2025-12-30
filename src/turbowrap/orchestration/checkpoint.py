@@ -63,9 +63,9 @@ class CheckpointManager(Generic[T]):
     def s3_client(self) -> Any:
         """Lazy-load S3 client."""
         if self._client is None:
-            import boto3
+            from turbowrap.utils.aws_clients import get_s3_client
 
-            self._client = boto3.client("s3", region_name=self.region)
+            self._client = get_s3_client(region=self.region)
         return self._client
 
     def _get_key(self, run_id: str, checkpoint_name: str) -> str:

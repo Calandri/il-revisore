@@ -9,8 +9,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
+
+from .aws_clients import get_s3_client
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class S3ArtifactSaver:
     def client(self) -> Any:
         """Lazy-load S3 client."""
         if self._client is None:
-            self._client = boto3.client("s3", region_name=self.region)
+            self._client = get_s3_client(region=self.region)
         return self._client
 
     def _get_bucket_region(self) -> str:

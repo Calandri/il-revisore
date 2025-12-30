@@ -26,6 +26,7 @@ from ...utils.git_utils import get_current_branch as get_current_branch_util
 from ...utils.git_utils import list_branches as list_branches_util
 from ..deps import get_db, get_or_404
 from ..services.operation_tracker import OperationType, get_tracker
+from ..utils.sse import sse_ping
 
 logger = logging.getLogger(__name__)
 
@@ -865,7 +866,7 @@ async def git_events(request: Request) -> StreamingResponse:
                     yield f"data: {message}\n\n"
                 except asyncio.TimeoutError:
                     # Send keepalive
-                    yield ": keepalive\n\n"
+                    yield sse_ping()
         finally:
             if queue in _git_sse_clients:
                 _git_sse_clients.remove(queue)

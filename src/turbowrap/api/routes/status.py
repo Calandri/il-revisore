@@ -20,6 +20,7 @@ from sse_starlette.sse import EventSourceResponse
 from ...config import get_settings
 from ...core.task_queue import get_task_queue
 from ...db.models import ChatSession, Issue, LinearIssue, Repository, Task
+from ...utils.datetime_utils import format_iso, now_utc
 from ..deps import get_db
 
 # Get build info from environment (set during Docker build)
@@ -240,7 +241,7 @@ def live_status() -> dict[str, Any]:
     from ..review_manager import get_review_manager
 
     result: dict[str, Any] = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": format_iso(now_utc()),
         "uptime_seconds": (datetime.now() - SERVER_START_TIME).total_seconds(),
     }
 
@@ -724,7 +725,7 @@ class SSELogHandler(logging.Handler):
             log_entry: dict[str, Any] = {
                 "content": self.format(record),
                 "level": record.levelname,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": format_iso(now_utc()),
                 "logger": record.name,
             }
             _log_buffer.append(log_entry)
@@ -776,7 +777,7 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
                 {
                     "message": "Connected to TurboWrap logs",
                     "container": "turbowrap-app",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": format_iso(now_utc()),
                 }
             ),
         }
@@ -799,7 +800,7 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
             except asyncio.TimeoutError:
                 yield {
                     "event": "ping",
-                    "data": json.dumps({"timestamp": datetime.utcnow().isoformat()}),
+                    "data": json.dumps({"timestamp": format_iso(now_utc())}),
                 }
 
     except asyncio.CancelledError:
@@ -811,7 +812,7 @@ async def generate_app_logs(level: str = "all") -> AsyncIterator[dict[str, str]]
                 {
                     "message": f"Error streaming logs: {e}",
                     "level": "ERROR",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": format_iso(now_utc()),
                 }
             ),
         }

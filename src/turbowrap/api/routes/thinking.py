@@ -3,11 +3,11 @@
 import asyncio
 from typing import Any
 
-import boto3
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException
 
 from turbowrap.config import get_settings
+from turbowrap.utils.aws_clients import get_s3_client as get_cached_s3_client
 
 router = APIRouter(prefix="/thinking", tags=["thinking"])
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/thinking", tags=["thinking"])
 def get_s3_client() -> Any:
     """Get S3 client with region from config."""
     settings = get_settings()
-    return boto3.client("s3", region_name=settings.thinking.s3_region)
+    return get_cached_s3_client(region=settings.thinking.s3_region)
 
 
 @router.get("/{task_id}/{reviewer_name}")

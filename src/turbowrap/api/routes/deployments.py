@@ -6,7 +6,7 @@ import os
 import shutil
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Literal, cast
 
 import httpx
@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ...config import get_settings
+from ...utils.datetime_utils import format_iso, now_utc
 from ..services.operation_tracker import OperationType, get_tracker
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def _time_ago(dt_str: str | None) -> str:
         return "N/A"
     try:
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
+        now = now_utc()
         delta = now - dt
 
         seconds = delta.total_seconds()
@@ -185,7 +186,7 @@ async def _fetch_deployments() -> DeploymentStatus:
         current=current,
         in_progress=in_progress,
         recent=recent[:5],
-        last_updated=datetime.now(timezone.utc).isoformat(),
+        last_updated=format_iso(now_utc()),
     )
 
     # Update cache

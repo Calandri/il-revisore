@@ -204,25 +204,25 @@ class TestS3ClientLazyLoading:
         """S3 client should be created when accessed."""
         cli = ClaudeCLI(model="opus")
 
-        with patch("turbowrap.utils.s3_artifact_saver.boto3") as mock_boto:
-            mock_boto.client.return_value = MagicMock()
+        with patch("turbowrap.utils.s3_artifact_saver.get_s3_client") as mock_get_client:
+            mock_get_client.return_value = MagicMock()
             _ = cli._s3_saver.client
 
-            mock_boto.client.assert_called_once()
+            mock_get_client.assert_called_once()
 
     def test_s3_client_cached(self):
         """S3 client should be cached after first access."""
         cli = ClaudeCLI(model="opus")
 
-        with patch("turbowrap.utils.s3_artifact_saver.boto3") as mock_boto:
+        with patch("turbowrap.utils.s3_artifact_saver.get_s3_client") as mock_get_client:
             mock_client = MagicMock()
-            mock_boto.client.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             client1 = cli._s3_saver.client
             client2 = cli._s3_saver.client
 
             assert client1 is client2
-            mock_boto.client.assert_called_once()
+            mock_get_client.assert_called_once()
 
 
 # =============================================================================

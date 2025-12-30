@@ -1,5 +1,11 @@
 """TurboWrap utility functions."""
 
+from .datetime_utils import (
+    format_display,
+    format_iso,
+    format_timestamp,
+    now_utc,
+)
 from .file_utils import (
     BE_EXTENSIONS,
     FE_EXTENSIONS,
@@ -21,6 +27,11 @@ from .git_utils import (
 )
 
 __all__ = [
+    # Datetime utils
+    "now_utc",
+    "format_iso",
+    "format_display",
+    "format_timestamp",
     # File utils
     "should_ignore",
     "discover_files",
