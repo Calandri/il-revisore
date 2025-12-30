@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "turbowrap-errors"
+version = "0.1.0"
+description = "Intelligent error handling for FastAPI with frontend integration"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "TurboWrap", email = "dev@turbowrap.io" }
+]
+keywords = [
+    "error-handling",
+    "fastapi",
+    "middleware",
+    "decorator",
+    "turbowrap"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.100.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.24.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/turbowrap/turbowrap-errors-py"
+Documentation = "https://github.com/turbowrap/turbowrap-errors-py#readme"
+Repository = "https://github.com/turbowrap/turbowrap-errors-py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["turbowrap_errors"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
