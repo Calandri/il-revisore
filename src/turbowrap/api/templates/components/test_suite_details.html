@@ -206,17 +206,19 @@
                 .enhance-btn.htmx-request .icon-loading { display: block; }
             </style>
 
-            <!-- Sviluppa Nuovi Test Button -->
+            <!-- Genera Nuovi Test Button (opens chat with /create_test command) -->
             <button
-                hx-get="/htmx/tests/develop/{{ suite.id }}"
-                hx-target="body"
-                hx-push-url="true"
+                @click="$dispatch('open-chat-with-command', {
+                    command: '/create_test --suite-id {{ suite.id }} --suite-path {{ suite.path }} --framework {{ suite.framework }}',
+                    reuseSession: true
+                })"
                 class="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 font-medium text-sm"
+                title="Apre la chat AI per generare nuovi test in questa suite"
             >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                 </svg>
-                Sviluppa Nuovi Test
+                Genera Nuovi Test
             </button>
         </div>
     </div>

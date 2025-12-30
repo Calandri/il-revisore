@@ -33,10 +33,11 @@
 - [ ] Mostrare output test in tempo reale
 - [ ] Coverage report integration
 
-### 3. AI Test Generation
-- [ ] Agent per generare nuovi test
-- [ ] Analisi del codice sorgente
-- [ ] Suggerimenti test da scrivere
+### 3. AI Test Generation (via Chat)
+- [x] Slash command `/create_test` per generare test via chat
+- [x] Script `test_tool.py` per operazioni git/test
+- [ ] UI button nel drawer per avviare generazione
+- [ ] Integrazione con test_enhancer.md agent
 
 ### 4. UI Improvements
 - [ ] Filtro per status test (passed/failed/skipped)
@@ -50,3 +51,8 @@
 - Drawer si apre con bottone blu "Esplora test"
 - Bottone "Analizza Test" nel drawer chiama `/htmx/tests/analyze/{suite_id}`
 - AI Analysis fornisce score 1-10 su 6 dimensioni + suggerimenti
+- **`/create_test`**: Comando chat per generare test. Uso: `/create_test src/module.py`
+  - Legge il file sorgente
+  - Chiede tipo test e scenari da coprire
+  - Genera test completi (pytest/vitest/jest)
+  - Crea branch, scrive file, esegue test
