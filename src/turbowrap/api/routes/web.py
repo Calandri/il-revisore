@@ -719,7 +719,27 @@ async def htmx_test_suites(
     db: Session = Depends(get_db),
 ) -> Response:
     """HTMX partial: test suites list for a repository."""
-    from ...db.models import TestSuite
+    from datetime import datetime, timedelta
+
+    from ...db.models import TestRun, TestSuite
+
+    # Auto-cleanup: Mark runs stuck for >10 minutes as "error"
+    stale_threshold = datetime.utcnow() - timedelta(minutes=10)
+    stale_runs = (
+        db.query(TestRun)
+        .filter(
+            TestRun.repository_id == repository_id,
+            TestRun.status.in_(["pending", "running"]),
+            TestRun.created_at < stale_threshold,
+        )
+        .all()
+    )
+    for run in stale_runs:
+        run.status = "error"
+        run.error_message = "Timeout: run bloccato per più di 10 minuti"
+        run.completed_at = datetime.utcnow()
+    if stale_runs:
+        db.commit()
 
     query = db.query(TestSuite).filter(
         TestSuite.repository_id == repository_id,
@@ -981,6 +1001,58 @@ async def htmx_delete_test_suite(
     response.headers["HX-Trigger"] = json.dumps(
         {
             "showToast": {"message": f"Test suite '{suite_name}' eliminato", "type": "success"},
+            "refreshSuites": True,
+        }
+    )
+    return response
+
+
+@router.post("/htmx/tests/suites/{suite_id}/cancel", response_class=HTMLResponse)
+async def htmx_cancel_stuck_run(
+    request: Request,
+    suite_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """HTMX: cancel stuck test runs for a suite."""
+    import json
+    from datetime import datetime
+
+    from ...db.models import TestRun, TestSuite
+
+    suite = db.query(TestSuite).filter(TestSuite.id == suite_id).first()
+    if not suite:
+        return Response(
+            content="<div class='text-red-500'>Suite non trovata</div>", status_code=404
+        )
+
+    # Find and cancel all pending/running runs
+    stuck_runs = (
+        db.query(TestRun)
+        .filter(
+            TestRun.suite_id == suite_id,
+            TestRun.status.in_(["pending", "running"]),
+        )
+        .all()
+    )
+
+    cancelled_count = len(stuck_runs)
+    for run in stuck_runs:
+        run.status = "error"
+        run.error_message = "Cancellato manualmente dall'utente"
+        run.completed_at = datetime.utcnow()
+
+    if stuck_runs:
+        db.commit()
+
+    response = Response(content="")
+    response.headers["HX-Trigger"] = json.dumps(
+        {
+            "showToast": {
+                "message": f"Cancellati {cancelled_count} run bloccati"
+                if cancelled_count
+                else "Nessun run da cancellare",
+                "type": "success" if cancelled_count else "info",
+            },
             "refreshSuites": True,
         }
     )
