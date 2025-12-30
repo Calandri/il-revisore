@@ -335,3 +335,82 @@ def update_agent(name: str, data: AgentUpdateRequest) -> dict[str, str]:
     loader._cache.pop(name, None)
 
     return {"status": "ok", "message": f"Agent '{name}' updated successfully"}
+
+
+# =============================================================================
+# Docs Endpoints
+# =============================================================================
+
+
+class DocInfo(BaseModel):
+    """Info about a documentation file."""
+
+    name: str
+    path: str
+    preview: str | None = None
+
+
+class DocContentResponse(BaseModel):
+    """Response with doc content."""
+
+    name: str
+    path: str
+    content: str
+
+
+@router.get("/docs", response_model=list[DocInfo])
+def list_docs() -> list[DocInfo]:
+    """List all documentation files from docs/ folder."""
+    docs_path = Path(__file__).parents[4] / "docs"
+    docs: list[DocInfo] = []
+
+    if not docs_path.exists():
+        return docs
+
+    for file_path in docs_path.rglob("*.md"):
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            # Get first non-empty line after title for preview
+            lines = content.split("\n")
+            preview = None
+            for line in lines[1:5]:  # Skip title, check next few lines
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    preview = line[:100] + "..." if len(line) > 100 else line
+                    break
+
+            rel_path = file_path.relative_to(docs_path.parent)
+            docs.append(
+                DocInfo(
+                    name=file_path.stem,
+                    path=str(rel_path),
+                    preview=preview,
+                )
+            )
+        except Exception:
+            pass
+
+    return sorted(docs, key=lambda d: d.name)
+
+
+@router.get("/docs/{path:path}", response_model=DocContentResponse)
+def get_doc(path: str) -> DocContentResponse:
+    """Get documentation file content."""
+    base_path = Path(__file__).parents[4]
+    full_path = base_path / path
+
+    # Security: ensure path is within docs folder
+    try:
+        full_path.resolve().relative_to(base_path.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail=f"Doc '{path}' not found")
+
+    content = full_path.read_text(encoding="utf-8")
+    return DocContentResponse(
+        name=full_path.stem,
+        path=path,
+        content=content,
+    )

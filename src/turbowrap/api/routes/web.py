@@ -248,6 +248,23 @@ async def files_page(request: Request, db: Session = Depends(get_db)) -> Respons
     )
 
 
+@router.get("/agents", response_class=HTMLResponse)
+async def agents_page(request: Request) -> Response:
+    """Agents management page - view and edit AI agents."""
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/agents.html",
+            {
+                "request": request,
+                "active_page": "agents",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """Settings page for configuring TurboWrap."""
