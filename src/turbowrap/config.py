@@ -209,6 +209,25 @@ class ThinkingSettings(BaseSettings):
     )
 
 
+class SelfReportSettings(BaseSettings):
+    """Self-reporting configuration for TurboWrap errors."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_SELF_REPORT_")
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable self-reporting of TurboWrap errors as Issues",
+    )
+    repo_id: str | None = Field(
+        default=None,
+        description="Repository ID where TurboWrap errors will be stored",
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="API key for self-reporting authentication",
+    )
+
+
 class Settings(BaseSettings):
     """Main TurboWrap settings."""
 
@@ -226,6 +245,7 @@ class Settings(BaseSettings):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     thinking: ThinkingSettings = Field(default_factory=ThinkingSettings)
     logs: LogsSettings = Field(default_factory=LogsSettings)
+    self_report: SelfReportSettings = Field(default_factory=SelfReportSettings)
 
     # Paths
     repos_dir: Path = Field(

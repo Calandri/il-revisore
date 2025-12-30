@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from turbowrap_errors import TurboWrapClient, TurboWrapMiddleware
 
 from .. import __version__
 from ..config import get_settings
@@ -264,6 +265,23 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # TurboWrap self-reporting middleware (catches errors and creates Issues)
+    if settings.self_report.enabled and settings.self_report.repo_id:
+        # Build server URL (same server)
+        server_url = f"http://localhost:{settings.server.port}"
+        client = TurboWrapClient(
+            server_url=server_url,
+            api_key=settings.self_report.api_key or "self-report",
+            repo_id=settings.self_report.repo_id,
+        )
+        app.add_middleware(
+            TurboWrapMiddleware,
+            client=client,
+            log_errors=True,
+            include_traceback=True,
+        )
+        logger.info(f"[STARTUP] Self-reporting enabled for repo {settings.self_report.repo_id}")
 
     # Templates and static files
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
