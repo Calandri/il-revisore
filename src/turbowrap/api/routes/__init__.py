@@ -14,6 +14,7 @@ from .git import router as git_router
 from .github import router as github_router
 from .issues import router as issues_router
 from .linear import router as linear_router
+from .live_view import router as live_view_router
 from .mockups import router as mockups_router
 from .operations import router as operations_router
 from .readme import router as readme_router
@@ -54,4 +55,5 @@ __all__ = [
     "mockups_router",
     "readme_router",
     "tests_router",
+    "live_view_router",
 ]

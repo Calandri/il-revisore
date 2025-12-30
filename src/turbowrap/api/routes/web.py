@@ -382,6 +382,23 @@ async def mockup_deploy_page(request: Request) -> Response:
     )
 
 
+@router.get("/live-view", response_class=HTMLResponse)
+async def live_view_page(request: Request) -> Response:
+    """Live View page - interact with production frontend sites."""
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/live_view.html",
+            {
+                "request": request,
+                "active_page": "live-view",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/mockups/{mockup_id}/preview", response_class=HTMLResponse)
 async def mockup_preview_page(
     request: Request,

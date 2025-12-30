@@ -148,6 +148,18 @@
                 <span>Mockups</span>
             </a>
 
+            <!-- Live View -->
+            <a href="/live-view"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'live-view' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <span>Live View</span>
+                <span class="ml-auto px-1.5 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 rounded-full">Beta</span>
+            </a>
+
             <!-- README -->
             <a href="/readme"
                @click="window.innerWidth < 768 && (sidebarOpen = false)"
@@ -220,6 +232,14 @@
                           d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
                 </svg>
                 <div class="sidebar-tooltip">Mockups</div>
+            </a>
+            <a href="/live-view"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'live-view' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <div class="sidebar-tooltip">Live View</div>
             </a>
             <a href="/readme"
                class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'readme' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">

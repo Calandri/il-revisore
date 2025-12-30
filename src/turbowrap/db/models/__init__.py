@@ -66,6 +66,9 @@ from .issue import Issue, ReviewCheckpoint
 # Linear integration models (legacy, to be migrated to Feature)
 from .linear import LinearIssue, LinearIssueRepositoryLink
 
+# Live View models
+from .live_view import LiveViewScreenshot
+
 # Mockup models
 from .mockup import Mockup, MockupProject, MockupStatus
 
@@ -141,6 +144,8 @@ __all__ = [
     "RepositoryDatabaseConnection",
     # Operation
     "Operation",
+    # Live View
+    "LiveViewScreenshot",
     # Mockup
     "MockupProject",
     "Mockup",
