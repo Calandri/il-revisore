@@ -256,6 +256,10 @@ class Settings(BaseSettings):
         default=Path(__file__).parent.parent.parent / "agents",
         description="Directory for agent prompt files",
     )
+    mcp_config: Path = Field(
+        default=Path(__file__).parent.parent.parent / ".mcp.json",
+        description="Path to MCP server configuration file for CLI chat",
+    )
 
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(

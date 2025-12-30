@@ -655,12 +655,13 @@ async def send_message(
                     if session_agent_name:
                         agent_path = loader.get_agent_path(session_agent_name)
 
+                    settings = get_settings()
                     proc = await manager.spawn_claude(
                         session_id=session_id,
                         working_dir=Path(
                             session_repository.local_path
                             if session_repository
-                            else get_settings().repos_dir
+                            else settings.repos_dir
                         ),
                         model=session_model or "claude-opus-4-5-20251101",
                         agent_path=agent_path,
@@ -668,6 +669,7 @@ async def send_message(
                             session_thinking_budget if session_thinking_enabled else None
                         ),
                         context=context,
+                        mcp_config=settings.mcp_config if settings.mcp_config.exists() else None,
                     )
                 else:
                     proc = await manager.spawn_gemini(
@@ -903,12 +905,11 @@ async def start_cli(
             if agent_name:
                 agent_path = loader.get_agent_path(agent_name)
 
+            settings = get_settings()
             proc = await manager.spawn_claude(
                 session_id=session_id,
                 working_dir=Path(
-                    session.repository.local_path
-                    if session.repository
-                    else get_settings().repos_dir
+                    session.repository.local_path if session.repository else settings.repos_dir
                 ),
                 model=cast(str, session.model) or "claude-opus-4-5-20251101",
                 agent_path=agent_path,
@@ -916,6 +917,7 @@ async def start_cli(
                     cast(int, session.thinking_budget) if session.thinking_enabled else None
                 ),
                 context=context,
+                mcp_config=settings.mcp_config if settings.mcp_config.exists() else None,
             )
         else:
             proc = await manager.spawn_gemini(
