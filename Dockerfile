@@ -48,7 +48,11 @@ RUN useradd -m -s /bin/bash appuser
 
 WORKDIR /app
 
-# Copy and install dependencies first (better layer caching)
+# Copy and install local packages first (turbowrap-errors)
+COPY packages/ ./packages/
+RUN pip install --no-cache-dir ./packages/turbowrap-errors-py/
+
+# Copy and install main dependencies (better layer caching)
 COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir . email-validator
 
