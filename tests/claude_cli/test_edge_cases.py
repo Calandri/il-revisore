@@ -208,7 +208,7 @@ class TestLargeOutputs:
         model_usage_json = (
             '"claude-opus-4-5-20251101":{"inputTokens":1000,"outputTokens":500,'
             '"costUSD":0.05},'
-            '"claude-sonnet-4-20250514":{"inputTokens":200,"outputTokens":100,'
+            '"claude-sonnet-4-5-20250929":{"inputTokens":200,"outputTokens":100,'
             '"costUSD":0.001},'
             '"claude-haiku-4-5-20251001":{"inputTokens":50,"outputTokens":25,'
             '"costUSD":0.0001}'

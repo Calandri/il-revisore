@@ -224,7 +224,7 @@ class FixOrchestrator:
                 )
 
                 approved, failed, gemini_feedback = await self._evaluate_fixes(
-                    challenger, fix_results, pending_issues, branch_name
+                    challenger, fix_results, pending_issues, branch_name, session_id
                 )
 
                 logger.info(
@@ -497,6 +497,7 @@ The following issues failed Gemini validation. Please fix them based on the feed
         fix_results: dict[str, Any],
         issues: list[Issue],
         branch_name: str,
+        session_id: str,
     ) -> tuple[list[Issue], list[Issue], str]:
         """
         Evaluate all fixes with Gemini Challenger using CLI.
@@ -568,6 +569,8 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 repo_path=self.repo_path,
                 branch_name=branch_name,
                 fixer_output=fix_results,
+                repo_name=self.repo_path.name,
+                parent_session_id=session_id,
             )
 
             # Process results

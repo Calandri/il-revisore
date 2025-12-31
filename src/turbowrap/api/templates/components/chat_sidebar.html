@@ -373,8 +373,8 @@
                                         class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                                     Opus 4.5
                                 </button>
-                                <button @click="activeSession.model = 'claude-sonnet-4-20250514'; updateSession(); showModelDropdown = false"
-                                        :class="activeSession?.model === 'claude-sonnet-4-20250514' ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600' : ''"
+                                <button @click="activeSession.model = 'claude-sonnet-4-5-20250929'; updateSession(); showModelDropdown = false"
+                                        :class="activeSession?.model === 'claude-sonnet-4-5-20250929' ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600' : ''"
                                         class="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                                     Sonnet 4
                                 </button>
@@ -610,7 +610,7 @@
                     <template x-if="activeSession.cli_type === 'claude'">
                         <optgroup label="Claude">
                             <option value="claude-opus-4-5-20251101">Opus 4.5</option>
-                            <option value="claude-sonnet-4-20250514">Sonnet 4</option>
+                            <option value="claude-sonnet-4-5-20250929">Sonnet 4.5</option>
                         </optgroup>
                     </template>
                     <template x-if="activeSession.cli_type === 'gemini'">

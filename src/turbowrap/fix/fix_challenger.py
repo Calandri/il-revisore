@@ -10,6 +10,8 @@ import codecs
 import json
 import logging
 import os
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,8 +24,10 @@ from turbowrap.fix.models import (
     FixQualityScores,
 )
 from turbowrap.llm import load_prompt
+from turbowrap.llm.mixins import OperationTrackingMixin
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 from turbowrap.utils.aws_secrets import get_google_api_key
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ logger = logging.getLogger(__name__)
 GEMINI_CLI_TIMEOUT = 180
 
 
-class GeminiFixChallenger:
+class GeminiFixChallenger(OperationTrackingMixin):
     """
     Fix challenger using Gemini CLI.
 
@@ -39,7 +43,13 @@ class GeminiFixChallenger:
     - Read the actual files
     - Run git diff to verify changes
     - Verify the fix matches what was claimed
+
+    Extends OperationTrackingMixin for unified operation tracking.
     """
+
+    # OperationTrackingMixin config
+    cli_name = "gemini"
+    working_dir: Path | None = None
 
     def __init__(
         self,
@@ -64,12 +74,22 @@ class GeminiFixChallenger:
         # Load challenger system prompt from fix_challenger.md (must exist)
         self.system_prompt = load_prompt("fix_challenger")
 
+        # S3 artifact saver for prompt/output logging
+        self._s3_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="fix-challenger",
+        )
+
     async def evaluate_batch(
         self,
         issues: list[FixContext],
         repo_path: Path,
         branch_name: str,
         fixer_output: dict[str, Any] | None = None,
+        # Tracking parameters
+        repo_name: str | None = None,
+        parent_session_id: str | None = None,
     ) -> dict[str, FixChallengerFeedback]:
         """
         Evaluate a batch of fixes using Gemini CLI.
@@ -79,16 +99,56 @@ class GeminiFixChallenger:
             repo_path: Path to the repository (Gemini runs here)
             branch_name: Current branch name
             fixer_output: Optional fixer's JSON output
+            repo_name: Repository name for operation tracking
+            parent_session_id: Parent fix session ID for hierarchical tracking
 
         Returns:
             Dict mapping issue_code -> FixChallengerFeedback
         """
+        start_time = time.time()
+        operation_id = str(uuid.uuid4())
+
+        # Set working_dir for mixin (used by _extract_repo_name)
+        self.working_dir = repo_path
+
+        # Build prompt
         prompt = self._build_batch_prompt(issues, branch_name, fixer_output)
 
+        # Register operation in tracker
+        operation = self._register_operation(
+            context_id=operation_id,
+            prompt=prompt,
+            operation_type="fix",
+            repo_name=repo_name or repo_path.name,
+            user_name=None,
+            operation_details={
+                "parent_session_id": parent_session_id,
+                "challenger_type": "gemini-fix",
+                "issue_count": len(issues),
+                "issue_codes": [ctx.issue_code for ctx in issues],
+                "branch_name": branch_name,
+            },
+        )
+
+        # Save prompt to S3
+        s3_prompt_url = await self._s3_saver.save_raw(
+            content=prompt,
+            artifact_type="prompt",
+            context_id=operation_id,
+        )
+
+        # Call Gemini CLI
         response = await self._call_gemini_cli(prompt, repo_path)
 
+        # Calculate duration
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        # Save output to S3 and complete/fail operation
+        s3_output_url = None
         if response is None:
-            # Return fallback feedback for all issues
+            # CLI failed
+            if operation:
+                self._fail_operation(operation.operation_id, "Gemini CLI failed")
             return {
                 ctx.issue_code: self._create_fallback_feedback(
                     iteration=1,
@@ -97,6 +157,22 @@ class GeminiFixChallenger:
                 )
                 for ctx in issues
             }
+
+        # Save output to S3
+        s3_output_url = await self._s3_saver.save_raw(
+            content=response,
+            artifact_type="output",
+            context_id=operation_id,
+        )
+
+        # Complete operation
+        if operation:
+            self._complete_operation(
+                operation_id=operation.operation_id,
+                duration_ms=duration_ms,
+                s3_prompt_url=s3_prompt_url,
+                s3_output_url=s3_output_url,
+            )
 
         return self._parse_batch_response(response, issues)
 
@@ -377,3 +453,48 @@ Now run `git diff HEAD` and evaluate each issue. Return the JSON response.
             ),
             improvements_needed=[message] if message else [],
         )
+
+    def _complete_operation(
+        self,
+        operation_id: str,
+        duration_ms: int,
+        s3_prompt_url: str | None = None,
+        s3_output_url: str | None = None,
+    ) -> None:
+        """
+        Complete operation in tracker (Gemini-specific).
+
+        Updates operation with S3 URLs and duration, then marks as completed.
+        """
+        try:
+            from turbowrap.api.services.operation_tracker import get_tracker
+
+            tracker = get_tracker()
+
+            # Update with S3 URLs and duration
+            tracker.update(
+                operation_id,
+                details={
+                    "s3_prompt_url": s3_prompt_url,
+                    "s3_output_url": s3_output_url,
+                    "duration_ms": duration_ms,
+                },
+            )
+
+            # Complete with result
+            tracker.complete(
+                operation_id,
+                result={
+                    "s3_prompt_url": s3_prompt_url,
+                    "s3_output_url": s3_output_url,
+                    "duration_ms": duration_ms,
+                },
+            )
+
+            logger.info(
+                f"[FIX CHALLENGER] Operation completed: {operation_id[:8]} "
+                f"(duration={duration_ms}ms)"
+            )
+
+        except Exception as e:
+            logger.warning(f"[FIX CHALLENGER] Failed to complete operation: {e}")

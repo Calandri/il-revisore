@@ -653,7 +653,8 @@ class OperationTracker:
             if repo_id:
                 operations = [op for op in operations if op.repository_id == repo_id]
 
-            operations.sort(key=lambda x: x.created_at, reverse=True)
+            # Sort with fallback for None created_at
+            operations.sort(key=lambda x: x.created_at or now_utc(), reverse=True)
 
             return operations
 
