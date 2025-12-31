@@ -1675,7 +1675,7 @@ function issuesApp() {
             this.clarification.pendingRequest = null;
         },
 
-        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false, forceNewBranch = false) {
+        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false) {
             this.isFixing = true;
             this.showFixModal = true;
 
@@ -1696,12 +1696,10 @@ function issuesApp() {
             this._updateScheduled = false;
 
             try {
-                // Generate new task_id if forceNewBranch to ensure a fresh branch is created
-                const taskId = forceNewBranch ? crypto.randomUUID() : firstIssue.task_id;
-
+                // Always use the original task_id - branch name is generated from issue titles
                 const requestBody = {
                     repository_id: firstIssue.repository_id,
-                    task_id: taskId,
+                    task_id: firstIssue.task_id,
                     issue_ids: this.selectedIssues,
                     force: forceRestart,
                 };
@@ -1949,9 +1947,7 @@ function issuesApp() {
                         const branchOptions = action === 'continue'
                             ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name }
                             : null;
-                        // forceNewBranch genera nuovo task_id per creare branch fresh
-                        const forceNewBranch = action === 'new-branch';
-                        await this._startFixProcess(firstIssue, branchOptions, false, forceNewBranch);
+                        await this._startFixProcess(firstIssue, branchOptions, false);
                     }
                 }
             } catch (error) { alert('Errore: ' + error.message); }
