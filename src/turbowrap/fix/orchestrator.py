@@ -1178,6 +1178,8 @@ class FixOrchestrator:
                                     "agent_type": "reviewer",
                                     "batch_id": batch_id,
                                     "iteration": current_iteration,
+                                    "issue_codes": [str(i.issue_code) for i in batch],
+                                    "issue_ids": [str(i.id) for i in batch],
                                 },
                             )
                             gemini_output = gemini_result.output if gemini_result.success else None

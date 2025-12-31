@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -11,8 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 
-from ...db.models import Issue, IssueStatus, is_valid_issue_transition
+from ...db.models import Issue, IssueStatus, Repository, is_valid_issue_transition
 from ...utils.aws_clients import get_s3_client
+from ...utils.git_utils import is_commit_in_branch
 from ..deps import get_db, get_or_404
 
 logger = logging.getLogger(__name__)
@@ -420,6 +422,87 @@ def toggle_issue_viewed(
     db.commit()
     db.refresh(issue)
     return issue
+
+
+class AutoDetectMergeResponse(BaseModel):
+    """Response for auto-detect merge status."""
+
+    was_merged: bool
+    commit_sha: str | None = None
+    message: str
+
+
+@router.post("/{issue_id}/auto-detect-merge", response_model=AutoDetectMergeResponse)
+def auto_detect_merge_status(
+    issue_id: str,
+    db: Session = Depends(get_db),
+) -> AutoDetectMergeResponse:
+    """Auto-detect if an issue's fix commit is in main/master.
+
+    If the issue has a fix_commit_sha and that commit is in main/master,
+    automatically updates the issue status to MERGED.
+
+    Returns whether the issue was auto-merged.
+    """
+    issue = get_or_404(db, Issue, issue_id)
+
+    # Skip if no commit SHA
+    if not issue.fix_commit_sha:
+        return AutoDetectMergeResponse(
+            was_merged=False,
+            commit_sha=None,
+            message="No fix commit SHA available",
+        )
+
+    # Skip if already merged
+    if issue.status == IssueStatus.MERGED.value:
+        return AutoDetectMergeResponse(
+            was_merged=False,
+            commit_sha=str(issue.fix_commit_sha),
+            message="Issue already marked as merged",
+        )
+
+    # Get repository path
+    repo = db.query(Repository).filter(Repository.id == issue.repository_id).first()
+    if not repo or not repo.local_path:
+        return AutoDetectMergeResponse(
+            was_merged=False,
+            commit_sha=str(issue.fix_commit_sha),
+            message="Repository not found or no local path",
+        )
+
+    repo_path = Path(str(repo.local_path))
+    if not repo_path.exists():
+        return AutoDetectMergeResponse(
+            was_merged=False,
+            commit_sha=str(issue.fix_commit_sha),
+            message="Repository path does not exist",
+        )
+
+    # Check if commit is in main/master
+    commit_sha = str(issue.fix_commit_sha)
+    if is_commit_in_branch(repo_path, commit_sha, "main"):
+        # Auto-update to MERGED
+        issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
+        issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+        issue.resolution_note = "Auto-detected: commit found in main"  # type: ignore[assignment]
+
+        db.commit()
+        db.refresh(issue)
+
+        logger.info(f"Auto-merged issue {issue.issue_code} - commit {commit_sha} in main")
+
+        return AutoDetectMergeResponse(
+            was_merged=True,
+            commit_sha=commit_sha,
+            message=f"Commit {commit_sha[:8]} found in main - status updated to MERGED",
+        )
+
+    return AutoDetectMergeResponse(
+        was_merged=False,
+        commit_sha=commit_sha,
+        message=f"Commit {commit_sha[:8]} not yet in main",
+    )
 
 
 class FixLogResponse(BaseModel):

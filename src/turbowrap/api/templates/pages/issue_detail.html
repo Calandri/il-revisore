@@ -817,6 +817,8 @@ function issueDetailApp() {
             });
             // Load adjacent issues for navigation
             await this.loadAdjacentIssues();
+            // Auto-detect merge status if issue has a commit
+            await this.autoDetectMerge();
             // Keyboard shortcuts for navigation
             document.addEventListener('keydown', (e) => {
                 // Skip if user is typing in an input
@@ -828,6 +830,27 @@ function issueDetailApp() {
                     window.location.href = '/issues/' + this.nextIssue.issue_code + params;
                 }
             });
+        },
+
+        async autoDetectMerge() {
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/auto-detect-merge`, { method: 'POST' });
+                if (res.ok) {
+                    const result = await res.json();
+                    if (result.was_merged) {
+                        console.log('[AutoMerge] Issue auto-merged:', result.message);
+                        window.dispatchEvent(new CustomEvent('show-toast', {
+                            detail: { message: '✅ ' + result.message, type: 'success' }
+                        }));
+                        // Reload to show updated status
+                        setTimeout(() => window.location.reload(), 1500);
+                    } else {
+                        console.log('[AutoMerge] Not merged:', result.message);
+                    }
+                }
+            } catch (e) {
+                console.warn('[AutoMerge] Check failed:', e);
+            }
         },
 
         async loadAdjacentIssues() {

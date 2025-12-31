@@ -589,6 +589,71 @@ def is_branch_merged(repo_path: Path, branch: str, target: str = "main") -> bool
         return False
 
 
+def is_commit_in_branch(repo_path: Path, commit_sha: str, branch: str = "main") -> bool:
+    """Check if a commit exists in a branch.
+
+    Uses git branch --contains to verify if the commit is reachable from the branch.
+
+    Args:
+        repo_path: Path to the repository.
+        commit_sha: Commit SHA (full or short).
+        branch: Branch to check (default: main).
+
+    Returns:
+        True if commit is in branch, False otherwise.
+    """
+    if not repo_path.exists() or not commit_sha:
+        return False
+
+    try:
+        # Fetch to ensure we have latest remote state
+        run_git_command(repo_path, ["fetch", "--prune"], timeout=30, check=False)
+
+        # Check if commit exists
+        try:
+            run_git_command(repo_path, ["rev-parse", "--verify", commit_sha])
+        except RuntimeError:
+            logger.debug(f"Commit {commit_sha} not found in repo")
+            return False
+
+        # git branch --contains <commit> checks which branches contain this commit
+        # We check if our target branch is in the list
+        output = run_git_command(
+            repo_path,
+            ["branch", "-a", "--contains", commit_sha],
+            check=False,
+        )
+
+        # Parse output - each line is a branch name (with * for current)
+        branches_containing = []
+        for line in output.split("\n"):
+            line = line.strip().lstrip("* ")
+            if line:
+                # Handle remotes/origin/main -> main
+                if line.startswith("remotes/origin/"):
+                    line = line.replace("remotes/origin/", "")
+                branches_containing.append(line)
+
+        # Check if target branch (or master as fallback) contains the commit
+        target_branches = [branch]
+        if branch == "main":
+            target_branches.append("master")
+        elif branch == "master":
+            target_branches.append("main")
+
+        for target in target_branches:
+            if target in branches_containing:
+                logger.debug(f"Commit {commit_sha} found in branch {target}")
+                return True
+
+        logger.debug(f"Commit {commit_sha} not in {branch}, found in: {branches_containing}")
+        return False
+
+    except Exception as e:
+        logger.warning(f"Error checking if commit {commit_sha} is in {branch}: {e}")
+        return False
+
+
 def get_commits_ahead(repo_path: Path, branch: str, target: str = "main") -> int:
     """Count commits in branch that are not in target.
 
