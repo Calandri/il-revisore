@@ -106,8 +106,8 @@ RUN git config --global credential.helper '!f() { echo "username=x-access-token"
 COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check (1 minute interval to reduce connection pool usage)
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')" || exit 1
 
 CMD ["/app/entrypoint.sh"]

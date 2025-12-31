@@ -239,11 +239,11 @@ function activeOperationsBanner() {
             console.log('[BANNER] Starting polling...');
             // Initial fetch
             this.fetchOperations();
-            // Poll every 5 seconds
+            // Poll every 15 seconds
             this.pollInterval = setInterval(() => {
                 console.log('[BANNER] Polling tick');
                 this.fetchOperations();
-            }, 5000);
+            }, 15000);
 
             // Listen for operation-started events to refresh immediately
             window.addEventListener('operation-started', () => {

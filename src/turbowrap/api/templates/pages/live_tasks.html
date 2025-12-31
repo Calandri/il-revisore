@@ -1029,11 +1029,11 @@ function liveTasksApp() {
             this.refresh();
             this.loadStats();
 
-            // Poll every 5 seconds for operation list updates (not streaming)
+            // Poll every 15 seconds for operation list updates (not streaming)
             this.pollInterval = setInterval(() => {
                 this.refresh();
                 this.loadStats();
-            }, 5000);
+            }, 15000);
 
             console.log('[LiveTasks] Initialized with operation worker support');
         },

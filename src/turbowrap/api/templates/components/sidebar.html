@@ -1548,8 +1548,8 @@ function liveTasksBadge() {
         startPolling() {
             // Initial fetch
             this.fetchCount();
-            // Poll every 5 seconds
-            this.pollInterval = setInterval(() => this.fetchCount(), 5000);
+            // Poll every 15 seconds
+            this.pollInterval = setInterval(() => this.fetchCount(), 15000);
         },
 
         stopPolling() {
