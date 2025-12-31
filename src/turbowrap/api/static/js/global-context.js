@@ -30,7 +30,11 @@ document.addEventListener('alpine:init', () => {
             await this.loadRepositories();
             if (this.selectedRepoId && this.hasClonedPath) {
                 await this.loadBranches();
+                // Start file watcher for initial repo
+                await this._switchFileWatcher(this.selectedRepoId);
             }
+            // Setup global file watcher SSE connection
+            this._setupFileWatcherSSE();
             // Emit ready event for pages waiting on initial load
             window.dispatchEvent(new CustomEvent('global-context-ready', {
                 detail: { repoId: this.selectedRepoId }
@@ -110,6 +114,9 @@ document.addEventListener('alpine:init', () => {
                 if (repoId && this.hasClonedPath) {
                     await this.loadBranches();
                 }
+
+                // Switch file watcher to new repo
+                await this._switchFileWatcher(repoId);
             }
 
             // Emit event for other components
@@ -183,6 +190,109 @@ document.addEventListener('alpine:init', () => {
             await this.loadRepositories();
             if (this.selectedRepoId && this.hasClonedPath) {
                 await this.loadBranches();
+            }
+        },
+
+        // ====== File Watcher Integration ======
+
+        // Switch file watcher to new repo
+        async _switchFileWatcher(repoId) {
+            try {
+                const res = await fetch('/api/repos/files/switch-watcher', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repo_id: repoId || null })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('[FileWatcher] Switched to repo:', repoId, data.status);
+                }
+            } catch (e) {
+                console.error('[FileWatcher] Failed to switch repo:', e);
+            }
+        },
+
+        // Setup SSE connection for file change events
+        _setupFileWatcherSSE() {
+            // Don't create if already exists
+            if (this._fileWatcherSSE) return;
+
+            this._fileWatcherSSE = new EventSource('/api/repos/files/watch');
+
+            this._fileWatcherSSE.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'connected') {
+                        console.log('[FileWatcher] SSE connected:', data.status);
+                        return;
+                    }
+                    // Emit file change event for listeners
+                    this._onFileChange(data);
+                } catch (e) {
+                    console.error('[FileWatcher] SSE parse error:', e);
+                }
+            };
+
+            this._fileWatcherSSE.onerror = (error) => {
+                console.warn('[FileWatcher] SSE connection error, will retry');
+            };
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', () => {
+                if (this._fileWatcherSSE) this._fileWatcherSSE.close();
+            });
+        },
+
+        // Handle file change event
+        _onFileChange(event) {
+            const { action, path, repo_id } = event;
+
+            // Only process if it's for the current repo
+            if (repo_id !== this.selectedRepoId) return;
+
+            // Extract relative path from full path
+            const repo = this.selectedRepo;
+            let relativePath = path;
+            if (repo && repo.local_path && path.startsWith(repo.local_path)) {
+                relativePath = path.substring(repo.local_path.length + 1);
+            }
+
+            console.log(`[FileWatcher] ${action}: ${relativePath}`);
+
+            // Determine if we're on the files page
+            const onFilesPage = window.location.pathname.startsWith('/files');
+
+            // Emit global event
+            window.dispatchEvent(new CustomEvent('file-change', {
+                detail: {
+                    action,
+                    path: relativePath,
+                    fullPath: path,
+                    repoId: repo_id,
+                    onFilesPage
+                }
+            }));
+
+            // Show toast if NOT on files page
+            if (!onFilesPage) {
+                const actionLabels = {
+                    created: 'New file',
+                    modified: 'Modified',
+                    deleted: 'Deleted',
+                    moved: 'Moved'
+                };
+                const label = actionLabels[action] || action;
+                const filename = relativePath.split('/').pop();
+
+                // Show clickable toast
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: {
+                        message: `${label}: ${filename}`,
+                        type: 'success',
+                        clickUrl: `/files?path=${encodeURIComponent(relativePath)}`,
+                        duration: 5000
+                    }
+                }));
             }
         }
     });

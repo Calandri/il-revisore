@@ -1,12 +1,16 @@
 """Repository routes."""
 
+import asyncio
+import json
 import logging
 import re
 import uuid
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from github import GithubException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -30,9 +34,12 @@ from ..schemas.repos import (
     RepoResponse,
     RepoStatus,
 )
+from ..services.file_watcher import FileWatcherService
 from ..services.operation_tracker import OperationType, get_tracker
+from ..utils.sse import sse_ping
 
 router = APIRouter(prefix="/repos", tags=["repositories"])
+logger = logging.getLogger(__name__)
 
 
 class FileInfo(BaseModel):
@@ -1803,3 +1810,97 @@ def write_file(
         "size": len(data.content.encode("utf-8")),
         "committed": committed,
     }
+
+
+# =========================================================================
+# File Watcher SSE (real-time file change notifications)
+# =========================================================================
+
+
+class SwitchWatcherRequest(BaseModel):
+    """Request to switch the file watcher to a different repository."""
+
+    repo_id: str | None = None
+
+
+@router.post("/files/switch-watcher")
+def switch_file_watcher(
+    request: SwitchWatcherRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Switch the file watcher to a different repository.
+
+    Called when the user changes the repository context in the footer.
+    """
+    from ...db.models import Repository
+
+    watcher = FileWatcherService.get_instance()
+
+    if request.repo_id is None:
+        # Stop watching
+        watcher.switch_repo(None, None)
+        return {"success": True, "repo_id": None, "status": watcher.get_status()}
+
+    # Get repository
+    repo = get_or_404(db, Repository, request.repo_id)
+    if not repo.local_path:
+        raise HTTPException(status_code=400, detail="Repository has no local path")
+
+    # Switch to this repo
+    success = watcher.switch_repo(str(repo.id), repo.local_path)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to start file watcher")
+
+    logger.info(f"[FileWatcher] Switched to repo {repo.name}")
+    return {"success": True, "repo_id": str(repo.id), "status": watcher.get_status()}
+
+
+@router.get("/files/watch")
+async def watch_file_changes(request: Request) -> StreamingResponse:
+    """SSE endpoint for real-time file change notifications.
+
+    Clients connect to receive notifications when files are modified
+    in the currently watched repository.
+
+    Events format:
+        {"action": "modified|created|deleted|moved", "path": "...", "repo_id": "..."}
+    """
+    watcher = FileWatcherService.get_instance()
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        queue = watcher.subscribe()
+        try:
+            # Send initial connection message with current status
+            yield f"data: {json.dumps({'type': 'connected', 'status': watcher.get_status()})}\n\n"
+
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+
+                try:
+                    # Wait for message with timeout (keeps connection alive)
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive
+                    yield sse_ping()
+        finally:
+            watcher.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/files/watcher-status")
+def get_watcher_status() -> dict[str, Any]:
+    """Get the current status of the file watcher."""
+    watcher = FileWatcherService.get_instance()
+    return watcher.get_status()

@@ -17,14 +17,17 @@ function toastManager() {
 
         show(detail) {
             const id = Date.now();
+            const duration = detail.duration || 4000;
+
             this.toasts.push({
                 id,
                 message: detail.message,
                 type: detail.type || 'success',
-                visible: true
+                visible: true,
+                clickUrl: detail.clickUrl || null
             });
 
-            // Auto-hide after 4 seconds
+            // Auto-hide after specified duration
             setTimeout(() => {
                 const toast = this.toasts.find(t => t.id === id);
                 if (toast) toast.visible = false;
@@ -33,7 +36,19 @@ function toastManager() {
                 setTimeout(() => {
                     this.toasts = this.toasts.filter(t => t.id !== id);
                 }, 300);
-            }, 4000);
+            }, duration);
+        },
+
+        handleClick(toast) {
+            if (toast.clickUrl) {
+                // Navigate to the URL
+                window.location.href = toast.clickUrl;
+            }
+            // Dismiss the toast
+            toast.visible = false;
+            setTimeout(() => {
+                this.toasts = this.toasts.filter(t => t.id !== toast.id);
+            }, 300);
         },
 
         clear() {

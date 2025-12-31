@@ -711,6 +711,31 @@ function fileEditor() {
                 }
             });
 
+            // Watch for file changes from file watcher (auto-refresh)
+            window.addEventListener('file-change', async (e) => {
+                const { action, path, repoId } = e.detail;
+
+                // Only process if it's for our repo
+                if (repoId !== this.selectedRepoId) return;
+
+                console.log(`[fileEditor] File ${action}: ${path}`);
+
+                // Debounce: don't reload if we just loaded
+                if (this.loadingTree) return;
+
+                // Reload file tree to show changes
+                await this.loadFileTree();
+
+                // If the changed file is currently open, offer to reload
+                if (this.currentFilePath === path && !this.isDirty) {
+                    // Auto-reload current file if not dirty
+                    await this.loadFile(path);
+                } else if (this.currentFilePath === path && this.isDirty) {
+                    // Show warning that file was modified externally
+                    this.showToast('File modificato esternamente', 'warning');
+                }
+            });
+
             // Track cursor position in textarea
             this.$nextTick(() => {
                 const textarea = document.querySelector('textarea');
