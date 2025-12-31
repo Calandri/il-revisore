@@ -205,12 +205,25 @@ class GitGraphBranch(BaseModel):
     color: str = "#6b7280"
 
 
-class GitGraphData(BaseModel):
-    """Complete git graph data for Mermaid rendering."""
+class GitGraphLine(BaseModel):
+    """A single line from git log --graph output for visual rendering."""
 
+    graph_chars: str  # The ASCII graph part (e.g., "* ", "| * ", "|\\ ")
+    sha: str
+    short_sha: str
+    message: str
+    branch: str | None = None
+    is_merge: bool = False
+    date: str
+    author: str
+
+
+class GitGraphData(BaseModel):
+    """Complete git graph data for visualization."""
+
+    lines: list[GitGraphLine]
     commits: list[GitGraphCommit]
     branches: list[GitGraphBranch]
-    mermaid_code: str
     current_branch: str
 
 
@@ -318,28 +331,26 @@ def get_git_graph(
     limit: int = Query(default=20, ge=5, le=50),
     db: Session = Depends(get_db),
 ) -> GitGraphData:
-    """Get git graph data for visualization with Mermaid gitgraph.
+    """Get git graph data for visualization with branch structure.
 
-    Returns commit history with branch information and generates
-    Mermaid gitgraph diagram code.
+    Returns commit history with ASCII graph characters showing
+    branch bifurcations and merges.
     """
     _, repo_path = _get_repo_and_path(repo_id, db)
 
     try:
         current_branch = get_current_branch_util(repo_path)
 
-        # Get all local branches
-        all_branches = list_branches_util(repo_path, include_remote=False)
-        main_branch = "main" if "main" in all_branches else "master"
-
-        # Get commits with parent info for graph
-        # Format: sha|short_sha|message|author|date|parents|ref_names
-        git_log_format = "--pretty=format:%H|%h|%s|%an|%aI|%P|%D"
+        # Use git log --graph to get the actual graph structure
+        # Format: graph_chars + delimiter + sha|short_sha|message|author|date|parents|ref_names
+        # We use a unique delimiter (|||) to separate graph from data
+        git_log_format = "--pretty=format:|||%H|%h|%s|%an|%aI|%P|%D"
         output = run_git_command(
             repo_path,
-            ["log", "--all", git_log_format, f"-n{limit}", "--topo-order"],
+            ["log", "--graph", "--all", git_log_format, f"-n{limit}", "--topo-order"],
         )
 
+        lines: list[GitGraphLine] = []
         commits: list[GitGraphCommit] = []
         branch_colors = {
             "main": "#22c55e",
@@ -351,47 +362,82 @@ def get_git_graph(
 
         seen_branches: set[str] = set()
 
-        for line in output.split("\n"):
-            if not line.strip():
+        for raw_line in output.split("\n"):
+            if not raw_line.strip():
                 continue
 
-            parts = line.split("|", 6)
-            if len(parts) >= 5:
-                sha = parts[0]
-                short_sha = parts[1]
-                message = parts[2][:60]
-                author = parts[3]
-                date = parts[4]
-                parents = parts[5].split() if len(parts) > 5 and parts[5] else []
-                ref_names = parts[6] if len(parts) > 6 else ""
+            # Split by our delimiter to get graph chars and commit data
+            if "|||" in raw_line:
+                graph_part, commit_data = raw_line.split("|||", 1)
+                graph_chars = graph_part  # Keep the ASCII graph chars
 
-                # Determine branch from ref_names
-                branch = None
-                if ref_names:
-                    for ref in ref_names.split(", "):
-                        ref = ref.strip()
-                        if ref.startswith("HEAD -> "):
-                            branch = ref.replace("HEAD -> ", "")
-                            break
-                        if not ref.startswith("origin/") and not ref.startswith("tag:"):
-                            branch = ref
-                            break
+                parts = commit_data.split("|", 6)
+                if len(parts) >= 5:
+                    sha = parts[0]
+                    short_sha = parts[1]
+                    message = parts[2][:60]
+                    author = parts[3]
+                    date = parts[4]
+                    parents = parts[5].split() if len(parts) > 5 and parts[5] else []
+                    ref_names = parts[6] if len(parts) > 6 else ""
 
-                if branch:
-                    seen_branches.add(branch)
+                    # Determine branch from ref_names
+                    branch = None
+                    if ref_names:
+                        for ref in ref_names.split(", "):
+                            ref = ref.strip()
+                            if ref.startswith("HEAD -> "):
+                                branch = ref.replace("HEAD -> ", "")
+                                break
+                            if not ref.startswith("origin/") and not ref.startswith("tag:"):
+                                branch = ref
+                                break
 
-                is_merge = len(parents) > 1
+                    if branch:
+                        seen_branches.add(branch)
 
-                commits.append(
-                    GitGraphCommit(
-                        sha=sha,
-                        short_sha=short_sha,
-                        message=message,
-                        author=author,
-                        date=date,
-                        branch=branch,
-                        is_merge=is_merge,
-                        parents=parents,
+                    is_merge = len(parents) > 1
+
+                    # Add to lines (for visual graph rendering)
+                    lines.append(
+                        GitGraphLine(
+                            graph_chars=graph_chars,
+                            sha=sha,
+                            short_sha=short_sha,
+                            message=message,
+                            branch=branch,
+                            is_merge=is_merge,
+                            date=date,
+                            author=author,
+                        )
+                    )
+
+                    # Also keep commits for backward compatibility
+                    commits.append(
+                        GitGraphCommit(
+                            sha=sha,
+                            short_sha=short_sha,
+                            message=message,
+                            author=author,
+                            date=date,
+                            branch=branch,
+                            is_merge=is_merge,
+                            parents=parents,
+                        )
+                    )
+            else:
+                # Graph-only line (continuation lines like "| |" or "|\")
+                # These are important for showing branch structure
+                lines.append(
+                    GitGraphLine(
+                        graph_chars=raw_line,
+                        sha="",
+                        short_sha="",
+                        message="",
+                        branch=None,
+                        is_merge=False,
+                        date="",
+                        author="",
                     )
                 )
 
@@ -416,42 +462,10 @@ def get_git_graph(
                 )
             )
 
-        # Generate Mermaid gitgraph code
-        mermaid_lines = ["gitGraph"]
-
-        # Track which branches we've created
-        created_branches: set[str] = set()
-        current_mermaid_branch = main_branch
-
-        # Reverse commits to go from oldest to newest
-        for commit in reversed(commits):
-            # Handle branch creation/switching
-            if commit.branch and commit.branch != current_mermaid_branch:
-                if commit.branch not in created_branches and commit.branch not in (
-                    "main",
-                    "master",
-                ):
-                    mermaid_lines.append(f'    branch {commit.branch.replace("/", "-")}')
-                    created_branches.add(commit.branch)
-                else:
-                    mermaid_lines.append(f'    checkout {commit.branch.replace("/", "-")}')
-                current_mermaid_branch = commit.branch
-
-            # Handle merge commits
-            if commit.is_merge:
-                # Find which branch was merged
-                mermaid_lines.append(f'    commit id: "{commit.short_sha}"')
-            else:
-                # Regular commit
-                short_msg = commit.message[:30].replace('"', "'")
-                mermaid_lines.append(f'    commit id: "{commit.short_sha}" tag: "{short_msg}"')
-
-        mermaid_code = "\n".join(mermaid_lines)
-
         return GitGraphData(
+            lines=lines,
             commits=commits,
             branches=branches,
-            mermaid_code=mermaid_code,
             current_branch=current_branch,
         )
 

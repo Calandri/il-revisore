@@ -157,8 +157,8 @@
                         </button>
                     </div>
 
-                    <!-- Vertical Git Graph -->
-                    <div class="max-h-[450px] overflow-y-auto">
+                    <!-- Git Graph with branch structure -->
+                    <div class="max-h-[450px] overflow-y-auto overflow-x-auto">
                         <!-- Loading -->
                         <template x-if="loadingGitGraph">
                             <div class="flex items-center justify-center py-8">
@@ -168,51 +168,53 @@
                             </div>
                         </template>
 
-                        <!-- Vertical Commit List (git log style) -->
+                        <!-- Git Graph Lines (like git log --graph) -->
                         <template x-if="!loadingGitGraph">
-                            <div class="relative">
-                                <!-- Vertical line -->
-                                <div class="absolute left-[19px] top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+                            <div class="font-mono text-xs">
+                                <template x-for="(line, idx) in gitGraph.lines" :key="idx">
+                                    <div class="flex items-center hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                                         :class="line.sha ? 'py-1' : 'py-0'">
+                                        <!-- Graph characters (ASCII art) -->
+                                        <div class="flex-shrink-0 whitespace-pre text-gray-400 dark:text-gray-500 select-none pl-2"
+                                             x-html="renderGraphChars(line.graph_chars, line)"></div>
 
-                                <template x-for="(commit, idx) in gitGraph.commits" :key="commit.sha">
-                                    <div class="relative flex items-start gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                        <!-- Commit dot -->
-                                        <div class="relative z-10 flex-shrink-0 w-5 flex justify-center">
-                                            <div class="w-3 h-3 rounded-full border-2 border-white dark:border-gray-800"
-                                                 :class="{
-                                                     'bg-green-500': commit.branch === 'main' || commit.branch === 'master',
-                                                     'bg-amber-500': commit.branch?.startsWith('fix/'),
-                                                     'bg-blue-500': commit.branch?.startsWith('feature/') || commit.branch?.startsWith('feat/'),
-                                                     'bg-purple-500': commit.is_merge,
-                                                     'bg-indigo-500': !commit.branch && !commit.is_merge
-                                                 }"></div>
-                                        </div>
+                                        <!-- Commit info (only if this line has a commit) -->
+                                        <template x-if="line.sha">
+                                            <div class="flex-1 flex items-center gap-2 min-w-0 pr-2">
+                                                <!-- SHA -->
+                                                <span class="text-indigo-600 dark:text-indigo-400 flex-shrink-0"
+                                                      x-text="line.short_sha"></span>
 
-                                        <!-- Commit info -->
-                                        <div class="flex-1 min-w-0">
-                                            <!-- Message -->
-                                            <p class="text-sm text-gray-900 dark:text-white leading-tight truncate" x-text="commit.message"></p>
+                                                <!-- Message -->
+                                                <span class="text-gray-900 dark:text-white truncate flex-1"
+                                                      x-text="line.message"></span>
 
-                                            <!-- Meta row -->
-                                            <div class="flex items-center gap-2 mt-1 flex-wrap">
-                                                <span class="font-mono text-[10px] text-indigo-600 dark:text-indigo-400" x-text="commit.short_sha"></span>
-
-                                                <template x-if="commit.is_merge">
-                                                    <span class="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded">merge</span>
+                                                <!-- Branch tag -->
+                                                <template x-if="line.branch">
+                                                    <span class="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+                                                          :class="{
+                                                              'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': line.branch === 'main' || line.branch === 'master',
+                                                              'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400': line.branch?.startsWith('fix/'),
+                                                              'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': line.branch?.startsWith('feature/') || line.branch?.startsWith('feat/'),
+                                                              'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400': !['main', 'master'].includes(line.branch) && !line.branch?.startsWith('fix/') && !line.branch?.startsWith('feature/') && !line.branch?.startsWith('feat/')
+                                                          }"
+                                                          x-text="line.branch"></span>
                                                 </template>
 
-                                                <template x-if="commit.branch">
-                                                    <span class="text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded font-mono truncate max-w-[100px]"
-                                                          x-text="commit.branch"></span>
+                                                <!-- Merge badge -->
+                                                <template x-if="line.is_merge">
+                                                    <span class="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded flex-shrink-0">M</span>
                                                 </template>
 
-                                                <span class="text-[10px] text-gray-400 ml-auto" x-text="formatDate(commit.date)"></span>
+                                                <!-- Date -->
+                                                <span class="text-gray-400 dark:text-gray-500 flex-shrink-0"
+                                                      x-text="formatDate(line.date)"></span>
                                             </div>
-                                        </div>
+                                        </template>
                                     </div>
                                 </template>
 
-                                <template x-if="!gitGraph.commits?.length">
+                                <template x-if="!gitGraph.lines?.length">
                                     <div class="text-center py-8 text-gray-500 text-sm">
                                         <p>Nessun commit</p>
                                     </div>
@@ -377,6 +379,7 @@ function panoramicaApp() {
         },
         tasks: [],
         gitGraph: {
+            lines: [],
             commits: [],
             branches: [],
             current_branch: ''
@@ -399,7 +402,7 @@ function panoramicaApp() {
                 } else {
                     this.issueSummary = { total: 0, by_status: {} };
                     this.tasks = [];
-                    this.gitGraph = { commits: [], branches: [], current_branch: '' };
+                    this.gitGraph = { lines: [], commits: [], branches: [], current_branch: '' };
                 }
             });
         },
@@ -491,6 +494,40 @@ function panoramicaApp() {
             if (diffSecs < 60) return `${diffSecs}s`;
             if (diffMins < 60) return `${diffMins}m`;
             return `${Math.floor(diffMins / 60)}h ${diffMins % 60}m`;
+        },
+
+        renderGraphChars(graphChars, line) {
+            // Render ASCII graph characters with colors
+            // * = commit point, | = branch line, / \ = merge/branch lines
+            if (!graphChars) return '';
+
+            // Color scheme for different elements
+            const colors = {
+                commit: line.branch === 'main' || line.branch === 'master'
+                    ? 'text-green-500'
+                    : line.branch?.startsWith('fix/')
+                        ? 'text-amber-500'
+                        : line.is_merge
+                            ? 'text-purple-500'
+                            : 'text-indigo-500',
+                line: 'text-gray-400 dark:text-gray-600',
+                merge: 'text-purple-500'
+            };
+
+            // Replace characters with colored spans
+            let result = graphChars
+                // Commit points
+                .replace(/\*/g, `<span class="${colors.commit} font-bold">●</span>`)
+                // Merge/branch indicators
+                .replace(/\\/g, `<span class="${colors.merge}">╲</span>`)
+                .replace(/\//g, `<span class="${colors.merge}">╱</span>`)
+                // Vertical lines
+                .replace(/\|/g, `<span class="${colors.line}">│</span>`)
+                // Horizontal lines and dashes
+                .replace(/-/g, `<span class="${colors.line}">─</span>`)
+                .replace(/_/g, `<span class="${colors.line}">─</span>`);
+
+            return result;
         }
     };
 }

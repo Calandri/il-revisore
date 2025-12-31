@@ -231,6 +231,13 @@ class FixRequest(BaseModel):
         "(e.g., 'Use the new API endpoint /api/v2/users')",
     )
 
+    # Session from pre-fix clarification phase
+    clarify_session_id: str | None = Field(
+        default=None,
+        description="Session ID from pre-fix clarification phase. "
+        "If provided, the fixer will resume this session to preserve clarification context.",
+    )
+
 
 class ClarificationQuestion(BaseModel):
     """Question requiring user clarification."""
@@ -397,3 +404,164 @@ class FixProgressEvent(BaseModel):
             "event": self.type.value,
             "data": self.model_dump_json(exclude_none=True),
         }
+
+
+# =============================================================================
+# Planning Phase Models (Clarify + Planner)
+# =============================================================================
+
+
+class IssueClarificationQuestion(BaseModel):
+    """A clarification question for a specific issue."""
+
+    id: str = Field(..., description="Question ID (format: {issue_code}-q{n})")
+    question: str = Field(..., description="The question to ask the user")
+    context: str | None = Field(default=None, description="Why this question is being asked")
+
+
+class IssueQuestionsGroup(BaseModel):
+    """Group of questions for a single issue."""
+
+    issue_code: str = Field(..., description="Issue code (e.g., BE-001)")
+    questions: list[IssueClarificationQuestion] = Field(
+        default_factory=list, description="Questions for this issue"
+    )
+
+
+class ClarificationPhaseOutput(BaseModel):
+    """Output from the clarification phase of the planner."""
+
+    phase: str = Field(default="clarification", description="Current phase")
+    has_questions: bool = Field(..., description="Whether there are questions to ask")
+    questions_by_issue: list[IssueQuestionsGroup] = Field(
+        default_factory=list, description="Questions grouped by issue"
+    )
+    issues_without_questions: list[str] = Field(
+        default_factory=list, description="Issue codes that don't need clarification"
+    )
+    ready_to_plan: bool = Field(..., description="Whether ready to proceed to planning")
+
+
+class IssueClarificationAnswered(BaseModel):
+    """A clarification question with its answer."""
+
+    question_id: str = Field(..., description="Question ID")
+    question: str = Field(..., description="The original question")
+    answer: str = Field(..., description="User's answer")
+    context: str | None = Field(default=None, description="Original context")
+
+
+class RelatedFile(BaseModel):
+    """A file related to the issue context."""
+
+    path: str = Field(..., description="File path")
+    reason: str = Field(..., description="Why this file is relevant")
+
+
+class IssueContextInfo(BaseModel):
+    """Pre-analyzed context for an issue."""
+
+    file_content_snippet: str | None = Field(
+        default=None, description="Relevant code snippet from target file"
+    )
+    related_files: list[RelatedFile] = Field(
+        default_factory=list, description="Files related to this issue"
+    )
+    existing_patterns: list[str] = Field(
+        default_factory=list, description="Existing patterns found in codebase"
+    )
+
+
+class IssuePlan(BaseModel):
+    """Step-by-step plan for fixing an issue."""
+
+    approach: str = Field(..., description="Fix approach: patch | refactor | rewrite")
+    steps: list[str] = Field(..., description="Numbered steps to fix the issue")
+    estimated_lines_changed: int = Field(default=0, description="Estimated lines of code to change")
+    risks: list[str] = Field(default_factory=list, description="Potential risks of this fix")
+    verification: str | None = Field(default=None, description="How to verify the fix works")
+
+
+class IssueTodo(BaseModel):
+    """Complete TODO for a single issue (passed to fixer agent)."""
+
+    issue_code: str = Field(..., description="Issue code (e.g., BE-001)")
+    issue_id: str = Field(..., description="Issue UUID")
+    file: str = Field(..., description="Target file path")
+    line: int | None = Field(default=None, description="Target line number")
+    title: str = Field(..., description="Issue title")
+
+    clarifications: list[IssueClarificationAnswered] = Field(
+        default_factory=list, description="Q&A specific to this issue"
+    )
+    context: IssueContextInfo = Field(
+        default_factory=IssueContextInfo, description="Pre-analyzed context"
+    )
+    plan: IssuePlan | None = Field(default=None, description="Execution plan")
+
+
+class IssueEntry(BaseModel):
+    """Entry for a single issue in an execution step."""
+
+    code: str = Field(..., description="Issue code")
+    todo_file: str = Field(..., description="Path to issue TODO file")
+    agent_type: str = Field(
+        default="fixer-single",
+        description="Agent type: fixer-single | fixer-refactor | fixer-complex",
+    )
+
+
+class ExecutionStep(BaseModel):
+    """A step in the execution plan (all issues in a step run in parallel)."""
+
+    step: int = Field(..., description="Step number (1-based)")
+    issues: list[IssueEntry] = Field(..., description="Issues to fix in this step")
+    reason: str | None = Field(default=None, description="Why these issues are grouped")
+
+
+class MasterTodoSummary(BaseModel):
+    """Summary of the master TODO."""
+
+    total_issues: int = Field(..., description="Total number of issues")
+    total_steps: int = Field(..., description="Total number of execution steps")
+
+
+class MasterTodo(BaseModel):
+    """Master TODO for the orchestrator (defines execution order)."""
+
+    session_id: str = Field(..., description="Fix session ID")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    branch_name: str | None = Field(default=None, description="Git branch name")
+
+    execution_steps: list[ExecutionStep] = Field(
+        ..., description="Steps to execute (sequential between steps, parallel within)"
+    )
+
+    summary: MasterTodoSummary = Field(..., description="Summary statistics")
+
+    @classmethod
+    def from_issue_todos(
+        cls,
+        session_id: str,
+        issue_todos: list[IssueTodo],
+        execution_steps: list[ExecutionStep],
+        branch_name: str | None = None,
+    ) -> "MasterTodo":
+        """Create MasterTodo from issue todos and execution plan."""
+        return cls(
+            session_id=session_id,
+            branch_name=branch_name,
+            execution_steps=execution_steps,
+            summary=MasterTodoSummary(
+                total_issues=len(issue_todos),
+                total_steps=len(execution_steps),
+            ),
+        )
+
+
+class PlanningPhaseOutput(BaseModel):
+    """Output from the planning phase of the planner."""
+
+    phase: str = Field(default="planning", description="Current phase")
+    master_todo: MasterTodo = Field(..., description="Master TODO for orchestrator")
+    issue_todos: list[IssueTodo] = Field(..., description="Individual issue TODOs")
