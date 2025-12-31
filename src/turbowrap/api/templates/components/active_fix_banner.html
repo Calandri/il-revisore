@@ -169,11 +169,13 @@ function activeOperationsBanner() {
         getModelShortName(model) {
             // Convert long model names to short display names
             if (!model) return '';
-            if (model.includes('opus')) return 'opus';
-            if (model.includes('sonnet')) return 'sonnet';
-            if (model.includes('haiku')) return 'haiku';
-            if (model.includes('flash')) return 'flash';
-            if (model.includes('pro')) return 'pro';
+            const m = model.toLowerCase();
+            if (m === 'fix-flow') return 'FIX';  // Orchestrator wrapper
+            if (m.includes('opus')) return 'opus';
+            if (m.includes('sonnet')) return 'sonnet';
+            if (m.includes('haiku')) return 'haiku';
+            if (m.includes('flash')) return 'flash';
+            if (m.includes('pro')) return 'pro';
             // Return last part after dash or full name if short
             const parts = model.split('-');
             return parts.length > 2 ? parts.slice(0, 2).join('-') : model;

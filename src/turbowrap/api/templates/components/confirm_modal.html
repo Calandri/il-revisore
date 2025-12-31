@@ -157,6 +157,18 @@ window.TurboConfirm = {
             confirmLabel: 'Elimina',
             cancelLabel: 'Annulla'
         });
+    },
+
+    // Special confirmation for branch deletion with local/remote options
+    async deleteBranch(branchName) {
+        return new Promise((resolve) => {
+            window.dispatchEvent(new CustomEvent('turbo-confirm-branch-delete', {
+                detail: {
+                    branchName,
+                    _resolve: resolve
+                }
+            }));
+        });
     }
 };
 
@@ -228,6 +240,158 @@ function confirmModal() {
             this.isOpen = false;
             if (this._resolve) {
                 this._resolve(false);
+                this._resolve = null;
+            }
+        }
+    };
+}
+</script>
+
+<!-- Branch Delete Modal (Special, more secure) -->
+<div x-data="branchDeleteModal()" @turbo-confirm-branch-delete.window="show($event.detail)">
+    <!-- Backdrop -->
+    <div x-show="isOpen"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm">
+    </div>
+
+    <!-- Modal -->
+    <div x-show="isOpen"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+         x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+         class="fixed inset-0 z-[81] flex items-center justify-center p-4"
+         @keydown.escape.window="cancel()">
+
+        <div class="w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden border-2 border-red-500/50">
+
+            <!-- Header with danger styling -->
+            <div class="px-6 py-4 bg-gradient-to-r from-red-600 to-red-700">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-white">Elimina Branch</h3>
+                        <p class="text-sm text-red-100">Questa azione non puo essere annullata</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="px-6 py-5 space-y-5">
+                <!-- Branch name highlight -->
+                <div class="p-4 bg-gray-100 dark:bg-gray-900 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Branch da eliminare:</p>
+                    <code class="text-lg font-bold font-mono text-red-600 dark:text-red-400 break-all" x-text="branchName"></code>
+                </div>
+
+                <!-- Delete options -->
+                <div class="space-y-3">
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Dove eliminare?</p>
+
+                    <!-- Option 1: Local only -->
+                    <label class="flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all"
+                           :class="deleteRemote === false ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'">
+                        <input type="radio" name="delete_scope" :checked="deleteRemote === false" @change="deleteRemote = false"
+                               class="mt-1 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-900 dark:text-white">Solo locale</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Elimina solo dal tuo computer. Il branch rimane su GitHub/GitLab.</p>
+                        </div>
+                        <svg class="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                    </label>
+
+                    <!-- Option 2: Local + Remote -->
+                    <label class="flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all"
+                           :class="deleteRemote === true ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'">
+                        <input type="radio" name="delete_scope" :checked="deleteRemote === true" @change="deleteRemote = true"
+                               class="mt-1 w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-900 dark:text-white">Locale + Remoto</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Elimina definitivamente dal tuo computer E da GitHub/GitLab.</p>
+                        </div>
+                        <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+                        </svg>
+                    </label>
+                </div>
+
+                <!-- Confirmation checkbox -->
+                <label class="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 cursor-pointer">
+                    <input type="checkbox" x-model="confirmed"
+                           class="mt-0.5 w-5 h-5 text-amber-600 border-amber-300 rounded focus:ring-amber-500">
+                    <div>
+                        <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Confermo di voler eliminare questo branch</p>
+                        <p class="text-xs text-amber-600 dark:text-amber-400">Comprendo che le issue associate NON saranno modificate</p>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <button @click="cancel()"
+                        class="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all">
+                    Annulla
+                </button>
+                <button @click="confirmDelete()"
+                        :disabled="!confirmed"
+                        class="px-6 py-2.5 text-sm font-bold text-white rounded-xl transition-all flex items-center gap-2 shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                        :class="confirmed ? 'bg-red-600 hover:bg-red-500 shadow-red-500/25' : 'bg-gray-400'">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    <span x-text="deleteRemote ? 'Elimina Locale + Remoto' : 'Elimina Solo Locale'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function branchDeleteModal() {
+    return {
+        isOpen: false,
+        branchName: '',
+        deleteRemote: false,
+        confirmed: false,
+        _resolve: null,
+
+        show(options) {
+            this.branchName = options.branchName || '';
+            this.deleteRemote = false;
+            this.confirmed = false;
+            this._resolve = options._resolve || null;
+            this.isOpen = true;
+        },
+
+        confirmDelete() {
+            if (!this.confirmed) return;
+            this.isOpen = false;
+            if (this._resolve) {
+                this._resolve({ confirmed: true, deleteRemote: this.deleteRemote });
+                this._resolve = null;
+            }
+        },
+
+        cancel() {
+            this.isOpen = false;
+            if (this._resolve) {
+                this._resolve({ confirmed: false, deleteRemote: false });
                 this._resolve = null;
             }
         }

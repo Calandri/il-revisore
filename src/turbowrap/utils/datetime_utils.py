@@ -41,3 +41,17 @@ def format_timestamp() -> str:
         String in format "YYYYMMDD_HHMMSS"
     """
     return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+
+def format_date(dt: datetime | None = None) -> str:
+    """Format datetime as date string for paths/keys.
+
+    Args:
+        dt: Datetime to format. If None, uses current UTC time.
+
+    Returns:
+        String in format "YYYY-MM-DD"
+    """
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    return dt.strftime("%Y-%m-%d")

@@ -459,6 +459,7 @@ function liveTasksApp() {
         getModelShortName(model) {
             if (!model) return '?';
             const m = model.toLowerCase();
+            if (m === 'fix-flow') return 'FIX';  // Orchestrator wrapper
             if (m.includes('opus')) return 'OPUS';
             if (m.includes('sonnet')) return 'SONNET';
             if (m.includes('haiku')) return 'HAIKU';
@@ -509,6 +510,7 @@ function liveTasksApp() {
         getModelBadgeClass(model) {
             if (!model) return 'bg-gray-100 dark:bg-gray-700 text-gray-500';
             const m = model.toLowerCase();
+            if (m === 'fix-flow') return 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300';  // Orchestrator
             if (m.includes('opus')) return 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300';
             if (m.includes('sonnet')) return 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300';
             if (m.includes('haiku')) return 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300';

@@ -236,6 +236,13 @@
             </div>
         </div>
 
+        <!-- Agents Launched (sub-agents via Task tool) -->
+        <div x-show="op.result?.agents_launched > 0" class="flex items-center gap-2 text-xs">
+            <span class="text-gray-500">Sub-agents:</span>
+            <span class="px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-medium"
+                  x-text="op.result?.agents_launched + ' launched'"></span>
+        </div>
+
         <!-- Links -->
         <div class="flex flex-wrap gap-4 text-xs">
             <template x-if="op.details?.s3_prompt_url">

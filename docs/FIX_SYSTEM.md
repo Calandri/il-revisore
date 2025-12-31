@@ -2,16 +2,16 @@
 
 ## Overview
 
-Il Fix System è il motore di correzione automatica delle issue trovate durante la code review.
-Utilizza **Claude CLI** (fixer) e **Gemini CLI** (challenger) in un loop iterativo per garantire fix di alta qualità.
+The Fix System is the automated remediation engine for issues found during code review.
+It uses **Claude CLI** (fixer) and **Gemini CLI** (challenger) in an iterative loop to ensure high-quality fixes.
 
-**Fixer**: Claude Opus (reasoning avanzato per fix complessi)
-**Challenger**: Gemini Flash (valutazione rapida ed economica)
-**Threshold**: Score >= 90 per marcare un issue come SOLVED
+**Fixer**: Claude Opus (advanced reasoning for complex fixes)
+**Challenger**: Gemini Flash (fast, economical evaluation)
+**Threshold**: Score >= 90 to mark an issue as SOLVED
 
 ---
 
-## Architettura
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -19,38 +19,63 @@ Utilizza **Claude CLI** (fixer) e **Gemini CLI** (challenger) in un loop iterati
 │                    (src/turbowrap/fix/orchestrator.py)              │
 └─────────────────────────────────────────────────────────────────────┘
                                    │
-        ┌──────────────────────────┼──────────────────────────┐
-        │                          │                          │
-        ▼                          ▼                          ▼
-┌───────────────┐      ┌───────────────────┐      ┌──────────────────┐
-│ Pre-Fix       │      │ Claude CLI        │      │ Gemini CLI       │
-│ Clarification │      │ (Fixer Agent)     │      │ (Challenger)     │
-│ (Optional)    │      │                   │      │                  │
-└───────────────┘      └───────────────────┘      └──────────────────┘
-        │                          │                          │
-        │                          ▼                          │
-        │              ┌───────────────────┐                  │
-        │              │ Sub-Agents:       │                  │
-        │              │ - git-branch-creator (haiku)         │
-        │              │ - fixer-single (opus)                │
-        │              │ - git-committer (haiku)              │
-        │              └───────────────────┘                  │
-        │                          │                          │
-        └──────────────────────────┼──────────────────────────┘
+                    ONE CLI call to fixer.md
+                                   │
                                    ▼
-                        ┌───────────────────┐
-                        │   Git Repository  │
-                        │   (Branch + Commits)
-                        └───────────────────┘
+              ┌─────────────────────────────────────────┐
+              │          Claude CLI (fixer.md)          │
+              │                                          │
+              │  Reads: master_todo.json                 │
+              │                                          │
+              │  Internally launches via Task tool:      │
+              │  ┌─────────────────────────────────────┐ │
+              │  │ Task(git-branch-creator) → Branch   │ │
+              │  └─────────────────────────────────────┘ │
+              │                    ↓                     │
+              │  ┌─────────────────────────────────────┐ │
+              │  │ Step 1: PARALLEL (same message)     │ │
+              │  │  Task(fixer-single) → Issue 1       │ │
+              │  │  Task(fixer-single) → Issue 2       │ │
+              │  └─────────────────────────────────────┘ │
+              │                    ↓                     │
+              │  ┌─────────────────────────────────────┐ │
+              │  │ Step 2: SERIAL (after step 1)       │ │
+              │  │  Task(fixer-single) → Issue 3       │ │
+              │  └─────────────────────────────────────┘ │
+              │                    ↓                     │
+              │           Aggregate Results              │
+              └─────────────────────────────────────────┘
+                                   │
+                                   ▼
+              ┌─────────────────────────────────────────┐
+              │         Gemini CLI (Challenger)          │
+              │         Per-issue evaluation             │
+              └─────────────────────────────────────────┘
+                                   │
+                                   ▼
+              ┌─────────────────────────────────────────┐
+              │             Git Repository               │
+              │           (Branch + Commits)             │
+              └─────────────────────────────────────────┘
 ```
+
+### Key Principle: ONE CLI Call with Multi-Agent
+
+The Python orchestrator makes **ONE** call to Claude CLI with the `fixer.md` agent.
+The `fixer.md` agent then uses the **Task tool** internally to spawn sub-agents:
+
+- **Parallel execution**: Multiple `Task()` calls in ONE message
+- **Serial execution**: `Task()` calls in separate messages (wait between)
+
+This leverages Claude CLI's native multi-agent architecture instead of launching multiple CLI processes from Python.
 
 ---
 
-## Workflow Completo
+## Complete Workflow
 
-### 1. Pre-Fix Clarification (Opzionale)
+### Phase 1: Clarify (Optional)
 
-Prima di iniziare il fix, l'utente può attivare una fase di clarification dove Claude Opus analizza le issue e fa domande per chiarire ambiguità.
+Before fixing, the user can enable a clarification phase where Claude analyzes issues and asks questions to clarify ambiguities.
 
 ```
 POST /api/fix/clarify
@@ -64,118 +89,200 @@ POST /api/fix/clarify
 ```json
 {
   "has_questions": true,
-  "questions": [
+  "questions_by_issue": [
     {
-      "id": "q1",
-      "question": "Per l'issue sulla validazione email, preferisci regex strict o permissivo?",
-      "context": "La validazione attuale accetta email con underscore..."
+      "issue_code": "BE-001",
+      "questions": [
+        {
+          "id": "BE-001-q1",
+          "question": "How should the null case be handled?",
+          "context": "Need to decide error handling strategy"
+        }
+      ]
     }
   ],
-  "message": "Ho alcune domande prima di procedere",
   "session_id": "clarify_abc123",
-  "ready_to_fix": false
+  "ready_to_plan": false
 }
 ```
 
-Continua fino a `ready_to_fix: true`, poi passa a `/start` con `clarify_session_id`.
+Continue until `ready_to_plan: true`, then proceed to Planning phase.
 
-### 2. Branch Creation
+### Phase 2: Plan
 
-Il Fix Orchestrator crea un branch dal main:
-- Nome auto-generato: `fix/<slug-from-issue-title>`
-- Esempio: `fix/missing-null-check-and-2-more`
+The planner generates:
+1. **master_todo.json** - Execution plan with steps (parallel/serial)
+2. **fix_todo_{code}.json** - Detailed TODO for each issue
 
-**Agent utilizzato**: `git-branch-creator` (Haiku - veloce ed economico)
-
-### 3. Issue Batching
-
-Le issue vengono raggruppate per ottimizzare l'esecuzione:
-
-| Tipo | File | Esecuzione |
-|------|------|------------|
-| **Parallel** | File diversi | Tutti insieme in un messaggio |
-| **Serial** | Stesso file | Uno alla volta (evita conflitti) |
-
-**Suddivisione BE/FE:**
-- Backend: `.py`, `.go`, `.java`, `.rb`, `.php`, `.rs`, `.c`, `.cpp`
-- Frontend: `.tsx`, `.ts`, `.jsx`, `.js`, `.css`, `.scss`, `.vue`, `.svelte`
-
-### 4. Fix Execution
-
-Per ogni batch, il `fixer.md` orchestrator:
-
-1. **Legge il TODO List** (JSON con issue raggruppate)
-2. **Lancia sub-agent paralleli** per file diversi
-3. **Lancia sub-agent seriali** per stesso file
-4. **Aggrega risultati** in JSON finale
-
-**Agent `fixer-single`** (per ogni issue):
-```markdown
-Input:
-- issue_code: FUNC-001
-- file: src/services.py
-- title: Missing null check
-- description: get_user crashes on None
-- suggested_fix: Add null check
-
-Output:
+```
+POST /api/fix/plan
 {
-  "issue_code": "FUNC-001",
-  "status": "fixed",
-  "file_modified": "src/services.py",
-  "changes_summary": "Added early return with None check",
-  "self_evaluation": {
-    "confidence": 98,
-    "completeness": "full",
-    "risks": []
-  }
+  "repository_id": "uuid",
+  "issue_ids": ["id1", "id2", ...],
+  "clarify_session_id": "clarify_abc123"  // Resume session
 }
 ```
 
-### 5. Challenger Evaluation
+**Generated Files:**
+```
+/tmp/fix_session_{session_id}/
+├── master_todo.json              # Execution plan
+├── fix_todo_BE-001.json          # Issue 1 details + clarifications + plan
+├── fix_todo_BE-002.json          # Issue 2 details
+└── fix_todo_FE-001.json          # Issue 3 details
+```
 
-Dopo ogni batch, Gemini CLI valuta OGNI issue individualmente:
+### Phase 3: Fix Execution
+
+ONE CLI call to `fixer.md` orchestrator:
+
+```
+POST /api/fix/start
+{
+  "repository_id": "uuid",
+  "task_id": "uuid",
+  "issue_ids": ["id1", "id2", "id3"],
+  "master_todo_path": "/tmp/fix_session_abc123/master_todo.json",
+  "clarify_session_id": "clarify_abc123"  // Resume session
+}
+```
+
+**Execution Flow:**
+
+1. **fixer.md** reads `master_todo.json`
+2. Creates branch via `Task(git-branch-creator)`
+3. For each step in `execution_steps`:
+   - Launches ALL issues in the step in ONE message (parallel)
+   - Waits for step completion before next step (serial between steps)
+4. Each `fixer-single` sub-agent reads its own `fix_todo_{code}.json`
+5. Aggregates results and returns JSON
+
+### Phase 4: Challenger Evaluation
+
+After fix execution, Gemini evaluates EACH issue individually:
 
 ```json
 {
   "issues": {
-    "FUNC-001": {
+    "BE-001": {
       "score": 95,
       "status": "SOLVED",
-      "feedback": "Fix corretto, null check implementato",
+      "feedback": "Fix correct, null check implemented properly",
       "quality_scores": {
         "correctness": 100,
         "safety": 90,
         "style": 95
-      },
-      "improvements_needed": []
+      }
     },
-    "FUNC-002": {
+    "BE-002": {
       "score": 70,
       "status": "IN_PROGRESS",
-      "feedback": "Fix parziale, manca gestione edge case",
+      "feedback": "Partial fix, missing edge case handling",
       "improvements_needed": ["Handle empty array case"]
     }
   }
 }
 ```
 
-**Soglia**: Score >= 90 = **SOLVED**
+**Threshold**: Score >= 90 = **SOLVED**
 
-### 6. Re-Fix (se necessario)
+### Phase 5: Re-Fix (if needed)
 
-Se challenger score < 90:
-1. Feedback inviato al `re_fixer.md` agent
-2. Re-fix con contesto del problema
-3. Nuovo round di challenger
-4. Max 2 iterazioni (1 fix + 1 re-fix)
+If challenger score < 90:
+1. Feedback sent to `re_fixer.md` agent
+2. Re-fix with problem context
+3. New challenger round
+4. Max 2 iterations (1 fix + 1 re-fix)
 
-### 7. Commit
+### Phase 6: Commit
 
-Dopo ogni batch completato:
+After all fixes complete:
 - **Agent**: `git-committer` (Haiku)
-- **Commit message**: Auto-generato con issue codes
-- **Non push automatico**: L'utente decide quando pushare
+- **Commit message**: Auto-generated with issue codes
+- **No automatic push**: User decides when to push
+
+---
+
+## TODO File Formats
+
+### master_todo.json
+
+```json
+{
+  "session_id": "abc123",
+  "branch_name": "fix/abc123",
+  "execution_steps": [
+    {
+      "step": 1,
+      "reason": "Issues on different files - can run in parallel",
+      "issues": [
+        {
+          "code": "BE-001",
+          "todo_file": "/tmp/fix_session_abc123/fix_todo_BE-001.json",
+          "agent_type": "fixer-single"
+        },
+        {
+          "code": "BE-002",
+          "todo_file": "/tmp/fix_session_abc123/fix_todo_BE-002.json",
+          "agent_type": "fixer-single"
+        }
+      ]
+    },
+    {
+      "step": 2,
+      "reason": "Issues on same file - must run after step 1",
+      "issues": [
+        {
+          "code": "BE-003",
+          "todo_file": "/tmp/fix_session_abc123/fix_todo_BE-003.json",
+          "agent_type": "fixer-single"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_issues": 3,
+    "total_steps": 2
+  }
+}
+```
+
+### fix_todo_{code}.json
+
+```json
+{
+  "issue_code": "BE-001",
+  "issue_id": "uuid",
+  "file": "src/api/routes.py",
+  "line": 42,
+  "title": "Missing null check causes crash",
+  "clarifications": [
+    {
+      "question_id": "BE-001-q1",
+      "question": "How should the null case be handled?",
+      "answer": "Return 404 with error message",
+      "context": "Need to decide error handling strategy"
+    }
+  ],
+  "context": {
+    "file_content_snippet": "def get_user(user_id):\n    return db.query(User)...",
+    "related_files": [
+      {"path": "src/models/user.py", "reason": "User model definition"}
+    ],
+    "existing_patterns": ["Other endpoints return 404 for not found"]
+  },
+  "plan": {
+    "approach": "patch",
+    "steps": [
+      "Add null check at line 42",
+      "Return 404 response if null"
+    ],
+    "estimated_lines_changed": 5,
+    "risks": [],
+    "verification": "Call endpoint with non-existent user_id, expect 404"
+  }
+}
+```
 
 ---
 
@@ -183,129 +290,72 @@ Dopo ogni batch completato:
 
 ### fixer.md (Orchestrator)
 - **Model**: Opus
-- **Role**: Coordina branch creation e fix paralleli/seriali
-- **Input**: TODO List JSON
+- **Role**: Coordinates branch creation and parallel/serial fixes
+- **Input**: `master_todo.json` path
 - **Output**: Aggregated results JSON
+- **Uses**: Task tool to spawn sub-agents
 
 ### fixer-single.md (Sub-Agent)
 - **Model**: Opus
-- **Role**: Corregge UNA singola issue
-- **Input**: Issue details
+- **Role**: Fixes ONE single issue
+- **Input**: `fix_todo_{code}.json` path
 - **Output**: Fix result JSON
 - **Rules**:
-  - Fix SOLO l'issue assegnata
+  - Read TODO file first (has clarifications and context)
+  - Fix ONLY the assigned issue
   - NO git commands
-  - Usa Edit tool per salvare
-  - Verifica suggested_fix prima di applicare
+  - Use Edit tool to save changes
+  - Follow the plan from TODO file
+  - Respect user clarifications
 
 ### fix_challenger.md (Evaluator)
 - **Model**: Sonnet
-- **Role**: Valuta qualità fix per-issue
+- **Role**: Evaluates fix quality per-issue
 - **Input**: Git diff + Issue list + Fixer output
-- **Output**: Per-issue scores e status
+- **Output**: Per-issue scores and status
 
 ### re_fixer.md (Re-Fix Agent)
 - **Model**: Opus
-- **Role**: Corregge issue basandosi su feedback challenger
+- **Role**: Fixes issues based on challenger feedback
 - **Input**: Issue + Previous fix + Challenger feedback
 - **Output**: Improved fix
 
 ### git-branch-creator.md
 - **Model**: Haiku
-- **Role**: Crea branch git
+- **Role**: Creates git branch
 - **Input**: Branch name
 - **Output**: Branch created confirmation
 
 ### git-committer.md
 - **Model**: Haiku
-- **Role**: Committa modifiche
+- **Role**: Commits changes
 - **Input**: Files modified + commit message
 - **Output**: Commit SHA
 
 ---
 
-## Models (Pydantic)
+## Session Continuity
 
-### FixStatus
-```python
-class FixStatus(str, Enum):
-    PENDING = "pending"
-    VALIDATING = "validating"
-    ANALYZING = "analyzing"
-    AWAITING_CLARIFICATION = "awaiting_clarification"
-    GENERATING = "generating"
-    APPLYING = "applying"
-    COMMITTING = "committing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SKIPPED = "skipped"
+The fix system maintains session continuity across phases using Claude CLI's resume feature:
+
+```
+Clarify (creates session A)
+    ↓ resume
+Plan (continues session A → A')
+    ↓ resume
+Fix (continues session A' → A'')
+    ↓ resume
+Re-Fix (if needed, continues A'' → A''')
 ```
 
-### FixQualityScores
-```python
-class FixQualityScores(BaseModel):
-    correctness: float  # 0-100 - Fix risolve il problema?
-    safety: float       # 0-100 - Introduce bug/vulnerabilità?
-    minimality: float   # 0-100 - Fix minimale e focalizzato?
-    style_consistency: float  # 0-100 - Stile coerente?
-
-    @property
-    def weighted_score(self) -> float:
-        # correctness: 40%, safety: 30%, minimality: 15%, style: 15%
-```
-
-### IssueFixResult
-```python
-class IssueFixResult(BaseModel):
-    issue_id: str
-    issue_code: str
-    status: FixStatus
-    commit_sha: str | None
-    commit_message: str | None
-    changes_made: str | None
-    error: str | None
-    fix_code: str | None  # Snippet (max 500 chars)
-    fix_explanation: str | None
-    fix_files_modified: list[str]
-    false_positive: bool
-    fix_self_score: int | None  # Claude self-eval
-    fix_gemini_score: int | None  # Challenger score
-```
-
-### FixSessionResult
-```python
-class FixSessionResult(BaseModel):
-    session_id: str
-    repository_id: str
-    task_id: str
-    branch_name: str
-    status: FixStatus
-    issues_requested: int
-    issues_fixed: int
-    issues_failed: int
-    issues_skipped: int
-    results: list[IssueFixResult]
-```
+This ensures:
+- Clarifications are preserved throughout
+- Context accumulates (no repetition)
+- Token efficiency (reuses existing context)
 
 ---
 
 ## API Endpoints
-
-### Start Fix Session (SSE)
-```
-POST /api/fix/start
-Content-Type: application/json
-
-{
-  "repository_id": "uuid",
-  "task_id": "uuid",
-  "issue_ids": ["id1", "id2", "id3"],
-  "use_existing_branch": false,
-  "user_notes": "Usa il nuovo endpoint /api/v2/users"
-}
-```
-
-**Response**: Server-Sent Events stream
 
 ### Pre-Fix Clarification
 ```
@@ -318,53 +368,44 @@ POST /api/fix/clarify
 }
 ```
 
-### List Issues
+### Planning Phase
 ```
-GET /api/fix/issues/{repository_id}?status=open&severity=CRITICAL&task_id=uuid
-```
-
-### Update Issue Status
-```
-PATCH /api/fix/issues/{issue_id}
+POST /api/fix/plan
 {
-  "status": "resolved",
-  "resolution_note": "Fixed in PR #123"
+  "repository_id": "uuid",
+  "issue_ids": ["id1", "id2"],
+  "clarify_session_id": "abc123"
 }
 ```
+
+### Start Fix Session (SSE)
+```
+POST /api/fix/start
+{
+  "repository_id": "uuid",
+  "task_id": "uuid",
+  "issue_ids": ["id1", "id2", "id3"],
+  "master_todo_path": "/tmp/fix_session_abc123/master_todo.json",
+  "clarify_session_id": "abc123"
+}
+```
+
+**Response**: Server-Sent Events stream
 
 ---
 
 ## SSE Events
 
-Durante l'esecuzione, il frontend riceve eventi in tempo reale:
-
 | Event | Description |
 |-------|-------------|
-| `fix_session_started` | Sessione iniziata |
-| `fix_issue_started` | Fix singola issue iniziato |
-| `fix_issue_validating` | Validazione issue in corso |
-| `fix_issue_generating` | Generazione fix in corso |
-| `fix_issue_streaming` | Streaming output Claude |
-| `fix_challenger_evaluating` | Challenger sta valutando |
-| `fix_challenger_result` | Risultato challenger |
-| `fix_issue_committed` | Issue committata |
-| `fix_session_completed` | Sessione completata |
-| `fix_session_error` | Errore sessione |
-
-**Event payload esempio:**
-```json
-{
-  "type": "fix_issue_completed",
-  "timestamp": "2025-01-15T10:30:00Z",
-  "session_id": "abc123",
-  "issue_id": "uuid",
-  "issue_code": "FUNC-001",
-  "issue_index": 1,
-  "total_issues": 5,
-  "message": "Issue fixed successfully",
-  "commit_sha": "a1b2c3d"
-}
-```
+| `fix_session_started` | Session started |
+| `fix_step_started` | Step started (with step number) |
+| `fix_issue_streaming` | Streaming output from Claude |
+| `fix_step_completed` | Step completed |
+| `fix_challenger_evaluating` | Challenger is evaluating |
+| `fix_challenger_result` | Challenger result |
+| `fix_session_completed` | Session completed |
+| `fix_session_error` | Session error |
 
 ---
 
@@ -374,7 +415,7 @@ Durante l'esecuzione, il frontend riceve eventi in tempo reale:
 ```python
 class FixChallengerSettings:
     max_iterations: int = 2  # 1 fix + 1 re-fix
-    satisfaction_threshold: float = 95.0  # Score minimo per SOLVED
+    satisfaction_threshold: float = 95.0  # Minimum score for SOLVED
 ```
 
 ### Timeouts
@@ -383,127 +424,36 @@ CLAUDE_CLI_TIMEOUT = 900  # 15 minutes per fix
 GEMINI_CLI_TIMEOUT = 120  # 2 minutes per review
 ```
 
-### Batching Limits
-```python
-MAX_ISSUES_PER_CLI_CALL = 5  # Fallback se no estimates
-MAX_WORKLOAD_POINTS_PER_BATCH = 15  # Basato su effort
-DEFAULT_EFFORT = 3  # Se effort non stimato
-```
-
-### Session Token Management
-```python
-MAX_SESSION_TOKENS = 150_000  # Limit before /compact
-```
-
-Quando il context supera questo limite, viene triggerato `/compact` per comprimere la sessione Claude.
-
 ---
 
 ## Storage
 
 ### S3
 - **Bucket**: `turbowrap-thinking`
-- **Prefix**: `fix-logs/`
-- **Contenuto**: Thinking logs, TODO lists, artifacts
-- **Lifecycle**: 10 giorni retention
+- **Prefix**: `fix-todos/`
+- **Content**: TODO files, thinking logs, artifacts
+- **Lifecycle**: 10 days retention
 
-### Database
-- **Tabella `issues`**: Issue con stato fix
-  - `status`: open, in_progress, resolved, ignored
-  - `fix_code`: Snippet del fix
-  - `fix_explanation`: Spiegazione PR-style
-  - `fix_files_modified`: Lista file modificati
-  - `fix_commit_sha`: SHA del commit
-  - `fix_branch`: Nome branch
-
----
-
-## Scope Validation (Monorepo)
-
-Per monorepo, è possibile limitare i fix a una sottocartella:
-
-```json
-{
-  "workspace_path": "packages/frontend",
-  "allowed_extra_paths": ["packages/shared"]
-}
-```
-
-Se Claude modifica file fuori scope:
-1. Viene sollevato `ScopeValidationError`
-2. UI mostra prompt all'utente
-3. Utente può approvare o rifiutare
-4. Se rifiutato, tutte le modifiche vengono revertate
-
----
-
-## Idempotency
-
-Il sistema previene duplicati usando idempotency key:
-- **Key**: Hash di `repository_id + task_id + sorted(issue_ids)`
-- **TTL**: 1 ora
-- **Bypass**: `force: true` per sessioni bloccate
-
----
-
-## Error Handling
-
-### BillingError
-Se Claude ritorna errore di crediti insufficienti:
-- Evento `fix_billing_error` inviato
-- Sessione terminata con errore
-- UI mostra messaggio appropriato
-
-### Scope Violation
-Se fix modifica file fuori workspace:
-- `ScopeValidationError` raised
-- Prompt interattivo all'utente
-- Possibilità di approvare o revertare
-
-### CLI Timeout
-Se Claude/Gemini CLI non risponde:
-- Timeout configurabile per CLI
-- Issue marcata come `failed`
-- Sessione continua con altre issue
+### Local
+- **Path**: `/tmp/fix_session_{session_id}/`
+- **Content**: master_todo.json, fix_todo_{code}.json files
+- **Cleanup**: After session completion
 
 ---
 
 ## Best Practices
 
-### Per gli utenti
+### For Users
 
-1. **Seleziona issue correlate** - Fix insieme issue che hanno senso insieme
-2. **Usa clarification** - Per issue complesse, la fase di clarification migliora i risultati
-3. **Fornisci user_notes** - Contesto aggiuntivo aiuta Claude
-4. **Review prima di push** - Il fix non pusha automaticamente
+1. **Use clarification** - For complex issues, the clarification phase improves results
+2. **Group related issues** - Fix issues that make sense together
+3. **Provide user_notes** - Additional context helps Claude
+4. **Review before push** - Fixes don't push automatically
 
-### Per lo sviluppo
+### For Development
 
-1. **Agent minimali** - Ogni agent fa UNA cosa
-2. **JSON output** - Sempre JSON parsabile per automazione
-3. **Self-evaluation** - Fixer valuta la propria confidence
-4. **Challenger indipendente** - Non fidarsi mai solo del fixer
-
----
-
-## Troubleshooting
-
-### Fix bloccato
-- Usa `force: true` per bypassare idempotency
-- Controlla logs S3 per dettagli
-- Verifica timeout settings
-
-### Score sempre basso
-- Verifica che suggested_fix sia corretto
-- Controlla se issue è troppo vaga
-- Considera di splittare in issue più piccole
-
-### Commit fallito
-- Verifica permessi git
-- Controlla se branch esiste già
-- Verifica conflitti con main
-
-### Scope violation frequente
-- Rivedi `workspace_path` configuration
-- Aggiungi paths necessari a `allowed_extra_paths`
-- Considera se issue richiede cross-package changes
+1. **One CLI call** - Never launch parallel CLI processes from Python
+2. **Task tool for parallelism** - Let Claude handle parallel execution internally
+3. **JSON output** - Always parseable JSON for automation
+4. **Self-evaluation** - Fixer evaluates its own confidence
+5. **Independent challenger** - Never trust only the fixer

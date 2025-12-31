@@ -2,67 +2,54 @@
 
 ## Overview
 
-Il sistema usa **Claude CLI** e **Gemini CLI** come agenti autonomi.
-Entrambi hanno accesso completo al sistema (file, git, terminal).
-**Nessuna comunicazione diretta tra i modelli** per evitare influenze.
+The system uses **Claude CLI** and **Gemini CLI** as autonomous agents.
+Both have full system access (files, git, terminal).
+**No direct communication between models** to avoid influences.
 
 ---
 
-## Fix Issue Flow (Sequential with Dynamic Batching)
+## Fix Issue Flow (ONE CLI Call with Multi-Agent)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│              FIX ISSUE FLOW (SEQUENTIAL + BATCHING)             │
+│           FIX ISSUE FLOW (ONE CLI + TASK TOOL)                   │
 └─────────────────────────────────────────────────────────────────┘
 
      Issues (from DB)
           │
           ▼
-    ┌─────────────┐
-    │  Classify   │ → be_issues[], fe_issues[]
-    │  by file    │
-    │  extension  │
-    └─────────────┘
+    ┌─────────────────┐
+    │   Plan Phase    │ → master_todo.json + fix_todo_{code}.json files
+    │   (TodoManager) │
+    └─────────────────┘
           │
           ▼
-    ┌─────────────────────────────────────────────────────────┐
-    │              DYNAMIC BATCHING BY WORKLOAD                │
-    │                                                          │
-    │  workload = estimated_effort × estimated_files_count     │
-    │  Max 15 workload points per batch OR max 5 issues        │
-    │                                                          │
-    │  If no estimates: default effort=3, files=1 (3 points)   │
-    └─────────────────────────────────────────────────────────┘
-          │
-          │
-          ▼ SEQUENTIAL: First ALL BE batches, then ALL FE batches
-          │
 ┌─────────────────────────────────────────────────────────────────┐
-│   BE Batch 1/N    │   BE Batch 2/N    │   ...   │   BE Batch N  │
-│   Claude CLI      │   Claude CLI      │         │   Claude CLI  │
-│   fixer.md        │   fixer.md        │         │   fixer.md    │
-│   + dev_be.md     │   + dev_be.md     │         │   + dev_be.md │
-│   workload=12     │   workload=9      │         │   workload=6  │
-└─────────────────────────────────────────────────────────────────┘
-          │
-          ▼ (after all BE complete)
-          │
-┌─────────────────────────────────────────────────────────────────┐
-│   FE Batch 1/M    │   FE Batch 2/M    │   ...   │   FE Batch M  │
-│   Claude CLI      │   Claude CLI      │         │   Claude CLI  │
-│   fixer.md        │   fixer.md        │         │   fixer.md    │
-│   + dev_fe.md     │   + dev_fe.md     │         │   + dev_fe.md │
-│   workload=10     │   workload=14     │         │   workload=5  │
+│                   ONE CLI CALL TO FIXER.MD                       │
+│                                                                   │
+│   orchestrator.py → _run_claude_cli(agent_type="fixer")          │
+│                                                                   │
+│   fixer.md internally uses Task tool:                            │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │ 1. Read master_todo.json                                 │   │
+│   │ 2. Task(git-branch-creator) → create branch              │   │
+│   │ 3. For each step in execution_steps:                     │   │
+│   │    - Step 1: Task(fixer-single) × N in ONE message      │   │
+│   │      → PARALLEL (issues on different files)              │   │
+│   │    - Step 2: Task(fixer-single) × M in separate msgs    │   │
+│   │      → SERIAL (issues on same file, after step 1)        │   │
+│   │ 4. Aggregate results → JSON output                       │   │
+│   └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
           │
           ▼
     ┌─────────────────────┐
     │   Gemini CLI        │  ← Pro + Thinking
-    │   (Reviewer)        │
+    │   (Challenger)      │
     │                     │
     │   - git diff ALL    │
     │   - Score 0-100     │
-    │   - Feedback        │
+    │   - Per-issue status│
     └─────────────────────┘
           │
           ▼
@@ -74,21 +61,49 @@ Entrambi hanno accesso completo al sistema (file, git, terminal).
           ▼                          ▼
     ┌─────────────┐           ┌─────────────┐
     │ iteration   │           │   COMMIT    │
-    │ < max (3)?  │           │   ALL fixes │
+    │ < max (2)?  │           │   ALL fixes │
     └─────────────┘           └─────────────┘
           │ YES                      │
           │                          ▼
-          └──► retry with feedback  DONE
+          └──► re-fix with feedback  DONE
 
 ⚠️ CRITICAL: Only issues with files in commit are marked RESOLVED
    Issues where CLI crashed or file not committed stay OPEN/FAILED
 ```
 
-### Why Sequential Instead of Parallel?
+### Why ONE CLI Call Instead of Parallel?
 
-macOS has a limit on file watchers. Running multiple Claude CLI processes
-in parallel caused `EOPNOTSUPP` errors when the limit was exhausted.
-Sequential execution avoids this issue.
+Previous approach launched N parallel CLI processes from Python using `asyncio.gather()`.
+This was **wrong** because it bypassed Claude CLI's native multi-agent architecture.
+
+**Correct approach**: ONE CLI call to `fixer.md` which uses the **Task tool** internally
+to spawn sub-agents. Parallelism is achieved by sending multiple `Task()` calls in
+a single message.
+
+---
+
+## TODO File Structure
+
+```
+/tmp/fix_session_{session_id}/
+├── master_todo.json              # Execution plan (steps, parallel/serial)
+├── fix_todo_BE-001.json          # Issue 1: details + clarifications + plan
+├── fix_todo_BE-002.json          # Issue 2: details + clarifications + plan
+└── fix_todo_FE-001.json          # Issue 3: details + clarifications + plan
+```
+
+### master_todo.json
+
+Contains `execution_steps` array. Each step has issues that run in parallel.
+Steps run sequentially (step 1 completes before step 2 starts).
+
+### fix_todo_{code}.json
+
+Contains everything a sub-agent needs:
+- Issue details (title, file, line, description)
+- Clarifications (Q&A from user)
+- Context (code snippets, related files, existing patterns)
+- Plan (approach, steps, verification)
 
 ---
 
@@ -129,197 +144,72 @@ Other statuses:
 
 ---
 
-## Workload Estimation
+## Session Continuity
 
-Reviewers estimate fix complexity for dynamic batching:
-
-| Field | Range | Description |
-|-------|-------|-------------|
-| `estimated_effort` | 1-5 | Fix complexity (1=trivial, 5=major refactor) |
-| `estimated_files_count` | 1+ | Number of files to modify |
-
-### Workload Formula
+All phases share ONE Claude session via resume:
 
 ```
-workload_points = estimated_effort × estimated_files_count
+/clarify → CREATE session A
+    ↓ resume
+/plan → RESUME session A → A'
+    ↓ resume
+/start → RESUME session A' → A''
+    ↓ resume
+/re-fix → RESUME session A'' → A'''
 ```
 
-### Batching Rules
-
-- Max **15 workload points** per batch
-- Max **5 issues** per batch (hard limit)
-- If no estimates: defaults to effort=3, files=1 (3 points)
-
-### Examples
-
-| Issue | Effort | Files | Workload | Batch Decision |
-|-------|--------|-------|----------|----------------|
-| Typo fix | 1 | 1 | 1 | Can fit many in one batch |
-| Add validation | 2 | 1 | 2 | ~7 per batch |
-| Refactor service | 4 | 3 | 12 | 1 per batch |
-| Architectural change | 5 | 5 | 25 | Split across batches |
+Benefits:
+- Clarifications preserved throughout
+- Context accumulates (no repetition)
+- Token efficiency
 
 ---
 
-## PR Review Flow (Coming Soon)
+## Models Used
+
+| Role | Model | Agent File |
+|------|-------|------------|
+| Fix Orchestrator | Claude Opus | `fixer.md` |
+| Fix Sub-Agent | Claude Opus | `fixer-single.md` |
+| Branch Creator | Claude Haiku | `git-branch-creator.md` |
+| Committer | Claude Haiku | `git-committer.md` |
+| Challenger | Gemini Flash | `fix_challenger.md` |
+| Re-Fixer | Claude Opus | `re_fixer.md` |
+
+---
+
+## Agent Files
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        PR REVIEW FLOW                           │
-└─────────────────────────────────────────────────────────────────┘
-
-     Pull Request
-          │
-          ├────────────────────┬────────────────────┐
-          │                    │                    │
-          ▼                    ▼                    │
-┌─────────────────┐  ┌─────────────────┐           │
-│   Claude CLI    │  │   Gemini CLI    │           │
-│   (Opus)        │  │   (Pro)         │           │
-│                 │  │                 │           │
-│   + Thinking    │  │   + Thinking    │           │
-│                 │  │                 │           │
-│   - Legge diff  │  │   - Legge diff  │           │
-│   - Analizza    │  │   - Analizza    │           │
-│   - Voto 0-100  │  │   - Voto 0-100  │           │
-│   - Feedback    │  │   - Feedback    │           │
-└─────────────────┘  └─────────────────┘           │
-          │                    │                    │
-          ▼                    ▼                    │
-    ┌─────────────────────────────────────┐        │
-    │      2 VOTI INDIPENDENTI            │        │
-    │                                     │        │
-    │   Claude: 85/100 - "Good but..."    │        │
-    │   Gemini: 78/100 - "Needs..."       │        │
-    │                                     │        │
-    │   Average: 81.5/100                 │        │
-    └─────────────────────────────────────┘        │
-                      │                            │
-                      ▼                            │
-              ┌───────────────┐                    │
-              │   APPROVED?   │                    │
-              │  avg >= 80%   │                    │
-              └───────────────┘                    │
-                                                   │
-     ⚠️ NO COMMUNICATION BETWEEN MODELS ⚠️         │
-     Each reviews independently                    │
-                                                   │
-└──────────────────────────────────────────────────┘
+agents/
+├── fixer.md                 # Orchestrator (reads master_todo.json, spawns sub-agents)
+├── fixer_single.md          # Sub-agent (reads fix_todo_{code}.json, fixes ONE issue)
+├── fix_challenger.md        # Gemini challenger (evaluates fixes per-issue)
+├── re_fixer.md              # Re-fix agent (uses challenger feedback)
+├── git-branch-creator.md    # Creates git branch (Haiku)
+├── git-committer.md         # Commits changes (Haiku)
+├── dev_be.md                # Backend guidelines (Python, FastAPI)
+└── dev_fe.md                # Frontend guidelines (React, Next.js)
 ```
 
 ---
 
 ## Configuration
 
-Settings in `config/settings.yaml`:
-
 ```yaml
 fix_challenger:
   enabled: true
-  max_iterations: 3              # Max retry loops
-  satisfaction_threshold: 95.0   # N% required to approve
-
-  # Gemini settings
-  model: "gemini-3-flash-preview"
-  thinking_budget: 10000         # Thinking tokens for Gemini
+  max_iterations: 2              # 1 fix + 1 re-fix max
+  satisfaction_threshold: 95.0   # Score required to pass
 ```
 
 ---
 
 ## Key Principles
 
-1. **Full Autonomy**: Both CLIs have complete system access
-2. **No Cross-Talk**: Models never communicate directly
-3. **Always Thinking**: Both use extended thinking mode
-4. **Independent Reviews**: For PR review, 2 separate votes
-5. **Iterative Fix**: Up to 3 attempts with feedback loop
-
----
-
-## CLI Commands
-
-### Claude CLI (Fixer)
-```bash
-claude --print --dangerously-skip-permissions
-```
-- Reads prompt from stdin
-- Has full file/git access
-- Uses Opus model with thinking
-
-### Gemini CLI (Reviewer)
-```bash
-gemini
-```
-- Reads prompt from stdin
-- Has full file/git access
-- Uses Pro model with thinking
-
----
-
-## Models Used
-
-| Role | Model | Thinking | Agent Files |
-|------|-------|----------|-------------|
-| Fixer | Claude Opus 4.5 | Extended (20k tokens) | `fixer.md` + `dev_be.md`/`dev_fe.md` |
-| Reviewer | Gemini 2.5 Pro | Enabled (10k tokens) | `fix_challenger.md` |
-| PR Review (Claude) | Claude Opus 4.5 | Extended (20k tokens) | `reviewer_be_*.md` / `reviewer_fe_*.md` |
-| PR Review (Gemini) | Gemini 2.5 Pro | Enabled (10k tokens) | `reviewer_be_*.md` / `reviewer_fe_*.md` |
-
----
-
-## Model Selection Strategy
-
-Il fixer usa **3 modelli diversi** per ottimizzare costi e qualità:
-
-### Per-Task Model Assignment
-
-| Task | Model | Cost | Rationale |
-|------|-------|------|-----------|
-| Branch creation | Claude Haiku | ~$0.01 | Simple git operation |
-| Code fixes | Claude Opus | ~$0.50-1.00 | Complex reasoning needed |
-| Fix validation | Gemini Pro | ~$0.10 | Specialized code review |
-| Atomic commits | Claude Haiku | ~$0.01 | Simple git operation |
-
-### Typical Fix Flow (from logs)
-
-```
-[Haiku]  → Branch/prep     - $0.04
-[Opus]   → Fix code        - $0.85
-[Gemini] → Validate (100%) - (included in Gemini costs)
-[Haiku]  → Commit          - $0.01
-─────────────────────────────────────────────
-Total: ~$0.90 per fix session
-```
-
-### Dynamic Thinking Budget
-
-Heavy batches (workload > 10) get extra thinking tokens:
-- Base: 8,000 tokens
-- Scale: +1,000 per workload point above 10
-- Max: 16,000 tokens
-
----
-
-## Agent Files
-
-I file agent in `agents/` vengono caricati automaticamente:
-
-```
-agents/
-├── fixer.md                 # Prompt base per Claude fixer
-├── fix_challenger.md        # Prompt per Gemini reviewer
-├── dev_be.md                # Guidelines backend (Python, FastAPI)
-├── dev_fe.md                # Guidelines frontend (React, Next.js)
-├── engineering_principles.md # Principi di ingegneria generali
-├── reviewer_be_*.md         # Reviewer backend (architecture, quality)
-└── reviewer_fe_*.md         # Reviewer frontend (architecture, quality)
-```
-
-### Selezione Automatica Agent
-
-L'orchestrator seleziona automaticamente l'agent giusto in base all'estensione del file:
-
-| Estensione | Agent |
-|------------|-------|
-| `.py`, `.go`, `.java`, `.rb`, `.php`, `.rs`, `.c`, `.cpp` | `dev_be.md` |
-| `.tsx`, `.ts`, `.jsx`, `.js`, `.css`, `.scss`, `.vue`, `.svelte` | `dev_fe.md` |
+1. **ONE CLI Call**: Never launch parallel CLI processes from Python
+2. **Task Tool for Parallelism**: Let Claude handle parallel execution internally
+3. **Full Autonomy**: CLIs have complete system access
+4. **No Cross-Talk**: Models never communicate directly
+5. **Independent Reviews**: Challenger validates fixer independently
+6. **Session Resume**: All phases share one Claude session

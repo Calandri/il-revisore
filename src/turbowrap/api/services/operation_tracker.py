@@ -15,14 +15,20 @@ Design Principles:
 from __future__ import annotations
 
 import logging
+import traceback
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from threading import RLock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from turbowrap.utils.datetime_utils import format_iso
+from turbowrap.utils.datetime_utils import format_iso, now_utc
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +58,30 @@ class OperationType(str, Enum):
     LINEAR_CLARIFY = "linear_clarify"  # Phase 1: generate clarifying questions
     LINEAR_ANALYSIS = "linear_analysis"  # Phase 2: deep analysis with answers
 
+    # Fix clarification and planning
+    FIX_CLARIFICATION = "fix_clarification"  # Pre-fix clarification phase
+    FIX_PLANNING = "fix_planning"  # Fix planning phase
+
+    # Testing operations
+    TEST_DISCOVERY = "test_discovery"  # Discovering tests in repo
+    TEST_EXECUTION = "test_execution"  # Running tests
+    TEST_ANALYSIS = "test_analysis"  # Analyzing test results
+    REPO_TEST_ANALYSIS = "repo_test_analysis"  # Full repo test analysis
+    TEST_ENHANCEMENT = "test_enhancement"  # Enhancing tests
+
+    # Analysis operations
+    MOCKUP = "mockup"  # Generating mockups
+    ENDPOINT_DETECTION = "endpoint_detection"  # Detecting API endpoints
+    README_ANALYSIS = "readme_analysis"  # Analyzing README
+    EVALUATE = "evaluate"  # Code evaluation
+
+    # Git operations (extended)
+    GIT_RESOLVE = "git_resolve"  # Resolving git conflicts
+    SMART_PUSH = "smart_push"  # Smart push with conflict handling
+
+    # Fix operations (extended)
+    COMPACTION = "compaction"  # Context compaction
+
     # Generic CLI task (for auto-tracking)
     CLI_TASK = "cli_task"
 
@@ -70,6 +100,25 @@ OPERATION_LABELS: dict[OperationType, str] = {
     OperationType.PROMOTE: "promoting to production",
     OperationType.LINEAR_CLARIFY: "clarifying",
     OperationType.LINEAR_ANALYSIS: "analyzing issue",
+    OperationType.FIX_CLARIFICATION: "clarifying fix for",
+    OperationType.FIX_PLANNING: "planning fix for",
+    # Testing operations
+    OperationType.TEST_DISCOVERY: "discovering tests in",
+    OperationType.TEST_EXECUTION: "running tests on",
+    OperationType.TEST_ANALYSIS: "analyzing tests for",
+    OperationType.REPO_TEST_ANALYSIS: "analyzing test suite in",
+    OperationType.TEST_ENHANCEMENT: "enhancing tests for",
+    # Analysis operations
+    OperationType.MOCKUP: "generating mockup for",
+    OperationType.ENDPOINT_DETECTION: "detecting endpoints in",
+    OperationType.README_ANALYSIS: "analyzing README for",
+    OperationType.EVALUATE: "evaluating code in",
+    # Git operations (extended)
+    OperationType.GIT_RESOLVE: "resolving conflicts in",
+    OperationType.SMART_PUSH: "smart pushing to",
+    # Fix operations (extended)
+    OperationType.COMPACTION: "compacting context for",
+    # Generic
     OperationType.CLI_TASK: "running task on",
 }
 
@@ -87,6 +136,25 @@ OPERATION_COLORS: dict[OperationType, str] = {
     OperationType.PROMOTE: "rose",
     OperationType.LINEAR_CLARIFY: "amber",
     OperationType.LINEAR_ANALYSIS: "indigo",
+    OperationType.FIX_CLARIFICATION: "teal",
+    OperationType.FIX_PLANNING: "sky",
+    # Testing operations
+    OperationType.TEST_DISCOVERY: "lime",
+    OperationType.TEST_EXECUTION: "green",
+    OperationType.TEST_ANALYSIS: "emerald",
+    OperationType.REPO_TEST_ANALYSIS: "teal",
+    OperationType.TEST_ENHANCEMENT: "cyan",
+    # Analysis operations
+    OperationType.MOCKUP: "fuchsia",
+    OperationType.ENDPOINT_DETECTION: "pink",
+    OperationType.README_ANALYSIS: "amber",
+    OperationType.EVALUATE: "indigo",
+    # Git operations (extended)
+    OperationType.GIT_RESOLVE: "orange",
+    OperationType.SMART_PUSH: "yellow",
+    # Fix operations (extended)
+    OperationType.COMPACTION: "stone",
+    # Generic
     OperationType.CLI_TASK: "slate",
 }
 
@@ -103,7 +171,7 @@ class Operation:
     operation_id: str
     operation_type: OperationType
     status: str  # "in_progress", "completed", "failed", "cancelled"
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=now_utc)
 
     repository_id: str | None = None
     repository_name: str | None = None
@@ -134,8 +202,18 @@ class Operation:
         """Duration in seconds, if started."""
         if not self.created_at:
             return None
-        end = self.completed_at or datetime.utcnow()
-        return (end - self.created_at).total_seconds()
+        end = self.completed_at or now_utc()
+        # Handle naive/aware datetime mismatch (DB datetimes may be naive)
+        start = self.created_at
+        if start.tzinfo is None:
+            from datetime import timezone
+
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            from datetime import timezone
+
+            end = end.replace(tzinfo=timezone.utc)
+        return (end - start).total_seconds()
 
     @property
     def is_stale(self) -> bool:
@@ -217,7 +295,7 @@ class OperationTracker:
 
     def _cleanup_expired(self) -> None:
         """Remove expired completed/failed operations."""
-        now = datetime.utcnow()
+        now = now_utc()
         expired_ids = []
 
         for op_id, op in self._operations.items():
@@ -311,21 +389,55 @@ class OperationTracker:
         """
         with self._store_lock:
             op = self._operations.get(operation_id)
-            if not op:
-                logger.warning(f"[TRACKER] Update failed: operation {operation_id} not found")
-                return None
 
-            if status:
-                op.status = status
-            if branch:
-                op.branch_name = branch
+            if op:
+                # Update in-memory operation
+                if status:
+                    op.status = status
+                if branch:
+                    op.branch_name = branch
+                if details:
+                    op.details.update(details)
+
+                if details:
+                    self._persist_update(operation_id, {"details": op.details})
+
+                return op
+            # Operation not in memory - update directly in DB
+            # This handles cases where server was restarted
             if details:
-                op.details.update(details)
+                self._persist_update_db_only(operation_id, details)
+                logger.info(
+                    f"[TRACKER] Updated operation in DB only: {operation_id[:8]} "
+                    f"(not in memory)"
+                )
+                return None  # Still return None as we don't have in-memory object
+            logger.warning(f"[TRACKER] Update failed: operation {operation_id} not found")
+            return None
 
-            if details:
-                self._persist_update(operation_id, {"details": op.details})
+    def _persist_update_db_only(self, operation_id: str, details: dict[str, Any]) -> bool:
+        """Update operation details directly in DB (merge with existing)."""
+        try:
+            from sqlalchemy.orm.attributes import flag_modified
 
-            return op
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation_id)
+                if db_op:
+                    # Merge details - must use flag_modified for SQLAlchemy to detect change
+                    existing_details = dict(db_op.details or {})
+                    existing_details.update(details)
+                    db_op.details = existing_details
+                    flag_modified(db_op, "details")
+                    logger.info(
+                        f"[TRACKER-DB] Updated operation in DB: {operation_id[:8]} "
+                        f"details={details}"
+                    )
+                    return True
+                logger.warning(f"[TRACKER-DB] Update failed - operation not in DB: {operation_id}")
+                return False
+        except Exception as e:
+            logger.error(f"[TRACKER-DB] Failed to update operation {operation_id}: {e}")
+            return False
 
     def complete(
         self,
@@ -345,11 +457,18 @@ class OperationTracker:
         with self._store_lock:
             op = self._operations.get(operation_id)
             if not op:
-                logger.warning(f"[TRACKER] Complete failed: operation {operation_id} not found")
+                # Fallback: complete directly in DB
+                if self._persist_complete_db_only(operation_id, result):
+                    logger.info(
+                        f"[TRACKER] Completed operation in DB only: {operation_id[:8]} "
+                        f"(not in memory)"
+                    )
+                else:
+                    logger.warning(f"[TRACKER] Complete failed: operation {operation_id} not found")
                 return None
 
             op.status = "completed"
-            op.completed_at = datetime.utcnow()
+            op.completed_at = now_utc()
 
             # This ensures data saved via update() is available in result for frontend
             merged_result = result.copy() if result else {}
@@ -383,6 +502,25 @@ class OperationTracker:
 
             return op
 
+    def _persist_complete_db_only(self, operation_id: str, result: dict[str, Any] | None) -> bool:
+        """Complete operation directly in DB (fallback when not in memory)."""
+        try:
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation_id)
+                if db_op:
+                    db_op.status = "completed"
+                    db_op.completed_at = now_utc()
+                    if db_op.started_at:
+                        db_op.duration_seconds = (
+                            db_op.completed_at - db_op.started_at
+                        ).total_seconds()
+                    db_op.result = result or {}
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[TRACKER-DB] Failed to complete {operation_id}: {e}")
+            return False
+
     def fail(
         self,
         operation_id: str,
@@ -401,11 +539,17 @@ class OperationTracker:
         with self._store_lock:
             op = self._operations.get(operation_id)
             if not op:
-                logger.warning(f"[TRACKER] Fail failed: operation {operation_id} not found")
+                # Fallback: fail directly in DB
+                if self._persist_fail_db_only(operation_id, error):
+                    logger.error(
+                        f"[TRACKER] Failed operation in DB only: {operation_id[:8]} - {error}"
+                    )
+                else:
+                    logger.warning(f"[TRACKER] Fail failed: operation {operation_id} not found")
                 return None
 
             op.status = "failed"
-            op.completed_at = datetime.utcnow()
+            op.completed_at = now_utc()
             op.error = error
 
             logger.error(f"[TRACKER] Failed {op.operation_type.value}: {operation_id} - {error}")
@@ -413,6 +557,25 @@ class OperationTracker:
             self._persist_fail(op)
 
             return op
+
+    def _persist_fail_db_only(self, operation_id: str, error: str) -> bool:
+        """Fail operation directly in DB (fallback when not in memory)."""
+        try:
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation_id)
+                if db_op:
+                    db_op.status = "failed"
+                    db_op.completed_at = now_utc()
+                    if db_op.started_at:
+                        db_op.duration_seconds = (
+                            db_op.completed_at - db_op.started_at
+                        ).total_seconds()
+                    db_op.error = error
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"[TRACKER-DB] Failed to fail {operation_id}: {e}")
+            return False
 
     def cancel(self, operation_id: str) -> Operation | None:
         """Mark operation as cancelled."""
@@ -422,7 +585,7 @@ class OperationTracker:
                 return None
 
             op.status = "cancelled"
-            op.completed_at = datetime.utcnow()
+            op.completed_at = now_utc()
 
             logger.info(f"[TRACKER] Cancelled {op.operation_type.value}: {operation_id}")
 
@@ -460,6 +623,8 @@ class OperationTracker:
         """
         Get all active (in_progress) operations.
 
+        Merges in-memory operations with DB operations (for server restart scenario).
+
         Args:
             op_type: Filter by operation type
             repo_id: Filter by repository ID
@@ -470,7 +635,17 @@ class OperationTracker:
         with self._store_lock:
             self._cleanup_expired()
 
+            # Start with in-memory operations
             operations = [op for op in self._operations.values() if op.status == "in_progress"]
+            seen_ids = {op.operation_id for op in operations}
+
+            # Also load from DB (for server restart scenario)
+            db_operations = self._load_active_from_db(op_type=op_type, repo_id=repo_id)
+            for op in db_operations:
+                if op.operation_id not in seen_ids:
+                    operations.append(op)
+                    # Also add to in-memory cache for future lookups
+                    self._operations[op.operation_id] = op
 
             if op_type:
                 operations = [op for op in operations if op.operation_type == op_type]
@@ -481,6 +656,49 @@ class OperationTracker:
             operations.sort(key=lambda x: x.created_at, reverse=True)
 
             return operations
+
+    def _load_active_from_db(
+        self,
+        op_type: OperationType | None = None,
+        repo_id: str | None = None,
+    ) -> list[Operation]:
+        """Load active operations from database (fallback for server restart)."""
+        try:
+            with self._db_session() as db:
+                from turbowrap.db.models.operation import Operation as OperationRecord
+
+                query = db.query(OperationRecord).filter(OperationRecord.status == "in_progress")
+
+                if op_type:
+                    query = query.filter(OperationRecord.operation_type == op_type.value)
+                if repo_id:
+                    query = query.filter(OperationRecord.repository_id == repo_id)
+
+                db_records = query.all()
+                operations = []
+                for rec in db_records:
+                    op = Operation(
+                        operation_id=rec.id,
+                        operation_type=OperationType(rec.operation_type),
+                        repository_id=rec.repository_id,
+                        repository_name=rec.repository_name,
+                        branch_name=rec.branch_name,
+                        user_name=rec.user_name,
+                        status=rec.status,
+                        details=rec.details or {},
+                        result=rec.result,
+                        error=rec.error,
+                        started_at=rec.started_at,
+                        completed_at=rec.completed_at,
+                        # duration_seconds is a computed property, not a field
+                        created_at=rec.created_at or rec.started_at,
+                        parent_session_id=rec.parent_session_id,
+                    )
+                    operations.append(op)
+                return operations
+        except Exception as e:
+            logger.error(f"[TRACKER-DB] Failed to load active operations: {e}")
+            return []
 
     def get_all(
         self,
@@ -617,17 +835,38 @@ class OperationTracker:
         with self._store_lock:
             return len(self._subscribers.get(operation_id, []))
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Database Persistence Methods
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @contextmanager
+    def _db_session(self) -> Generator[Session, None, None]:
+        """Context manager for database operations with auto-commit/rollback."""
+        from turbowrap.db.session import get_session_local
+
+        SessionLocal = get_session_local()
+        db = SessionLocal()
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def _get_db_operation(self, db: Session, operation_id: str) -> Any:
+        """Get DBOperation by ID. Returns None if not found."""
+        from turbowrap.db.models import Operation as DBOperation
+
+        return db.query(DBOperation).filter(DBOperation.id == operation_id).first()
+
     def _persist_register(self, operation: Operation) -> None:
         """Persist a new operation to database."""
-        import traceback
-
         try:
             from turbowrap.db.models import Operation as DBOperation
-            from turbowrap.db.session import get_session_local
 
-            SessionLocal = get_session_local()
-            db = SessionLocal()
-            try:
+            with self._db_session() as db:
                 db_op = DBOperation(
                     id=operation.operation_id,
                     operation_type=operation.operation_type.value,
@@ -641,16 +880,7 @@ class OperationTracker:
                     started_at=operation.created_at,
                 )
                 db.add(db_op)
-                db.commit()
-                logger.info(f"[TRACKER-DB] Persisted operation: {operation.operation_id}")
-            except Exception as db_error:
-                db.rollback()
-                logger.error(
-                    f"[TRACKER-DB] DB error persisting operation {operation.operation_id}: "
-                    f"{db_error}\n{traceback.format_exc()}"
-                )
-            finally:
-                db.close()
+            logger.info(f"[TRACKER-DB] Persisted operation: {operation.operation_id}")
         except Exception as e:
             logger.error(
                 f"[TRACKER-DB] Failed to persist operation {operation.operation_id}: "
@@ -659,130 +889,76 @@ class OperationTracker:
 
     def _persist_update(self, operation_id: str, updates: dict[str, Any]) -> None:
         """Update operation in database."""
-        import traceback
-
         try:
-            from turbowrap.db.models import Operation as DBOperation
-            from turbowrap.db.session import get_session_local
-
-            SessionLocal = get_session_local()
-            db = SessionLocal()
-            try:
-                db_op = db.query(DBOperation).filter(DBOperation.id == operation_id).first()
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation_id)
                 if db_op:
                     for key, value in updates.items():
                         if hasattr(db_op, key):
                             setattr(db_op, key, value)
-                    db.commit()
                     logger.debug(f"[TRACKER-DB] Updated operation: {operation_id[:8]}")
                 else:
                     logger.warning(
                         f"[TRACKER-DB] Update failed - operation not found in DB: {operation_id}"
                     )
-            except Exception as db_error:
-                db.rollback()
-                logger.error(f"[TRACKER-DB] DB error updating {operation_id}: {db_error}")
-            finally:
-                db.close()
         except Exception as e:
             logger.error(
-                f"[TRACKER-DB] Failed to update operation {operation_id}: {e}\n{traceback.format_exc()}"
+                f"[TRACKER-DB] Failed to update operation {operation_id}: "
+                f"{e}\n{traceback.format_exc()}"
             )
 
     def _persist_complete(self, operation: Operation) -> None:
         """Mark operation as completed in database."""
-        import traceback
-
         try:
-            from turbowrap.db.models import Operation as DBOperation
-            from turbowrap.db.session import get_session_local
-
-            SessionLocal = get_session_local()
-            db = SessionLocal()
-            try:
-                db_op = (
-                    db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
-                )
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation.operation_id)
                 if db_op:
                     db_op.status = "completed"  # type: ignore[assignment]
                     db_op.completed_at = operation.completed_at  # type: ignore[assignment]
                     db_op.duration_seconds = operation.duration_seconds  # type: ignore[assignment]
                     db_op.result = operation.result  # type: ignore[assignment]
-                    db.commit()
                     logger.info(f"[TRACKER-DB] Completed operation in DB: {operation.operation_id}")
                 else:
                     logger.error(
-                        f"[TRACKER-DB] Complete failed - operation not found in DB: {operation.operation_id}"
+                        f"[TRACKER-DB] Complete failed - operation not found: {operation.operation_id}"
                     )
-            except Exception as db_error:
-                db.rollback()
-                logger.error(
-                    f"[TRACKER-DB] DB error completing {operation.operation_id}: {db_error}"
-                )
-            finally:
-                db.close()
         except Exception as e:
             logger.error(
-                f"[TRACKER-DB] Failed to complete operation {operation.operation_id} in DB: "
+                f"[TRACKER-DB] Failed to complete operation {operation.operation_id}: "
                 f"{e}\n{traceback.format_exc()}"
             )
 
     def _persist_fail(self, operation: Operation) -> None:
         """Mark operation as failed in database."""
-        import traceback
-
         try:
-            from turbowrap.db.models import Operation as DBOperation
-            from turbowrap.db.session import get_session_local
-
-            SessionLocal = get_session_local()
-            db = SessionLocal()
-            try:
-                db_op = (
-                    db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
-                )
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation.operation_id)
                 if db_op:
                     db_op.status = "failed"  # type: ignore[assignment]
                     db_op.completed_at = operation.completed_at  # type: ignore[assignment]
                     db_op.duration_seconds = operation.duration_seconds  # type: ignore[assignment]
                     db_op.error = operation.error  # type: ignore[assignment]
-                    db.commit()
                     logger.info(f"[TRACKER-DB] Failed operation in DB: {operation.operation_id}")
                 else:
                     logger.error(
-                        f"[TRACKER-DB] Fail update failed - operation not found in DB: {operation.operation_id}"
+                        f"[TRACKER-DB] Fail update failed - operation not found: {operation.operation_id}"
                     )
-            except Exception as db_error:
-                db.rollback()
-                logger.error(f"[TRACKER-DB] DB error failing {operation.operation_id}: {db_error}")
-            finally:
-                db.close()
         except Exception as e:
             logger.error(
-                f"[TRACKER-DB] Failed to mark operation {operation.operation_id} as failed in DB: "
+                f"[TRACKER-DB] Failed to mark operation {operation.operation_id} as failed: "
                 f"{e}\n{traceback.format_exc()}"
             )
 
     def _persist_cancel(self, operation: Operation) -> None:
         """Mark operation as cancelled in database."""
         try:
-            from turbowrap.db.models import Operation as DBOperation
-            from turbowrap.db.session import get_session_local
-
-            SessionLocal = get_session_local()
-            db = SessionLocal()
-            try:
-                db_op = (
-                    db.query(DBOperation).filter(DBOperation.id == operation.operation_id).first()
-                )
+            with self._db_session() as db:
+                db_op = self._get_db_operation(db, operation.operation_id)
                 if db_op:
                     db_op.status = "cancelled"  # type: ignore[assignment]
                     db_op.completed_at = operation.completed_at  # type: ignore[assignment]
                     db_op.duration_seconds = operation.duration_seconds  # type: ignore[assignment]
-                    db.commit()
                     logger.debug(f"[TRACKER-DB] Cancelled operation: {operation.operation_id[:8]}")
-            finally:
-                db.close()
         except Exception as e:
             logger.warning(f"[TRACKER-DB] Failed to cancel operation in DB: {e}")
 

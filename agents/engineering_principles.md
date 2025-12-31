@@ -12,18 +12,18 @@ A philosophy guide for developers and reviewers. These principles are stack-agno
 
 ## TurboWrap Agent System
 
-TurboWrap è un sistema di code review multi-agent. Ogni agent ha un ruolo specifico e insieme forniscono una review completa.
+TurboWrap is a multi-agent code review system. Each agent has a specific role and together they provide a complete review.
 
 ### Agent Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         IL REVISORE AGENTS                               │
+│                         REVIEWER AGENTS                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                        ORCHESTRATOR                              │    │
-│  │            Coordina il processo di review completo               │    │
+│  │            Coordinates the complete review process               │    │
 │  └───────────────────────────┬─────────────────────────────────────┘    │
 │                              │                                           │
 │         ┌────────────────────┼────────────────────┐                     │
@@ -46,65 +46,65 @@ TurboWrap è un sistema di code review multi-agent. Ogni agent ha un ruolo speci
 
 ---
 
-### Development Agents (Scrittura Codice)
+### Development Agents (Code Writing)
 
-Usali quando devi **scrivere** o **implementare** codice.
+Use them when you need to **write** or **implement** code.
 
 #### `dev_be` - Backend Developer
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Implementare endpoint, query DB, caching, Lambda functions |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Implement endpoints, DB queries, caching, Lambda functions |
 | **Stack** | Python, FastAPI, MySQL, Redis, AWS |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🟢 Green |
 
-**Esempi di utilizzo:**
-- "Crea un endpoint per fetchare i report per site ID"
-- "Come configuro il caching Redis per le preferenze utente?"
-- "La query SQL non restituisce risultati, aiutami a debuggare"
+**Usage examples:**
+- "Create an endpoint to fetch reports by site ID"
+- "How do I configure Redis caching for user preferences?"
+- "The SQL query returns no results, help me debug"
 
 #### `dev_fe` - Frontend Developer
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Creare componenti OASI, chart, feature flags, theme variants |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Create OASI components, charts, feature flags, theme variants |
 | **Stack** | React, Next.js, TypeScript, Tailwind Variants |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🔴 Red |
 
-**Esempi di utilizzo:**
-- "Crea un chart component per la sezione monitoring"
-- "Aggiungi supporto dark/light mode a questa card"
-- "Implementa lazy loading per questo componente pesante"
+**Usage examples:**
+- "Create a chart component for the monitoring section"
+- "Add dark/light mode support to this card"
+- "Implement lazy loading for this heavy component"
 
 ---
 
 ### Review Agents (Code Review)
 
-Usali per **verificare** codice esistente o appena scritto.
+Use them to **verify** existing or newly written code.
 
 #### `reviewer_be` - Backend Reviewer
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Review codice Python/FastAPI |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Review Python/FastAPI code |
 | **Focus** | Security, performance, architecture, patterns |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🟢 Green |
 
-**Cosa controlla:**
-- SQL injection, secrets hardcoded
+**What it checks:**
+- SQL injection, hardcoded secrets
 - N+1 queries, missing indexes
 - Layer separation (apis → services → repositories)
 - Type annotations, error handling
 
 #### `reviewer_fe_architecture` - Frontend Architecture Reviewer
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Verificare struttura e pattern dei componenti React |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Verify structure and patterns of React components |
 | **Focus** | Component structure, hook ordering, folder organization |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🟠 Orange |
 
-**Cosa controlla:**
+**What it checks:**
 - Hook ordering (9-step order)
 - Props in `.props.ts` files
 - Two-level chart architecture
@@ -113,15 +113,15 @@ Usali per **verificare** codice esistente o appena scritto.
 - i18n usage
 
 #### `reviewer_fe_quality` - Frontend Quality Reviewer
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Verificare qualità, performance e sicurezza del codice frontend |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Verify quality, performance and security of frontend code |
 | **Focus** | TypeScript strictness, performance, security, a11y |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🟠 Orange |
 
-**Cosa controlla:**
-- Zero tolerance per `any`
+**What it checks:**
+- Zero tolerance for `any`
 - `useMemo`/`useCallback` usage
 - Memory leaks in useEffect
 - XSS vulnerabilities
@@ -133,58 +133,58 @@ Usali per **verificare** codice esistente o appena scritto.
 ### Analysis Agents
 
 #### `analyst_func` - Functional Analyst
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Verificare correttezza funzionale e business logic |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Verify functional correctness and business logic |
 | **Focus** | Requirements, edge cases, user flows, data integrity |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🟣 Purple |
 
-**Cosa controlla:**
-- Requisiti implementati correttamente?
-- Edge cases gestiti?
-- User flows funzionano?
-- Calcoli/formule corretti?
-- API contract rispettato?
+**What it checks:**
+- Are requirements implemented correctly?
+- Are edge cases handled?
+- Do user flows work?
+- Are calculations/formulas correct?
+- Is the API contract respected?
 
 ---
 
 ### Orchestration
 
 #### `orchestrator` - Review Orchestrator
-| Attributo | Valore |
-|-----------|--------|
-| **Quando usarlo** | Automaticamente per review complete di PR |
-| **Focus** | Coordinamento, aggregazione risultati, report unificato |
+| Attribute | Value |
+|-----------|-------|
+| **When to use** | Automatically for complete PR reviews |
+| **Focus** | Coordination, results aggregation, unified report |
 | **Model** | Claude Opus 4.5 |
 | **Color** | 🔵 Blue |
 
 **Workflow:**
-1. Detecta tipo repository (BE/FE/Full-stack)
-2. Lancia reviewer appropriati in parallelo
-3. Applica Challenger Pattern (Gemini valida review)
-4. Aggrega risultati e deduplica issues
-5. Genera report unificato
+1. Detects repository type (BE/FE/Full-stack)
+2. Launches appropriate reviewers in parallel
+3. Applies Challenger Pattern (Gemini validates review)
+4. Aggregates results and deduplicates issues
+5. Generates unified report
 
 ---
 
-### Decision Matrix: Quale Agent Usare?
+### Decision Matrix: Which Agent to Use?
 
 | Scenario | Agent(s) |
 |----------|----------|
-| "Devo implementare un endpoint" | `dev_be` |
-| "Devo creare un componente React" | `dev_fe` |
-| "Review del mio codice Python" | `reviewer_be` |
-| "Review del mio componente React" | `reviewer_fe_architecture` + `reviewer_fe_quality` |
-| "Il codice fa quello che dovrebbe?" | `analyst_func` |
-| "Review completa di una PR" | `orchestrator` (lancia tutti) |
-| "Ho un bug nella business logic" | `analyst_func` |
-| "Ho un memory leak" | `reviewer_fe_quality` |
-| "Dove metto i props?" | `reviewer_fe_architecture` |
+| "I need to implement an endpoint" | `dev_be` |
+| "I need to create a React component" | `dev_fe` |
+| "Review my Python code" | `reviewer_be` |
+| "Review my React component" | `reviewer_fe_architecture` + `reviewer_fe_quality` |
+| "Does the code do what it should?" | `analyst_func` |
+| "Complete review of a PR" | `orchestrator` (launches all) |
+| "I have a bug in business logic" | `analyst_func` |
+| "I have a memory leak" | `reviewer_fe_quality` |
+| "Where do I put props?" | `reviewer_fe_architecture` |
 
 ---
 
-### Confronto: Architecture vs Quality vs Analyst
+### Comparison: Architecture vs Quality vs Analyst
 
 ```
                     FRONTEND REVIEW
@@ -195,14 +195,14 @@ Usali per **verificare** codice esistente o appena scritto.
 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
 │  ARCHITECTURE │ │    QUALITY    │ │   ANALYST     │
 ├───────────────┤ ├───────────────┤ ├───────────────┤
-│ COME è        │ │ QUANTO BENE   │ │ COSA fa       │
-│ organizzato   │ │ è scritto     │ │ il codice     │
+│ HOW it's      │ │ HOW WELL      │ │ WHAT the      │
+│ organized     │ │ it's written  │ │ code does     │
 ├───────────────┤ ├───────────────┤ ├───────────────┤
-│ • Hook order  │ │ • TypeScript  │ │ • Requisiti   │
+│ • Hook order  │ │ • TypeScript  │ │ • Requirements│
 │ • Folder      │ │ • Performance │ │ • Edge cases  │
 │   structure   │ │ • Security    │ │ • User flows  │
-│ • Props files │ │ • Memory      │ │ • Calcoli     │
-│ • Patterns    │ │ • A11y        │ │ • Integrazioni│
+│ • Props files │ │ • Memory      │ │ • Calculations│
+│ • Patterns    │ │ • A11y        │ │ • Integrations│
 └───────────────┘ └───────────────┘ └───────────────┘
 ```
 
@@ -210,14 +210,14 @@ Usali per **verificare** codice esistente o appena scritto.
 
 ### Challenger Pattern
 
-TurboWrap usa un sistema dual-reviewer per garantire qualità:
+TurboWrap uses a dual-reviewer system to ensure quality:
 
 ```
 REVIEWER (Claude Opus)  ──►  CHALLENGER (Gemini)
         │                           │
-        │    Review iniziale        │
+        │    Initial review         │
         ├──────────────────────────►│
-        │                           │ Valuta completezza
+        │                           │ Evaluates completeness
         │                           │ Score < 99%?
         │◄──────────────────────────┤
         │    Feedback + Score       │

@@ -54,7 +54,7 @@ class TodoManager:
     def s3_client(self) -> Any:
         """Lazy-load S3 client."""
         if self._s3_client is None:
-            self._s3_client = get_s3_client(region=self.settings.aws.region)
+            self._s3_client = get_s3_client(region=self.settings.thinking.s3_region)
         return self._s3_client
 
     @property

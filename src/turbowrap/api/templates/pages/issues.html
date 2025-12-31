@@ -863,6 +863,27 @@
                         </div>
                     </template>
                 </div>
+
+                <!-- Step Indicator (for step-by-step execution) -->
+                <div x-show="fixProgress.totalSteps > 0" class="mt-3 p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium text-indigo-700 dark:text-indigo-300">
+                                Step <span x-text="fixProgress.currentStep"></span>/<span x-text="fixProgress.totalSteps"></span>
+                            </span>
+                            <span x-show="fixProgress.stepReason" class="text-indigo-600 dark:text-indigo-400 text-xs" x-text="fixProgress.stepReason"></span>
+                        </div>
+                        <!-- Progress dots -->
+                        <div class="flex gap-1">
+                            <template x-for="step in fixProgress.totalSteps" :key="step">
+                                <div class="w-2 h-2 rounded-full"
+                                     :class="step < fixProgress.currentStep ? 'bg-green-500' :
+                                             step === fixProgress.currentStep ? 'bg-indigo-500 animate-pulse' :
+                                             'bg-gray-300 dark:bg-gray-600'"></div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Billing Error Banner -->
@@ -1084,8 +1105,40 @@
                     </div>
                 </div>
 
-                <!-- Questions -->
-                <div x-show="!clarification.loading && clarification.questions.length > 0" class="space-y-4">
+                <!-- Questions Grouped by Issue -->
+                <div x-show="!clarification.loading && clarification.questionsByIssue.length > 0" class="space-y-6">
+                    <template x-for="group in clarification.questionsByIssue" :key="group.issue_code">
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                            <!-- Issue Header -->
+                            <div class="px-4 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="group.issue_code"></span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400" x-text="group.questions.length + ' domanda/e'"></span>
+                                </div>
+                            </div>
+                            <!-- Questions for this issue -->
+                            <div class="p-4 space-y-4">
+                                <template x-for="(q, idx) in group.questions" :key="q.id">
+                                    <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <div class="flex items-start gap-2 mb-2">
+                                            <span class="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-xs font-medium flex items-center justify-center shrink-0" x-text="idx + 1"></span>
+                                            <p class="font-medium text-gray-900 dark:text-gray-100 text-sm" x-text="q.question"></p>
+                                        </div>
+                                        <p x-show="q.context" class="text-xs text-gray-500 dark:text-gray-400 mb-2 ml-7" x-text="q.context"></p>
+                                        <textarea
+                                            x-model="clarification.answers[q.id]"
+                                            rows="2"
+                                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 resize-none ml-7 text-sm"
+                                            placeholder="La tua risposta..."></textarea>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Legacy: Questions flat list (fallback) -->
+                <div x-show="!clarification.loading && clarification.questions.length > 0 && clarification.questionsByIssue.length === 0" class="space-y-4">
                     <template x-for="(q, idx) in clarification.questions" :key="q.id">
                         <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
                             <div class="flex items-start gap-2 mb-2">
@@ -1103,7 +1156,7 @@
                 </div>
 
                 <!-- Ready to fix message (no questions) -->
-                <div x-show="!clarification.loading && clarification.questions.length === 0 && clarification.readyToFix" class="text-center py-8">
+                <div x-show="!clarification.loading && !hasQuestions() && clarification.readyToFix" class="text-center py-8">
                     <svg class="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
@@ -1122,7 +1175,7 @@
                         Annulla
                     </button>
                     <button
-                        x-show="clarification.questions.length > 0"
+                        x-show="hasQuestions()"
                         @click="submitClarificationAnswers()"
                         :disabled="clarification.loading"
                         class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
@@ -1132,6 +1185,86 @@
                         Invia Risposte
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- PLAN PREVIEW MODAL -->
+    <!-- ============================================== -->
+    <div x-show="planPreview.show" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-lg">Piano di Esecuzione</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        <span x-text="planPreview.totalIssues"></span> issues in <span x-text="planPreview.totalSteps"></span> step
+                    </p>
+                </div>
+                <button @click="cancelPlanPreview()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="p-4 overflow-y-auto flex-1">
+                <!-- Loading state -->
+                <div x-show="planPreview.loading" class="flex flex-col items-center py-8">
+                    <svg class="w-12 h-12 text-emerald-500 animate-spin mb-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-500 dark:text-gray-400">Generazione piano in corso...</p>
+                </div>
+
+                <!-- Execution Steps -->
+                <div x-show="!planPreview.loading" class="space-y-4">
+                    <template x-for="step in planPreview.executionSteps" :key="step.step">
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                            <!-- Step Header -->
+                            <div class="px-4 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-sm flex items-center justify-center" x-text="step.step"></span>
+                                    <span class="text-sm font-medium" x-text="step.issues.length + ' issue' + (step.issues.length > 1 ? 's' : '')"></span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 italic" x-text="'(in parallelo)'"></span>
+                                </div>
+                            </div>
+                            <!-- Issues in this step -->
+                            <div class="p-3 space-y-2">
+                                <template x-for="issue in step.issues" :key="issue.code">
+                                    <div class="flex items-center gap-2 text-sm">
+                                        <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="issue.code"></span>
+                                        <span class="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded" x-text="issue.agent_type"></span>
+                                    </div>
+                                </template>
+                                <!-- Step reason -->
+                                <p x-show="step.reason" class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic" x-text="step.reason"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div x-show="!planPreview.loading" class="p-4 border-t dark:border-gray-700 flex justify-between items-center shrink-0">
+                <button @click="cancelPlanPreview()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    Annulla
+                </button>
+                <button @click="executePlan()" class="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Esegui Piano
+                </button>
             </div>
         </div>
     </div>
@@ -1379,18 +1512,32 @@ function issuesApp() {
             showStreamingDetails: false,
             lastScore: null,
             billingError: null,
-            scopeViolation: { show: false, sessionId: null, dirs: [], responding: false }
+            scopeViolation: { show: false, sessionId: null, dirs: [], responding: false },
+            // Step-by-step execution tracking
+            currentStep: 0,
+            totalSteps: 0,
+            stepReason: ''
         },
         // Pre-fix clarification state
         clarification: {
             show: false,
             loading: false,
             sessionId: null,
-            questions: [],
+            questions: [],           // Legacy flat list
+            questionsByIssue: [],    // NEW: Grouped by issue [{issue_code, questions: [...]}]
             answers: {},
             message: '',
             readyToFix: false,
             pendingRequest: null  // Stores the pending fix request details
+        },
+        // Execution plan preview state
+        planPreview: {
+            show: false,
+            loading: false,
+            masterTodoPath: null,
+            executionSteps: [],      // [{step: 1, issues: [...], reason: "..."}]
+            totalIssues: 0,
+            totalSteps: 0
         },
         _streamingBuffer: '',
         _updateScheduled: false,
@@ -1619,27 +1766,36 @@ function issuesApp() {
                 this.clarification.sessionId = data.session_id;
                 this.clarification.message = data.message;
                 this.clarification.questions = data.questions || [];
-                this.clarification.readyToFix = data.ready_to_fix;
+                this.clarification.questionsByIssue = data.questions_by_issue || [];
+                this.clarification.readyToFix = data.ready_to_fix || data.ready_to_plan;
 
-                // Reset answers for new questions
+                // Reset answers for new questions (support both flat and grouped)
                 this.clarification.answers = {};
-                data.questions?.forEach(q => {
-                    this.clarification.answers[q.id] = '';
-                });
+                if (this.clarification.questionsByIssue.length > 0) {
+                    // Grouped questions by issue
+                    this.clarification.questionsByIssue.forEach(group => {
+                        group.questions?.forEach(q => {
+                            this.clarification.answers[q.id] = '';
+                        });
+                    });
+                } else {
+                    // Legacy flat list
+                    data.questions?.forEach(q => {
+                        this.clarification.answers[q.id] = '';
+                    });
+                }
 
-                // If ready to fix, show confirmation message then proceed
-                if (data.ready_to_fix) {
-                    this.clarification.message = '✨ OPUS has everything clear! Starting to work on your fix...';
+                // If ready to plan/fix, show plan preview then proceed
+                if (data.ready_to_fix || data.ready_to_plan) {
+                    this.clarification.message = '✨ OPUS has everything clear! Generating execution plan...';
                     this.clarification.loading = true;
 
                     // Brief pause to show the message
-                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
 
                     this.clarification.show = false;
-                    await this._startFixProcess(
-                        this.clarification.pendingRequest.firstIssue,
-                        this.clarification.pendingRequest.branchOptions
-                    );
+                    // Show plan preview instead of starting fix directly
+                    await this.createExecutionPlan();
                 }
             } catch (error) {
                 console.error('Clarification error:', error);
@@ -1653,17 +1809,36 @@ function issuesApp() {
         async submitClarificationAnswers() {
             if (this.clarification.loading) return;
 
-            // Validate all answers are provided
-            const unanswered = this.clarification.questions.filter(
-                q => !this.clarification.answers[q.id]?.trim()
-            );
-            if (unanswered.length > 0) {
+            // Validate all answers are provided (support both grouped and flat)
+            let unansweredCount = 0;
+            if (this.clarification.questionsByIssue.length > 0) {
+                // Grouped questions
+                this.clarification.questionsByIssue.forEach(group => {
+                    group.questions?.forEach(q => {
+                        if (!this.clarification.answers[q.id]?.trim()) {
+                            unansweredCount++;
+                        }
+                    });
+                });
+            } else {
+                // Legacy flat list
+                unansweredCount = this.clarification.questions.filter(
+                    q => !this.clarification.answers[q.id]?.trim()
+                ).length;
+            }
+
+            if (unansweredCount > 0) {
                 alert('Rispondi a tutte le domande prima di procedere.');
                 return;
             }
 
             // Continue clarification with answers
             await this._startClarification(this.clarification.pendingRequest.firstIssue);
+        },
+
+        // Helper to check if there are any questions (grouped or flat)
+        hasQuestions() {
+            return this.clarification.questionsByIssue.length > 0 || this.clarification.questions.length > 0;
         },
 
         // Skip clarification and proceed directly to fix
@@ -1680,12 +1855,67 @@ function issuesApp() {
             this.clarification.show = false;
             this.clarification.sessionId = null;
             this.clarification.questions = [];
+            this.clarification.questionsByIssue = [];
             this.clarification.answers = {};
             this.clarification.message = '';
             this.clarification.pendingRequest = null;
         },
 
-        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false) {
+        // Plan Preview functions
+        cancelPlanPreview() {
+            this.planPreview.show = false;
+            this.planPreview.loading = false;
+            this.planPreview.masterTodoPath = null;
+            this.planPreview.executionSteps = [];
+            this.planPreview.totalIssues = 0;
+            this.planPreview.totalSteps = 0;
+        },
+
+        async createExecutionPlan() {
+            // Called after clarification is ready_to_plan
+            this.planPreview.show = true;
+            this.planPreview.loading = true;
+
+            try {
+                const response = await fetch('/api/fix/plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: this.filters.repository_id,
+                        issue_ids: this.selectedIssues,
+                        clarify_session_id: this.clarification.sessionId
+                    })
+                });
+
+                if (!response.ok) throw new Error('Failed to create plan');
+
+                const data = await response.json();
+                this.planPreview.masterTodoPath = data.master_todo_path;
+                this.planPreview.executionSteps = data.execution_steps || [];
+                this.planPreview.totalIssues = data.issue_count;
+                this.planPreview.totalSteps = data.step_count;
+                this.planPreview.loading = false;
+
+            } catch (error) {
+                console.error('Plan creation error:', error);
+                this.planPreview.loading = false;
+                // Fallback: proceed without plan
+                this.cancelPlanPreview();
+                this._startFixProcess(this.clarification.pendingRequest?.firstIssue, this.clarification.pendingRequest?.branchOptions);
+            }
+        },
+
+        async executePlan() {
+            // Execute the planned fix
+            this.planPreview.show = false;
+            const branchOptions = this.clarification.pendingRequest?.branchOptions;
+            const firstIssue = this.clarification.pendingRequest?.firstIssue;
+
+            // Pass master_todo_path to the fix process
+            await this._startFixProcess(firstIssue, branchOptions, false, this.planPreview.masterTodoPath);
+        },
+
+        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false, masterTodoPath = null) {
             this.isFixing = true;
             this.showFixModal = true;
 
@@ -1699,7 +1929,8 @@ function issuesApp() {
                 current: 0, total: this.selectedIssues.length, currentIssue: null, logs: [], status: 'running',
                 branchName: branchOptions?.existing_branch_name || null, issueStates: issueStates,
                 fixingIssueIds: [...this.selectedIssues], streamingContent: '', showStreamingDetails: false,
-                lastScore: null, billingError: null, scopeViolation: { show: false, sessionId: null, dirs: [], responding: false }
+                lastScore: null, billingError: null, scopeViolation: { show: false, sessionId: null, dirs: [], responding: false },
+                currentStep: 0, totalSteps: 0, stepReason: ''
             };
             this._streamingBuffer = '';
             this._eventBuffer = [];
@@ -1717,6 +1948,13 @@ function issuesApp() {
                 if (branchOptions) {
                     requestBody.use_existing_branch = branchOptions.use_existing_branch || false;
                     requestBody.existing_branch_name = branchOptions.existing_branch_name || null;
+                }
+                // Add master_todo_path for step-by-step execution
+                if (masterTodoPath) {
+                    requestBody.master_todo_path = masterTodoPath;
+                    // Also set step info in fixProgress for UI
+                    this.fixProgress.totalSteps = this.planPreview.totalSteps;
+                    this.fixProgress.currentStep = 1;
                 }
 
                 const response = await fetch('/api/fix/start', {
@@ -1792,6 +2030,16 @@ function issuesApp() {
         _processEvent(event) {
             const eventType = event.type || event.event;
             if (eventType === 'fix_session_started' && event.branch_name) this.fixProgress.branchName = event.branch_name;
+            // Step tracking events (from step-by-step execution)
+            if (eventType === 'fix_step_started') {
+                this.fixProgress.currentStep = event.current_step || 0;
+                this.fixProgress.totalSteps = event.total_steps || 0;
+                this.fixProgress.stepReason = event.step_reason || '';
+            }
+            if (eventType === 'fix_step_completed') {
+                // Move visual indicator to next step (current is now done)
+                this.fixProgress.currentStep = (event.current_step || 0) + 1;
+            }
             if (eventType === 'fix_challenger_result' && event.message) {
                 const batchScoreMatch = event.message.match(/score:\s*(\d+)/);
                 if (batchScoreMatch) this.fixProgress.lastScore = parseInt(batchScoreMatch[1]);
@@ -1851,7 +2099,7 @@ function issuesApp() {
         },
 
         getEventIcon(type) {
-            const icons = { 'fix_session_started': '&#128640;', 'fix_issue_generating': '&#128203;', 'fix_issue_streaming': '&#128295;', 'fix_challenger_evaluating': '&#129514;', 'fix_challenger_result': '&#128202;', 'fix_challenger_approved': '&#9989;', 'fix_batch_committed': '&#128190;', 'fix_batch_failed': '&#9888;', 'fix_regenerating': '&#128260;', 'fix_session_completed': '&#127881;', 'fix_session_error': '&#10060;', 'fix_billing_error': '&#128179;' };
+            const icons = { 'fix_session_started': '&#128640;', 'fix_step_started': '&#127937;', 'fix_step_completed': '&#9989;', 'fix_issue_generating': '&#128203;', 'fix_issue_streaming': '&#128295;', 'fix_challenger_evaluating': '&#129514;', 'fix_challenger_result': '&#128202;', 'fix_challenger_approved': '&#9989;', 'fix_batch_committed': '&#128190;', 'fix_batch_failed': '&#9888;', 'fix_regenerating': '&#128260;', 'fix_session_completed': '&#127881;', 'fix_session_error': '&#10060;', 'fix_billing_error': '&#128179;' };
             return icons[type] || '&#128221;';
         },
 
@@ -1859,6 +2107,7 @@ function issuesApp() {
             if (type === 'fix_billing_error') return 'text-orange-500';
             if (type.includes('error') || type.includes('failed')) return 'text-red-500';
             if (type.includes('approved') || type.includes('completed')) return 'text-green-500';
+            if (type.includes('step_')) return 'text-indigo-500';
             if (type.includes('challenger')) return 'text-purple-500';
             return 'text-gray-700 dark:text-gray-300';
         },

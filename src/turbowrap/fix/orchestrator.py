@@ -528,7 +528,7 @@ class FixOrchestrator:
                 serial_groups.append(
                     {
                         "file": file_path,
-                        "description": "Issues su STESSO FILE - lancia UNO alla volta",
+                        "description": "Issues on SAME FILE - run ONE at a time",
                         "issues": [
                             {
                                 "code": str(issue.issue_code),
@@ -551,7 +551,7 @@ class FixOrchestrator:
             "branch_name": branch_name,
             "repo_path": str(self.repo_path),
             "parallel_group": {
-                "description": "Issues su FILE DIVERSI - lancia TUTTI insieme in UN messaggio",
+                "description": "Issues on DIFFERENT FILES - run ALL together in ONE message",
                 "issues": [
                     {
                         "code": str(issue.issue_code),
@@ -1072,7 +1072,7 @@ class FixOrchestrator:
                                     session_id=session_id,
                                     error=str(e),
                                     message=f"💳 BILLING ERROR: {e}\n\n"
-                                    f"Ricarica il credito su console.anthropic.com",
+                                    f"Please add credits at console.anthropic.com",
                                 )
                             )
                             raise
@@ -2206,13 +2206,14 @@ FAILED_ISSUES: <comma-separated issue codes, or "none">
 Read the TODO list at: `{todo_list_path}`
 
 This JSON file contains:
-- `branch_name`: Git branch to create (via Task tool with haiku model)
-- `groups`: Issue groups with parallel/serial execution order
+- `branch_name`: Git branch to work on
+- `parallel_group`: Issues on DIFFERENT files (run ALL together in ONE message)
+- `serial_groups`: Issues on SAME file (run ONE at a time, after parallel)
 - Issue details for each fix
 
 **Follow the TODO list exactly:**
-1. First, create the branch using Task tool with model=haiku
-2. Then process groups in order (parallel groups together, serial groups one by one)
+1. Process `parallel_group` first - all issues can run in parallel
+2. Then process each `serial_groups` item sequentially
 3. Return aggregated JSON with results for each issue
 
 ---

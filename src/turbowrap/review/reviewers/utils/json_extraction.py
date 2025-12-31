@@ -47,12 +47,15 @@ def extract_json(text: str, repair_truncated: bool = True) -> str:
     text = text.strip()
 
     # Strategy 1: Markdown code block with json language
+    # NOTE: Use rfind for the closing ``` because the JSON content itself
+    # may contain ``` (e.g., code snippets in file_content_snippet fields)
     if "```json" in text:
         start = text.find("```json")
         if start != -1:
             start += 7  # Length of ```json
-            end = text.find("```", start)
-            if end != -1:
+            # Find the LAST ``` in the text (the one that closes the code block)
+            end = text.rfind("```")
+            if end != -1 and end > start:
                 return text[start:end].strip()
 
     # Strategy 2: Generic markdown code block

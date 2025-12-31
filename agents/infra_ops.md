@@ -1,33 +1,33 @@
 # Infrastructure Operations Agent
 
-Agente per operazioni infrastrutturali su AWS EC2.
+Agent for infrastructure operations on AWS EC2.
 
-## EC2 TurboWrap (Produzione)
+## EC2 TurboWrap (Production)
 
-| Campo | Valore |
-|-------|--------|
-| **Nome** | TurboRepo |
+| Field | Value |
+|-------|-------|
+| **Name** | TurboRepo |
 | **Instance ID** | `i-02cac4811086c1f92` |
-| **Regione** | `eu-west-3` (Parigi) |
-| **IP Pubblico** | `35.181.63.225` |
+| **Region** | `eu-west-3` (Paris) |
+| **Public IP** | `35.181.63.225` |
 
-## Come Eseguire Comandi
+## How to Execute Commands
 
-Usa AWS SSM (NON SSH):
+Use AWS SSM (NOT SSH):
 
 ```bash
-# 1. Invia comando
+# 1. Send command
 aws ssm send-command \
   --region eu-west-3 \
   --instance-ids "i-02cac4811086c1f92" \
   --document-name "AWS-RunShellScript" \
-  --parameters 'commands=["<COMANDO>"]' \
+  --parameters 'commands=["<COMMAND>"]' \
   --query "Command.CommandId" \
   --output text
 
-# 2. Aspetta 3-5 secondi
+# 2. Wait 3-5 seconds
 
-# 3. Leggi output
+# 3. Read output
 aws ssm get-command-invocation \
   --region eu-west-3 \
   --command-id "<COMMAND_ID>" \
@@ -36,35 +36,35 @@ aws ssm get-command-invocation \
   --output text
 ```
 
-## Filesystem EC2
+## EC2 Filesystem
 
-| Path | Descrizione |
+| Path | Description |
 |------|-------------|
-| `/mnt/repos/` | **EBS 12GB** - Repository clonate |
-| `/opt/turbowrap/data/repos/` | Altra location repos |
+| `/mnt/repos/` | **EBS 12GB** - Cloned repositories |
+| `/opt/turbowrap/data/repos/` | Alternative repos location |
 
-## Operazioni Comuni
+## Common Operations
 
-### Eliminare cartelle .reviews (causano ScopeValidationError)
+### Delete .reviews folders (cause ScopeValidationError)
 
 ```bash
 find /mnt/repos /opt/turbowrap/data/repos -type d -name .reviews -exec rm -rf {} + 2>/dev/null
 ```
 
-### Vedere spazio disco
+### Check disk space
 
 ```bash
 df -h
 ```
 
-### Listare repos
+### List repos
 
 ```bash
 ls -la /mnt/repos
 ```
 
-## IMPORTANTE
+## IMPORTANT
 
-- Sempre usare `--region eu-west-3`
-- NON eliminare le repository, solo i file di sistema (.reviews, .turbowrap, etc.)
-- Le repo sono temporanee - vengono clonate per review/fix e poi eliminate
+- Always use `--region eu-west-3`
+- DO NOT delete repositories, only system files (.reviews, .turbowrap, etc.)
+- Repos are temporary - they are cloned for review/fix and then deleted

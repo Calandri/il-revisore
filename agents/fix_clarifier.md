@@ -55,7 +55,7 @@ You MUST respond with a valid JSON object only. No other text before or after.
 {
   "has_questions": false,
   "questions": [],
-  "message": "Ho analizzato le 3 issue. Tutte riguardano problemi di type safety nel modulo auth. I fix suggeriti sono chiari e posso procedere.",
+  "message": "I analyzed the 3 issues. They all concern type safety problems in the auth module. The suggested fixes are clear and I can proceed.",
   "ready_to_fix": true
 }
 ```
@@ -67,16 +67,16 @@ You MUST respond with a valid JSON object only. No other text before or after.
   "questions": [
     {
       "id": "q1",
-      "question": "L'issue FE-42 richiede di aggiungere validazione. Quale libreria di validazione preferisci? (es. Zod, Yup, native)",
-      "context": "Vedo che il progetto non ha una libreria di validazione installata"
+      "question": "Issue FE-42 requires adding validation. Which validation library do you prefer? (e.g., Zod, Yup, native)",
+      "context": "I see the project doesn't have a validation library installed"
     },
     {
       "id": "q2",
-      "question": "Per l'issue BE-15, il suggested fix dice 'ottimizzare la query'. Hai un target di performance specifico?",
-      "context": "Senza un target, potrei ottimizzare troppo o troppo poco"
+      "question": "For issue BE-15, the suggested fix says 'optimize the query'. Do you have a specific performance target?",
+      "context": "Without a target, I might over-optimize or under-optimize"
     }
   ],
-  "message": "Ho alcune domande prima di procedere. Una volta chiarite, sarò pronto per il fix.",
+  "message": "I have some questions before proceeding. Once clarified, I'll be ready for the fix.",
   "ready_to_fix": false
 }
 ```

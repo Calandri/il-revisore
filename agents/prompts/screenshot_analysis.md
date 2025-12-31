@@ -1,21 +1,21 @@
 # Screenshot Analysis Prompt
 
-Analizza questi screenshot per una issue di sviluppo.
+Analyze these screenshots for a development issue.
 
-**Contesto:**
-- **Titolo**: {title}
-- **Descrizione**: {description}
-- **Link Figma**: {figma_link}
-- **Link Sito**: {website_link}
+**Context:**
+- **Title**: {title}
+- **Description**: {description}
+- **Figma Link**: {figma_link}
+- **Website Link**: {website_link}
 
-**Analisi richiesta:**
+**Required Analysis:**
 
-Identifica e descrivi in dettaglio:
+Identify and describe in detail:
 
-1. **Componenti UI visibili**: Elenca tutti i componenti UI presenti (bottoni, form, input, dropdown, etc.)
-2. **Layout e design**: Struttura della pagina, grid system, spacing, allineamenti
-3. **User flow**: Sequenza di azioni dell'utente visibile negli screenshot
-4. **Requisiti tecnici**: Tecnologie necessarie, pattern UI da implementare
-5. **Potenziali problemi**: Edge case, accessibilità, responsive design, stati error/loading
+1. **Visible UI Components**: List all UI components present (buttons, forms, inputs, dropdowns, etc.)
+2. **Layout and Design**: Page structure, grid system, spacing, alignments
+3. **User Flow**: Sequence of user actions visible in the screenshots
+4. **Technical Requirements**: Necessary technologies, UI patterns to implement
+5. **Potential Issues**: Edge cases, accessibility, responsive design, error/loading states
 
-Fornisci un'analisi tecnica dettagliata e specifica, non generica.
+Provide a detailed and specific technical analysis, not generic.
