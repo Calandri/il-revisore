@@ -753,13 +753,16 @@ def get_branch_commits(
         return []
 
 
-def delete_branch(repo_path: Path, branch: str, force: bool = False) -> bool:
-    """Delete a local and remote branch.
+def delete_branch(
+    repo_path: Path, branch: str, force: bool = False, delete_remote: bool = True
+) -> bool:
+    """Delete a local and optionally remote branch.
 
     Args:
         repo_path: Path to the repository.
         branch: Branch name to delete.
         force: Force delete even if not fully merged.
+        delete_remote: If True, also delete the remote branch. Default True.
 
     Returns:
         True if successful, False otherwise.
@@ -776,14 +779,15 @@ def delete_branch(repo_path: Path, branch: str, force: bool = False) -> bool:
         except RuntimeError:
             pass  # Branch might not exist locally
 
-        # Delete remote branch
-        try:
-            run_git_command(repo_path, ["push", "origin", "--delete", branch])
-            logger.info(f"Deleted remote branch: {branch}")
-        except RuntimeError as e:
-            if "remote ref does not exist" not in str(e):
-                logger.warning(f"Failed to delete remote branch {branch}: {e}")
-                return False
+        # Delete remote branch (only if requested)
+        if delete_remote:
+            try:
+                run_git_command(repo_path, ["push", "origin", "--delete", branch])
+                logger.info(f"Deleted remote branch: {branch}")
+            except RuntimeError as e:
+                if "remote ref does not exist" not in str(e):
+                    logger.warning(f"Failed to delete remote branch {branch}: {e}")
+                    return False
 
         return True
 

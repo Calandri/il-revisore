@@ -210,9 +210,8 @@ function unmergedBranchesComponent() {
             const repoId = this.selectedRepoId;
             if (!repoId || branch.merging) return;
 
-            if (!confirm(`Merge '${branch.name}' into main? Questo eseguira un git merge con AI conflict resolution se necessario.`)) {
-                return;
-            }
+            const confirmed = await TurboConfirm.merge(branch.name);
+            if (!confirmed) return;
 
             branch.merging = true;
             try {
@@ -250,9 +249,15 @@ function unmergedBranchesComponent() {
             const repoId = this.selectedRepoId;
             if (!repoId || branch.marking) return;
 
-            if (!confirm(`Confermi che '${branch.name}' e stato gia mergiato manualmente? Le issue associate verranno segnate come RESOLVED.`)) {
-                return;
-            }
+            const confirmed = await TurboConfirm.show({
+                type: 'info',
+                title: 'Segna come mergiato',
+                message: `Confermi che <code class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">${branch.name}</code> e stato gia mergiato manualmente?`,
+                details: `<svg class="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Le issue associate verranno segnate come <strong>MERGED</strong></span>`,
+                confirmLabel: 'Conferma',
+                cancelLabel: 'Annulla'
+            });
+            if (!confirmed) return;
 
             branch.marking = true;
             try {
@@ -278,23 +283,44 @@ function unmergedBranchesComponent() {
             }
         },
 
-        async deleteBranch(branch) {
+        async deleteBranch(branch, deleteRemote = null) {
             const repoId = this.selectedRepoId;
             if (!repoId || branch.deleting) return;
 
-            if (!confirm(`Eliminare il branch '${branch.name}'? Le issue associate NON verranno modificate.`)) {
-                return;
+            // If deleteRemote not specified, show confirmation modal with options
+            if (deleteRemote === null) {
+                const confirmed = await TurboConfirm.show({
+                    type: 'danger',
+                    title: 'Elimina Branch',
+                    message: `Eliminare il branch <code class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">${branch.name}</code>?`,
+                    details: `<svg class="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><span>Le issue associate <strong>NON</strong> verranno modificate</span>`,
+                    confirmLabel: 'Solo locale',
+                    cancelLabel: 'Annulla'
+                });
+                if (!confirmed) return;
+
+                // Ask if also delete remote
+                const deleteRemoteConfirmed = await TurboConfirm.show({
+                    type: 'warning',
+                    title: 'Eliminare anche da remoto?',
+                    message: `Vuoi eliminare <code class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">${branch.name}</code> anche dal repository remoto (origin)?`,
+                    details: `<svg class="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg><span>Questo eliminera il branch anche su GitHub/GitLab</span>`,
+                    confirmLabel: 'Si, elimina anche remoto',
+                    cancelLabel: 'No, solo locale'
+                });
+                deleteRemote = deleteRemoteConfirmed;
             }
 
             branch.deleting = true;
             try {
-                const response = await fetch(`/api/git/repositories/${repoId}/branches/${encodeURIComponent(branch.name)}?force=true`, {
+                const response = await fetch(`/api/git/repositories/${repoId}/branches/${encodeURIComponent(branch.name)}?force=true&delete_remote=${deleteRemote}`, {
                     method: 'DELETE'
                 });
 
                 const result = await response.json();
                 if (result.success) {
-                    this.showToast(`Branch '${branch.name}' eliminato`, 'success');
+                    const suffix = deleteRemote ? ' (locale + remoto)' : ' (solo locale)';
+                    this.showToast(`Branch '${branch.name}' eliminato${suffix}`, 'success');
                     // Remove from list
                     this.branches = this.branches.filter(b => b.name !== branch.name);
                 } else {

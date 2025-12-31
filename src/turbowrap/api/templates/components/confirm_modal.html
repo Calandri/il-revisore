@@ -1,0 +1,240 @@
+<!-- TurboWrap Confirm Modal -->
+<!-- Beautiful replacement for native confirm() dialogs -->
+
+<div x-data="confirmModal()" @turbo-confirm.window="show($event.detail)">
+    <!-- Backdrop -->
+    <div x-show="isOpen"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm">
+    </div>
+
+    <!-- Modal -->
+    <div x-show="isOpen"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+         x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+         class="fixed inset-0 z-[81] flex items-center justify-center p-4"
+         @keydown.escape.window="cancel()">
+
+        <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700"
+             @click.away="cancel()">
+
+            <!-- Icon & Header -->
+            <div class="px-6 py-5" :class="headerClass">
+                <div class="flex items-start gap-4">
+                    <!-- Icon -->
+                    <div class="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center" :class="iconBgClass">
+                        <!-- Danger Icon -->
+                        <template x-if="type === 'danger'">
+                            <svg class="w-6 h-6" :class="iconClass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                        </template>
+                        <!-- Warning Icon -->
+                        <template x-if="type === 'warning'">
+                            <svg class="w-6 h-6" :class="iconClass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </template>
+                        <!-- Info Icon -->
+                        <template x-if="type === 'info'">
+                            <svg class="w-6 h-6" :class="iconClass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </template>
+                        <!-- Success Icon (for merge, etc) -->
+                        <template x-if="type === 'success'">
+                            <svg class="w-6 h-6" :class="iconClass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/>
+                            </svg>
+                        </template>
+                    </div>
+                    <!-- Title & Message -->
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="title"></h3>
+                        <p class="mt-1.5 text-sm text-gray-600 dark:text-gray-400 leading-relaxed" x-html="message"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Details (optional) -->
+            <template x-if="details">
+                <div class="px-6 pb-4">
+                    <div class="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300" x-html="details"></div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Actions -->
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
+                <button @click="cancel()"
+                        class="px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all duration-200">
+                    <span x-text="cancelLabel"></span>
+                </button>
+                <button @click="confirm()"
+                        class="px-5 py-2.5 text-sm font-medium text-white rounded-xl transition-all duration-200 shadow-lg flex items-center gap-2"
+                        :class="confirmButtonClass">
+                    <!-- Button icon based on type -->
+                    <template x-if="type === 'success'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </template>
+                    <template x-if="type === 'danger'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </template>
+                    <span x-text="confirmLabel"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Global TurboConfirm API
+window.TurboConfirm = {
+    _resolve: null,
+
+    /**
+     * Show a confirmation dialog
+     * @param {Object} options - Configuration options
+     * @param {string} options.title - Dialog title
+     * @param {string} options.message - Dialog message (supports HTML)
+     * @param {string} options.type - Type: 'danger', 'warning', 'info', 'success' (default: 'warning')
+     * @param {string} options.confirmLabel - Confirm button text (default: 'Conferma')
+     * @param {string} options.cancelLabel - Cancel button text (default: 'Annulla')
+     * @param {string} options.details - Additional details HTML (optional)
+     * @returns {Promise<boolean>} - Resolves to true if confirmed, false if cancelled
+     */
+    show(options) {
+        return new Promise((resolve) => {
+            this._resolve = resolve;
+            window.dispatchEvent(new CustomEvent('turbo-confirm', {
+                detail: {
+                    ...options,
+                    _resolve: resolve
+                }
+            }));
+        });
+    },
+
+    // Shortcut for danger confirmation
+    danger(title, message, confirmLabel = 'Elimina') {
+        return this.show({ type: 'danger', title, message, confirmLabel });
+    },
+
+    // Shortcut for merge confirmation
+    merge(branchName) {
+        return this.show({
+            type: 'success',
+            title: 'Merge Branch',
+            message: `Vuoi eseguire il merge di <code class="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">${branchName}</code> in <strong>main</strong>?`,
+            details: `<svg class="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>Verra eseguito un git merge con AI conflict resolution se necessario</span>`,
+            confirmLabel: 'Merge',
+            cancelLabel: 'Annulla'
+        });
+    },
+
+    // Shortcut for delete confirmation
+    delete(itemName, itemType = 'elemento') {
+        return this.show({
+            type: 'danger',
+            title: `Elimina ${itemType}`,
+            message: `Sei sicuro di voler eliminare <strong>${itemName}</strong>? Questa azione non puo essere annullata.`,
+            confirmLabel: 'Elimina',
+            cancelLabel: 'Annulla'
+        });
+    }
+};
+
+function confirmModal() {
+    return {
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'warning',
+        confirmLabel: 'Conferma',
+        cancelLabel: 'Annulla',
+        details: null,
+        _resolve: null,
+
+        get headerClass() {
+            return '';
+        },
+
+        get iconBgClass() {
+            const classes = {
+                danger: 'bg-red-100 dark:bg-red-900/30',
+                warning: 'bg-amber-100 dark:bg-amber-900/30',
+                info: 'bg-blue-100 dark:bg-blue-900/30',
+                success: 'bg-green-100 dark:bg-green-900/30'
+            };
+            return classes[this.type] || classes.warning;
+        },
+
+        get iconClass() {
+            const classes = {
+                danger: 'text-red-600 dark:text-red-400',
+                warning: 'text-amber-600 dark:text-amber-400',
+                info: 'text-blue-600 dark:text-blue-400',
+                success: 'text-green-600 dark:text-green-400'
+            };
+            return classes[this.type] || classes.warning;
+        },
+
+        get confirmButtonClass() {
+            const classes = {
+                danger: 'bg-red-600 hover:bg-red-500 shadow-red-500/25',
+                warning: 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/25',
+                info: 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/25',
+                success: 'bg-green-600 hover:bg-green-500 shadow-green-500/25'
+            };
+            return classes[this.type] || classes.warning;
+        },
+
+        show(options) {
+            this.title = options.title || 'Conferma';
+            this.message = options.message || 'Sei sicuro?';
+            this.type = options.type || 'warning';
+            this.confirmLabel = options.confirmLabel || 'Conferma';
+            this.cancelLabel = options.cancelLabel || 'Annulla';
+            this.details = options.details || null;
+            this._resolve = options._resolve || null;
+            this.isOpen = true;
+        },
+
+        confirm() {
+            this.isOpen = false;
+            if (this._resolve) {
+                this._resolve(true);
+                this._resolve = null;
+            }
+        },
+
+        cancel() {
+            this.isOpen = false;
+            if (this._resolve) {
+                this._resolve(false);
+                this._resolve = null;
+            }
+        }
+    };
+}
+</script>
+
+<style>
+[x-cloak] { display: none !important; }
+</style>

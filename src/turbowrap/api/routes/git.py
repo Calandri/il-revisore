@@ -640,6 +640,7 @@ def delete_repo_branch(
     repo_id: str,
     branch: str,
     force: bool = Query(default=False),
+    delete_remote: bool = Query(default=True),
     db: Session = Depends(get_db),
 ) -> GitOperationResult:
     """Delete a branch from the repository.
@@ -648,6 +649,7 @@ def delete_repo_branch(
         repo_id: Repository ID
         branch: Branch name to delete
         force: Force delete even if not merged
+        delete_remote: If True, also delete from remote. Default True.
     """
     _, repo_path = _get_repo_and_path(repo_id, db)
 
@@ -658,10 +660,11 @@ def delete_repo_branch(
     if branch == current:
         return GitOperationResult(success=False, message="Cannot delete current branch")
 
-    success = delete_branch(repo_path, branch, force=force)
+    success = delete_branch(repo_path, branch, force=force, delete_remote=delete_remote)
 
+    suffix = " (local + remote)" if delete_remote else " (local only)"
     if success:
-        return GitOperationResult(success=True, message=f"Deleted branch '{branch}'")
+        return GitOperationResult(success=True, message=f"Deleted branch '{branch}'{suffix}")
     return GitOperationResult(success=False, message=f"Failed to delete branch '{branch}'")
 
 
