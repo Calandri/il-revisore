@@ -1956,6 +1956,10 @@ function issuesApp() {
                     this.fixProgress.totalSteps = this.planPreview.totalSteps;
                     this.fixProgress.currentStep = 1;
                 }
+                // Add clarify_session_id for operation grouping
+                if (this.clarification && this.clarification.sessionId) {
+                    requestBody.clarify_session_id = this.clarification.sessionId;
+                }
 
                 const response = await fetch('/api/fix/start', {
                     method: 'POST',

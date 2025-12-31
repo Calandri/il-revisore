@@ -519,6 +519,17 @@ async def clarify_before_fix(
     if not issues:
         raise HTTPException(status_code=404, detail="No issues found")
 
+    # First call only: mark issues as IN_PROGRESS
+    if not request.session_id:
+        from datetime import datetime, timezone
+
+        for issue in issues:
+            if issue.status == IssueStatus.OPEN.value:
+                issue.status = IssueStatus.IN_PROGRESS.value
+                issue.phase_started_at = datetime.now(timezone.utc)
+        db.commit()
+        logger.info(f"[CLARIFY] Marked {len(issues)} issues as IN_PROGRESS")
+
     # Format issues for prompt
     issues_text = _format_issues_for_clarify(issues)
 
