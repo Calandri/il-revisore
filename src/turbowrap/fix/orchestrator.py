@@ -136,10 +136,52 @@ class FixOrchestrator:
             FixSessionResult with all issue outcomes
         """
         session_id = str(uuid.uuid4())
-        # Store parent_session_id for operation grouping (clarify_session_id from caller)
         parent_session_id = operation_id
         branch_name = request.existing_branch_name or generate_branch_name(issues)
 
+        await self._emit_session_started(emit, session_id, branch_name, issues)
+
+        try:
+            # Setup fix session components
+            cli, challenger, master_todo_path = await self._setup_fix_session(
+                session_id, branch_name, issues, request
+            )
+
+            # Run fix rounds
+            all_results, gemini_feedback = await self._run_fix_rounds(
+                cli,
+                challenger,
+                master_todo_path,
+                session_id,
+                parent_session_id,
+                branch_name,
+                issues,
+                request,
+                emit,
+            )
+
+            # Mark remaining pending issues as failed
+            self._mark_remaining_failed(issues, all_results)
+
+            # Build final result and save to S3
+            final_result = self._build_result(session_id, request, branch_name, issues, all_results)
+            await self._save_fix_log_to_s3(session_id, final_result, issues, gemini_feedback)
+
+            return final_result
+
+        except Exception as e:
+            logger.exception(f"[FIX] Unexpected error: {e}")
+            await self._emit(emit, FixEventType.FIX_SESSION_ERROR, {"error": str(e)})
+            return self._build_error_result(session_id, request, branch_name, issues, str(e))
+
+    async def _emit_session_started(
+        self,
+        emit: ProgressCallback | None,
+        session_id: str,
+        branch_name: str,
+        issues: list[Issue],
+    ) -> None:
+        """Emit session started event."""
         await self._emit(
             emit,
             FixEventType.FIX_SESSION_STARTED,
@@ -150,196 +192,237 @@ class FixOrchestrator:
             },
         )
 
-        try:
-            # Prepare TODO files
-            todo_manager = TodoManager(session_id)
-            master_todo, issue_todos = self._create_todos(issues, session_id, branch_name, request)
-            await todo_manager.save_all(master_todo, issue_todos)
-            master_todo_path = todo_manager.get_local_path()
+    async def _setup_fix_session(
+        self,
+        session_id: str,
+        branch_name: str,
+        issues: list[Issue],
+        request: FixRequest,
+    ) -> tuple[ClaudeCLI, GeminiFixChallenger, Path]:
+        """Setup fix session components: TODO files, CLI, and Challenger."""
+        # Prepare TODO files
+        todo_manager = TodoManager(session_id)
+        master_todo, issue_todos = self._create_todos(issues, session_id, branch_name, request)
+        await todo_manager.save_all(master_todo, issue_todos)
+        master_todo_path = todo_manager.get_local_path()
 
-            # Initialize Claude CLI (reused across rounds)
-            cli = ClaudeCLI(
-                working_dir=self.repo_path,
-                agent_md_path=FIXER_AGENT,
-                model="opus",
-                timeout=CLAUDE_CLI_TIMEOUT,
-                tools="fix",
+        # Initialize Claude CLI (reused across rounds)
+        cli = ClaudeCLI(
+            working_dir=self.repo_path,
+            agent_md_path=FIXER_AGENT,
+            model="opus",
+            timeout=CLAUDE_CLI_TIMEOUT,
+            tools="fix",
+        )
+
+        # Initialize Gemini Challenger
+        challenger = GeminiFixChallenger(satisfaction_threshold=self.satisfaction_threshold)
+
+        return cli, challenger, master_todo_path
+
+    async def _run_fix_rounds(
+        self,
+        cli: ClaudeCLI,
+        challenger: GeminiFixChallenger,
+        master_todo_path: Path,
+        session_id: str,
+        parent_session_id: str | None,
+        branch_name: str,
+        issues: list[Issue],
+        request: FixRequest,
+        emit: ProgressCallback | None,
+    ) -> tuple[dict[str, IssueFixResult], str]:
+        """Run fix rounds with challenger loop."""
+        all_results: dict[str, IssueFixResult] = {}
+        pending_issues = issues.copy()
+        claude_session_id = request.clarify_session_id
+        gemini_feedback: str = ""
+
+        for round_num in range(1, MAX_ROUNDS + 1):
+            logger.info(f"[FIX] Round {round_num}/{MAX_ROUNDS} - {len(pending_issues)} issues")
+
+            # Execute single round
+            round_result = await self._execute_single_round(
+                cli,
+                challenger,
+                master_todo_path,
+                session_id,
+                parent_session_id,
+                branch_name,
+                pending_issues,
+                request,
+                emit,
+                round_num,
+                claude_session_id,
+                gemini_feedback,
             )
 
-            # Initialize Gemini Challenger
-            challenger = GeminiFixChallenger(satisfaction_threshold=self.satisfaction_threshold)
+            if round_result is None:
+                # CLI failed
+                return all_results, gemini_feedback
 
-            # Track results
-            all_results: dict[str, IssueFixResult] = {}
-            pending_issues = issues.copy()
-            # Resume from clarify/plan session to preserve context
-            claude_session_id = request.clarify_session_id
-            gemini_feedback: str = ""
-            gemini_scores: dict[str, int] = {}
+            approved, failed, gemini_feedback, gemini_scores, claude_session_id, fix_results = (
+                round_result
+            )
 
-            for round_num in range(1, MAX_ROUNDS + 1):
-                logger.info(f"[FIX] Round {round_num}/{MAX_ROUNDS} - {len(pending_issues)} issues")
-
-                await self._emit(
-                    emit,
-                    FixEventType.FIX_STEP_STARTED,
-                    {
-                        "round": round_num,
-                        "issue_count": len(pending_issues),
-                    },
+            # Process approved issues
+            if approved:
+                await self._process_approved_issues(
+                    approved, fix_results, gemini_scores, round_num, branch_name, all_results, emit
                 )
 
-                # Build prompt
-                if round_num == 1:
-                    prompt = self._build_fix_prompt(
-                        master_todo_path,
-                        branch_name,
-                        request.workspace_path,
-                    )
-                else:
-                    prompt = self._build_refix_prompt(
-                        [str(i.issue_code) for i in pending_issues],
-                        gemini_feedback,
-                    )
+            # Check if done
+            if not failed:
+                break
 
-                # Call Claude CLI
-                await self._emit(
-                    emit,
-                    FixEventType.FIX_ISSUE_GENERATING,
-                    {
-                        "round": round_num,
-                        "message": "Claude is fixing issues...",
-                    },
-                )
+            pending_issues = failed
 
-                result = await cli.run(
-                    prompt=prompt,
-                    operation_type="fix",
-                    repo_name=self.repo_path.name,
-                    context_id=session_id,
-                    resume_session_id=claude_session_id,
-                    operation_details={
-                        # Link to clarify session for grouping
-                        "parent_session_id": parent_session_id,
-                        "round": round_num,
-                        # Issue tracking for history
-                        "issue_ids": [str(issue.id) for issue in pending_issues],
-                        "issue_codes": [str(issue.issue_code) for issue in pending_issues],
-                        "issue_count": len(pending_issues),
-                    },
-                )
+        return all_results, gemini_feedback
 
-                if not result.success:
-                    logger.error(f"[FIX] Claude CLI failed: {result.error}")
-                    return self._build_error_result(
-                        session_id,
-                        request,
-                        branch_name,
-                        issues,
-                        f"Claude CLI failed: {result.error}",
-                    )
+    async def _execute_single_round(
+        self,
+        cli: ClaudeCLI,
+        challenger: GeminiFixChallenger,
+        master_todo_path: Path,
+        session_id: str,
+        parent_session_id: str | None,
+        branch_name: str,
+        pending_issues: list[Issue],
+        request: FixRequest,
+        emit: ProgressCallback | None,
+        round_num: int,
+        claude_session_id: str | None,
+        previous_feedback: str,
+    ) -> tuple[list[Issue], list[Issue], str, dict[str, int], str | None, dict[str, Any]] | None:
+        """Execute a single fix round. Returns None if CLI fails."""
+        await self._emit(
+            emit,
+            FixEventType.FIX_STEP_STARTED,
+            {"round": round_num, "issue_count": len(pending_issues)},
+        )
 
-                claude_session_id = result.session_id
-                fix_results = parse_llm_json(result.output) or {}
+        # Build prompt
+        if round_num == 1:
+            prompt = self._build_fix_prompt(master_todo_path, branch_name, request.workspace_path)
+        else:
+            prompt = self._build_refix_prompt(
+                [str(i.issue_code) for i in pending_issues], previous_feedback
+            )
 
-                # Debug: log parsed results to understand structure
-                logger.info(f"[FIX] Parsed fix_results keys: {list(fix_results.keys())}")
-                if "issues" in fix_results:
-                    for code, data in fix_results["issues"].items():
-                        logger.info(
-                            f"[FIX] Issue {code}: status={data.get('status')}, "
-                            f"changes_summary={data.get('changes_summary', 'MISSING')[:100] if data.get('changes_summary') else 'MISSING'}"
-                        )
+        # Call Claude CLI
+        await self._emit(
+            emit,
+            FixEventType.FIX_ISSUE_GENERATING,
+            {"round": round_num, "message": "Claude is fixing issues..."},
+        )
 
-                # Evaluate with Gemini
-                await self._emit(
-                    emit,
-                    FixEventType.FIX_CHALLENGER_EVALUATING,
-                    {
-                        "round": round_num,
-                        "message": "Gemini is evaluating fixes...",
-                    },
-                )
+        result = await cli.run(
+            prompt=prompt,
+            operation_type="fix",
+            repo_name=self.repo_path.name,
+            context_id=session_id,
+            resume_session_id=claude_session_id,
+            operation_details={
+                "parent_session_id": parent_session_id,
+                "round": round_num,
+                "issue_ids": [str(issue.id) for issue in pending_issues],
+                "issue_codes": [str(issue.issue_code) for issue in pending_issues],
+                "issue_count": len(pending_issues),
+            },
+        )
 
-                approved, failed, gemini_feedback, gemini_scores = await self._evaluate_fixes(
-                    challenger,
-                    fix_results,
-                    pending_issues,
-                    branch_name,
-                    session_id,
-                    parent_session_id,
-                )
+        if not result.success:
+            logger.error(f"[FIX] Claude CLI failed: {result.error}")
+            return None
 
+        fix_results = parse_llm_json(result.output) or {}
+        self._log_fix_results(fix_results)
+
+        # Evaluate with Gemini
+        await self._emit(
+            emit,
+            FixEventType.FIX_CHALLENGER_EVALUATING,
+            {"round": round_num, "message": "Gemini is evaluating fixes..."},
+        )
+
+        approved, failed, gemini_feedback, gemini_scores = await self._evaluate_fixes(
+            challenger, fix_results, pending_issues, branch_name, session_id, parent_session_id
+        )
+
+        logger.info(f"[FIX] Round {round_num}: {len(approved)} approved, {len(failed)} failed")
+
+        return approved, failed, gemini_feedback, gemini_scores, result.session_id, fix_results
+
+    def _log_fix_results(self, fix_results: dict[str, Any]) -> None:
+        """Log parsed fix results for debugging."""
+        logger.info(f"[FIX] Parsed fix_results keys: {list(fix_results.keys())}")
+        if "issues" in fix_results:
+            for code, data in fix_results["issues"].items():
+                summary = data.get("changes_summary", "MISSING")
+                summary_preview = summary[:100] if summary else "MISSING"
                 logger.info(
-                    f"[FIX] Round {round_num}: {len(approved)} approved, {len(failed)} failed"
+                    f"[FIX] Issue {code}: status={data.get('status')}, "
+                    f"changes_summary={summary_preview}"
                 )
 
-                # Commit approved fixes
-                if approved:
-                    await self._emit(
-                        emit,
-                        FixEventType.FIX_BATCH_COMMITTED,
-                        {
-                            "round": round_num,
-                            "approved_count": len(approved),
-                        },
-                    )
+    async def _process_approved_issues(
+        self,
+        approved: list[Issue],
+        fix_results: dict[str, Any],
+        gemini_scores: dict[str, int],
+        round_num: int,
+        branch_name: str,
+        all_results: dict[str, IssueFixResult],
+        emit: ProgressCallback | None,
+    ) -> None:
+        """Process approved issues: commit and record results."""
+        await self._emit(
+            emit,
+            FixEventType.FIX_BATCH_COMMITTED,
+            {"round": round_num, "approved_count": len(approved)},
+        )
 
-                    commit_sha = await self._commit_fixes(approved, round_num, branch_name)
+        commit_sha = await self._commit_fixes(approved, round_num, branch_name)
 
-                    for issue in approved:
-                        issue_code = str(issue.issue_code)
-                        issue_data = fix_results.get("issues", {}).get(issue_code, {})
+        for issue in approved:
+            issue_code = str(issue.issue_code)
+            issue_data = fix_results.get("issues", {}).get(issue_code, {})
 
-                        # Extract file_modified (handle singular from agent output)
-                        file_modified = issue_data.get("file_modified")
-                        files_modified = [file_modified] if file_modified else []
+            # Extract file_modified (handle singular from agent output)
+            file_modified = issue_data.get("file_modified")
+            files_modified = [file_modified] if file_modified else []
 
-                        # Extract self_evaluation.confidence → fix_self_score
-                        self_eval = issue_data.get("self_evaluation", {})
-                        self_score = self_eval.get("confidence")
+            # Extract self_evaluation.confidence → fix_self_score
+            self_eval = issue_data.get("self_evaluation", {})
+            self_score = self_eval.get("confidence")
 
-                        all_results[issue_code] = IssueFixResult(
-                            issue_id=str(issue.id),
-                            issue_code=issue_code,
-                            status=FixStatus.COMPLETED,
-                            commit_sha=commit_sha,
-                            changes_made=issue_data.get("changes_summary"),
-                            fix_explanation=issue_data.get("changes_summary"),
-                            fix_files_modified=files_modified,
-                            fix_self_score=self_score,
-                            fix_gemini_score=gemini_scores.get(issue_code),
-                        )
+            all_results[issue_code] = IssueFixResult(
+                issue_id=str(issue.id),
+                issue_code=issue_code,
+                status=FixStatus.COMPLETED,
+                commit_sha=commit_sha,
+                changes_made=issue_data.get("changes_summary"),
+                fix_explanation=issue_data.get("changes_summary"),
+                fix_files_modified=files_modified,
+                fix_self_score=self_score,
+                fix_gemini_score=gemini_scores.get(issue_code),
+            )
 
-                # Check if done
-                if not failed:
-                    break
-
-                pending_issues = failed
-
-            # Mark remaining as failed
-            for issue in pending_issues:
-                issue_code = str(issue.issue_code)
-                if issue_code not in all_results:
-                    all_results[issue_code] = IssueFixResult(
-                        issue_id=str(issue.id),
-                        issue_code=issue_code,
-                        status=FixStatus.FAILED,
-                        error=f"Failed after {MAX_ROUNDS} rounds",
-                    )
-
-            # Build final result
-            final_result = self._build_result(session_id, request, branch_name, issues, all_results)
-
-            # Save fix log to S3 for debugging
-            await self._save_fix_log_to_s3(session_id, final_result, issues, gemini_feedback)
-
-            return final_result
-
-        except Exception as e:
-            logger.exception(f"[FIX] Unexpected error: {e}")
-            await self._emit(emit, FixEventType.FIX_SESSION_ERROR, {"error": str(e)})
-            return self._build_error_result(session_id, request, branch_name, issues, str(e))
+    def _mark_remaining_failed(
+        self,
+        issues: list[Issue],
+        all_results: dict[str, IssueFixResult],
+    ) -> None:
+        """Mark remaining issues (not in all_results) as failed."""
+        for issue in issues:
+            issue_code = str(issue.issue_code)
+            if issue_code not in all_results:
+                all_results[issue_code] = IssueFixResult(
+                    issue_id=str(issue.id),
+                    issue_code=issue_code,
+                    status=FixStatus.FAILED,
+                    error=f"Failed after {MAX_ROUNDS} rounds",
+                )
 
     def _create_todos(
         self,

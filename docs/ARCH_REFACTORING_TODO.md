@@ -1,27 +1,28 @@
 # ARCH Refactoring TODO List
 
 **Data creazione**: 2025-12-31
+**Data completamento**: 2025-12-31
 **Obiettivo**: Ridurre fix.py da ~1600 a ~800 righe (-50%), fix_issues() da 223 a ~40 righe (-82%)
 
 ---
 
-## STEP 1: PendingQuestionStore (1-2h) - BASSO RISCHIO
+## STEP 1: PendingQuestionStore (1-2h) - BASSO RISCHIO ✅ COMPLETATO
 
 ### Obiettivo
 Incapsulare 4 dict globali in un singleton thread-safe.
 
 ### Task
 
-- [ ] **1.1** Creare file `src/turbowrap/api/services/pending_question_store.py`
-- [ ] **1.2** Migrare dict globali:
+- [x] **1.1** Creare file `src/turbowrap/api/services/pending_question_store.py`
+- [x] **1.2** Migrare dict globali:
   - `_pending_clarifications` → `store._clarifications`
   - `_clarification_answers` → `store._clarification_futures`
   - `_pending_scope_violations` → `store._scope_violations`
   - `_scope_violation_responses` → `store._scope_futures`
-- [ ] **1.3** Migrare `register_scope_question()` → `store.register_scope_violation()`
-- [ ] **1.4** Migrare `wait_for_scope_response()` → `store.wait_for_scope_response()`
-- [ ] **1.5** Aggiornare fix.py per usare `PendingQuestionStore.get_instance()`
-- [ ] **1.6** Rimuovere dict e funzioni originali da fix.py
+- [x] **1.3** Migrare `register_scope_question()` → `store.register_scope_violation()`
+- [x] **1.4** Migrare `wait_for_scope_response()` → `store.wait_for_scope_response()`
+- [x] **1.5** Aggiornare fix.py per usare `PendingQuestionStore.get_instance()`
+- [x] **1.6** Rimuovere dict e funzioni originali da fix.py
 
 ### File Coinvolti
 - **NUOVO**: `src/turbowrap/api/services/pending_question_store.py`
