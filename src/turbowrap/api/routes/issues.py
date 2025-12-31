@@ -230,15 +230,18 @@ def list_issues(
 @router.get("/summary", response_model=IssueSummary)
 def get_issues_summary(
     repository_id: str | None = None,
-    status: str | None = Query(default="open", description="Filter by status (default: open)"),
+    status: str | None = Query(
+        default="open", description="Filter by status (default: open, use 'all' for all statuses)"
+    ),
     db: Session = Depends(get_db),
 ) -> IssueSummary:
     """Get summary statistics for issues."""
-    query = db.query(Issue)
+    query = db.query(Issue).filter(Issue.deleted_at.is_(None))
 
     if repository_id:
         query = query.filter(Issue.repository_id == repository_id)
-    if status:
+    # Only filter by status if not "all"
+    if status and status.lower() != "all":
         query = query.filter(Issue.status == status)
 
     issues: list[Issue] = query.all()
@@ -248,6 +251,8 @@ def get_issues_summary(
         "open": 0,
         "in_progress": 0,
         "resolved": 0,
+        "in_review": 0,
+        "merged": 0,
         "ignored": 0,
         "duplicate": 0,
     }

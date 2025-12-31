@@ -134,18 +134,8 @@
 
                 <!-- LEFT COLUMN: Branch da Mergiare -->
                 <div class="space-y-6">
-                    <!-- Include existing unmerged branches component -->
+                    <!-- Include existing unmerged branches component (self-managing) -->
                     {% include "components/unmerged_branches.html" %}
-
-                    <!-- Empty state when no branches -->
-                    <div x-show="branches.length === 0 && !loadingBranches"
-                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center">
-                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        <p class="text-gray-600 dark:text-gray-400 font-medium">Tutti i branch sono mergiati</p>
-                        <p class="text-gray-500 text-sm mt-1">Nessun branch fix in attesa</p>
-                    </div>
                 </div>
 
                 <!-- RIGHT COLUMN: Ultimi 20 Task -->
@@ -274,14 +264,12 @@ function panoramicaApp() {
     return {
         loading: false,
         loadingTasks: false,
-        loadingBranches: false,
 
         issueSummary: {
             total: 0,
             by_status: {}
         },
         tasks: [],
-        branches: [],
 
         get selectedRepoId() {
             return Alpine.store('globalContext')?.selectedRepoId;
@@ -300,7 +288,6 @@ function panoramicaApp() {
                 } else {
                     this.issueSummary = { total: 0, by_status: {} };
                     this.tasks = [];
-                    this.branches = [];
                 }
             });
         },
