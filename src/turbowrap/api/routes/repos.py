@@ -665,6 +665,334 @@ def delete_external_link(
     return {"status": "deleted", "link_id": link_id}
 
 
+# =============================================================================
+# REPOSITORY OVERVIEW STATS
+# =============================================================================
+
+
+class WidgetStatus(BaseModel):
+    """TurboWrap Bug Widget installation status."""
+
+    installed: bool = False
+    script_url: str | None = None
+    last_checked: str | None = None
+    file_path: str | None = None
+
+
+class DatabaseInfo(BaseModel):
+    """Database connection info for display."""
+
+    id: str
+    name: str
+    db_type: str
+    host: str | None = None
+    database: str | None = None
+    usage_type: str = "testing"
+    is_default: bool = False
+
+
+class ExternalLinkInfo(BaseModel):
+    """External link info for display."""
+
+    id: str
+    link_type: str
+    url: str
+    label: str | None = None
+    is_primary: bool = False
+
+
+class LastOperationInfo(BaseModel):
+    """Last operation info."""
+
+    id: str
+    operation_type: str
+    status: str
+    started_at: str
+    completed_at: str | None = None
+    duration_seconds: int | None = None
+
+
+class RepositoryOverviewStats(BaseModel):
+    """Complete overview stats for a repository."""
+
+    # Widget status
+    widget: WidgetStatus
+
+    # Test counts
+    turbowrap_tests_count: int = 0
+    total_tests_count: int = 0
+
+    # Mockups count
+    mockups_count: int = 0
+    mockup_files: list[str] = []
+
+    # External links
+    external_links: list[ExternalLinkInfo] = []
+    production_url: str | None = None
+
+    # Database connections
+    databases: list[DatabaseInfo] = []
+
+    # Last operations
+    last_review: LastOperationInfo | None = None
+    last_readme: LastOperationInfo | None = None
+
+
+def _check_widget_installed(repo_path: Path) -> WidgetStatus:
+    """Check if TurboWrap Bug Widget is installed in the repository."""
+    import re
+    from datetime import datetime
+
+    widget_patterns = [
+        r'<script[^>]*src=["\'][^"\']*turbowrap[^"\']*widget[^"\']*["\']',
+        r'<script[^>]*src=["\'][^"\']*bug-widget[^"\']*["\']',
+        r"turbowrap\.widget",
+        r"TurboWrapWidget",
+    ]
+
+    # Search in HTML files
+    html_files = list(repo_path.rglob("*.html"))[:50]  # Limit search
+    for html_file in html_files:
+        try:
+            content = html_file.read_text(encoding="utf-8", errors="ignore")
+            for pattern in widget_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    # Extract script URL if possible
+                    url_match = re.search(r'src=["\']([^"\']+)["\']', match.group(0))
+                    return WidgetStatus(
+                        installed=True,
+                        script_url=url_match.group(1) if url_match else None,
+                        last_checked=datetime.utcnow().isoformat(),
+                        file_path=str(html_file.relative_to(repo_path)),
+                    )
+        except Exception:
+            continue
+
+    # Search in JS/TS config files
+    config_patterns = ["turbowrap.config", "widget.config"]
+    for pattern in config_patterns:
+        config_files = list(repo_path.rglob(f"*{pattern}*"))[:10]
+        if config_files:
+            return WidgetStatus(
+                installed=True,
+                last_checked=datetime.utcnow().isoformat(),
+                file_path=str(config_files[0].relative_to(repo_path)),
+            )
+
+    return WidgetStatus(installed=False, last_checked=datetime.utcnow().isoformat())
+
+
+def _count_turbowrap_tests(repo_path: Path) -> tuple[int, int]:
+    """Count TurboWrap E2E tests and total tests."""
+    turbowrap_count = 0
+    total_count = 0
+
+    # TurboWrap E2E tests patterns
+    turbowrap_patterns = [
+        "tests/turbowrap/**/*.test.*",
+        "tests/turbowrap/**/*.spec.*",
+        "test/turbowrap/**/*.test.*",
+        "e2e/turbowrap/**/*.test.*",
+        "**/turbowrap*.test.*",
+        "**/turbowrap*.spec.*",
+    ]
+
+    # General test patterns
+    test_patterns = [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.test.js",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "**/*.spec.js",
+        "**/test_*.py",
+        "**/*_test.py",
+    ]
+
+    # Count TurboWrap tests
+    for pattern in turbowrap_patterns:
+        turbowrap_count += len(list(repo_path.glob(pattern)))
+
+    # Count total tests
+    for pattern in test_patterns:
+        total_count += len(list(repo_path.glob(pattern)))
+
+    return turbowrap_count, total_count
+
+
+def _count_mockups(repo_path: Path) -> tuple[int, list[str]]:
+    """Count mockup files in the repository."""
+    mockup_files: list[str] = []
+
+    # Mockup patterns
+    patterns = [
+        "mockups/**/*",
+        "mockup/**/*",
+        "mocks/**/*.png",
+        "mocks/**/*.jpg",
+        "mocks/**/*.svg",
+        "docs/mockups/**/*",
+        "**/mockup*.png",
+        "**/mockup*.jpg",
+        "**/mockup*.svg",
+        "**/mockup*.pdf",
+        "**/design*.png",
+        "**/design*.jpg",
+        "**/wireframe*.png",
+    ]
+
+    for pattern in patterns:
+        for f in repo_path.glob(pattern):
+            if f.is_file() and f.suffix.lower() in {
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".svg",
+                ".pdf",
+                ".fig",
+            }:
+                rel_path = str(f.relative_to(repo_path))
+                if rel_path not in mockup_files:
+                    mockup_files.append(rel_path)
+
+    return len(mockup_files), mockup_files[:20]  # Limit to 20 for display
+
+
+@router.get("/{repo_id}/overview-stats", response_model=RepositoryOverviewStats)
+def get_repository_overview_stats(
+    repo_id: str,
+    resync_widget: bool = Query(default=False, description="Force resync widget detection"),
+    db: Session = Depends(get_db),
+) -> RepositoryOverviewStats:
+    """Get comprehensive overview stats for a repository.
+
+    Includes:
+    - TurboWrap Bug Widget installation status
+    - TurboWrap E2E tests count
+    - Mockup files count
+    - External links (production URL, etc.)
+    - Database connections
+    - Last review/readme operations
+    """
+
+    from ...db.models import (
+        DatabaseConnection,
+        Operation,
+        Repository,
+        RepositoryDatabaseConnection,
+        RepositoryExternalLink,
+    )
+
+    repo = get_or_404(db, Repository, repo_id)
+    repo_path = Path(cast(str, repo.local_path))
+
+    # 1. Widget status (check or use cached)
+    widget_status = _check_widget_installed(repo_path)
+
+    # 2. Test counts
+    turbowrap_tests, total_tests = _count_turbowrap_tests(repo_path)
+
+    # 3. Mockups
+    mockups_count, mockup_files = _count_mockups(repo_path)
+
+    # 4. External links
+    external_links = (
+        db.query(RepositoryExternalLink)
+        .filter(RepositoryExternalLink.repository_id == repo_id)
+        .order_by(RepositoryExternalLink.is_primary.desc())
+        .all()
+    )
+
+    links_info = [
+        ExternalLinkInfo(
+            id=link.id,
+            link_type=link.link_type,
+            url=link.url,
+            label=link.label,
+            is_primary=link.is_primary,
+        )
+        for link in external_links
+    ]
+
+    # Find primary production URL
+    production_url = None
+    for link in external_links:
+        if link.link_type == "production":
+            production_url = link.url
+            break
+
+    # 5. Database connections
+    db_connections = (
+        db.query(RepositoryDatabaseConnection, DatabaseConnection)
+        .join(
+            DatabaseConnection,
+            RepositoryDatabaseConnection.database_connection_id == DatabaseConnection.id,
+        )
+        .filter(RepositoryDatabaseConnection.repository_id == repo_id)
+        .all()
+    )
+
+    databases_info = [
+        DatabaseInfo(
+            id=db_conn.id,
+            name=db_conn.name,
+            db_type=db_conn.db_type,
+            host=db_conn.host,
+            database=db_conn.database,
+            usage_type=repo_db_conn.usage_type,
+            is_default=repo_db_conn.is_default,
+        )
+        for repo_db_conn, db_conn in db_connections
+    ]
+
+    # 6. Last operations (review and readme)
+    last_review = (
+        db.query(Operation)
+        .filter(
+            Operation.repository_id == repo_id,
+            Operation.operation_type == "review",
+        )
+        .order_by(Operation.started_at.desc())
+        .first()
+    )
+
+    last_readme = (
+        db.query(Operation)
+        .filter(
+            Operation.repository_id == repo_id,
+            Operation.operation_type == "readme",
+        )
+        .order_by(Operation.started_at.desc())
+        .first()
+    )
+
+    def _op_to_info(op: Operation | None) -> LastOperationInfo | None:
+        if not op:
+            return None
+        return LastOperationInfo(
+            id=op.id,
+            operation_type=op.operation_type,
+            status=op.status,
+            started_at=op.started_at.isoformat() if op.started_at else "",
+            completed_at=op.completed_at.isoformat() if op.completed_at else None,
+            duration_seconds=op.duration_seconds,
+        )
+
+    return RepositoryOverviewStats(
+        widget=widget_status,
+        turbowrap_tests_count=turbowrap_tests,
+        total_tests_count=total_tests,
+        mockups_count=mockups_count,
+        mockup_files=mockup_files,
+        external_links=links_info,
+        production_url=production_url,
+        databases=databases_info,
+        last_review=_op_to_info(last_review),
+        last_readme=_op_to_info(last_readme),
+    )
+
+
 ALLOWED_EXTENSIONS = {
     ".md",
     ".txt",
