@@ -34,47 +34,12 @@ GEMINI_MODEL_MAP = {
 # Gemini pricing per 1M tokens (USD)
 # Reference: https://ai.google.dev/pricing
 GEMINI_PRICING: dict[str, dict[str, float]] = {
-    # Gemini 2.0 Flash
-    "gemini-2.0-flash": {
-        "input": 0.10,
-        "output": 0.40,
-        "cached": 0.025,
-    },
-    "gemini-2.0-flash-lite": {
-        "input": 0.075,
-        "output": 0.30,
-        "cached": 0.01875,
-    },
-    # Gemini 2.5 Flash (preview)
-    "gemini-2.5-flash-preview-05-20": {
-        "input": 0.15,
-        "output": 0.60,
-        "cached": 0.0375,
-    },
-    # Gemini 3 Flash (preview) - using 2.5 pricing as estimate
-    "gemini-3-flash-preview": {
-        "input": 0.15,
-        "output": 0.60,
-        "cached": 0.0375,
-    },
-    # Gemini 1.5 Pro
-    "gemini-1.5-pro": {
-        "input": 1.25,
-        "output": 5.00,
-        "cached": 0.3125,
-    },
-    # Gemini 2.5 Pro (preview)
-    "gemini-2.5-pro-preview-05-06": {
-        "input": 1.25,
-        "output": 10.00,
-        "cached": 0.3125,
-    },
     # Gemini 3 Pro (preview) - using 2.5 pricing as estimate
     "gemini-3-pro-preview": {
         "input": 1.25,
         "output": 10.00,
         "cached": 0.3125,
-    },
+    }
 }
 
 # Default pricing for unknown models (conservative estimate)
@@ -134,7 +99,10 @@ class GeminiClient(BaseAgent):
         api_key = settings.agents.effective_google_key
         if not api_key:
             # Fallback to AWS Secrets Manager
-            from turbowrap.utils.aws_secrets import get_gemini_api_key, get_google_api_key
+            from turbowrap.utils.aws_secrets import (
+                get_gemini_api_key,
+                get_google_api_key,
+            )
 
             api_key = get_google_api_key() or get_gemini_api_key()
 

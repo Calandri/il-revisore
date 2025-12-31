@@ -157,12 +157,9 @@ async def discover_tests(
             duration_ms=result.duration_ms,
         )
 
-    except FileNotFoundError as e:
-        logger.error(f"[TEST DISCOVERY] Agent prompt not found: {e}")
-        return DiscoveryResult(
-            success=False,
-            error=str(e),
-        )
+    except FileNotFoundError:
+        # Agent prompt file must exist - fail hard
+        raise
     except Exception as e:
         logger.exception(f"[TEST DISCOVERY] Error: {e}")
         return DiscoveryResult(

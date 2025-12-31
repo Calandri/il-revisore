@@ -185,15 +185,11 @@ Be concise and actionable.
                 content = full_path.read_text(encoding="utf-8", errors="ignore")[:6000]
                 file_contents.append(f"## {file_path}\n```\n{content}\n```")
 
-        # Try to load dev prompt
-        try:
-            # Detect file type for appropriate prompt
-            if any(f.endswith(".py") for f in target_files):
-                system_prompt = load_prompt("dev_be")
-            else:
-                system_prompt = load_prompt("dev_fe")
-        except FileNotFoundError:
-            system_prompt = "You are a senior software developer. Write clean, maintainable code."
+        # Load dev prompt (must exist in agents/)
+        if any(f.endswith(".py") for f in target_files):
+            system_prompt = load_prompt("dev_be")
+        else:
+            system_prompt = load_prompt("dev_fe")
 
         prompt = f"""Complete this development task:
 

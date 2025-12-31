@@ -224,7 +224,7 @@ class FixOrchestrator:
                 )
 
                 approved, failed, gemini_feedback = await self._evaluate_fixes(
-                    challenger, fix_results, pending_issues
+                    challenger, fix_results, pending_issues, branch_name
                 )
 
                 logger.info(
@@ -496,9 +496,15 @@ The following issues failed Gemini validation. Please fix them based on the feed
         challenger: GeminiFixChallenger,
         fix_results: dict[str, Any],
         issues: list[Issue],
+        branch_name: str,
     ) -> tuple[list[Issue], list[Issue], str]:
         """
-        Evaluate all fixes with Gemini Challenger.
+        Evaluate all fixes with Gemini Challenger using CLI.
+
+        The challenger runs in the repo directory and can:
+        - Run git diff to see actual changes
+        - Read files directly
+        - Verify fixes match what was claimed
 
         Returns:
             Tuple of (approved_issues, failed_issues, feedback_text)
@@ -508,6 +514,10 @@ The following issues failed Gemini validation. Please fix them based on the feed
         feedback_parts: list[str] = []
 
         issues_data = fix_results.get("issues", {})
+
+        # Pre-filter issues: skip those that don't need Gemini evaluation
+        issues_to_evaluate: list[Issue] = []
+        contexts: list[FixContext] = []
 
         for issue in issues:
             issue_code = str(issue.issue_code)
@@ -523,53 +533,67 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 feedback_parts.append(f"## {issue_code}\nStatus: {status} (not fixed)\n")
                 continue
 
-            # Get file content for evaluation
+            # Build context for Gemini evaluation
             file_path = issue.file
             if not file_path:
                 approved.append(issue)  # Can't evaluate without file
                 continue
 
-            try:
-                full_path = self.repo_path / file_path
-                if full_path.exists():
-                    fixed_content = full_path.read_text()
-                    original_content = issue.current_code or ""
+            context = FixContext(
+                issue_id=str(issue.id),
+                issue_code=issue_code,
+                file_path=str(file_path),
+                line=issue.line,
+                title=issue.title or "",
+                description=issue.description or "",
+                current_code=issue.current_code or "",
+                suggested_fix=issue.suggested_fix,
+                category=issue.category or "general",
+                severity=issue.severity or "MEDIUM",
+            )
 
-                    # Evaluate with Gemini
-                    context = FixContext(
-                        issue_id=str(issue.id),
-                        issue_code=issue_code,
-                        file_path=str(file_path),
-                        line=issue.line,
-                        title=issue.title or "",
-                        description=issue.description or "",
-                        current_code=original_content,
-                        suggested_fix=issue.suggested_fix,
-                        category=issue.category or "general",
-                        severity=issue.severity or "MEDIUM",
-                    )
+            issues_to_evaluate.append(issue)
+            contexts.append(context)
 
-                    feedback = await challenger.evaluate(
-                        context=context,
-                        original_content=original_content,
-                        fixed_content=fixed_content,
-                        changes_summary=issue_data.get("changes_summary"),
-                    )
+        # If no issues need evaluation, return early
+        if not contexts:
+            return approved, failed, "\n".join(feedback_parts)
 
-                    if feedback.status == FixChallengerStatus.APPROVED:
-                        approved.append(issue)
-                    else:
-                        failed.append(issue)
-                        feedback_parts.append(
-                            f"## {issue_code} (score: {feedback.satisfaction_score:.0f}/100)\n"
-                            f"{feedback.to_refinement_prompt()}\n"
-                        )
+        # Call Gemini CLI with batch evaluation
+        try:
+            logger.info(f"[FIX] Evaluating {len(contexts)} issues with Gemini CLI")
+
+            feedback_map = await challenger.evaluate_batch(
+                issues=contexts,
+                repo_path=self.repo_path,
+                branch_name=branch_name,
+                fixer_output=fix_results,
+            )
+
+            # Process results
+            for issue, context in zip(issues_to_evaluate, contexts, strict=True):
+                issue_code = context.issue_code
+                feedback = feedback_map.get(issue_code)
+
+                if feedback is None:
+                    # No feedback = fallback to approved
+                    approved.append(issue)
+                    continue
+
+                if feedback.status == FixChallengerStatus.APPROVED:
+                    approved.append(issue)
                 else:
-                    approved.append(issue)  # File doesn't exist, trust Claude
+                    failed.append(issue)
+                    feedback_parts.append(
+                        f"## {issue_code} (score: {feedback.satisfaction_score:.0f}/100)\n"
+                        f"{feedback.to_refinement_prompt()}\n"
+                    )
 
-            except Exception as e:
-                logger.warning(f"[FIX] Failed to evaluate {issue_code}: {e}")
-                approved.append(issue)  # On error, trust Claude
+        except Exception as e:
+            logger.exception(f"[FIX] Gemini CLI evaluation failed: {e}")
+            # On error, approve all (trust Claude)
+            for issue in issues_to_evaluate:
+                approved.append(issue)
 
         return approved, failed, "\n".join(feedback_parts)
 

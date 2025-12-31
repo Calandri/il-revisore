@@ -129,11 +129,8 @@ class ChallengerLoop:
         if self.challenger is None:
             self.challenger = GeminiCLIChallenger()
 
-        # Load agent prompt if available
-        try:
-            context.agent_prompt = self.reviewer.load_agent_prompt(settings.agents_dir)
-        except FileNotFoundError:
-            logger.warning(f"Agent file not found for {reviewer_name}")
+        # Load agent prompt (must exist)
+        context.agent_prompt = self.reviewer.load_agent_prompt(settings.agents_dir)
 
         iteration = 0
         current_review: ReviewOutput | None = None

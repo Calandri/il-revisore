@@ -3,7 +3,6 @@ Main orchestrator for TurboWrap code review system.
 """
 
 import asyncio
-import contextlib
 import logging
 import time
 import uuid
@@ -1157,8 +1156,8 @@ class Orchestrator:
         gemini_reviewer = GeminiCLIReviewer(name=reviewer_name)
         grok_reviewer = GrokCLIReviewer(name=reviewer_name)
 
-        with contextlib.suppress(FileNotFoundError):
-            context.agent_prompt = claude_reviewer.load_agent_prompt(self.settings.agents_dir)
+        # Load agent prompt (must exist)
+        context.agent_prompt = claude_reviewer.load_agent_prompt(self.settings.agents_dir)
 
         # NOTE: Use base reviewer_name so content goes to the right card
         display_name = get_reviewer_display_name(reviewer_name)
