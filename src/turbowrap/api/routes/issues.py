@@ -177,6 +177,9 @@ def list_issues(
     # Auto-cleanup: reset issues stuck in_progress for >1 hour
     reset_stuck_in_progress_issues(db, max_age_hours=1, repository_id=repository_id)
 
+    # Auto-merge: detect resolved issues with commits already in main
+    auto_merge_resolved_issues(db, repository_id=repository_id, max_check=10)
+
     query = db.query(Issue)
 
     if repository_id:
@@ -795,6 +798,63 @@ def reset_stuck_in_progress_issues(
         logger.info(f"Auto-reset {len(reset_ids)} stuck in_progress issues: {reset_ids}")
 
     return len(reset_ids), reset_ids
+
+
+def auto_merge_resolved_issues(
+    db: Session,
+    repository_id: str | None = None,
+    max_check: int = 10,
+) -> tuple[int, list[str]]:
+    """
+    Auto-detect resolved issues with commits already in main and mark them as merged.
+
+    Checks fix_commit_sha against main branch and updates status to MERGED.
+    Limited to max_check issues per call to avoid performance issues.
+
+    Returns tuple of (count, list of merged issue IDs).
+    """
+    if not repository_id:
+        return 0, []  # Need repo to check git
+
+    # Get repository path
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo or not repo.local_path:
+        return 0, []
+
+    repo_path = Path(str(repo.local_path))
+    if not repo_path.exists():
+        return 0, []
+
+    # Find resolved issues with fix_commit_sha
+    resolved_with_commit = (
+        db.query(Issue)
+        .filter(
+            Issue.repository_id == repository_id,
+            Issue.status == IssueStatus.RESOLVED.value,
+            Issue.fix_commit_sha.isnot(None),
+            Issue.deleted_at.is_(None),
+        )
+        .limit(max_check)
+        .all()
+    )
+
+    if not resolved_with_commit:
+        return 0, []
+
+    merged_ids: list[str] = []
+    for issue in resolved_with_commit:
+        commit_sha = str(issue.fix_commit_sha)
+        if is_commit_in_branch(repo_path, commit_sha, "main"):
+            issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
+            issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
+            issue.resolution_note = "Auto-detected: commit found in main"  # type: ignore[assignment]
+            merged_ids.append(str(issue.id))
+
+    if merged_ids:
+        db.commit()
+        logger.info(f"Auto-merged {len(merged_ids)} resolved issues: {merged_ids}")
+
+    return len(merged_ids), merged_ids
 
 
 @router.post("/cleanup/reset-stuck", response_model=StuckIssuesResetResponse)
