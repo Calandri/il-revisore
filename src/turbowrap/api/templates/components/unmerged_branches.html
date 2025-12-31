@@ -1,0 +1,330 @@
+<!-- Unmerged Branches Section -->
+<!-- Shows fix branches that haven't been merged to main yet -->
+<div x-data="unmergedBranchesComponent()"
+     x-init="init()"
+     x-show="$store.globalContext?.selectedRepoId && branches.length > 0"
+     x-cloak
+     class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+
+    <!-- Header -->
+    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                <svg class="w-4 h-4 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+            </div>
+            <div>
+                <h3 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    Branch da Mergiare
+                    <span class="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-xs px-2 py-0.5 rounded-full" x-text="branches.length"></span>
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Fix completati in attesa di merge</p>
+            </div>
+        </div>
+        <button @click="fetchBranches()"
+                :disabled="loading"
+                class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+            <svg class="w-4 h-4" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Branches List -->
+    <div class="divide-y divide-gray-100 dark:divide-gray-700">
+        <template x-for="branch in branches" :key="branch.name">
+            <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <!-- Branch Header -->
+                <div class="flex items-center justify-between cursor-pointer" @click="branch.expanded = !branch.expanded">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <!-- Status dot -->
+                        <div class="w-2 h-2 rounded-full bg-yellow-400 flex-shrink-0"></div>
+                        <!-- Branch name -->
+                        <code class="font-mono text-sm text-gray-800 dark:text-gray-200 truncate" x-text="branch.name"></code>
+                        <!-- Commits badge -->
+                        <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded flex-shrink-0">
+                            <span x-text="branch.commits_ahead"></span> commit<span x-show="branch.commits_ahead !== 1">s</span>
+                        </span>
+                        <!-- Issues badge -->
+                        <span class="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded flex-shrink-0">
+                            <span x-text="branch.issues.length"></span> issue<span x-show="branch.issues.length !== 1">s</span>
+                        </span>
+                    </div>
+                    <!-- Expand arrow -->
+                    <svg class="w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ml-2"
+                         :class="branch.expanded && 'rotate-180'"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </div>
+
+                <!-- Expanded Content -->
+                <div x-show="branch.expanded" x-collapse class="mt-4 space-y-4">
+                    <!-- Issues List -->
+                    <div class="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                        <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Issues risolte:</p>
+                        <div class="space-y-1.5">
+                            <template x-for="issue in branch.issues" :key="issue.id">
+                                <div class="flex items-center gap-2 text-sm">
+                                    <span class="text-green-500">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                    </span>
+                                    <code class="text-xs font-mono text-gray-600 dark:text-gray-400" x-text="issue.issue_code"></code>
+                                    <span class="text-gray-700 dark:text-gray-300 truncate" x-text="issue.title"></span>
+                                    <span class="text-xs px-1.5 py-0.5 rounded capitalize"
+                                          :class="{
+                                              'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400': issue.severity === 'CRITICAL',
+                                              'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400': issue.severity === 'HIGH',
+                                              'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400': issue.severity === 'MEDIUM',
+                                              'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': issue.severity === 'LOW'
+                                          }"
+                                          x-text="issue.severity.toLowerCase()"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Commits List (if any) -->
+                    <template x-if="branch.commits && branch.commits.length > 0">
+                        <div class="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                            <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Commits:</p>
+                            <div class="space-y-1.5">
+                                <template x-for="commit in branch.commits" :key="commit.sha">
+                                    <div class="flex items-center gap-2 text-sm">
+                                        <code class="text-xs font-mono text-indigo-600 dark:text-indigo-400" x-text="commit.sha"></code>
+                                        <span class="text-gray-700 dark:text-gray-300 truncate" x-text="commit.message"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Actions -->
+                    <div class="flex flex-wrap gap-2 pt-2">
+                        <!-- Merge to Main -->
+                        <button @click="mergeBranch(branch)"
+                                :disabled="branch.merging"
+                                class="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                            <template x-if="!branch.merging">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/>
+                                </svg>
+                            </template>
+                            <template x-if="branch.merging">
+                                <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                            </template>
+                            <span x-text="branch.merging ? 'Merging...' : 'Merge to Main'"></span>
+                        </button>
+
+                        <!-- Mark as Merged (manual) -->
+                        <button @click="markAsMerged(branch)"
+                                :disabled="branch.marking"
+                                class="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                            <template x-if="!branch.marking">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </template>
+                            <span x-text="branch.marking ? 'Marking...' : 'Gia Mergiato'"></span>
+                        </button>
+
+                        <!-- Delete Branch -->
+                        <button @click="deleteBranch(branch)"
+                                :disabled="branch.deleting"
+                                class="px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                            <template x-if="!branch.deleting">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </template>
+                            <span x-text="branch.deleting ? 'Deleting...' : 'Elimina'"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+
+<script>
+function unmergedBranchesComponent() {
+    return {
+        branches: [],
+        loading: false,
+
+        get selectedRepoId() {
+            return Alpine.store('globalContext')?.selectedRepoId;
+        },
+
+        init() {
+            // Fetch branches initially if repo is selected
+            if (this.selectedRepoId) {
+                this.fetchBranches();
+            }
+
+            // Watch for repo selection changes
+            this.$watch('$store.globalContext.selectedRepoId', (repoId) => {
+                if (repoId) {
+                    this.fetchBranches();
+                } else {
+                    this.branches = [];
+                }
+            });
+        },
+
+        async fetchBranches() {
+            const repoId = this.selectedRepoId;
+            if (!repoId) return;
+
+            this.loading = true;
+            try {
+                const response = await fetch(`/api/git/repositories/${repoId}/unmerged-branches`);
+                if (response.ok) {
+                    const data = await response.json();
+                    // Add UI state to each branch
+                    this.branches = data.map(b => ({
+                        ...b,
+                        expanded: false,
+                        merging: false,
+                        marking: false,
+                        deleting: false
+                    }));
+                } else {
+                    console.error('Failed to fetch unmerged branches:', response.status);
+                    this.branches = [];
+                }
+            } catch (error) {
+                console.error('Error fetching unmerged branches:', error);
+                this.branches = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async mergeBranch(branch) {
+            const repoId = this.selectedRepoId;
+            if (!repoId || branch.merging) return;
+
+            if (!confirm(`Merge '${branch.name}' into main? Questo eseguira un git merge con AI conflict resolution se necessario.`)) {
+                return;
+            }
+
+            branch.merging = true;
+            try {
+                // First checkout the branch
+                await fetch(`/api/git/repositories/${repoId}/checkout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ branch: branch.name })
+                });
+
+                // Then merge to main
+                const response = await fetch(`/api/git/repositories/${repoId}/merge-to-main`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ push_after_merge: true })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    this.showToast(`Branch '${branch.name}' mergiato con successo!`, 'success');
+                    // Remove from list
+                    this.branches = this.branches.filter(b => b.name !== branch.name);
+                } else {
+                    this.showToast(`Merge fallito: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error merging branch:', error);
+                this.showToast('Errore durante il merge', 'error');
+            } finally {
+                branch.merging = false;
+            }
+        },
+
+        async markAsMerged(branch) {
+            const repoId = this.selectedRepoId;
+            if (!repoId || branch.marking) return;
+
+            if (!confirm(`Confermi che '${branch.name}' e stato gia mergiato manualmente? Le issue associate verranno segnate come RESOLVED.`)) {
+                return;
+            }
+
+            branch.marking = true;
+            try {
+                const response = await fetch(`/api/git/repositories/${repoId}/mark-branch-merged`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ branch: branch.name })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    this.showToast(result.message, 'success');
+                    // Remove from list
+                    this.branches = this.branches.filter(b => b.name !== branch.name);
+                } else {
+                    this.showToast(`Operazione fallita: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error marking branch as merged:', error);
+                this.showToast('Errore durante l\'operazione', 'error');
+            } finally {
+                branch.marking = false;
+            }
+        },
+
+        async deleteBranch(branch) {
+            const repoId = this.selectedRepoId;
+            if (!repoId || branch.deleting) return;
+
+            if (!confirm(`Eliminare il branch '${branch.name}'? Le issue associate NON verranno modificate.`)) {
+                return;
+            }
+
+            branch.deleting = true;
+            try {
+                const response = await fetch(`/api/git/repositories/${repoId}/branches/${encodeURIComponent(branch.name)}?force=true`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    this.showToast(`Branch '${branch.name}' eliminato`, 'success');
+                    // Remove from list
+                    this.branches = this.branches.filter(b => b.name !== branch.name);
+                } else {
+                    this.showToast(`Eliminazione fallita: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting branch:', error);
+                this.showToast('Errore durante l\'eliminazione', 'error');
+            } finally {
+                branch.deleting = false;
+            }
+        },
+
+        showToast(message, type = 'info') {
+            // Use global toast if available
+            if (typeof window.showToast === 'function') {
+                window.showToast(message, type);
+            } else {
+                // Fallback to alert
+                if (type === 'error') {
+                    alert('Errore: ' + message);
+                } else {
+                    console.log(message);
+                }
+            }
+        }
+    };
+}
+</script>
+
+<style>
+[x-cloak] { display: none !important; }
+</style>

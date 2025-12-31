@@ -13,12 +13,16 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...db.models import Repository
+from ...db.models import Issue, Repository
 from ...utils.git_utils import (
     CommitInfo,
     GitOperationResult,
     GitStatus,
+    delete_branch,
+    get_branch_commits,
+    get_commits_ahead,
     get_repo_status,
+    is_branch_merged,
     resolve_conflicts_with_gemini,
     run_git_command,
 )
@@ -174,13 +178,6 @@ class MarkBranchMergedRequest(BaseModel):
     branch: str
 
 
-class DeleteBranchRequest(BaseModel):
-    """Request to delete a branch."""
-
-    branch: str
-    force: bool = False
-
-
 @router.get("/repositories")
 def list_repositories(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     """List all repositories with basic info (including those in error state)."""
@@ -290,6 +287,184 @@ def list_branches(repo_id: str, db: Session = Depends(get_db)) -> BranchListInfo
         return BranchListInfo(current=current, branches=branches)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Unmerged Branches Endpoints
+# ============================================================================
+
+
+@router.get("/repositories/{repo_id}/unmerged-branches", response_model=list[UnmergedBranch])
+def get_unmerged_branches(repo_id: str, db: Session = Depends(get_db)) -> list[UnmergedBranch]:
+    """Get all fix branches that haven't been merged to main.
+
+    Scans issues with fix_branch set, checks merge status, and returns
+    detailed info including associated issues and commits.
+    """
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+
+    # Get all issues with fix_branch for this repository
+    issues_with_branches = (
+        db.query(Issue)
+        .filter(
+            Issue.repository_id == repo_id,
+            Issue.fix_branch.isnot(None),
+            Issue.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    if not issues_with_branches:
+        return []
+
+    # Group issues by branch
+    branch_issues: dict[str, list[Issue]] = {}
+    branch_session_ids: dict[str, str | None] = {}
+    branch_created_at: dict[str, str | None] = {}
+
+    for issue in issues_with_branches:
+        branch = str(issue.fix_branch)
+        if branch not in branch_issues:
+            branch_issues[branch] = []
+            branch_session_ids[branch] = issue.fix_session_id
+            # Use fixed_at as creation date approximation
+            if issue.fixed_at:
+                branch_created_at[branch] = issue.fixed_at.isoformat()
+
+        branch_issues[branch].append(issue)
+
+    # Determine main branch
+    try:
+        all_branches = list_branches_util(repo_path, include_remote=False)
+        main_branch = "main" if "main" in all_branches else "master"
+    except Exception:
+        main_branch = "main"
+
+    # Check merge status for each branch
+    unmerged: list[UnmergedBranch] = []
+
+    for branch_name, issues in branch_issues.items():
+        # Check if merged
+        if is_branch_merged(repo_path, branch_name, main_branch):
+            continue  # Skip merged branches
+
+        # Get commits ahead
+        commits_ahead = get_commits_ahead(repo_path, branch_name, main_branch)
+
+        # Get commit details
+        commits_data = get_branch_commits(repo_path, branch_name, main_branch, max_commits=5)
+        commits = [
+            UnmergedBranchCommit(
+                sha=c["sha"],
+                message=c["message"],
+                author=c["author"],
+                date=c["date"],
+            )
+            for c in commits_data
+        ]
+
+        # Build issue list
+        issue_list = [
+            UnmergedBranchIssue(
+                id=str(issue.id),
+                issue_code=str(issue.issue_code),
+                title=str(issue.title)[:60],
+                severity=str(issue.severity),
+                status=str(issue.status),
+            )
+            for issue in issues
+        ]
+
+        unmerged.append(
+            UnmergedBranch(
+                name=branch_name,
+                commits_ahead=commits_ahead,
+                issues=issue_list,
+                commits=commits,
+                fix_session_id=branch_session_ids.get(branch_name),
+                created_at=branch_created_at.get(branch_name),
+            )
+        )
+
+    # Sort by created_at (most recent first)
+    unmerged.sort(key=lambda b: b.created_at or "", reverse=True)
+
+    return unmerged
+
+
+@router.post("/repositories/{repo_id}/mark-branch-merged", response_model=GitOperationResult)
+def mark_branch_merged(
+    repo_id: str,
+    request: MarkBranchMergedRequest,
+    db: Session = Depends(get_db),
+) -> GitOperationResult:
+    """Mark a branch as manually merged.
+
+    Updates all issues with this branch to RESOLVED status and deletes
+    the local/remote branch references.
+    """
+    repo, repo_path = _get_repo_and_path(repo_id, db)
+
+    branch = request.branch.strip()
+    if not branch:
+        return GitOperationResult(success=False, message="Branch name cannot be empty")
+
+    # Find and update all issues with this branch
+    issues_updated = (
+        db.query(Issue)
+        .filter(
+            Issue.repository_id == repo_id,
+            Issue.fix_branch == branch,
+            Issue.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    for issue in issues_updated:
+        if issue.status not in ("RESOLVED", "WONTFIX"):
+            issue.status = "RESOLVED"
+            issue.resolution_note = "Branch manually marked as merged"
+
+    db.commit()
+
+    # Delete the branch (cleanup)
+    deleted = delete_branch(repo_path, branch, force=True)
+
+    return GitOperationResult(
+        success=True,
+        message=f"Marked '{branch}' as merged. Updated {len(issues_updated)} issues."
+        + (" Branch deleted." if deleted else ""),
+    )
+
+
+@router.delete("/repositories/{repo_id}/branches/{branch:path}", response_model=GitOperationResult)
+def delete_repo_branch(
+    repo_id: str,
+    branch: str,
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> GitOperationResult:
+    """Delete a branch from the repository.
+
+    Args:
+        repo_id: Repository ID
+        branch: Branch name to delete
+        force: Force delete even if not merged
+    """
+    _, repo_path = _get_repo_and_path(repo_id, db)
+
+    if branch in ("main", "master"):
+        return GitOperationResult(success=False, message="Cannot delete main/master branch")
+
+    current = get_current_branch_util(repo_path)
+    if branch == current:
+        return GitOperationResult(success=False, message="Cannot delete current branch")
+
+    success = delete_branch(repo_path, branch, force=force)
+
+    if success:
+        return GitOperationResult(success=True, message=f"Deleted branch '{branch}'")
+    return GitOperationResult(success=False, message=f"Failed to delete branch '{branch}'")
 
 
 @router.get("/repositories/{repo_id}/commits/{sha}/files", response_model=list[CommitFileInfo])
