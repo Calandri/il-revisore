@@ -426,39 +426,8 @@ class FixProgressEvent(BaseModel):
 
 
 # =============================================================================
-# Planning Phase Models (Clarify + Planner)
+# Planning Phase Models (used by IssueTodo)
 # =============================================================================
-
-
-class IssueClarificationQuestion(BaseModel):
-    """A clarification question for a specific issue."""
-
-    id: str = Field(..., description="Question ID (format: {issue_code}-q{n})")
-    question: str = Field(..., description="The question to ask the user")
-    context: str | None = Field(default=None, description="Why this question is being asked")
-
-
-class IssueQuestionsGroup(BaseModel):
-    """Group of questions for a single issue."""
-
-    issue_code: str = Field(..., description="Issue code (e.g., BE-001)")
-    questions: list[IssueClarificationQuestion] = Field(
-        default_factory=list, description="Questions for this issue"
-    )
-
-
-class ClarificationPhaseOutput(BaseModel):
-    """Output from the clarification phase of the planner."""
-
-    phase: str = Field(default="clarification", description="Current phase")
-    has_questions: bool = Field(..., description="Whether there are questions to ask")
-    questions_by_issue: list[IssueQuestionsGroup] = Field(
-        default_factory=list, description="Questions grouped by issue"
-    )
-    issues_without_questions: list[str] = Field(
-        default_factory=list, description="Issue codes that don't need clarification"
-    )
-    ready_to_plan: bool = Field(..., description="Whether ready to proceed to planning")
 
 
 class IssueClarificationAnswered(BaseModel):
@@ -506,9 +475,14 @@ class IssueTodo(BaseModel):
 
     issue_code: str = Field(..., description="Issue code (e.g., BE-001)")
     issue_id: str = Field(..., description="Issue UUID")
-    file: str = Field(..., description="Target file path")
+    file: str | None = Field(default=None, description="Target file path")
     line: int | None = Field(default=None, description="Target line number")
+    end_line: int | None = Field(default=None, description="End line number")
     title: str = Field(..., description="Issue title")
+    description: str | None = Field(default=None, description="Issue description")
+    suggested_fix: str | None = Field(default=None, description="Suggested fix from review")
+    severity: str = Field(default="MEDIUM", description="Issue severity")
+    category: str = Field(default="general", description="Issue category")
 
     clarifications: list[IssueClarificationAnswered] = Field(
         default_factory=list, description="Q&A specific to this issue"
@@ -576,11 +550,3 @@ class MasterTodo(BaseModel):
                 total_steps=len(execution_steps),
             ),
         )
-
-
-class PlanningPhaseOutput(BaseModel):
-    """Output from the planning phase of the planner."""
-
-    phase: str = Field(default="planning", description="Current phase")
-    master_todo: MasterTodo = Field(..., description="Master TODO for orchestrator")
-    issue_todos: list[IssueTodo] = Field(..., description="Individual issue TODOs")
