@@ -107,7 +107,7 @@ class FixOrchestrator:
         self.satisfaction_threshold = self.settings.fix_challenger.satisfaction_threshold
         # S3 for fix log storage (lazy loaded)
         self._s3_client: Any | None = None
-        self.s3_bucket = self.settings.s3_bucket
+        self.s3_bucket = self.settings.thinking.s3_bucket
 
     @property
     def s3_client(self) -> Any:

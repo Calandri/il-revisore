@@ -22,17 +22,14 @@ from turbowrap.api.services.pending_question_store import (
 )
 from turbowrap.db.models import Issue, IssueStatus, Repository
 from turbowrap.fix import ClarificationAnswer
-from turbowrap.llm.claude_cli import ClaudeCLI
-from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fix", tags=["fix"])
 
+# Agent file path for merge (used by /merge endpoint)
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "agents"
 GIT_MERGER_AGENT = AGENTS_DIR / "git_merger_gemini.md"
-FIX_CLARIFIER_AGENT = AGENTS_DIR / "fix_clarifier.md"
-FIX_PLANNER_AGENT = AGENTS_DIR / "fix_planner.md"
 
 
 def _load_agent(agent_path: Path) -> str:
@@ -426,21 +423,6 @@ def update_issue(
     return {"status": "updated", "issue_id": issue_id, "new_status": data.status}
 
 
-def _format_issues_for_plan(issues: list[Issue]) -> str:
-    """Format issues for prompts (used by /plan endpoint)."""
-    lines = []
-    for i, issue in enumerate(issues, 1):
-        lines.append(f"## Issue {i}: {issue.issue_code}")
-        lines.append(f"**Title:** {issue.title}")
-        lines.append(f"**File:** {issue.file}:{issue.line or '?'}")
-        lines.append(f"**Severity:** {issue.severity}")
-        lines.append(f"**Description:** {issue.description}")
-        if issue.suggested_fix:
-            lines.append(f"**Suggested Fix:** {issue.suggested_fix}")
-        lines.append("")
-    return "\n".join(lines)
-
-
 @router.post("/clarify", response_model=PreFixClarifyResponse)
 async def clarify_before_fix(
     request: PreFixClarifyRequest,
@@ -537,16 +519,7 @@ async def create_fix_plan(
     3. Save TODO files locally and to S3
     4. Return plan summary
     """
-    from turbowrap.fix.models import (
-        ExecutionStep,
-        IssueContextInfo,
-        IssueEntry,
-        IssuePlan,
-        IssueTodo,
-        MasterTodo,
-        MasterTodoSummary,
-    )
-    from turbowrap.fix.todo_manager import TodoManager
+    from turbowrap.api.services.fix_plan_service import FixPlanService
 
     # Load repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
@@ -558,311 +531,33 @@ async def create_fix_plan(
     if not issues:
         raise HTTPException(status_code=404, detail="No issues found")
 
-    # Format issues for prompt
-    issues_text = _format_issues_for_plan(issues)
-
-    # Build planning prompt
-    prompt = f"""Proceed to the PLANNING phase.
-
-Issues to plan:
-
-{issues_text}
-
-Generate the execution plan. For each issue:
-1. Read the target file to understand context
-2. Search for similar patterns in the codebase
-3. Identify dependencies between issues
-4. Generate a step-by-step plan
-
-Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
-{{
-  "phase": "planning",
-  "master_todo": {{ ... }},
-  "issue_todos": [ ... ]
-}}"""
-
-    # Run OPUS for planning (needs complex reasoning)
+    # Run planning service
     try:
-        working_dir = Path(repo.local_path) if repo.local_path else None
-        agent_path = FIX_PLANNER_AGENT if FIX_PLANNER_AGENT.exists() else None
-        logger.info(f"[PLAN] Creating CLI with working_dir={working_dir}, agent={agent_path}")
-
-        cli = ClaudeCLI(
-            working_dir=working_dir,
-            model="opus",
-            agent_md_path=agent_path,
+        service = FixPlanService(repo, db)
+        result = await service.create_plan(
+            issues=issues,
+            clarify_session_id=request.clarify_session_id,
         )
-    except Exception as e:
-        logger.exception(f"[PLAN] CLI creation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"CLI creation failed: {e}")
-
-    try:
-        # Resume the clarify session to preserve context
-        logger.info(f"[PLAN] Running CLI (resuming session={request.clarify_session_id})")
-
-        # Update clarify operation to show we're now in planning phase
-        tracker = get_tracker()
-        tracker.update(
-            request.clarify_session_id,
-            details={"phase": "planning"},
-        )
-
-        result = await cli.run(
-            prompt=prompt,
-            operation_type="fix_planning",
-            repo_name=repo.name or "unknown",
-            resume_session_id=request.clarify_session_id,  # Resume clarify session!
-            operation_details={
-                "parent_session_id": request.clarify_session_id,  # Link to clarify (root)
-                "issue_codes": [i.issue_code for i in issues if i.issue_code],
-                "issue_ids": [str(i.id) for i in issues],
-                "issue_count": len(issues),
-            },
-        )
-        logger.info(f"[PLAN] CLI run complete, output length: {len(result.output or '')}")
     except Exception as e:
         logger.exception(f"[PLAN] Planning failed: {e}")
         raise HTTPException(status_code=500, detail=f"Planning failed: {e}")
 
-    # Parse JSON response
-    if not result.output:
-        raise HTTPException(status_code=500, detail="No response from planner")
-
-    # MANDATORY: Log CLI prompt input and output for debugging
-    logger.info("[PLAN] === CLI PROMPT INPUT ===")
-    logger.info(f"[PLAN] Prompt length: {len(prompt)}")
-    logger.info(f"[PLAN] Session: {request.clarify_session_id}")
-    logger.info("[PLAN] === CLI OUTPUT ===")
-    logger.info(f"[PLAN] Output length: {len(result.output)}")
-    logger.info(f"[PLAN] Output (first 1000 chars): {result.output[:1000]}")
-
-    try:
-        data = parse_llm_json(result.output)
-        logger.info(f"[PLAN] Parsed data type: {type(data)}")
-        logger.info(f"[PLAN] Parsed data keys: {list(data.keys()) if data else 'None'}")
-        if data:
-            logger.info(f"[PLAN] phase: {data.get('phase')}")
-            logger.info(f"[PLAN] master_todo keys: {list(data.get('master_todo', {}).keys())}")
-            logger.info(f"[PLAN] issue_todos count: {len(data.get('issue_todos', []))}")
-            if data.get("issue_todos"):
-                first_todo = data["issue_todos"][0]
-                logger.info(f"[PLAN] First issue_todo keys: {list(first_todo.keys())}")
-                logger.info(f"[PLAN] First issue_todo context: {first_todo.get('context', {})}")
-    except Exception as e:
-        logger.exception(f"[PLAN] JSON parsing failed: {e}")
-        logger.error(f"[PLAN] Raw output: {result.output[:2000]}")
-        raise HTTPException(status_code=500, detail=f"JSON parsing failed: {e}")
-
-    # Ensure session_id is set (ClaudeCLI.run() always sets it)
-    if not result.session_id:
-        raise HTTPException(status_code=500, detail="Claude CLI did not return a session ID")
-
-    if not data or data.get("phase") != "planning":
-        logger.warning(
-            f"[PLAN] FALLBACK TRIGGERED: data={data is not None}, phase={data.get('phase') if data else 'N/A'}"
-        )
-        logger.warning(f"[PLAN] Raw output first 2000 chars: {result.output[:2000]}")
-        data = _create_fallback_plan(issues, result.session_id)
-
-    # ALWAYS use result.session_id (the OUTPUT, not the input!)
-    session_id: str = result.session_id
-
-    # Build MasterTodo and IssueTodos with proper error handling
-    try:
-        execution_steps: list[ExecutionStep] = []
-        for step_data in data.get("master_todo", {}).get("execution_steps", []):
-            step = ExecutionStep(
-                step=step_data.get("step", 1),
-                issues=[
-                    IssueEntry(
-                        code=ie.get("code", ""),
-                        todo_file=ie.get("todo_file", f"fix_todo_{ie.get('code', '')}.json"),
-                        agent_type=ie.get("agent_type", "fixer-single"),
-                    )
-                    for ie in step_data.get("issues", [])
-                ],
-                reason=step_data.get("reason"),
-            )
-            execution_steps.append(step)
-
-        if not execution_steps:
-            execution_steps = [
-                ExecutionStep(
-                    step=1,
-                    issues=[
-                        IssueEntry(
-                            code=issue.issue_code or f"issue-{i}",
-                            todo_file=f"fix_todo_{issue.issue_code or f'issue-{i}'}.json",
-                            agent_type="fixer-single",
-                        )
-                        for i, issue in enumerate(issues)
-                    ],
-                    reason="All issues in single step (fallback)",
-                )
-            ]
-
-        master_todo = MasterTodo(
-            session_id=session_id,
-            execution_steps=execution_steps,
-            summary=MasterTodoSummary(
-                total_issues=len(issues),
-                total_steps=len(execution_steps),
-            ),
-        )
-
-        # Build IssueTodos
-        issue_todos: list[IssueTodo] = []
-        issue_code_map = {issue.issue_code: issue for issue in issues if issue.issue_code}
-
-        for todo_data in data.get("issue_todos", []):
-            issue_code = todo_data.get("issue_code", "")
-            issue = issue_code_map.get(issue_code)
-            if not issue:
-                continue
-
-            context_data = todo_data.get("context", {})
-            context = IssueContextInfo(
-                file_content_snippet=context_data.get("file_content_snippet"),
-                related_files=[],
-                existing_patterns=context_data.get("existing_patterns", []),
-            )
-
-            plan_data = todo_data.get("plan", {})
-            # Parse estimated_lines_changed safely (LLM may return string)
-            raw_lines = plan_data.get("estimated_lines_changed", 0)
-            if isinstance(raw_lines, str):
-                # Extract first number from string like "~10-20 (note)"
-                match = re.search(r"\d+", raw_lines)
-                estimated_lines = int(match.group()) if match else 5
-            else:
-                estimated_lines = int(raw_lines) if raw_lines else 0
-
-            plan = (
-                IssuePlan(
-                    approach=plan_data.get("approach", "patch"),
-                    steps=plan_data.get("steps", []),
-                    estimated_lines_changed=estimated_lines,
-                    risks=plan_data.get("risks", []),
-                    verification=plan_data.get("verification"),
-                )
-                if plan_data
-                else None
-            )
-
-            issue_todo = IssueTodo(
-                issue_code=issue_code,
-                issue_id=issue.id,
-                file=issue.file or "",
-                line=issue.line,
-                title=issue.title or "",
-                clarifications=[],
-                context=context,
-                plan=plan,
-            )
-            issue_todos.append(issue_todo)
-
-        # Create fallback IssueTodos for missing issues
-        planned_codes = {t.issue_code for t in issue_todos}
-        for issue in issues:
-            if issue.issue_code and issue.issue_code not in planned_codes:
-                issue_todos.append(
-                    IssueTodo(
-                        issue_code=issue.issue_code,
-                        issue_id=issue.id,
-                        file=issue.file or "",
-                        line=issue.line,
-                        title=issue.title or "",
-                        clarifications=[],
-                        context=IssueContextInfo(),
-                        plan=IssuePlan(
-                            approach="patch",
-                            steps=[f"1. Fix {issue.title}"],
-                            estimated_lines_changed=5,
-                        ),
-                    )
-                )
-
-        # Save TODO files
-        todo_manager = TodoManager(session_id)
-        paths = await todo_manager.save_all(master_todo, issue_todos)
-
-        # Save plan to each issue in database
-        for issue_todo in issue_todos:
-            issue = issue_code_map.get(issue_todo.issue_code)
-            if issue and issue_todo.plan:
-                issue.fix_plan = {
-                    "approach": issue_todo.plan.approach,
-                    "steps": issue_todo.plan.steps,
-                    "estimated_lines_changed": issue_todo.plan.estimated_lines_changed,
-                    "risks": issue_todo.plan.risks or [],
-                    "verification": issue_todo.plan.verification,
-                }
-        db.commit()
-        logger.info(f"[PLAN] Saved fix_plan to {len(issue_todos)} issues")
-
-        step_infos = [
+    # Convert service result to response model
+    return FixPlanResponse(
+        session_id=result.session_id,
+        master_todo_path=result.master_todo_path,
+        issue_count=result.issue_count,
+        step_count=result.step_count,
+        execution_steps=[
             FixPlanStepInfo(
-                step=step.step,
-                issue_codes=[ie.code for ie in step.issues],
-                reason=step.reason,
+                step=s.step,
+                issue_codes=s.issue_codes,
+                reason=s.reason,
             )
-            for step in execution_steps
-        ]
-
-        return FixPlanResponse(
-            session_id=session_id,
-            master_todo_path=str(paths.get("master", "")),
-            issue_count=len(issue_todos),
-            step_count=len(execution_steps),
-            execution_steps=step_infos,
-            ready_to_execute=True,
-        )
-
-    except Exception as e:
-        logger.exception(f"[PLAN] Building/saving TODO failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Building plan failed: {e}")
-
-
-def _create_fallback_plan(issues: list[Issue], session_id: str) -> dict[str, Any]:
-    """Create a fallback plan when LLM response is invalid."""
-    return {
-        "phase": "planning",
-        "master_todo": {
-            "session_id": session_id,
-            "execution_steps": [
-                {
-                    "step": 1,
-                    "issues": [
-                        {
-                            "code": issue.issue_code or f"issue-{i}",
-                            "todo_file": f"fix_todo_{issue.issue_code or f'issue-{i}'}.json",
-                            "agent_type": "fixer-single",
-                        }
-                        for i, issue in enumerate(issues)
-                    ],
-                    "reason": "Fallback: all issues in single step",
-                }
-            ],
-            "summary": {"total_issues": len(issues), "total_steps": 1},
-        },
-        "issue_todos": [
-            {
-                "issue_code": issue.issue_code or f"issue-{i}",
-                "issue_id": issue.id,
-                "file": issue.file or "",
-                "line": issue.line,
-                "title": issue.title or "",
-                "clarifications": [],
-                "context": {},
-                "plan": {
-                    "approach": "patch",
-                    "steps": [f"1. Fix: {issue.title}"],
-                    "estimated_lines_changed": 5,
-                },
-            }
-            for i, issue in enumerate(issues)
+            for s in result.execution_steps
         ],
-    }
+        ready_to_execute=result.ready_to_execute,
+    )
 
 
 @router.post("/start", response_model=None)
