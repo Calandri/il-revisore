@@ -571,6 +571,8 @@ Respond ONLY with valid JSON:
                 "issue_codes": [i.issue_code for i in issues if i.issue_code],
                 "issue_ids": [str(i.id) for i in issues],
                 "issue_count": len(issues),
+                # Link resume calls to root clarify session
+                "parent_session_id": request.session_id if request.session_id else None,
             },
         )
     except Exception as e:

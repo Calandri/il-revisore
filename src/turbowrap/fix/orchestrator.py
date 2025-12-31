@@ -120,6 +120,8 @@ class FixOrchestrator:
             FixSessionResult with all issue outcomes
         """
         session_id = str(uuid.uuid4())
+        # Store parent_session_id for operation grouping (clarify_session_id from caller)
+        parent_session_id = operation_id
         branch_name = request.existing_branch_name or generate_branch_name(issues)
 
         await self._emit(
@@ -198,6 +200,11 @@ class FixOrchestrator:
                     repo_name=self.repo_path.name,
                     context_id=session_id,
                     resume_session_id=claude_session_id,
+                    operation_details={
+                        # Link to clarify session for grouping
+                        "parent_session_id": parent_session_id,
+                        "round": round_num,
+                    },
                 )
 
                 if not result.success:
@@ -224,7 +231,12 @@ class FixOrchestrator:
                 )
 
                 approved, failed, gemini_feedback = await self._evaluate_fixes(
-                    challenger, fix_results, pending_issues, branch_name, session_id
+                    challenger,
+                    fix_results,
+                    pending_issues,
+                    branch_name,
+                    session_id,
+                    parent_session_id,
                 )
 
                 logger.info(
@@ -498,6 +510,7 @@ The following issues failed Gemini validation. Please fix them based on the feed
         issues: list[Issue],
         branch_name: str,
         session_id: str,
+        parent_session_id: str | None,
     ) -> tuple[list[Issue], list[Issue], str]:
         """
         Evaluate all fixes with Gemini Challenger using CLI.
@@ -570,7 +583,7 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 branch_name=branch_name,
                 fixer_output=fix_results,
                 repo_name=self.repo_path.name,
-                parent_session_id=session_id,
+                parent_session_id=parent_session_id,  # Use clarify_session_id as root
             )
 
             # Process results

@@ -55,12 +55,14 @@ from turbowrap.fix.models import (  # noqa: E402
     FixRequest,
 )
 from turbowrap.fix.orchestrator import (  # noqa: E402
-    DEFAULT_EFFORT,
-    DEFAULT_FILES,
-    MAX_ISSUES_PER_CLI_CALL,
-    MAX_WORKLOAD_POINTS_PER_BATCH,
     FixOrchestrator,
 )
+
+# Constants for workload batching (defined locally for tests)
+DEFAULT_EFFORT = 3  # Default effort if not estimated (1-5 scale)
+DEFAULT_FILES = 1  # Default files count if not estimated
+MAX_ISSUES_PER_CLI_CALL = 5  # Max issues per CLI call
+MAX_WORKLOAD_POINTS_PER_BATCH = 15  # Max workload points per batch
 
 # =============================================================================
 # Fixtures
