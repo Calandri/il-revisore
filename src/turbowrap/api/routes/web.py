@@ -245,6 +245,58 @@ async def linear_page(request: Request, db: Session = Depends(get_db)) -> Respon
     )
 
 
+@router.get("/features", response_class=HTMLResponse)
+async def features_page(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Features tracking page."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/features.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "features",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
+@router.get("/features/{feature_id}", response_class=HTMLResponse)
+async def feature_detail_page(
+    request: Request,
+    feature_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Feature detail page - shows full feature info by ID."""
+    from ...db.models import Feature
+
+    feature = db.query(Feature).filter(Feature.id == feature_id).first()
+
+    if not feature:
+        return Response(
+            content="<html><body><h1>Feature not found</h1><p>The feature you requested does not exist.</p><a href='/features'>Back to Features</a></body></html>",
+            status_code=404,
+            media_type="text/html",
+        )
+
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/feature_detail.html",
+            {
+                "request": request,
+                "feature": feature,
+                "active_page": "features",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/files", response_class=HTMLResponse)
 async def files_page(request: Request, db: Session = Depends(get_db)) -> Response:
     """File editor page."""

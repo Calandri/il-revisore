@@ -126,6 +126,17 @@
                 <span>Issues</span>
             </a>
 
+            <!-- Features -->
+            <a href="/features"
+               @click="window.innerWidth < 768 && (sidebarOpen = false)"
+               class="group relative flex items-center gap-2 px-3 py-1.5 pl-6 rounded-lg transition-colors text-sm {% if active_page == 'features' %}bg-primary/10 text-primary border-l-2 border-primary{% else %}hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span>Features</span>
+            </a>
+
             <!-- Tests -->
             <a href="/tests"
                @click="window.innerWidth < 768 && (sidebarOpen = false)"
@@ -227,6 +238,14 @@
                           d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                 </svg>
                 <div class="sidebar-tooltip">Issues</div>
+            </a>
+            <a href="/features"
+               class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'features' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <div class="sidebar-tooltip">Features</div>
             </a>
             <a href="/tests"
                class="group relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors {% if active_page == 'tests' %}bg-primary text-white{% else %}hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}">

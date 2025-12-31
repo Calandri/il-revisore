@@ -134,9 +134,10 @@ class FixPlanService:
                 lines.append(f"**Suggested Fix:** {issue.suggested_fix}")
 
             # Include clarifications if present (redundancy for robustness)
-            if issue.clarifications:
+            clarifications = list(issue.clarifications or [])
+            if clarifications:
                 lines.append("\n**Clarifications (from user):**")
-                for c in issue.clarifications:
+                for c in clarifications:
                     q = c.get("question", "")
                     a = c.get("answer", "")
                     lines.append(f"- Q: {q}")
