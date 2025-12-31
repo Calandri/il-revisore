@@ -1035,6 +1035,27 @@
                       class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 resize-none"
                       placeholder="Es: Usa l'endpoint /api/v2/users invece di /api/users&#10;Es: Mantieni la compatibilità con Python 3.9"></textarea>
             <p class="mt-2 text-xs text-gray-400">Queste note verranno passate all'AI che risolverà le issues.</p>
+
+            <!-- Multi-Agent Toggle -->
+            <div class="mt-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="font-medium text-sm text-gray-700 dark:text-gray-200">Multi-Agent Mode</span>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Splitta issue grandi in sub-task paralleli</p>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <input type="checkbox" x-model="enableSubtasks" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
+                    </div>
+                </label>
+            </div>
             <div class="flex justify-end gap-3 mt-4">
                 <button @click="showNotesModal = false; fixNotes = ''" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
                 <button @click="showNotesModal = false; confirmFixWithNotes()" class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2">
@@ -1050,8 +1071,12 @@
     <!-- ============================================== -->
     <!-- CLARIFICATION MODAL -->
     <!-- ============================================== -->
-    <div x-show="clarification.show" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+    <div x-show="clarification.show" x-cloak x-transition
+         @click.self="confirmCancelClarification()"
+         @keydown.escape.window="clarification.show && confirmCancelClarification()"
+         x-init="$watch('clarification.show', v => v ? _addBeforeUnloadWarning() : _removeBeforeUnloadWarning())"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div @click.stop class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
                 <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
@@ -1063,7 +1088,7 @@
                     <h3 class="font-semibold text-lg">Pre-Fix Clarification</h3>
                     <p class="text-sm text-gray-500 dark:text-gray-400">OPUS sta analizzando le issue prima di procedere</p>
                 </div>
-                <button @click="cancelClarification()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
+                <button @click="confirmCancelClarification()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
@@ -1171,7 +1196,7 @@
                     Salta e procedi direttamente
                 </button>
                 <div class="flex gap-3">
-                    <button @click="cancelClarification()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    <button @click="confirmCancelClarification()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                         Annulla
                     </button>
                     <button
@@ -1192,8 +1217,12 @@
     <!-- ============================================== -->
     <!-- PLAN PREVIEW MODAL -->
     <!-- ============================================== -->
-    <div x-show="planPreview.show" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+    <div x-show="planPreview.show" x-cloak x-transition
+         @click.self="confirmCancelPlanPreview()"
+         @keydown.escape.window="planPreview.show && confirmCancelPlanPreview()"
+         x-init="$watch('planPreview.show', v => v ? _addBeforeUnloadWarning() : _removeBeforeUnloadWarning())"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div @click.stop class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
             <!-- Header -->
             <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
                 <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -1207,7 +1236,7 @@
                         <span x-text="planPreview.totalIssues"></span> issues in <span x-text="planPreview.totalSteps"></span> step
                     </p>
                 </div>
-                <button @click="cancelPlanPreview()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
+                <button @click="confirmCancelPlanPreview()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
@@ -1255,7 +1284,7 @@
 
             <!-- Footer -->
             <div x-show="!planPreview.loading" class="p-4 border-t dark:border-gray-700 flex justify-between items-center shrink-0">
-                <button @click="cancelPlanPreview()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <button @click="confirmCancelPlanPreview()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                     Annulla
                 </button>
                 <button @click="executePlan()" class="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2">
@@ -1486,6 +1515,7 @@ function issuesApp() {
         ignoreReason: '',
         ignoringIssue: false,
         fixNotes: '',
+        enableSubtasks: false,  // Multi-agent mode for multi-file issues
         pendingBranch: null,
         pendingBranchLoading: false,
         pendingFixRequest: null,
@@ -1530,7 +1560,8 @@ function issuesApp() {
             answers: {},             // Current batch answers
             message: '',
             readyToFix: false,
-            pendingRequest: null  // Stores the pending fix request details
+            pendingRequest: null,  // Stores the pending fix request details
+            pingInterval: null     // Auto-ping interval to keep cache warm
         },
         // Execution plan preview state
         planPreview: {
@@ -1769,6 +1800,7 @@ function issuesApp() {
 
                 const data = await response.json();
                 this.clarification.sessionId = data.session_id;
+                this._startClarifyPing();  // Keep cache warm while user thinks
                 this.clarification.message = data.message;
                 this.clarification.readyToFix = data.ready_to_fix || data.ready_to_plan;
 
@@ -1810,6 +1842,7 @@ function issuesApp() {
 
                 // If ready to plan/fix, show plan preview then proceed
                 if (data.ready_to_fix || data.ready_to_plan) {
+                    this._stopClarifyPing();  // No more need to keep cache warm
                     this.clarification.message = '✨ OPUS has everything clear! Generating execution plan...';
                     this.clarification.loading = true;
 
@@ -1866,6 +1899,7 @@ function issuesApp() {
 
         // Skip clarification and proceed directly to fix
         skipClarification() {
+            this._stopClarifyPing();
             this.clarification.show = false;
             this._startFixProcess(
                 this.clarification.pendingRequest.firstIssue,
@@ -1873,8 +1907,92 @@ function issuesApp() {
             );
         },
 
+        // Auto-ping to keep Claude cache warm (every 3 min)
+        _startClarifyPing() {
+            this._stopClarifyPing();
+            this.clarification.pingInterval = setInterval(() => {
+                if (!this.clarification.show || this.clarification.readyToFix || this.clarification.loading) {
+                    this._stopClarifyPing();
+                    return;
+                }
+                this._pingClarifySession();
+            }, 180000); // 3 minutes
+            console.log('[CLARIFY] 🔄 Started cache ping (every 3min)');
+        },
+
+        _stopClarifyPing() {
+            if (this.clarification.pingInterval) {
+                clearInterval(this.clarification.pingInterval);
+                this.clarification.pingInterval = null;
+                console.log('[CLARIFY] ⏹️ Stopped cache ping');
+            }
+        },
+
+        async _pingClarifySession() {
+            if (!this.clarification.sessionId) return;
+            const firstIssue = this.clarification.pendingRequest?.firstIssue;
+            if (!firstIssue) return;
+
+            try {
+                console.log('[CLARIFY] 📡 Pinging to keep cache warm...');
+                const response = await fetch('/api/fix/clarify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: firstIssue.repository_id,
+                        issue_ids: this.selectedIssues,
+                        session_id: this.clarification.sessionId,
+                        answers: null,
+                        previous_questions: null,
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    this.clarification.sessionId = data.session_id;
+                    console.log('[CLARIFY] ✅ Cache ping OK');
+                }
+            } catch (e) {
+                console.warn('[CLARIFY] ⚠️ Ping failed:', e.message);
+            }
+        },
+
+        // Confirm before canceling clarification
+        async confirmCancelClarification() {
+            const confirmed = await TurboConfirm.show({
+                title: '⚠️ Annullare il processo?',
+                message: 'Il processo di clarification/planning verrà annullato e perderai il contesto accumulato.',
+                confirmText: 'Sì, annulla',
+                cancelText: 'Continua',
+                variant: 'warning'
+            });
+            if (confirmed) {
+                this.cancelClarification();
+            }
+        },
+
+        // Browser back/refresh warning
+        _beforeUnloadHandler: null,
+
+        _addBeforeUnloadWarning() {
+            this._beforeUnloadHandler = (e) => {
+                e.preventDefault();
+                e.returnValue = 'Il processo di clarification verrà annullato. Sei sicuro?';
+                return e.returnValue;
+            };
+            window.addEventListener('beforeunload', this._beforeUnloadHandler);
+        },
+
+        _removeBeforeUnloadWarning() {
+            if (this._beforeUnloadHandler) {
+                window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+                this._beforeUnloadHandler = null;
+            }
+        },
+
         // Cancel clarification
         cancelClarification() {
+            this._stopClarifyPing();
+            this._removeBeforeUnloadWarning();
             this.clarification.show = false;
             this.clarification.sessionId = null;
             this.clarification.questions = [];
@@ -1887,7 +2005,21 @@ function issuesApp() {
         },
 
         // Plan Preview functions
+        async confirmCancelPlanPreview() {
+            const confirmed = await TurboConfirm.show({
+                title: '⚠️ Annullare il piano?',
+                message: 'Il piano di esecuzione verrà annullato.',
+                confirmText: 'Sì, annulla',
+                cancelText: 'Continua',
+                variant: 'warning'
+            });
+            if (confirmed) {
+                this.cancelPlanPreview();
+            }
+        },
+
         cancelPlanPreview() {
+            this._removeBeforeUnloadWarning();
             this.planPreview.show = false;
             this.planPreview.loading = false;
             this.planPreview.masterTodoPath = null;
@@ -1908,7 +2040,8 @@ function issuesApp() {
                     body: JSON.stringify({
                         repository_id: this.filters.repository_id,
                         issue_ids: this.selectedIssues,
-                        clarify_session_id: this.clarification.sessionId
+                        clarify_session_id: this.clarification.sessionId,
+                        enable_subtasks: this.enableSubtasks
                     })
                 });
 

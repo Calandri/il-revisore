@@ -296,6 +296,10 @@ class FixPlanRequest(BaseModel):
     clarify_session_id: str = Field(
         ..., description="Session ID from clarification phase (required)"
     )
+    enable_subtasks: bool = Field(
+        default=False,
+        description="Enable multi-agent mode for splitting large issues into parallel sub-tasks",
+    )
 
 
 class FixPlanStepInfo(BaseModel):
@@ -537,6 +541,7 @@ async def create_fix_plan(
         result = await service.create_plan(
             issues=issues,
             clarify_session_id=request.clarify_session_id,
+            enable_subtasks=request.enable_subtasks,
         )
     except Exception as e:
         logger.exception(f"[PLAN] Planning failed: {e}")

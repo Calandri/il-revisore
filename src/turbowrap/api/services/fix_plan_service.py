@@ -85,16 +85,21 @@ class FixPlanService:
         self,
         issues: list[Issue],
         clarify_session_id: str,
+        enable_subtasks: bool | None = None,
     ) -> PlanResult:
         """Create execution plan for fixing issues.
 
         Args:
             issues: Issues to plan fixes for.
             clarify_session_id: Claude session ID from clarification phase.
+            enable_subtasks: Override for subtask splitting. If None, uses config default.
 
         Returns:
             PlanResult with execution steps and TODO paths.
         """
+        # Store subtasks setting (request override or config default)
+        self._enable_subtasks = enable_subtasks
+
         # Build prompt
         prompt = self._build_planning_prompt(issues)
 
@@ -147,8 +152,15 @@ class FixPlanService:
         settings = get_settings()
         issues_text = self._format_issues(issues)
 
+        # Use request override if set, otherwise config default
+        enable_subtasks = (
+            self._enable_subtasks
+            if self._enable_subtasks is not None
+            else settings.fix_planner.enable_subtasks
+        )
+
         # Build subtasks configuration note
-        if settings.fix_planner.enable_subtasks:
+        if enable_subtasks:
             subtasks_note = f"""
 ## Sub-Task Splitting: ENABLED
 
