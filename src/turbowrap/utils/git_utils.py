@@ -538,6 +538,195 @@ def list_branches(repo_path: Path, include_remote: bool = True) -> list[str]:
         raise RepositoryError(f"Failed to list branches: {e}") from e
 
 
+def is_branch_merged(repo_path: Path, branch: str, target: str = "main") -> bool:
+    """Check if a branch has been merged into target branch.
+
+    Uses git merge-base --is-ancestor to verify if all commits
+    in branch are reachable from target.
+
+    Args:
+        repo_path: Path to the repository.
+        branch: Branch name to check.
+        target: Target branch (default: main).
+
+    Returns:
+        True if branch is merged into target, False otherwise.
+    """
+    if not repo_path.exists():
+        return False
+
+    try:
+        # First, fetch to ensure we have latest remote state
+        run_git_command(repo_path, ["fetch", "--prune"], timeout=30, check=False)
+
+        # Try local branch first, then remote
+        branch_ref = branch
+        try:
+            run_git_command(repo_path, ["rev-parse", "--verify", branch])
+        except RuntimeError:
+            # Try remote branch
+            branch_ref = f"origin/{branch}"
+            try:
+                run_git_command(repo_path, ["rev-parse", "--verify", branch_ref])
+            except RuntimeError:
+                # Branch doesn't exist locally or remotely - consider it "merged" (deleted)
+                logger.debug(f"Branch {branch} not found, considering as merged/deleted")
+                return True
+
+        # Check if branch is ancestor of target
+        # git merge-base --is-ancestor <branch> <target>
+        # Returns 0 if branch is ancestor (merged), non-zero otherwise
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", branch_ref, target],
+            cwd=repo_path,
+            capture_output=True,
+            env=_get_git_env(),
+        )
+        return result.returncode == 0
+
+    except Exception as e:
+        logger.warning(f"Error checking if {branch} is merged into {target}: {e}")
+        return False
+
+
+def get_commits_ahead(repo_path: Path, branch: str, target: str = "main") -> int:
+    """Count commits in branch that are not in target.
+
+    Args:
+        repo_path: Path to the repository.
+        branch: Branch name to check.
+        target: Target branch (default: main).
+
+    Returns:
+        Number of commits ahead, or 0 if branch not found.
+    """
+    if not repo_path.exists():
+        return 0
+
+    try:
+        # Try local branch first, then remote
+        branch_ref = branch
+        try:
+            run_git_command(repo_path, ["rev-parse", "--verify", branch])
+        except RuntimeError:
+            branch_ref = f"origin/{branch}"
+            try:
+                run_git_command(repo_path, ["rev-parse", "--verify", branch_ref])
+            except RuntimeError:
+                return 0
+
+        # git rev-list --count target..branch
+        output = run_git_command(
+            repo_path,
+            ["rev-list", "--count", f"{target}..{branch_ref}"],
+        )
+        return int(output.strip()) if output.strip() else 0
+
+    except (RuntimeError, ValueError) as e:
+        logger.warning(f"Error counting commits ahead for {branch}: {e}")
+        return 0
+
+
+def get_branch_commits(
+    repo_path: Path,
+    branch: str,
+    target: str = "main",
+    max_commits: int = 10,
+) -> list[dict[str, str]]:
+    """Get list of commits in branch not in target.
+
+    Args:
+        repo_path: Path to the repository.
+        branch: Branch name.
+        target: Target branch (default: main).
+        max_commits: Maximum commits to return.
+
+    Returns:
+        List of commit dicts with sha, message, author, date.
+    """
+    if not repo_path.exists():
+        return []
+
+    try:
+        # Try local branch first, then remote
+        branch_ref = branch
+        try:
+            run_git_command(repo_path, ["rev-parse", "--verify", branch])
+        except RuntimeError:
+            branch_ref = f"origin/{branch}"
+
+        # git log target..branch --format="%H|%s|%an|%ci"
+        output = run_git_command(
+            repo_path,
+            [
+                "log",
+                f"{target}..{branch_ref}",
+                f"--max-count={max_commits}",
+                "--format=%H|%s|%an|%ci",
+            ],
+        )
+
+        commits = []
+        for line in output.split("\n"):
+            if not line.strip():
+                continue
+            parts = line.split("|", 3)
+            if len(parts) >= 4:
+                commits.append(
+                    {
+                        "sha": parts[0][:8],
+                        "message": parts[1][:80],
+                        "author": parts[2],
+                        "date": parts[3],
+                    }
+                )
+
+        return commits
+
+    except RuntimeError as e:
+        logger.warning(f"Error getting commits for {branch}: {e}")
+        return []
+
+
+def delete_branch(repo_path: Path, branch: str, force: bool = False) -> bool:
+    """Delete a local and remote branch.
+
+    Args:
+        repo_path: Path to the repository.
+        branch: Branch name to delete.
+        force: Force delete even if not fully merged.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not repo_path.exists():
+        return False
+
+    try:
+        # Delete local branch if exists
+        try:
+            flag = "-D" if force else "-d"
+            run_git_command(repo_path, ["branch", flag, branch], check=False)
+            logger.info(f"Deleted local branch: {branch}")
+        except RuntimeError:
+            pass  # Branch might not exist locally
+
+        # Delete remote branch
+        try:
+            run_git_command(repo_path, ["push", "origin", "--delete", branch])
+            logger.info(f"Deleted remote branch: {branch}")
+        except RuntimeError as e:
+            if "remote ref does not exist" not in str(e):
+                logger.warning(f"Failed to delete remote branch {branch}: {e}")
+                return False
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error deleting branch {branch}: {e}")
+        return False
+
+
 def checkout_branch(repo_path: Path, branch: str) -> str:
     """Checkout a branch in the repository.
 

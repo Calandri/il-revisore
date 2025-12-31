@@ -1947,7 +1947,9 @@ function issuesApp() {
                         const branchOptions = action === 'continue'
                             ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name }
                             : null;
-                        await this._startFixProcess(firstIssue, branchOptions, false);
+                        // ALWAYS go through clarification phase (even on resume/continue)
+                        this.clarification.pendingRequest = { firstIssue, branchOptions };
+                        await this._startClarification(firstIssue);
                     }
                 }
             } catch (error) { alert('Errore: ' + error.message); }

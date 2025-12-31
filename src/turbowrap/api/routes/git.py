@@ -133,6 +133,54 @@ class StashEntry(BaseModel):
     date: str
 
 
+# ============================================================================
+# Unmerged Branches Models
+# ============================================================================
+
+
+class UnmergedBranchIssue(BaseModel):
+    """Issue associated with an unmerged branch."""
+
+    id: str
+    issue_code: str
+    title: str
+    severity: str
+    status: str
+
+
+class UnmergedBranchCommit(BaseModel):
+    """Commit in an unmerged branch."""
+
+    sha: str
+    message: str
+    author: str
+    date: str
+
+
+class UnmergedBranch(BaseModel):
+    """Information about an unmerged fix branch."""
+
+    name: str
+    commits_ahead: int
+    issues: list[UnmergedBranchIssue]
+    commits: list[UnmergedBranchCommit]
+    fix_session_id: str | None = None
+    created_at: str | None = None
+
+
+class MarkBranchMergedRequest(BaseModel):
+    """Request to mark a branch as manually merged."""
+
+    branch: str
+
+
+class DeleteBranchRequest(BaseModel):
+    """Request to delete a branch."""
+
+    branch: str
+    force: bool = False
+
+
 @router.get("/repositories")
 def list_repositories(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     """List all repositories with basic info (including those in error state)."""
