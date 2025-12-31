@@ -151,20 +151,17 @@ async def issues_page(request: Request, db: Session = Depends(get_db)) -> Respon
     )
 
 
-@router.get("/issues/{issue_code}", response_class=HTMLResponse)
+@router.get("/issues/{issue_id}", response_class=HTMLResponse)
 async def issue_detail_page(
     request: Request,
-    issue_code: str,
+    issue_id: str,
     db: Session = Depends(get_db),
 ) -> Response:
-    """Issue detail page - shows full issue info by issue_code."""
+    """Issue detail page - shows full issue info by ID (UUID only)."""
     from ...db.models import Issue
 
-    # Find issue by issue_code
-    issue = db.query(Issue).filter(Issue.issue_code == issue_code).first()
-    if not issue:
-        # Try to find by ID as fallback
-        issue = db.query(Issue).filter(Issue.id == issue_code).first()
+    # Find by ID (UUID) only - no fallback to issue_code to avoid ambiguity
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
 
     if not issue:
         # Return 404 page

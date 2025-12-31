@@ -372,7 +372,7 @@ def handle_live_view_action(
         return LiveViewActionResponse(
             action="create_issue",
             success=True,
-            redirect=f"/issues/{issue.issue_code}",
+            redirect=f"/issues/{issue.id}",
             entity_id=issue.id,
             message=f"Issue {issue_code} created",
         )
