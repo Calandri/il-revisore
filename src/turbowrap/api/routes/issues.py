@@ -798,14 +798,13 @@ def get_issue_operations(
     get_or_404(db, Issue, issue_id)
 
     # Query operations where details->issue_ids contains this issue_id
-    # SQLite JSON: json_extract(details, '$.issue_ids') LIKE '%issue_id%'
+    # Note: SQLite doesn't support JSON array contains, so we fetch all with details
+    # and filter in Python below
     operations = (
         db.query(Operation)
-        .filter(
-            Operation.details.isnot(None),
-            Operation.details.cast(str).contains(issue_id),
-        )
+        .filter(Operation.details.isnot(None))
         .order_by(Operation.started_at.desc())
+        .limit(100)  # Limit to prevent excessive data
         .all()
     )
 

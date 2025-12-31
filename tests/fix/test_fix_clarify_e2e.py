@@ -630,12 +630,14 @@ class TestDataPersistence:
             ops_resp = client.get(f"{BASE_URL}/api/issues/{issue_ids[0]}/operations")
 
             if ops_resp.status_code == 200:
-                operations = ops_resp.json()
+                data = ops_resp.json()
+                operations = data.get("operations", [])
+                total = data.get("total", 0)
                 print(f"\nOperations for issue {issue_ids[0][:8]}...:")
-                print(f"  Total operations: {len(operations)}")
+                print(f"  Total operations: {total}")
                 for op in operations[:5]:  # Show first 5
                     print(
-                        f"    - {op.get('type')}: {op.get('status')} at {op.get('created_at', '')[:19]}"
+                        f"    - {op.get('operation_type')}: {op.get('status')} at {op.get('started_at', '')[:19]}"
                     )
             else:
                 print(f"\nOperations endpoint returned: {ops_resp.status_code}")
