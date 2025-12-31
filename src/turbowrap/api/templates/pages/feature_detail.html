@@ -510,64 +510,35 @@
                 </div>
             </div>
 
-            <!-- FIX RESULT (shown when fixed) -->
-            {% if issue.fix_code %}
+            <!-- DEVELOPMENT RESULT (shown when developed) -->
+            {% if feature.fix_explanation or feature.fix_branch %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-green-300 dark:border-green-500/30 overflow-hidden">
                 <div class="px-4 md:px-6 py-3 md:py-4 border-b border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-500/10">
                     <h3 class="text-base md:text-lg font-semibold flex flex-wrap items-center gap-2 text-green-700 dark:text-green-400">
                         <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                         </svg>
-                        Fix Applicato
-                        {% if issue.fixed_by and issue.fixed_at %}
-                        <span class="text-xs md:text-sm font-normal text-gray-500 dark:text-gray-400">da {{ issue.fixed_by }} il {{ issue.fixed_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                        {% endif %}
+                        Sviluppo Completato
                     </h3>
                 </div>
                 <div class="p-4 md:p-6 space-y-4">
-                    {% if issue.fix_explanation %}
+                    {% if feature.fix_explanation %}
                     <div>
-                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Spiegazione</h4>
-                        <p class="text-gray-700 dark:text-gray-300 text-sm">{{ issue.fix_explanation }}</p>
-                    </div>
-                    {% endif %}
-                    <div>
-                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Codice</h4>
-                        <pre class="p-4 overflow-x-auto code-block text-sm bg-gray-50 dark:bg-gray-900 rounded-lg"><code class="text-gray-800 dark:text-gray-300">{{ issue.fix_code }}</code></pre>
-                    </div>
-                    {% if issue.fix_files_modified %}
-                    <div>
-                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">File Modificati</h4>
-                        <div class="flex flex-wrap gap-2">
-                            {% for file in issue.fix_files_modified %}
-                            <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono">{{ file }}</span>
-                            {% endfor %}
-                        </div>
+                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Riepilogo Modifiche</h4>
+                        <p class="text-gray-700 dark:text-gray-300 text-sm">{{ feature.fix_explanation }}</p>
                     </div>
                     {% endif %}
                     <div class="flex flex-wrap items-center gap-6 text-sm pt-2">
-                        {% if issue.fix_branch %}
+                        {% if feature.fix_branch %}
                         <div class="flex items-center gap-2">
                             <span class="text-gray-500">Branch:</span>
-                            <span class="font-mono text-primary">{{ issue.fix_branch }}</span>
+                            <span class="font-mono text-primary">{{ feature.fix_branch }}</span>
                         </div>
                         {% endif %}
-                        {% if issue.fix_commit_sha %}
+                        {% if feature.fix_commit_sha %}
                         <div class="flex items-center gap-2">
                             <span class="text-gray-500">Commit:</span>
-                            <span class="font-mono text-gray-700 dark:text-gray-300">{{ issue.fix_commit_sha[:8] }}</span>
-                        </div>
-                        {% endif %}
-                        {% if issue.fix_self_score is not none %}
-                        <div class="flex items-center gap-2">
-                            <span class="text-gray-500">Self Score:</span>
-                            <span class="font-semibold {% if issue.fix_self_score >= 90 %}text-green-600 dark:text-green-400{% elif issue.fix_self_score >= 70 %}text-yellow-600 dark:text-yellow-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ issue.fix_self_score }}%</span>
-                        </div>
-                        {% endif %}
-                        {% if issue.fix_gemini_score is not none %}
-                        <div class="flex items-center gap-2">
-                            <span class="text-gray-500">Gemini Score:</span>
-                            <span class="font-semibold {% if issue.fix_gemini_score >= 90 %}text-green-600 dark:text-green-400{% elif issue.fix_gemini_score >= 70 %}text-yellow-600 dark:text-yellow-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ issue.fix_gemini_score }}%</span>
+                            <span class="font-mono text-gray-700 dark:text-gray-300">{{ feature.fix_commit_sha[:8] }}</span>
                         </div>
                         {% endif %}
                     </div>
@@ -583,7 +554,7 @@
         <div class="space-y-4 md:space-y-6">
 
             <!-- LINEAR INTEGRATION -->
-            {% if issue.linear_identifier %}
+            {% if feature.linear_identifier %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-500/30 p-4 md:p-6">
                 <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
@@ -594,10 +565,10 @@
                 <div class="space-y-3">
                     <div class="flex justify-between items-center">
                         <span class="text-sm text-gray-500">Identifier</span>
-                        <span class="text-primary font-mono">{{ issue.linear_identifier }}</span>
+                        <span class="text-primary font-mono">{{ feature.linear_identifier }}</span>
                     </div>
-                    {% if issue.linear_url %}
-                    <a href="{{ issue.linear_url }}" target="_blank"
+                    {% if feature.linear_url %}
+                    <a href="{{ feature.linear_url }}" target="_blank"
                        class="mt-3 w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm text-center transition-colors flex items-center justify-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
@@ -614,7 +585,7 @@
             {% endif %}
 
             <!-- EFFORT ESTIMATION -->
-            {% if issue.estimated_effort %}
+            {% if feature.estimated_effort %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
                 <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -625,83 +596,79 @@
                 <div class="space-y-4">
                     <div>
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm text-gray-500 dark:text-gray-400">Complessita</span>
-                            <span class="font-bold text-lg">{{ issue.estimated_effort }}/5</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400">Complessità</span>
+                            <span class="font-bold text-lg">{{ feature.estimated_effort }}/5</span>
                         </div>
                         <div class="flex gap-1">
                             {% for i in range(5) %}
-                            <div class="h-2 flex-1 rounded-full {% if i < issue.estimated_effort %}bg-yellow-500{% else %}bg-gray-200 dark:bg-gray-700{% endif %}"></div>
+                            <div class="h-2 flex-1 rounded-full {% if i < feature.estimated_effort %}bg-yellow-500{% else %}bg-gray-200 dark:bg-gray-700{% endif %}"></div>
                             {% endfor %}
                         </div>
                     </div>
-                    {% if issue.estimated_files_count %}
+                    {% if feature.estimated_days %}
                     <div class="flex items-center justify-between py-2 border-t border-gray-200 dark:border-gray-700">
-                        <span class="text-sm text-gray-500">File da modificare</span>
-                        <span class="font-medium">{{ issue.estimated_files_count }} file{% if issue.estimated_files_count > 1 %}s{% endif %}</span>
+                        <span class="text-sm text-gray-500">Giorni stimati</span>
+                        <span class="font-medium">{{ feature.estimated_days }} giorn{% if feature.estimated_days == 1 %}o{% else %}i{% endif %}</span>
                     </div>
                     {% endif %}
                 </div>
             </div>
             {% endif %}
 
-            <!-- REFERENCES -->
-            {% if issue.references %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+            <!-- MOCKUP LINK -->
+            {% if feature.mockup_id or feature.figma_link %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-pink-200 dark:border-pink-500/30 p-4 md:p-6">
                 <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                    <svg class="w-5 h-5 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
-                    Riferimenti
+                    Design
                 </h3>
                 <div class="space-y-2">
-                    {% for ref in issue.references %}
-                    <a href="{{ ref }}" target="_blank" class="block p-3 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                        <div class="text-sm font-medium text-primary truncate">{{ ref }}</div>
+                    {% if feature.mockup_id %}
+                    <a href="/mockups/{{ feature.mockup_id }}" class="block p-3 bg-pink-50 dark:bg-pink-500/10 rounded-lg hover:bg-pink-100 dark:hover:bg-pink-500/20 transition-colors">
+                        <div class="text-sm font-medium text-pink-600 dark:text-pink-400 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                            Visualizza Mockup
+                        </div>
                     </a>
-                    {% endfor %}
+                    {% endif %}
+                    {% if feature.figma_link %}
+                    <a href="{{ feature.figma_link }}" target="_blank" class="block p-3 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-sm font-medium text-primary truncate flex items-center gap-2">
+                            <svg class="w-4 h-4" viewBox="0 0 38 57" fill="currentColor">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M19 28.5a9.5 9.5 0 1 1 19 0 9.5 9.5 0 0 1-19 0z"/>
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19v9.5a9.5 9.5 0 1 1-19 0z"/>
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M19 0v19h9.5a9.5 9.5 0 1 0 0-19H19z"/>
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5z"/>
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5z"/>
+                            </svg>
+                            Apri in Figma
+                        </div>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
 
-            <!-- FLAGGED BY -->
-            {% if issue.flagged_by %}
+            <!-- REPOSITORIES -->
+            {% if feature.repository_links %}
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
                 <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+                    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
                     </svg>
-                    Segnalato da
+                    Repository
                 </h3>
-                <div class="flex flex-wrap gap-2">
-                    {% for agent in issue.flagged_by %}
-                    <span class="px-3 py-1 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 rounded-full text-sm">{{ agent }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- CLARIFICATIONS (Q&A from fix clarifier) -->
-            {% if issue.clarifications %}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-cyan-200 dark:border-cyan-500/30 p-4 md:p-6">
-                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Clarifications
-                    <span class="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 rounded-full text-xs">{{ issue.clarifications|length }}</span>
-                </h3>
-                <div class="space-y-3">
-                    {% for qa in issue.clarifications %}
-                    <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            <span class="text-cyan-600 dark:text-cyan-400">Q:</span> {{ qa.question }}
-                        </div>
-                        <div class="text-sm text-gray-600 dark:text-gray-400">
-                            <span class="text-green-600 dark:text-green-400">A:</span> {{ qa.answer }}
-                        </div>
-                        {% if qa.context %}
-                        <div class="text-xs text-gray-400 mt-1 italic">{{ qa.context }}</div>
-                        {% endif %}
+                <div class="space-y-2">
+                    {% for link in feature.repository_links %}
+                    <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <span class="text-sm font-medium">{{ link.repository.name }}</span>
+                        <span class="px-2 py-0.5 rounded text-xs {% if link.role == 'primary' %}bg-primary/20 text-primary{% else %}bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                            {{ link.role }}
+                        </span>
                     </div>
                     {% endfor %}
                 </div>
@@ -717,32 +684,16 @@
                     Info
                 </h3>
                 <div class="space-y-3 text-sm">
-                    {% if repository %}
                     <div class="flex justify-between">
-                        <span class="text-gray-500">Repository</span>
-                        <a href="/repos" class="text-primary hover:underline">{{ repository.name }}</a>
-                    </div>
-                    {% endif %}
-                    <div class="flex justify-between">
-                        <span class="text-gray-500">Issue ID</span>
-                        <span class="font-mono text-xs text-gray-600 dark:text-gray-300">{{ issue.id[:8] }}...</span>
+                        <span class="text-gray-500">Feature ID</span>
+                        <span class="font-mono text-xs text-gray-600 dark:text-gray-300">{{ feature.id[:8] }}...</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-500">Ultimo update</span>
-                        <span class="text-gray-600 dark:text-gray-300">{{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        <span class="text-gray-600 dark:text-gray-300">{{ feature.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
                     </div>
                 </div>
             </div>
-
-            <!-- FIX LOG BUTTON -->
-            {% if issue.fix_session_id %}
-            <button @click="showFixLog = true" class="w-full px-3 md:px-4 py-2.5 md:py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 text-sm">
-                <svg class="w-4 h-4 md:w-5 md:h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                <span class="hidden sm:inline">Visualizza</span> Fix Log
-            </button>
-            {% endif %}
 
             <!-- DANGER ZONE -->
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-300 dark:border-red-500/30 p-4 md:p-6">
@@ -758,90 +709,19 @@
                         <select x-model="forceStatus" @change="forceChangeStatus()"
                                 class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm">
                             <option value="">-- Seleziona stato --</option>
-                            <option value="open">Open</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="resolved">Resolved</option>
-                            <option value="in_review">In Review</option>
+                            <option value="analysis">Analysis</option>
+                            <option value="design">Design</option>
+                            <option value="development">Development</option>
+                            <option value="review">Review</option>
                             <option value="merged">Merged</option>
-                            <option value="ignored">Ignored</option>
-                            <option value="duplicate">Duplicate</option>
+                            <option value="on_hold">On Hold</option>
+                            <option value="cancelled">Cancelled</option>
                         </select>
-                        <p class="text-xs text-gray-400 mt-1">Usa solo se la issue è bloccata in uno stato errato</p>
+                        <p class="text-xs text-gray-400 mt-1">Usa solo se la feature è bloccata in uno stato errato</p>
                     </div>
                 </div>
             </div>
 
-        </div>
-    </div>
-
-    <!-- ============================================== -->
-    <!-- FIX LOG MODAL -->
-    <!-- ============================================== -->
-    <div x-show="showFixLog" x-cloak x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showFixLog = false">
-        <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-4xl max-h-[90vh] flex flex-col">
-            <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
-                <h3 class="text-base md:text-lg font-semibold truncate">Fix Log - Session {{ issue.fix_session_id[:8] if issue.fix_session_id else '' }}...</h3>
-                <button @click="showFixLog = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-4 md:p-6">
-                <template x-if="fixLogLoading">
-                    <div class="flex items-center justify-center py-12">
-                        <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                        </svg>
-                    </div>
-                </template>
-                <template x-if="!fixLogLoading && fixLog">
-                    <div class="space-y-4 md:space-y-6">
-                        <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div class="text-sm text-gray-500">Status</div>
-                                <div class="font-medium" x-text="fixLog.status"></div>
-                            </div>
-                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div class="text-sm text-gray-500">Issues Requested</div>
-                                <div class="font-medium" x-text="fixLog.issues_requested"></div>
-                            </div>
-                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div class="text-sm text-gray-500">Issues Fixed</div>
-                                <div class="font-medium" x-text="fixLog.issues_fixed"></div>
-                            </div>
-                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div class="text-sm text-gray-500">Branch</div>
-                                <div class="font-medium font-mono text-sm" x-text="fixLog.branch_name || '-'"></div>
-                            </div>
-                        </div>
-                        <template x-if="fixLog.claude_prompts && fixLog.claude_prompts.length > 0">
-                            <div>
-                                <h4 class="font-semibold mb-3">Claude Prompts</h4>
-                                <template x-for="(prompt, idx) in fixLog.claude_prompts" :key="idx">
-                                    <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                        <div class="flex items-center gap-2 mb-2">
-                                            <span class="px-2 py-1 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 rounded text-xs" x-text="prompt.type"></span>
-                                            <span class="text-sm text-gray-500" x-text="'Batch ' + prompt.batch"></span>
-                                        </div>
-                                        <pre class="text-xs overflow-x-auto whitespace-pre-wrap" x-text="prompt.prompt"></pre>
-                                    </div>
-                                </template>
-                            </div>
-                        </template>
-                        <template x-if="fixLog.gemini_review">
-                            <div>
-                                <h4 class="font-semibold mb-3">Gemini Review</h4>
-                                <pre class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm overflow-x-auto whitespace-pre-wrap" x-text="fixLog.gemini_review"></pre>
-                            </div>
-                        </template>
-                    </div>
-                </template>
-                <template x-if="!fixLogLoading && fixLogError">
-                    <div class="text-center py-12 text-red-500" x-text="fixLogError"></div>
-                </template>
-            </div>
         </div>
     </div>
 
@@ -887,18 +767,12 @@
 
 {% block scripts %}
 <script>
-function issueDetailApp() {
+function featureDetailApp() {
     return {
-        issueId: '{{ issue.id }}',
-        issueCode: '{{ issue.issue_code }}',
-        repositoryId: '{{ issue.repository_id }}',
-        isViewed: {{ 'true' if issue.is_viewed else 'false' }},
+        featureId: '{{ feature.id }}',
+        featureCode: '{{ feature.linear_identifier or feature.id[:8] }}',
         activeTab: 'details',
         actionLoading: false,
-        showFixLog: false,
-        fixLog: null,
-        fixLogLoading: false,
-        fixLogError: null,
         showLinkLinear: false,
         linearIdentifier: '',
         linkingLinear: false,
@@ -906,26 +780,19 @@ function issueDetailApp() {
         addingComment: false,
         forceStatus: '',
         // Navigation
-        prevIssue: null,
-        nextIssue: null,
+        prevFeature: null,
+        nextFeature: null,
         currentIndex: -1,
-        totalIssues: 0,
+        totalFeatures: 0,
         filterParams: '',
         // Operations history
         operations: [],
         operationsLoading: false,
 
         async init() {
-            console.log('[IssueDetail] Initializing with issueId:', this.issueId, 'issueCode:', this.issueCode);
-            this.$watch('showFixLog', async (value) => {
-                if (value && !this.fixLog) {
-                    await this.loadFixLog();
-                }
-            });
-            // Load adjacent issues for navigation
-            await this.loadAdjacentIssues();
-            // Auto-detect merge status if issue has a commit
-            await this.autoDetectMerge();
+            console.log('[FeatureDetail] Initializing with featureId:', this.featureId);
+            // Load adjacent features for navigation
+            await this.loadAdjacentFeatures();
             // Load operations history for cronologia tab
             await this.loadOperations();
             // Keyboard shortcuts for navigation
@@ -933,39 +800,18 @@ function issueDetailApp() {
                 // Skip if user is typing in an input
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
                 const params = this.filterParams ? '?' + this.filterParams : '';
-                if (e.key === 'ArrowLeft' && this.prevIssue) {
-                    window.location.href = '/issues/' + this.prevIssue.id + params;
-                } else if (e.key === 'ArrowRight' && this.nextIssue) {
-                    window.location.href = '/issues/' + this.nextIssue.id + params;
+                if (e.key === 'ArrowLeft' && this.prevFeature) {
+                    window.location.href = '/features/' + this.prevFeature.id + params;
+                } else if (e.key === 'ArrowRight' && this.nextFeature) {
+                    window.location.href = '/features/' + this.nextFeature.id + params;
                 }
             });
-        },
-
-        async autoDetectMerge() {
-            try {
-                const res = await fetch(`/api/issues/${this.issueId}/auto-detect-merge`, { method: 'POST' });
-                if (res.ok) {
-                    const result = await res.json();
-                    if (result.was_merged) {
-                        console.log('[AutoMerge] Issue auto-merged:', result.message);
-                        window.dispatchEvent(new CustomEvent('show-toast', {
-                            detail: { message: '✅ ' + result.message, type: 'success' }
-                        }));
-                        // Reload to show updated status
-                        setTimeout(() => window.location.reload(), 1500);
-                    } else {
-                        console.log('[AutoMerge] Not merged:', result.message);
-                    }
-                }
-            } catch (e) {
-                console.warn('[AutoMerge] Check failed:', e);
-            }
         },
 
         async loadOperations() {
             this.operationsLoading = true;
             try {
-                const res = await fetch(`/api/issues/${this.issueId}/operations`);
+                const res = await fetch(`/api/features/${this.featureId}/operations`);
                 if (res.ok) {
                     const data = await res.json();
                     this.operations = data.operations || [];
@@ -980,9 +826,9 @@ function issueDetailApp() {
 
         getOperationLabel(type) {
             const labels = {
-                'fix_clarification': 'Clarification',
-                'fix_planning': 'Planning',
-                'fix': 'Fix',
+                'analysis': 'Analysis',
+                'design': 'Design',
+                'development': 'Development',
                 'review': 'Review'
             };
             return labels[type] || type;
@@ -992,10 +838,10 @@ function issueDetailApp() {
             if (status === 'failed') return 'bg-red-500';
             if (status === 'in_progress') return 'bg-yellow-500';
             const colors = {
-                'fix_clarification': 'bg-teal-500',
-                'fix_planning': 'bg-sky-500',
-                'fix': 'bg-violet-500',
-                'review': 'bg-blue-500'
+                'analysis': 'bg-blue-500',
+                'design': 'bg-purple-500',
+                'development': 'bg-yellow-500',
+                'review': 'bg-teal-500'
             };
             return colors[type] || 'bg-gray-500';
         },
@@ -1006,78 +852,60 @@ function issueDetailApp() {
             return date.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
         },
 
-        async loadAdjacentIssues() {
+        async loadAdjacentFeatures() {
             try {
-                // Build API URL with same filters from URL params (passed from list page)
                 const urlParams = new URLSearchParams(window.location.search);
                 const apiParams = new URLSearchParams();
 
-                // Always filter by repository from context or URL
-                const repoId = urlParams.get('repository_id') || this.repositoryId;
-                if (repoId) apiParams.set('repository_id', repoId);
-
                 // Preserve filters from list page
                 if (urlParams.get('status')) apiParams.set('status', urlParams.get('status'));
-                if (urlParams.get('severity')) apiParams.set('severity', urlParams.get('severity'));
-                if (urlParams.get('category')) apiParams.set('category', urlParams.get('category'));
+                if (urlParams.get('priority')) apiParams.set('priority', urlParams.get('priority'));
+                if (urlParams.get('repository_id')) apiParams.set('repository_id', urlParams.get('repository_id'));
                 if (urlParams.get('search')) apiParams.set('search', urlParams.get('search'));
-                if (urlParams.get('linear_linked')) apiParams.set('linear_linked', urlParams.get('linear_linked'));
 
                 apiParams.set('limit', '500');
 
-                console.log('[Navigation] Fetching issues with params:', apiParams.toString());
-                const res = await fetch(`/api/issues?${apiParams.toString()}`);
+                console.log('[Navigation] Fetching features with params:', apiParams.toString());
+                const res = await fetch(`/api/features?${apiParams.toString()}`);
                 if (!res.ok) {
                     console.error('[Navigation] API error:', res.status);
                     return;
                 }
-                const issues = await res.json();
-                console.log('[Navigation] Found', issues.length, 'issues');
-                this.totalIssues = issues.length;
+                const features = await res.json();
+                console.log('[Navigation] Found', features.length, 'features');
+                this.totalFeatures = features.length;
 
-                // Find current issue index by ID (unique)
-                const idx = issues.findIndex(i => i.id === this.issueId);
-                console.log('[Navigation] Current issue id:', this.issueId, 'found at index:', idx);
+                // Find current feature index by ID
+                const idx = features.findIndex(f => f.id === this.featureId);
+                console.log('[Navigation] Current feature id:', this.featureId, 'found at index:', idx);
                 if (idx === -1) {
-                    console.warn('[Navigation] Current issue not found in results');
+                    console.warn('[Navigation] Current feature not found in results');
                     return;
                 }
                 this.currentIndex = idx;
-                this.prevIssue = idx > 0 ? issues[idx - 1] : null;
-                this.nextIssue = idx < issues.length - 1 ? issues[idx + 1] : null;
-
-                console.log('[Navigation] prevIssue:', this.prevIssue?.issue_code || null);
-                console.log('[Navigation] nextIssue:', this.nextIssue?.issue_code || null);
+                this.prevFeature = idx > 0 ? features[idx - 1] : null;
+                this.nextFeature = idx < features.length - 1 ? features[idx + 1] : null;
 
                 // Store filter params for navigation links
                 this.filterParams = urlParams.toString();
             } catch (e) {
-                console.error('[Navigation] Failed to load adjacent issues:', e);
+                console.error('[Navigation] Failed to load adjacent features:', e);
             }
-        },
-
-        // Convert "BE-MEDIUM-001" to "BE-001" for compact display
-        getShortCode(code) {
-            const parts = code.split('-');
-            if (parts.length >= 3) {
-                return parts[0] + '-' + parts[parts.length - 1];
-            }
-            return code;
         },
 
         async linkLinear() {
             if (!this.linearIdentifier) return;
             this.linkingLinear = true;
             try {
-                const res = await fetch(`/api/issues/${this.issueId}/link-linear`, {
-                    method: 'POST',
+                const res = await fetch(`/api/features/${this.featureId}`, {
+                    method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ linear_identifier: this.linearIdentifier })
                 });
                 if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
                 window.location.reload();
             } catch (e) {
-                TurboWrapError.handle('Link Linear Issue', e, { issueId: this.issueId });
+                TurboWrapError.handle('Link Linear Feature', e, { featureId: this.featureId });
             }
             this.linkingLinear = false;
         },
@@ -1086,11 +914,15 @@ function issueDetailApp() {
             if (!confirm('Rimuovere collegamento Linear?')) return;
             this.actionLoading = true;
             try {
-                const res = await fetch(`/api/issues/${this.issueId}/link-linear`, { method: 'DELETE' });
+                const res = await fetch(`/api/features/${this.featureId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linear_id: null, linear_identifier: null, linear_url: null })
+                });
                 if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
                 window.location.reload();
             } catch (e) {
-                TurboWrapError.handle('Unlink Linear Issue', e, { issueId: this.issueId });
+                TurboWrapError.handle('Unlink Linear Feature', e, { featureId: this.featureId });
             }
             this.actionLoading = false;
         },
@@ -1099,72 +931,74 @@ function issueDetailApp() {
             if (!this.newComment.trim()) return;
             this.addingComment = true;
             try {
-                const res = await fetch(`/api/issues/${this.issueId}/comments`, {
-                    method: 'POST',
+                const res = await fetch(`/api/features/${this.featureId}`, {
+                    method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: this.newComment, author: 'user', comment_type: 'human' })
+                    body: JSON.stringify({
+                        add_comment: {
+                            content: this.newComment,
+                            author: 'user',
+                            type: 'human',
+                            created_at: new Date().toISOString()
+                        }
+                    })
                 });
                 if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
                 window.location.reload();
             } catch (e) {
-                TurboWrapError.handle('Add Comment', e, { issueId: this.issueId });
+                TurboWrapError.handle('Add Comment', e, { featureId: this.featureId });
             }
             this.addingComment = false;
         },
 
+        async advancePhase() {
+            await this.updateStatus('development');
+        },
+
+        async markAsReview() {
+            await this.updateStatus('review');
+        },
+
         async markAsMerged() {
-            if (!confirm('Sei sicuro di voler segnare questa issue come MERGED?')) return;
-            await this.updateStatus('resolve');
+            if (!confirm('Sei sicuro di voler segnare questa feature come MERGED?')) return;
+            await this.updateStatus('merged');
         },
 
-        async ignoreIssue() {
-            const note = prompt('Motivo per ignorare (opzionale):');
-            if (note === null) return;
-            await this.updateStatus('ignore', note);
+        async cancelFeature() {
+            if (!confirm('Sei sicuro di voler cancellare questa feature?')) return;
+            await this.updateStatus('cancelled');
         },
 
-        async reopenIssue() {
-            await this.updateStatus('reopen');
+        async holdFeature() {
+            await this.updateStatus('on_hold');
         },
 
-        async updateStatus(action, note = '') {
+        async backToDevelopment() {
+            await this.updateStatus('development');
+        },
+
+        async reopenFeature() {
+            await this.updateStatus('analysis');
+        },
+
+        async updateStatus(newStatus) {
             this.actionLoading = true;
             try {
-                const url = `/api/issues/${this.issueId}/${action}${note ? '?note=' + encodeURIComponent(note) : ''}`;
-                const res = await fetch(url, { method: 'POST' });
+                const res = await fetch(`/api/features/${this.featureId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
                 if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
-
-                // After status change, go to next/prev issue or list
-                const params = this.filterParams ? '?' + this.filterParams : '';
-                if (this.nextIssue) {
-                    window.location.href = '/issues/' + this.nextIssue.id + params;
-                } else if (this.prevIssue) {
-                    window.location.href = '/issues/' + this.prevIssue.id + params;
-                } else {
-                    window.location.href = '/issues';
-                }
+                window.location.reload();
             } catch (e) {
-                TurboWrapError.handle('Update Issue Status', e, { issueId: this.issueId, action });
+                TurboWrapError.handle('Update Feature Status', e, { featureId: this.featureId, status: newStatus });
             }
             this.actionLoading = false;
         },
 
-        startFix() {
-            window.location.href = `/issues?fix=${this.issueId}`;
-        },
-
-        async loadFixLog() {
-            this.fixLogLoading = true;
-            this.fixLogError = null;
-            try {
-                const res = await fetch(`/api/issues/${this.issueId}/fix-log`);
-                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
-                this.fixLog = await res.json();
-            } catch (e) {
-                TurboWrapError.warning('Load Fix Log', e, { issueId: this.issueId });
-                this.fixLogError = e.message;
-            }
-            this.fixLogLoading = false;
+        startDevelop() {
+            window.location.href = `/features?develop=${this.featureId}`;
         },
 
         copyToClipboard(text) {
@@ -1175,23 +1009,6 @@ function issueDetailApp() {
             });
         },
 
-        async toggleViewed() {
-            const newState = !this.isViewed;
-            console.log('[Viewed] Toggling viewed state to:', newState, 'for issue:', this.issueId);
-            try {
-                const res = await fetch(`/api/issues/${this.issueId}/toggle-viewed?viewed=${newState}`, { method: 'POST' });
-                console.log('[Viewed] API response:', res.status);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                this.isViewed = newState;
-                console.log('[Viewed] State updated successfully');
-            } catch (e) {
-                console.error('[Viewed] Error:', e);
-                if (window.TurboWrapError) {
-                    TurboWrapError.warning('Toggle Viewed', e, { issueId: this.issueId });
-                }
-            }
-        },
-
         async forceChangeStatus() {
             if (!this.forceStatus) return;
             if (!confirm(`Forzare stato a "${this.forceStatus}"? Azione pericolosa.`)) {
@@ -1199,7 +1016,7 @@ function issueDetailApp() {
                 return;
             }
             try {
-                const res = await fetch(`/api/issues/${this.issueId}?force=true`, {
+                const res = await fetch(`/api/features/${this.featureId}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: this.forceStatus })
@@ -1211,7 +1028,7 @@ function issueDetailApp() {
                 }));
                 window.location.reload();
             } catch (e) {
-                TurboWrapError.handle('Force Change Status', e, { issueId: this.issueId, status: this.forceStatus });
+                TurboWrapError.handle('Force Change Status', e, { featureId: this.featureId, status: this.forceStatus });
             }
             this.forceStatus = '';
         }

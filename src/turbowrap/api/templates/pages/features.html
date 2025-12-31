@@ -22,8 +22,8 @@
 /* === ANIMATIONS === */
 .stat-card { transition: all 0.2s ease; }
 .stat-card:hover { transform: translateY(-2px); }
-.issue-card { transition: all 0.2s ease; }
-.issue-card:hover { transform: translateY(-1px); box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3); }
+.feature-card { transition: all 0.2s ease; }
+.feature-card:hover { transform: translateY(-1px); box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3); }
 
 @keyframes pulse-critical {
     0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
@@ -117,14 +117,14 @@
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
             <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3 flex-wrap">
-                <span>Issues</span>
+                <span>Features</span>
                 <template x-if="$store.globalContext?.selectedRepo">
                     <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
                         per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
                     </span>
                 </template>
             </h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">Problemi trovati nelle code review</p>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Nuove funzionalità in sviluppo</p>
         </div>
         <div class="flex items-center gap-3">
             <!-- Lint+Fix -->
@@ -402,19 +402,19 @@
             </div>
         </template>
         <template x-if="filters.repository_id">
-            <p class="text-gray-500">Nessuna issue trovata</p>
+            <p class="text-gray-500">Nessuna feature trovata</p>
         </template>
     </div>
 
     <!-- ============================================== -->
-    <!-- ISSUES LIST VIEW -->
+    <!-- FEATURES LIST VIEW -->
     <!-- ============================================== -->
     <div x-show="!loading && features.length > 0 && viewMode === 'list' && !groupBy"
          class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <!-- Table Header -->
         <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wide">
             <div class="col-span-1"></div>
-            <div class="col-span-4">Issue</div>
+            <div class="col-span-4">Feature</div>
             <div class="col-span-2">File</div>
             <div class="col-span-1">Severity</div>
             <div class="col-span-1">Status</div>
@@ -423,12 +423,12 @@
             <div class="col-span-1">Modifica</div>
         </div>
 
-        <!-- Issue Rows -->
+        <!-- Feature Rows -->
         <template x-for="feature in features" :key="feature.id">
-            <a :href="'/issues/' + feature.id + getFilterParams()"
-               class="issue-card block border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-               :class="{'opacity-60': feature.status === 'resolved' || feature.status === 'merged', 'bg-primary/5': selectedFeatures.includes(feature.id)}"
-               :data-issue-id="feature.id" :data-issue-code="feature.linear_identifier || feature.id.slice(0,8)">
+            <a :href="'/features/' + feature.id + getFilterParams()"
+               class="feature-card block border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+               :class="{'opacity-60': feature.status === 'merged' || feature.status === 'cancelled', 'bg-primary/5': selectedFeatures.includes(feature.id)}"
+               :data-feature-id="feature.id" :data-feature-code="feature.linear_identifier || feature.id.slice(0,8)">
 
                 <!-- MOBILE LAYOUT -->
                 <div class="md:hidden p-3">
@@ -485,7 +485,7 @@
                              }"></div>
                     </div>
 
-                    <!-- Issue Info -->
+                    <!-- Feature Info -->
                     <div class="col-span-4">
                         <div class="flex items-center gap-2 flex-wrap">
                             <!-- AI Icons inline -->
@@ -525,17 +525,17 @@
                             </template>
                             <!-- Quick actions inline -->
                             <template x-if="feature.status === 'open' || feature.status === 'in_progress'">
-                                <button @click.stop.prevent="quickIgnore(issue)" class="quick-btn quick-btn-ignore" title="Ignora">
+                                <button @click.stop.prevent="quickIgnore(feature)" class="quick-btn quick-btn-ignore" title="Ignora">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                 </button>
                             </template>
                             <template x-if="feature.status === 'resolved' || feature.status === 'in_review'">
-                                <button @click.stop.prevent="quickMerge(issue)" class="quick-btn quick-btn-merge" title="Merged">
+                                <button @click.stop.prevent="quickMerge(feature)" class="quick-btn quick-btn-merge" title="Merged">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                                 </button>
                             </template>
                             <template x-if="feature.status === 'ignored'">
-                                <button @click.stop.prevent="quickReopen(issue)" class="quick-btn quick-btn-reopen" title="Riapri">
+                                <button @click.stop.prevent="quickReopen(feature)" class="quick-btn quick-btn-reopen" title="Riapri">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                                 </button>
                             </template>
@@ -579,7 +579,7 @@
                             </span>
                         </template>
                         <template x-if="!feature.linear_identifier">
-                            <button @click.stop.prevent="openLinkLinearModal(issue)"
+                            <button @click.stop.prevent="openLinkLinearModal(feature)"
                                     class="px-2 py-1 rounded text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 transition-colors">
                                 + Link
                             </button>
@@ -617,15 +617,15 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- ISSUES CARDS VIEW -->
+    <!-- FEATURES CARDS VIEW -->
     <!-- ============================================== -->
     <div x-show="!loading && features.length > 0 && viewMode === 'cards' && !groupBy"
          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <template x-for="feature in features" :key="feature.id">
-            <a :href="'/issues/' + feature.id + getFilterParams()"
-               class="issue-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 block"
-               :class="{'opacity-60': feature.status === 'resolved' || feature.status === 'merged'}"
-               :data-issue-id="feature.id" :data-issue-code="feature.linear_identifier || feature.id.slice(0,8)">
+            <a :href="'/features/' + feature.id + getFilterParams()"
+               class="feature-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 block"
+               :class="{'opacity-60': feature.status === 'merged' || feature.status === 'cancelled'}"
+               :data-feature-id="feature.id" :data-feature-code="feature.linear_identifier || feature.id.slice(0,8)">
                 <!-- Header row -->
                 <div class="flex items-center justify-between gap-2 mb-2">
                     <div class="flex items-center gap-1.5 flex-wrap">
@@ -666,23 +666,23 @@
                         </template>
                     </div>
                     <!-- Quick action -->
-                    <template x-if="feature.status === 'open' || feature.status === 'in_progress'">
-                        <button @click.stop.prevent="quickIgnore(issue)" class="quick-btn quick-btn-ignore" title="Ignora">
+                    <template x-if="feature.status === 'analysis' || feature.status === 'design'">
+                        <button @click.stop.prevent="quickCancel(feature)" class="quick-btn quick-btn-ignore" title="Annulla">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                         </button>
                     </template>
-                    <template x-if="feature.status === 'resolved' || feature.status === 'in_review'">
-                        <button @click.stop.prevent="quickMerge(issue)" class="quick-btn quick-btn-merge" title="Merged">
+                    <template x-if="feature.status === 'review'">
+                        <button @click.stop.prevent="quickMerge(feature)" class="quick-btn quick-btn-merge" title="Merged">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                         </button>
                     </template>
-                    <template x-if="feature.status === 'ignored'">
-                        <button @click.stop.prevent="quickReopen(issue)" class="quick-btn quick-btn-reopen" title="Riapri">
+                    <template x-if="feature.status === 'on_hold' || feature.status === 'cancelled'">
+                        <button @click.stop.prevent="quickReopen(feature)" class="quick-btn quick-btn-reopen" title="Riapri">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                         </button>
                     </template>
                 </div>
-                <!-- Issue code & title -->
+                <!-- Feature code & title -->
                 <div class="font-mono text-sm font-medium text-gray-900 dark:text-white" x-text="feature.linear_identifier || feature.id.slice(0,8)"></div>
                 <div class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2" x-text="feature.title"></div>
                 <!-- File -->
@@ -727,32 +727,32 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- ISSUES GROUP BY FILE VIEW -->
+    <!-- FEATURES GROUP BY ASSIGNEE VIEW -->
     <!-- ============================================== -->
     <div x-show="!loading && features.length > 0 && groupBy === 'file'" class="space-y-4">
-        <template x-for="[file, fileIssues] in Object.entries(getIssuesByFile())" :key="file">
+        <template x-for="[assignee, assigneeFeatures] in Object.entries(getFeaturesByAssignee())" :key="assignee">
             <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <!-- File Header -->
+                <!-- Assignee Header -->
                 <div class="px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                         </svg>
-                        <span class="font-mono text-sm truncate max-w-[400px]" x-text="file" :title="file"></span>
-                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 dark:bg-gray-700" x-text="fileIssues.length + ' issue' + (fileIssues.length > 1 ? 's' : '')"></span>
+                        <span class="font-medium text-sm truncate max-w-[400px]" x-text="assignee" :title="assignee"></span>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 dark:bg-gray-700" x-text="assigneeFeatures.length + ' feature' + (assigneeFeatures.length > 1 ? 's' : '')"></span>
                     </div>
-                    <button @click="createBatchFromFile(file, fileIssues)"
+                    <button @click="createBatchFromAssignee(assignee, assigneeFeatures)"
                             class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
-                        Fix Batch
+                        Develop Batch
                     </button>
                 </div>
-                <!-- Issues in this file -->
+                <!-- Features for this assignee -->
                 <div class="divide-y divide-gray-100 dark:divide-gray-700">
-                    <template x-for="issue in fileIssues" :key="feature.id">
-                        <a :href="'/issues/' + feature.id + getFilterParams()"
+                    <template x-for="feature in assigneeFeatures" :key="feature.id">
+                        <a :href="'/features/' + feature.id + getFilterParams()"
                            class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                             <!-- Severity bar -->
                             <div class="w-1 h-8 rounded-full flex-shrink-0"
@@ -762,7 +762,7 @@
                                      'severity-medium': feature.priority === 'MEDIUM',
                                      'severity-low': feature.priority === 'LOW'
                                  }"></div>
-                            <!-- Issue info -->
+                            <!-- Feature info -->
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2">
                                     <span class="font-mono text-xs text-gray-500" x-text="feature.linear_identifier || feature.id.slice(0,8)"></span>
@@ -830,7 +830,7 @@
                             </svg>
                         </div>
                         <div>
-                            <h3 class="font-semibold">Fix Issues</h3>
+                            <h3 class="font-semibold">Develop Features</h3>
                             <p x-show="fixProgress.branchName" class="text-xs text-gray-500 italic">
                                 <code class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded" x-text="fixProgress.branchName"></code>
                             </p>
@@ -842,22 +842,22 @@
                         </svg>
                     </button>
                 </div>
-                <!-- Issue Chips -->
+                <!-- Feature Chips -->
                 <div class="flex gap-2 overflow-x-auto pb-2">
-                    <template x-for="issueId in fixProgress.fixingIssueIds" :key="issueId">
+                    <template x-for="featureId in fixProgress.fixingFeatureIds" :key="featureId">
                         <div class="shrink-0 px-2.5 py-1 rounded-full text-xs font-mono flex items-center gap-1.5"
                              :class="{
-                                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': fixProgress.issueStates[issueId]?.status === 'pending',
-                                 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 ring-2 ring-yellow-400': fixProgress.issueStates[issueId]?.status === 'in_progress',
-                                 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300': fixProgress.issueStates[issueId]?.status === 'completed',
-                                 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300': fixProgress.issueStates[issueId]?.status === 'failed'
+                                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': fixProgress.featureStates[featureId]?.status === 'pending',
+                                 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 ring-2 ring-yellow-400': fixProgress.featureStates[featureId]?.status === 'in_progress',
+                                 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300': fixProgress.featureStates[featureId]?.status === 'completed',
+                                 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300': fixProgress.featureStates[featureId]?.status === 'failed'
                              }">
-                            <span x-text="fixProgress.issueStates[issueId]?.code || issueId.slice(0,8)"></span>
-                            <svg x-show="fixProgress.issueStates[issueId]?.status === 'in_progress'" class="w-3 h-3 animate-spin" viewBox="0 0 24 24">
+                            <span x-text="fixProgress.featureStates[featureId]?.code || featureId.slice(0,8)"></span>
+                            <svg x-show="fixProgress.featureStates[featureId]?.status === 'in_progress'" class="w-3 h-3 animate-spin" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                             </svg>
-                            <svg x-show="fixProgress.issueStates[issueId]?.status === 'completed'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg x-show="fixProgress.featureStates[featureId]?.status === 'completed'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
                         </div>
@@ -1029,12 +1029,12 @@
             </div>
             <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
                 <span class="font-medium text-green-600" x-text="selectedFeatures.length"></span>
-                <span x-text="selectedFeatures.length === 1 ? 'issue selezionata' : 'issues selezionate'"></span>
+                <span x-text="selectedFeatures.length === 1 ? 'feature selezionata' : 'features selezionate'"></span>
             </p>
             <textarea x-model="fixNotes" rows="4"
                       class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 resize-none"
                       placeholder="Es: Usa l'endpoint /api/v2/users invece di /api/users&#10;Es: Mantieni la compatibilità con Python 3.9"></textarea>
-            <p class="mt-2 text-xs text-gray-400">Queste note verranno passate all'AI che risolverà le issues.</p>
+            <p class="mt-2 text-xs text-gray-400">Queste note verranno passate all'AI che svilupperà le features.</p>
 
             <!-- Multi-Agent Toggle -->
             <div class="mt-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
@@ -1047,7 +1047,7 @@
                         </div>
                         <div>
                             <span class="font-medium text-sm text-gray-700 dark:text-gray-200">Multi-Agent Mode</span>
-                            <p class="text-xs text-gray-500 dark:text-gray-400">Splitta issue grandi in sub-task paralleli</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Splitta feature grandi in sub-task paralleli</p>
                         </div>
                     </div>
                     <div class="relative">
@@ -1086,7 +1086,7 @@
                 </div>
                 <div class="flex-1">
                     <h3 class="font-semibold text-lg">Pre-Fix Clarification</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">OPUS sta analizzando le issue prima di procedere</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">OPUS sta analizzando le feature prima di procedere</p>
                 </div>
                 <button @click="confirmCancelClarification()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1095,12 +1095,12 @@
                 </button>
             </div>
 
-            <!-- Selected Issues -->
+            <!-- Selected Features -->
             <div class="px-4 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                 <div class="flex flex-wrap gap-1.5">
-                    <template x-for="issueId in selectedFeatures" :key="issueId">
+                    <template x-for="featureId in selectedFeatures" :key="featureId">
                         <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded"
-                              x-text="issues.find(i => i.id === issueId)?.issue_code || issueId.slice(0,8)"></span>
+                              x-text="features.find(f => f.id === featureId)?.linear_identifier || featureId.slice(0,8)"></span>
                     </template>
                 </div>
             </div>
@@ -1130,18 +1130,18 @@
                     </div>
                 </div>
 
-                <!-- Questions Grouped by Issue -->
-                <div x-show="!clarification.loading && clarification.questionsByIssue.length > 0" class="space-y-6">
-                    <template x-for="group in clarification.questionsByIssue" :key="group.issue_code">
+                <!-- Questions Grouped by Feature -->
+                <div x-show="!clarification.loading && clarification.questionsByFeature.length > 0" class="space-y-6">
+                    <template x-for="group in clarification.questionsByFeature" :key="group.feature_code">
                         <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                            <!-- Issue Header -->
+                            <!-- Feature Header -->
                             <div class="px-4 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                                 <div class="flex items-center gap-2">
-                                    <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="group.issue_code"></span>
+                                    <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="group.feature_code"></span>
                                     <span class="text-sm text-gray-500 dark:text-gray-400" x-text="group.questions.length + ' domanda/e'"></span>
                                 </div>
                             </div>
-                            <!-- Questions for this issue -->
+                            <!-- Questions for this feature -->
                             <div class="p-4 space-y-4">
                                 <template x-for="(q, idx) in group.questions" :key="q.id">
                                     <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
@@ -1186,7 +1186,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <p class="text-lg font-medium text-gray-900 dark:text-gray-100">Pronto per il fix!</p>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">OPUS ha confermato che le issue sono chiare.</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">OPUS ha confermato che le feature sono chiare.</p>
                 </div>
             </div>
 
@@ -1233,7 +1233,7 @@
                 <div class="flex-1">
                     <h3 class="font-semibold text-lg">Piano di Esecuzione</h3>
                     <p class="text-sm text-gray-500 dark:text-gray-400">
-                        <span x-text="planPreview.totalIssues"></span> issues in <span x-text="planPreview.totalSteps"></span> step
+                        <span x-text="planPreview.totalFeatures"></span> features in <span x-text="planPreview.totalSteps"></span> step
                     </p>
                 </div>
                 <button @click="confirmCancelPlanPreview()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
@@ -1262,16 +1262,16 @@
                             <div class="px-4 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                                 <div class="flex items-center gap-3">
                                     <span class="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-sm flex items-center justify-center" x-text="step.step"></span>
-                                    <span class="text-sm font-medium" x-text="step.features.length + ' issue' + (step.features.length > 1 ? 's' : '')"></span>
+                                    <span class="text-sm font-medium" x-text="step.features.length + ' feature' + (step.features.length > 1 ? 's' : '')"></span>
                                     <span class="text-xs text-gray-500 dark:text-gray-400 italic" x-text="'(in parallelo)'"></span>
                                 </div>
                             </div>
-                            <!-- Issues in this step -->
+                            <!-- Features in this step -->
                             <div class="p-3 space-y-2">
-                                <template x-for="issue in step.issues" :key="issue.code">
+                                <template x-for="feat in step.features" :key="feat.code">
                                     <div class="flex items-center gap-2 text-sm">
-                                        <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="issue.code"></span>
-                                        <span class="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded" x-text="issue.agent_type"></span>
+                                        <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="feat.code"></span>
+                                        <span class="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded" x-text="feat.agent_type"></span>
                                     </div>
                                 </template>
                                 <!-- Step reason -->
@@ -1319,8 +1319,8 @@
                     <div class="text-sm text-gray-500 mb-1">Branch:</div>
                     <code class="text-sm font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="pendingBranch?.branch_name"></code>
                     <div class="mt-2 text-sm">
-                        <span class="text-gray-500">Issues fixate:</span>
-                        <span x-text="pendingBranch?.issues_count"></span>
+                        <span class="text-gray-500">Features sviluppate:</span>
+                        <span x-text="pendingBranch?.features_count || pendingBranch?.issues_count"></span>
                     </div>
                 </div>
                 <p class="text-sm text-gray-600 dark:text-gray-300">Cosa vuoi fare prima di lanciare i nuovi fix?</p>
@@ -1411,7 +1411,7 @@
     </div>
 
     <!-- ============================================== -->
-    <!-- IGNORE ISSUE MODAL -->
+    <!-- CANCEL FEATURE MODAL -->
     <!-- ============================================== -->
     <div x-show="showIgnoreModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showIgnoreModal = false">
         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" @click.stop>
@@ -1424,8 +1424,8 @@
                         </svg>
                     </div>
                     <div>
-                        <h3 class="font-semibold text-lg text-gray-900 dark:text-white">Ignora Issue</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 font-mono" x-text="ignoreIssue?.issue_code"></p>
+                        <h3 class="font-semibold text-lg text-gray-900 dark:text-white">Annulla Feature</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 font-mono" x-text="ignoreFeature?.linear_identifier || ignoreFeature?.id?.slice(0,8)"></p>
                     </div>
                 </div>
             </div>
@@ -1464,22 +1464,22 @@
 
             <!-- Footer -->
             <div class="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
-                <button @click="showIgnoreModal = false; ignoreIssue = null; ignoreReason = ''"
+                <button @click="showIgnoreModal = false; ignoreFeature = null; ignoreReason = ''"
                         class="px-4 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium">
                     Annulla
                 </button>
-                <button @click="confirmIgnore()" :disabled="ignoringIssue"
+                <button @click="confirmIgnore()" :disabled="cancellingFeature"
                         class="px-5 py-2.5 bg-gray-700 dark:bg-gray-600 text-white rounded-xl hover:bg-gray-800 dark:hover:bg-gray-500 transition-colors font-medium flex items-center gap-2 disabled:opacity-50">
-                    <template x-if="ignoringIssue">
+                    <template x-if="cancellingFeature">
                         <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                         </svg>
                     </template>
-                    <svg x-show="!ignoringIssue" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg x-show="!cancellingFeature" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
                     </svg>
-                    <span x-text="ignoringIssue ? 'Ignorando...' : 'Ignora Issue'"></span>
+                    <span x-text="cancellingFeature ? 'Annullando...' : 'Annulla Feature'"></span>
                 </button>
             </div>
         </div>
@@ -1510,12 +1510,12 @@ function featuresApp() {
         showIgnoreModal: false,
         linkLinearInput: '',
         linkingLinear: false,
-        currentIssueForLink: null,
-        ignoreIssue: null,
+        currentFeatureForLink: null,
+        ignoreFeature: null,
         ignoreReason: '',
-        ignoringIssue: false,
+        cancellingFeature: false,
         fixNotes: '',
-        enableSubtasks: false,  // Multi-agent mode for multi-file issues
+        enableSubtasks: false,  // Multi-agent mode for multi-file features
         pendingBranch: null,
         pendingBranchLoading: false,
         pendingFixRequest: null,
@@ -1532,12 +1532,12 @@ function featuresApp() {
         fixProgress: {
             current: 0,
             total: 0,
-            currentIssue: null,
+            currentFeature: null,
             logs: [],
             status: 'idle',
             branchName: null,
-            issueStates: {},
-            fixingIssueIds: [],
+            featureStates: {},
+            fixingFeatureIds: [],
             streamingContent: '',
             showStreamingDetails: false,
             lastScore: null,
@@ -1554,7 +1554,7 @@ function featuresApp() {
             loading: false,
             sessionId: null,
             questions: [],           // Current batch of questions
-            questionsByIssue: [],    // Current batch grouped by issue
+            questionsByFeature: [],    // Current batch grouped by feature
             allQuestions: [],        // ALL questions history (accumulated)
             allAnswers: {},          // ALL answers history (accumulated)
             answers: {},             // Current batch answers
@@ -1568,8 +1568,8 @@ function featuresApp() {
             show: false,
             loading: false,
             masterTodoPath: null,
-            executionSteps: [],      // [{step: 1, issues: [...], reason: "..."}]
-            totalIssues: 0,
+            executionSteps: [],      // [{step: 1, features: [...], reason: "..."}]
+            totalFeatures: 0,
             totalSteps: 0
         },
         _streamingBuffer: '',
@@ -1596,28 +1596,28 @@ function featuresApp() {
                 }
             });
 
-            // Handle ?fix= parameter from issue detail page - check BEFORE refresh
+            // Handle ?fix= parameter from feature detail page - check BEFORE refresh
             const urlParams = new URLSearchParams(window.location.search);
-            const fixIssueId = urlParams.get('fix');
-            if (fixIssueId) {
-                // Clear status filter to ensure we can find in_progress issues
+            const fixFeatureId = urlParams.get('fix');
+            if (fixFeatureId) {
+                // Clear status filter to ensure we can find in_progress features
                 this.filters.status = '';
             }
 
             await this.refresh();
 
-            if (fixIssueId) {
+            if (fixFeatureId) {
                 // Clean URL without reload
-                window.history.replaceState({}, '', '/issues');
-                // Select the issue and open notes modal
-                const issueToFix = this.features.find(i => i.id === fixIssueId);
-                if (issueToFix && (issueToFix.status === 'open' || issueToFix.status === 'in_progress')) {
-                    this.selectedFeatures = [fixIssueId];
+                window.history.replaceState({}, '', '/features');
+                // Select the feature and open notes modal
+                const featureToFix = this.features.find(f => f.id === fixFeatureId);
+                if (featureToFix && (featureToFix.status === 'analysis' || featureToFix.status === 'design' || featureToFix.status === 'development')) {
+                    this.selectedFeatures = [fixFeatureId];
                     this.fixNotes = '';
                     this.showNotesModal = true;
-                } else if (!issueToFix) {
-                    // Issue not found - maybe it was already resolved or doesn't exist
-                    console.warn('Issue not found for fix:', fixIssueId);
+                } else if (!featureToFix) {
+                    // Feature not found - maybe it was already merged or doesn't exist
+                    console.warn('Feature not found for fix:', fixFeatureId);
                 }
             }
         },
@@ -1671,14 +1671,14 @@ function featuresApp() {
                 if (this.filters.order_by) params.set('order_by', this.filters.order_by);
                 if (this.filters.linear_linked) params.set('linear_linked', this.filters.linear_linked);
 
-                const [issuesRes, summaryRes] = await Promise.all([
+                const [featuresRes, summaryRes] = await Promise.all([
                     fetch('/api/features?' + params.toString()),
                     fetch('/api/features/summary?' + params.toString())
                 ]);
-                this.features = await issuesRes.json();
+                this.features = await featuresRes.json();
                 this.summary = await summaryRes.json();
             } catch (error) {
-                console.error('Error loading issues:', error);
+                console.error('Error loading features:', error);
             }
             this.loading = false;
         },
@@ -1686,8 +1686,8 @@ function featuresApp() {
         toggleSelectAll() {
             if (this.selectAllChecked) {
                 this.selectedFeatures = this.features
-                    .filter(i => i.status === 'open' || i.status === 'in_progress')
-                    .map(i => i.id);
+                    .filter(f => f.status === 'analysis' || f.status === 'design' || f.status === 'development')
+                    .map(f => f.id);
             } else {
                 this.selectedFeatures = [];
             }
@@ -1698,17 +1698,17 @@ function featuresApp() {
             this.selectAllChecked = false;
         },
 
-        openLinkLinearModal(issue) {
-            this.currentIssueForLink = issue;
+        openLinkLinearModal(feature) {
+            this.currentFeatureForLink = feature;
             this.linkLinearInput = '';
             this.showLinkLinearModal = true;
         },
 
         async linkLinear() {
-            if (!this.linkLinearInput || !this.currentIssueForLink) return;
+            if (!this.linkLinearInput || !this.currentFeatureForLink) return;
             this.linkingLinear = true;
             try {
-                const res = await fetch(`/api/features/${this.currentIssueForLink.id}/link-linear`, {
+                const res = await fetch(`/api/features/${this.currentFeatureForLink.id}/link-linear`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ linear_identifier: this.linkLinearInput })
@@ -1717,7 +1717,7 @@ function featuresApp() {
                 this.showLinkLinearModal = false;
                 await this.refresh();
             } catch (e) {
-                TurboWrapError.handle('Link Linear Issue', e);
+                TurboWrapError.handle('Link Linear Feature', e);
             }
             this.linkingLinear = false;
         },
@@ -1730,28 +1730,28 @@ function featuresApp() {
 
         async confirmFixWithNotes() {
             if (this.selectedFeatures.length === 0 || this.isFixing) return;
-            const firstIssue = this.features.find(i => i.id === this.selectedFeatures[0]);
-            if (!firstIssue || !firstIssue.repository_id || !firstIssue.task_id) {
-                alert('Errore: Dati issue incompleti');
+            const firstFeature = this.features.find(f => f.id === this.selectedFeatures[0]);
+            if (!firstFeature || !firstFeature.repository_id || !firstFeature.task_id) {
+                alert('Errore: Dati feature incompleti');
                 return;
             }
 
             // Store pending request for after clarification
             this.clarification.pendingRequest = {
-                firstIssue,
+                firstFeature,
                 branchOptions: null,
             };
 
             // Check for pending branches first
             try {
-                const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
+                const pendingRes = await fetch(`/api/fix/pending-branches/${firstFeature.repository_id}`);
                 if (pendingRes.ok) {
                     const pendingData = await pendingRes.json();
                     if (pendingData.has_pending && pendingData.branches.length > 0) {
                         this.pendingFixRequest = {
-                            repository_id: firstIssue.repository_id,
-                            task_id: firstIssue.task_id,
-                            issue_ids: [...this.selectedFeatures],
+                            repository_id: firstFeature.repository_id,
+                            task_id: firstFeature.task_id,
+                            feature_ids: [...this.selectedFeatures],
                             user_notes: this.fixNotes || null,
                         };
                         this.pendingBranch = pendingData.branches[0];
@@ -1764,22 +1764,22 @@ function featuresApp() {
             }
 
             // Start clarification phase
-            await this._startClarification(firstIssue);
+            await this._startClarification(firstFeature);
         },
 
         // Pre-fix clarification with OPUS
-        async _startClarification(firstIssue) {
+        async _startClarification(firstFeature) {
             this.clarification.loading = true;
             this.clarification.show = true;
-            this.clarification.message = 'OPUS sta analizzando le issue...';
+            this.clarification.message = 'OPUS sta analizzando le feature...';
 
             try {
                 const response = await fetch('/api/fix/clarify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        repository_id: firstIssue.repository_id,
-                        issue_ids: this.selectedFeatures,
+                        repository_id: firstFeature.repository_id,
+                        feature_ids: this.selectedFeatures,
                         session_id: this.clarification.sessionId,
                         // Send ALL accumulated answers (current + previous)
                         answers: Object.keys(this.clarification.allAnswers).length > 0
@@ -1820,13 +1820,13 @@ function featuresApp() {
 
                 // Set new batch of questions
                 this.clarification.questions = data.questions || [];
-                this.clarification.questionsByIssue = data.questions_by_issue || [];
+                this.clarification.questionsByFeature = data.questions_by_feature || data.questions_by_issue || [];
 
                 // Reset answers only for NEW questions
                 this.clarification.answers = {};
-                if (this.clarification.questionsByIssue.length > 0) {
-                    // Grouped questions by issue
-                    this.clarification.questionsByIssue.forEach(group => {
+                if (this.clarification.questionsByFeature.length > 0) {
+                    // Grouped questions by feature
+                    this.clarification.questionsByFeature.forEach(group => {
                         group.questions?.forEach(q => {
                             this.clarification.answers[q.id] = '';
                         });
@@ -1865,9 +1865,9 @@ function featuresApp() {
 
             // Validate all answers are provided (support both grouped and flat)
             let unansweredCount = 0;
-            if (this.clarification.questionsByIssue.length > 0) {
+            if (this.clarification.questionsByFeature.length > 0) {
                 // Grouped questions
-                this.clarification.questionsByIssue.forEach(group => {
+                this.clarification.questionsByFeature.forEach(group => {
                     group.questions?.forEach(q => {
                         if (!this.clarification.answers[q.id]?.trim()) {
                             unansweredCount++;
@@ -1887,12 +1887,12 @@ function featuresApp() {
             }
 
             // Continue clarification with answers
-            await this._startClarification(this.clarification.pendingRequest.firstIssue);
+            await this._startClarification(this.clarification.pendingRequest.firstFeature);
         },
 
         // Helper to check if there are any questions (grouped or flat)
         hasQuestions() {
-            return this.clarification.questionsByIssue.length > 0 || this.clarification.questions.length > 0;
+            return this.clarification.questionsByFeature.length > 0 || this.clarification.questions.length > 0;
         },
 
         // Skip clarification and proceed directly to fix
@@ -1900,7 +1900,7 @@ function featuresApp() {
             this._stopClarifyPing();
             this.clarification.show = false;
             this._startFixProcess(
-                this.clarification.pendingRequest.firstIssue,
+                this.clarification.pendingRequest.firstFeature,
                 this.clarification.pendingRequest.branchOptions
             );
         },
@@ -1928,8 +1928,8 @@ function featuresApp() {
 
         async _pingClarifySession() {
             if (!this.clarification.sessionId) return;
-            const firstIssue = this.clarification.pendingRequest?.firstIssue;
-            if (!firstIssue) return;
+            const firstFeature = this.clarification.pendingRequest?.firstFeature;
+            if (!firstFeature) return;
 
             try {
                 console.log('[CLARIFY] 📡 Pinging to keep cache warm...');
@@ -1937,8 +1937,8 @@ function featuresApp() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        repository_id: firstIssue.repository_id,
-                        issue_ids: this.selectedFeatures,
+                        repository_id: firstFeature.repository_id,
+                        feature_ids: this.selectedFeatures,
                         session_id: this.clarification.sessionId,
                         answers: null,
                         previous_questions: null,
@@ -2022,7 +2022,7 @@ function featuresApp() {
             this.planPreview.loading = false;
             this.planPreview.masterTodoPath = null;
             this.planPreview.executionSteps = [];
-            this.planPreview.totalIssues = 0;
+            this.planPreview.totalFeatures = 0;
             this.planPreview.totalSteps = 0;
         },
 
@@ -2037,7 +2037,7 @@ function featuresApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         repository_id: this.filters.repository_id,
-                        issue_ids: this.selectedFeatures,
+                        feature_ids: this.selectedFeatures,
                         clarify_session_id: this.clarification.sessionId,
                         enable_subtasks: this.enableSubtasks
                     })
@@ -2048,7 +2048,7 @@ function featuresApp() {
                 const data = await response.json();
                 this.planPreview.masterTodoPath = data.master_todo_path;
                 this.planPreview.executionSteps = data.execution_steps || [];
-                this.planPreview.totalIssues = data.issue_count;
+                this.planPreview.totalFeatures = data.feature_count || data.issue_count;
                 this.planPreview.totalSteps = data.step_count;
                 this.planPreview.loading = false;
 
@@ -2057,7 +2057,7 @@ function featuresApp() {
                 this.planPreview.loading = false;
                 // Fallback: proceed without plan
                 this.cancelPlanPreview();
-                this._startFixProcess(this.clarification.pendingRequest?.firstIssue, this.clarification.pendingRequest?.branchOptions);
+                this._startFixProcess(this.clarification.pendingRequest?.firstFeature, this.clarification.pendingRequest?.branchOptions);
             }
         },
 
@@ -2065,26 +2065,26 @@ function featuresApp() {
             // Execute the planned fix
             this.planPreview.show = false;
             const branchOptions = this.clarification.pendingRequest?.branchOptions;
-            const firstIssue = this.clarification.pendingRequest?.firstIssue;
+            const firstFeature = this.clarification.pendingRequest?.firstFeature;
 
             // Pass master_todo_path to the fix process
-            await this._startFixProcess(firstIssue, branchOptions, false, this.planPreview.masterTodoPath);
+            await this._startFixProcess(firstFeature, branchOptions, false, this.planPreview.masterTodoPath);
         },
 
-        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false, masterTodoPath = null) {
+        async _startFixProcess(firstFeature, branchOptions = null, forceRestart = false, masterTodoPath = null) {
             this.isFixing = true;
             this.showFixModal = true;
 
-            const issueStates = {};
+            const featureStates = {};
             this.selectedFeatures.forEach(id => {
-                const issue = this.features.find(i => i.id === id);
-                issueStates[id] = { code: issue?.issue_code || id.slice(0, 8), status: 'pending', score: null };
+                const feature = this.features.find(f => f.id === id);
+                featureStates[id] = { code: feature?.linear_identifier || id.slice(0, 8), status: 'pending', score: null };
             });
 
             this.fixProgress = {
-                current: 0, total: this.selectedFeatures.length, currentIssue: null, logs: [], status: 'running',
-                branchName: branchOptions?.existing_branch_name || null, issueStates: issueStates,
-                fixingIssueIds: [...this.selectedFeatures], streamingContent: '', showStreamingDetails: false,
+                current: 0, total: this.selectedFeatures.length, currentFeature: null, logs: [], status: 'running',
+                branchName: branchOptions?.existing_branch_name || null, featureStates: featureStates,
+                fixingFeatureIds: [...this.selectedFeatures], streamingContent: '', showStreamingDetails: false,
                 lastScore: null, billingError: null, scopeViolation: { show: false, sessionId: null, dirs: [], responding: false },
                 currentStep: 0, totalSteps: 0, stepReason: ''
             };
@@ -2093,11 +2093,11 @@ function featuresApp() {
             this._updateScheduled = false;
 
             try {
-                // Always use the original task_id - branch name is generated from issue titles
+                // Always use the original task_id - branch name is generated from feature titles
                 const requestBody = {
-                    repository_id: firstIssue.repository_id,
-                    task_id: firstIssue.task_id,
-                    issue_ids: this.selectedFeatures,
+                    repository_id: firstFeature.repository_id,
+                    task_id: firstFeature.task_id,
+                    feature_ids: this.selectedFeatures,
                     force: forceRestart,
                 };
                 if (this.fixNotes && this.fixNotes.trim()) requestBody.user_notes = this.fixNotes.trim();
@@ -2129,7 +2129,7 @@ function featuresApp() {
                     if (confirm(`Una sessione di fix è già in corso (${stuckSession.session_id.slice(0, 8)}...).\n\nForzare il riavvio?`)) {
                         this.showFixModal = false;
                         this.isFixing = false;
-                        await this._startFixProcess(firstIssue, branchOptions, true);
+                        await this._startFixProcess(firstFeature, branchOptions, true);
                         return;
                     } else {
                         throw new Error('Sessione già in corso');
@@ -2140,8 +2140,8 @@ function featuresApp() {
 
                 window.dispatchEvent(new CustomEvent('operation-started'));
                 this.selectedFeatures.forEach(id => {
-                    const issue = this.features.find(i => i.id === id);
-                    if (issue) feature.status = 'in_progress';
+                    const feature = this.features.find(f => f.id === id);
+                    if (feature) feature.status = 'development';
                 });
 
                 const reader = response.body.getReader();
@@ -2204,34 +2204,34 @@ function featuresApp() {
                 const batchScoreMatch = event.message.match(/score:\s*(\d+)/);
                 if (batchScoreMatch) this.fixProgress.lastScore = parseInt(batchScoreMatch[1]);
             }
-            if (eventType === 'fix_challenger_approved' && event.issue_ids) {
-                event.issue_ids.forEach(issueId => {
-                    if (this.fixProgress.issueStates[issueId]) {
-                        this.fixProgress.issueStates[issueId].status = 'completed';
-                        this.fixProgress.issueStates[issueId].score = this.fixProgress.lastScore;
+            if (eventType === 'fix_challenger_approved' && (event.feature_ids || event.issue_ids)) {
+                (event.feature_ids || event.issue_ids).forEach(featureId => {
+                    if (this.fixProgress.featureStates[featureId]) {
+                        this.fixProgress.featureStates[featureId].status = 'completed';
+                        this.fixProgress.featureStates[featureId].score = this.fixProgress.lastScore;
                     }
                 });
             }
-            if (eventType === 'fix_batch_failed' && event.issue_ids) {
-                event.issue_ids.forEach(issueId => {
-                    if (this.fixProgress.issueStates[issueId]) this.fixProgress.issueStates[issueId].status = 'failed';
+            if (eventType === 'fix_batch_failed' && (event.feature_ids || event.issue_ids)) {
+                (event.feature_ids || event.issue_ids).forEach(featureId => {
+                    if (this.fixProgress.featureStates[featureId]) this.fixProgress.featureStates[featureId].status = 'failed';
                 });
             }
             if (eventType === 'fix_session_completed') {
-                Object.keys(this.fixProgress.issueStates).forEach(id => {
-                    const state = this.fixProgress.issueStates[id];
+                Object.keys(this.fixProgress.featureStates).forEach(id => {
+                    const state = this.fixProgress.featureStates[id];
                     if (state.status !== 'failed') { state.status = 'completed'; state.score = this.fixProgress.lastScore; }
                 });
             }
             if (eventType === 'fix_session_error') {
-                Object.keys(this.fixProgress.issueStates).forEach(id => {
-                    if (this.fixProgress.issueStates[id].status === 'in_progress') this.fixProgress.issueStates[id].status = 'failed';
+                Object.keys(this.fixProgress.featureStates).forEach(id => {
+                    if (this.fixProgress.featureStates[id].status === 'in_progress') this.fixProgress.featureStates[id].status = 'failed';
                 });
             }
             if (eventType === 'fix_billing_error') {
                 this.fixProgress.billingError = event.error || event.message || 'Credit balance is too low';
-                Object.keys(this.fixProgress.issueStates).forEach(id => {
-                    const state = this.fixProgress.issueStates[id];
+                Object.keys(this.fixProgress.featureStates).forEach(id => {
+                    const state = this.fixProgress.featureStates[id];
                     if (state.status === 'in_progress' || state.status === 'pending') state.status = 'failed';
                 });
             }
@@ -2359,16 +2359,16 @@ function featuresApp() {
                 }
                 this.showPendingBranchModal = false;
                 if (this.pendingFixRequest) {
-                    const firstIssue = this.features.find(i => i.id === this.pendingFixRequest.issue_ids[0]);
-                    if (firstIssue) {
-                        this.selectedFeatures = this.pendingFixRequest.issue_ids;
+                    const firstFeature = this.features.find(f => f.id === (this.pendingFixRequest.feature_ids || this.pendingFixRequest.issue_ids)[0]);
+                    if (firstFeature) {
+                        this.selectedFeatures = this.pendingFixRequest.feature_ids || this.pendingFixRequest.issue_ids;
                         // continue = usa branch esistente, new-branch/merge = crea nuovo branch
                         const branchOptions = action === 'continue'
                             ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name }
                             : null;
                         // ALWAYS go through clarification phase (even on resume/continue)
-                        this.clarification.pendingRequest = { firstIssue, branchOptions };
-                        await this._startClarification(firstIssue);
+                        this.clarification.pendingRequest = { firstFeature, branchOptions };
+                        await this._startClarification(firstFeature);
                     }
                 }
             } catch (error) { alert('Errore: ' + error.message); }
@@ -2399,57 +2399,57 @@ function featuresApp() {
             return 'bg-gray-200 dark:bg-gray-700';
         },
 
-        // Group issues by file path, sorted by number of issues (descending)
-        getIssuesByFile() {
-            const byFile = {};
-            for (const issue of this.features) {
-                const file = feature.assignee_name || 'unknown';
-                if (!byFile[file]) byFile[file] = [];
-                byFile[file].push(issue);
+        // Group features by assignee, sorted by count (descending)
+        getFeaturesByAssignee() {
+            const byAssignee = {};
+            for (const feature of this.features) {
+                const assignee = feature.assignee_name || 'unassigned';
+                if (!byAssignee[assignee]) byAssignee[assignee] = [];
+                byAssignee[assignee].push(feature);
             }
             // Sort by count descending
-            const sorted = Object.entries(byFile)
+            const sorted = Object.entries(byAssignee)
                 .sort((a, b) => b[1].length - a[1].length);
             return Object.fromEntries(sorted);
         },
 
-        // Select all issues from a file for batch fix - directly opens clarification popup
-        async createBatchFromFile(file, fileIssues) {
-            // Filter only fixable issues (open status)
-            const fixableIds = fileIssues
-                .filter(i => i.status === 'open')
-                .map(i => i.id);
+        // Select all features from an assignee for batch development - directly opens clarification popup
+        async createBatchFromAssignee(assignee, assigneeFeatures) {
+            // Filter only fixable features (analysis/design status)
+            const fixableIds = assigneeFeatures
+                .filter(f => f.status === 'analysis' || f.status === 'design')
+                .map(f => f.id);
             if (fixableIds.length === 0) {
-                this.showToast('Nessuna issue open da fixare in questo file', 'warning');
+                this.showToast('Nessuna feature in analysis/design da sviluppare', 'warning');
                 return;
             }
             // Set selection
             this.selectedFeatures = fixableIds;
             this.fixNotes = '';
 
-            // Find first issue for repository/task info
-            const firstIssue = fileIssues.find(i => i.status === 'open');
-            if (!firstIssue || !firstIssue.repository_id || !firstIssue.task_id) {
-                this.showToast('Errore: Dati issue incompleti', 'error');
+            // Find first feature for repository/task info
+            const firstFeature = assigneeFeatures.find(f => f.status === 'analysis' || f.status === 'design');
+            if (!firstFeature || !firstFeature.repository_id || !firstFeature.task_id) {
+                this.showToast('Errore: Dati feature incompleti', 'error');
                 return;
             }
 
             // Store pending request
             this.clarification.pendingRequest = {
-                firstIssue,
+                firstFeature,
                 branchOptions: null,
             };
 
             // Check for pending branches first
             try {
-                const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
+                const pendingRes = await fetch(`/api/fix/pending-branches/${firstFeature.repository_id}`);
                 if (pendingRes.ok) {
                     const pendingData = await pendingRes.json();
                     if (pendingData.has_pending && pendingData.branches.length > 0) {
                         this.pendingFixRequest = {
-                            repository_id: firstIssue.repository_id,
-                            task_id: firstIssue.task_id,
-                            issue_ids: [...this.selectedFeatures],
+                            repository_id: firstFeature.repository_id,
+                            task_id: firstFeature.task_id,
+                            feature_ids: [...this.selectedFeatures],
                             user_notes: null,
                         };
                         this.pendingBranch = pendingData.branches[0];
@@ -2462,32 +2462,32 @@ function featuresApp() {
             }
 
             // Go directly to clarification popup
-            await this._startClarification(firstIssue);
+            await this._startClarification(firstFeature);
         },
 
-        quickIgnore(issue) {
-            this.ignoreIssue = issue;
+        quickIgnore(feature) {
+            this.ignoreFeature = feature;
             this.ignoreReason = '';
             this.showIgnoreModal = true;
         },
 
         async confirmIgnore() {
-            if (!this.ignoreIssue || this.ignoringIssue) return;
-            this.ignoringIssue = true;
+            if (!this.ignoreFeature || this.cancellingFeature) return;
+            this.cancellingFeature = true;
             try {
-                const body = { status: 'ignored' };
+                const body = { status: 'cancelled' };
                 if (this.ignoreReason.trim()) {
                     body.resolution_note = this.ignoreReason.trim();
                 }
-                const issueCode = this.ignoreIssue.issue_code;
-                const res = await fetch(`/api/features/${this.ignoreIssue.id}`, {
+                const featureCode = this.ignoreFeature.linear_identifier || this.ignoreFeature.id.slice(0, 8);
+                const res = await fetch(`/api/features/${this.ignoreFeature.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
                 if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
                 this.showIgnoreModal = false;
-                this.ignoreIssue = null;
+                this.ignoreFeature = null;
                 this.ignoreReason = '';
                 await this.refresh();
 
@@ -2496,17 +2496,17 @@ function featuresApp() {
                 this.toasts.push({
                     id: toastId,
                     level: 'INFO',
-                    message: `Issue ${issueCode} ignored. Click "Ignored" filter to view.`,
+                    message: `Feature ${featureCode} cancelled. Click "Cancelled" filter to view.`,
                     timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'})
                 });
                 setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== toastId); }, 5000);
             } catch (e) {
-                TurboWrapError.handle('Ignore Issue', e, { issueId: this.ignoreIssue?.id });
+                TurboWrapError.handle('Cancel Feature', e, { featureId: this.ignoreFeature?.id });
             }
-            this.ignoringIssue = false;
+            this.cancellingFeature = false;
         },
 
-        async quickMerge(issue) {
+        async quickMerge(feature) {
             try {
                 const res = await fetch(`/api/features/${feature.id}`, {
                     method: 'PATCH',
@@ -2517,22 +2517,22 @@ function featuresApp() {
                 feature.status = 'merged';
                 await this.refresh();
             } catch (e) {
-                TurboWrapError.handle('Mark Issue Merged', e, { issueId: feature.id });
+                TurboWrapError.handle('Mark Feature Merged', e, { featureId: feature.id });
             }
         },
 
-        async quickReopen(issue) {
+        async quickReopen(feature) {
             try {
                 const res = await fetch(`/api/features/${feature.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'open' })
+                    body: JSON.stringify({ status: 'analysis' })
                 });
                 if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
-                feature.status = 'open';
+                feature.status = 'analysis';
                 await this.refresh();
             } catch (e) {
-                TurboWrapError.handle('Reopen Issue', e, { issueId: feature.id });
+                TurboWrapError.handle('Reopen Feature', e, { featureId: feature.id });
             }
         }
     }
