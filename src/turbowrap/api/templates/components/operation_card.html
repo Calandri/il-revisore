@@ -112,11 +112,16 @@
             <span class="text-xs text-gray-500" x-text="op.user_name || 'system'"></span>
         </div>
 
-        <!-- Issue -->
-        <div class="flex-shrink-0 hidden sm:block">
+        <!-- Issue(s) -->
+        <div class="flex-shrink-0 hidden sm:flex items-center gap-1">
             <template x-if="op.details?.issue_codes && op.details.issue_codes.length > 0">
-                <a :href="'/issues/' + (op.details.issue_ids?.[0] || op.details.issue_codes[0])" @click.stop
-                   class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline" x-text="op.details.issue_codes[0]"></a>
+                <div class="flex items-center gap-1">
+                    <a :href="'/issues/' + (op.details.issue_ids?.[0] || op.details.issue_codes[0])" @click.stop
+                       class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline" x-text="op.details.issue_codes[0]"></a>
+                    <span x-show="op.details.issue_codes.length > 1"
+                          class="text-xs bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-full"
+                          x-text="'+' + (op.details.issue_codes.length - 1)"></span>
+                </div>
             </template>
             <template x-if="!op.details?.issue_codes || op.details.issue_codes.length === 0">
                 <span class="text-xs text-gray-400 dark:text-gray-600">—</span>
@@ -245,16 +250,15 @@
                     S3 Output
                 </a>
             </template>
-            <template x-if="op.details?.issue_codes && op.details.issue_codes.length > 0">
-                <template x-for="(code, idx) in op.details.issue_codes" :key="code">
-                    <a :href="'/issues/' + (op.details.issue_ids?.[idx] || code)" @click.stop
-                       class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                        </svg>
-                        <span x-text="'Issue ' + code"></span>
-                    </a>
-                </template>
+            <!-- All Issues linked -->
+            <template x-for="(code, idx) in (op.details?.issue_codes || [])" :key="'issue-' + idx">
+                <a :href="'/issues/' + (op.details.issue_ids?.[idx] || code)" @click.stop
+                   class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                    </svg>
+                    <span x-text="'Issue ' + code"></span>
+                </a>
             </template>
         </div>
 

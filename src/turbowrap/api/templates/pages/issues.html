@@ -1049,6 +1049,16 @@
                 </button>
             </div>
 
+            <!-- Selected Issues -->
+            <div class="px-4 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div class="flex flex-wrap gap-1.5">
+                    <template x-for="issueId in selectedIssues" :key="issueId">
+                        <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded"
+                              x-text="issues.find(i => i.id === issueId)?.issue_code || issueId.slice(0,8)"></span>
+                    </template>
+                </div>
+            </div>
+
             <!-- Content -->
             <div class="p-4 overflow-y-auto flex-1">
                 <!-- Loading state -->
