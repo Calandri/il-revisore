@@ -160,7 +160,7 @@
                 <!-- Widget Status -->
                 <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
                     <div class="flex items-center justify-between">
-                        <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Bug Widget</div>
+                        <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">TurboWrap Bug</div>
                         <button @click="resyncWidget()" :disabled="loadingOverview" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors" title="Resync">
                             <svg class="w-3.5 h-3.5 text-gray-400" :class="loadingOverview && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -202,7 +202,7 @@
                 <!-- Mockups -->
                 <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 cursor-pointer"
                      @click="showMockupsList = !showMockupsList">
-                    <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Mockups</div>
+                    <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">TurboWrap Mockup</div>
                     <div class="text-2xl font-bold mt-1 text-pink-600 dark:text-pink-400" x-text="overviewStats.mockups_count || 0"></div>
                     <div class="text-xs text-gray-400 mt-1">file di design</div>
                 </div>
@@ -256,7 +256,7 @@
                         </template>
                         <template x-if="overviewStats.last_readme">
                             <div class="flex items-center justify-between text-xs">
-                                <span class="text-green-600 dark:text-green-400">Readme</span>
+                                <span class="text-green-600 dark:text-green-400">TurboWrap Readme</span>
                                 <span class="text-gray-400" x-text="formatDate(overviewStats.last_readme.started_at)"></span>
                             </div>
                         </template>
