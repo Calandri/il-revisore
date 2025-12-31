@@ -1,10 +1,10 @@
 """Application settings model."""
 
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, String, Text
+from sqlalchemy import Column, String, Text
 
 from turbowrap.db.base import Base
+
+from .base import TZDateTime, now_utc
 
 
 class Setting(Base):
@@ -16,7 +16,7 @@ class Setting(Base):
     value = Column(Text, nullable=True)
     is_secret = Column(String(1), default="N")  # Y = encrypted/masked in API responses
     description = Column(String(255), nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     def __repr__(self) -> str:
         return f"<Setting {self.key}>"

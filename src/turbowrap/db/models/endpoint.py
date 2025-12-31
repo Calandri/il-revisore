@@ -1,12 +1,9 @@
 """Endpoint detection model."""
 
-from datetime import datetime
-
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -19,7 +16,7 @@ from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import EndpointVisibility, generate_uuid
+from .base import EndpointVisibility, TZDateTime, generate_uuid, now_utc
 
 
 class Endpoint(Base):
@@ -60,13 +57,13 @@ class Endpoint(Base):
     auth_type = Column(String(50), nullable=True)  # Bearer, Basic, API-Key, OAuth2, etc.
 
     # Detection metadata
-    detected_at = Column(DateTime, nullable=True)  # When this endpoint was detected
+    detected_at = Column(TZDateTime(), nullable=True)  # When this endpoint was detected
     detection_confidence = Column(Float, nullable=True)  # 0-100 confidence score
     framework = Column(String(50), nullable=True)  # fastapi, flask, express, etc.
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", backref="endpoints")

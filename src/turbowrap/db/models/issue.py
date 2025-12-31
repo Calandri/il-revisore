@@ -1,12 +1,9 @@
 """Issue and ReviewCheckpoint models."""
 
-from datetime import datetime
-
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -19,7 +16,7 @@ from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import IssueStatus, SoftDeleteMixin, generate_uuid
+from .base import IssueStatus, SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class Issue(Base, SoftDeleteMixin):
@@ -70,11 +67,11 @@ class Issue(Base, SoftDeleteMixin):
 
     # Tracking
     status = Column(String(20), default=IssueStatus.OPEN.value, index=True)
-    phase_started_at = Column(DateTime, nullable=True)  # When current phase started
+    phase_started_at = Column(TZDateTime(), nullable=True)  # When current phase started
     is_active = Column(Boolean, default=False, index=True)  # True when in active development
     is_viewed = Column(Boolean, default=False, index=True)  # True when manually marked as reviewed
     resolution_note = Column(Text, nullable=True)  # Why it was resolved/ignored
-    resolved_at = Column(DateTime, nullable=True)
+    resolved_at = Column(TZDateTime(), nullable=True)
 
     # Fix result fields (populated when issue is fixed)
     fix_code = Column(Text, nullable=True)  # Snippet del codice fixato (display: max 500 chars)
@@ -87,14 +84,14 @@ class Issue(Base, SoftDeleteMixin):
         String(100), nullable=True
     )  # Branch dove e stato fatto il fix (e.g., "fix/1234567890")
     fix_session_id = Column(String(36), nullable=True, index=True)  # UUID sessione fix (per log S3)
-    fixed_at = Column(DateTime, nullable=True)  # Quando e stato fixato
+    fixed_at = Column(TZDateTime(), nullable=True)  # Quando e stato fixato
     fixed_by = Column(String(50), nullable=True)  # Agent che ha fixato (e.g., "fixer_claude")
     fix_self_score = Column(Integer, nullable=True)  # Self-evaluation score (0-100)
     fix_gemini_score = Column(Integer, nullable=True)  # Gemini challenger score (0-100)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     task = relationship("Task", back_populates="issues")
@@ -137,9 +134,9 @@ class ReviewCheckpoint(Base):
     model_usage = Column(JSON, nullable=True)  # Token/cost info
 
     # Timing
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(TZDateTime(), nullable=True)
+    completed_at = Column(TZDateTime(), nullable=True)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     task = relationship("Task", backref="checkpoints")

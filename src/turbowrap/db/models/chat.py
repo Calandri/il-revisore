@@ -1,13 +1,11 @@
 """Chat session models (SDK-based)."""
 
-from datetime import datetime
-
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, Column, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class ChatSession(Base, SoftDeleteMixin):
@@ -20,8 +18,8 @@ class ChatSession(Base, SoftDeleteMixin):
     task_id = Column(String(36), ForeignKey("tasks.id"), nullable=True)
     title = Column(String(255), nullable=True)
     status = Column(String(50), default="active")  # active, archived
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", back_populates="chat_sessions")
@@ -41,7 +39,7 @@ class ChatMessage(Base):
     role = Column(String(50), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     metadata_ = Column("metadata", JSON, nullable=True)  # agent_type, tokens, etc
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")

@@ -1,15 +1,14 @@
 """Operation tracking model."""
 
-from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, Column, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
-from turbowrap.utils.datetime_utils import format_iso
+from turbowrap.utils.datetime_utils import format_iso, now_utc
 
-from .base import OperationStatus, generate_uuid
+from .base import OperationStatus, TZDateTime, generate_uuid
 
 
 class Operation(Base):
@@ -51,13 +50,13 @@ class Operation(Base):
     error = Column(Text, nullable=True)
 
     # Timing
-    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
+    started_at = Column(TZDateTime(), default=now_utc, nullable=False)
+    completed_at = Column(TZDateTime(), nullable=True)
     duration_seconds = Column(Float, nullable=True)  # Computed on completion
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", backref="operations")
@@ -78,7 +77,7 @@ class Operation(Base):
             return False
         if not self.started_at:
             return False
-        elapsed = (datetime.utcnow() - self.started_at).total_seconds()
+        elapsed = (now_utc() - self.started_at).total_seconds()
         return elapsed > 1800
 
     def to_dict(self) -> dict[str, Any]:

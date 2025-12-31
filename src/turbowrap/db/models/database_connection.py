@@ -1,12 +1,9 @@
 """Database connection model for external database viewer."""
 
-from datetime import datetime
-
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
-    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -18,7 +15,7 @@ from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class DatabaseConnection(Base, SoftDeleteMixin):
@@ -68,7 +65,7 @@ class DatabaseConnection(Base, SoftDeleteMixin):
     extra_options = Column(JSON, nullable=True)  # Driver-specific options
 
     # Status tracking
-    last_connected_at = Column(DateTime, nullable=True)
+    last_connected_at = Column(TZDateTime(), nullable=True)
     last_error = Column(Text, nullable=True)  # Last connection error
     is_favorite = Column(Boolean, default=False, index=True)  # Starred connections
 
@@ -78,8 +75,8 @@ class DatabaseConnection(Base, SoftDeleteMixin):
     tags = Column(JSON, nullable=True)  # ["production", "staging", etc.]
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     __table_args__ = (
         Index("idx_database_connections_type", "db_type"),
@@ -119,7 +116,7 @@ class RepositoryDatabaseConnection(Base):
     is_default = Column(Boolean, default=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     repository = relationship("Repository", backref="database_links")

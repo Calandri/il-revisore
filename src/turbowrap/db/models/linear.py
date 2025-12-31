@@ -1,12 +1,9 @@
 """Linear integration models."""
 
-from datetime import datetime
-
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -19,7 +16,7 @@ from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class LinearIssue(Base, SoftDeleteMixin):
@@ -67,7 +64,7 @@ class LinearIssue(Base, SoftDeleteMixin):
     # Analysis results (from Claude)
     analysis_summary = Column(Text, nullable=True)
     analysis_comment_id = Column(String(100), nullable=True)  # Linear comment ID
-    analyzed_at = Column(DateTime, nullable=True)
+    analyzed_at = Column(TZDateTime(), nullable=True)
     analyzed_by = Column(String(100), nullable=True)  # "claude_opus"
     user_answers = Column(JSON, nullable=True)  # User responses to clarifying questions
 
@@ -79,9 +76,9 @@ class LinearIssue(Base, SoftDeleteMixin):
     fix_files_modified = Column(JSON, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    synced_at = Column(DateTime, nullable=True)  # Last sync from Linear
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
+    synced_at = Column(TZDateTime(), nullable=True)  # Last sync from Linear
 
     # Relationships
     task = relationship("Task", backref="linear_issues")
@@ -117,7 +114,7 @@ class LinearIssueRepositoryLink(Base):
     source_label = Column(String(100), nullable=True)  # Original label that created this link
     confidence_score = Column(Float, nullable=True)  # 0-100 if from Claude analysis
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     linear_issue = relationship("LinearIssue", back_populates="repository_links")

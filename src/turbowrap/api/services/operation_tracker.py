@@ -20,7 +20,7 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from threading import RLock
 from typing import TYPE_CHECKING, Any
@@ -653,8 +653,15 @@ class OperationTracker:
             if repo_id:
                 operations = [op for op in operations if op.repository_id == repo_id]
 
-            # Sort with fallback for None created_at
-            operations.sort(key=lambda x: x.created_at or now_utc(), reverse=True)
+            # Sort with fallback for None created_at (convert naive to aware for consistent comparison)
+            def to_aware(dt: datetime | None) -> datetime:
+                if dt is None:
+                    return now_utc()
+                if dt.tzinfo is None:
+                    return dt.replace(tzinfo=timezone.utc)
+                return dt
+
+            operations.sort(key=lambda x: to_aware(x.created_at), reverse=True)
 
             return operations
 

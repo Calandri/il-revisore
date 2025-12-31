@@ -1,13 +1,11 @@
 """Repository models."""
 
-from datetime import datetime
-
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, String
+from sqlalchemy import JSON, Boolean, Column, ForeignKey, Index, String
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class Repository(Base, SoftDeleteMixin):
@@ -20,7 +18,7 @@ class Repository(Base, SoftDeleteMixin):
     url = Column(String(512), nullable=False)  # GitHub URL
     local_path = Column(String(512), nullable=False)  # ~/.turbowrap/repos/<hash>/
     default_branch = Column(String(100), default="main")
-    last_synced_at = Column(DateTime, nullable=True)
+    last_synced_at = Column(TZDateTime(), nullable=True)
     status = Column(String(50), default="active")  # active, syncing, error
     repo_type = Column(String(50), nullable=True)  # backend, frontend, fullstack
     project_name = Column(String(255), nullable=True, index=True)  # Group related repos by project
@@ -56,8 +54,8 @@ class Repository(Base, SoftDeleteMixin):
     #   "generated_at": "2024-01-01T00:00:00Z"
     # }
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     tasks = relationship("Task", back_populates="repository", cascade="all, delete-orphan")
@@ -101,8 +99,8 @@ class RepositoryLink(Base):
     target_repo_id = Column(String(36), ForeignKey("repositories.id"), nullable=False)
     link_type = Column(String(50), nullable=False)  # Uses LinkType enum values
     metadata_ = Column("metadata", JSON, nullable=True)  # Additional info
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     source_repo = relationship(
@@ -140,8 +138,8 @@ class RepositoryExternalLink(Base):
     label = Column(String(100), nullable=True)  # Optional custom label
     is_primary = Column(Boolean, default=False)  # Mark one link as primary per type
     metadata_ = Column("metadata", JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", back_populates="external_links")

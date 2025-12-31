@@ -1,13 +1,11 @@
 """CLI-based chat models (claude/gemini subprocess)."""
 
-from datetime import datetime
-
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class CLIChatSession(Base, SoftDeleteMixin):
@@ -64,9 +62,9 @@ class CLIChatSession(Base, SoftDeleteMixin):
     total_tokens_out = Column(Integer, default=0)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_message_at = Column(DateTime, nullable=True)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
+    last_message_at = Column(TZDateTime(), nullable=True)
 
     # Relationships
     repository = relationship("Repository")
@@ -118,7 +116,7 @@ class CLIChatMessage(Base):
     duration_ms = Column(Integer, nullable=True)  # Response time in milliseconds
 
     # Timestamp
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     session = relationship("CLIChatSession", back_populates="messages")

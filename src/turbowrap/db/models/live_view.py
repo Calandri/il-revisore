@@ -1,12 +1,10 @@
 """Live View models for production site screenshots."""
 
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import Column, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 
 from ..session import Base  # type: ignore[attr-defined]
-from .base import generate_uuid
+from .base import TZDateTime, generate_uuid, now_utc
 
 
 class LiveViewScreenshot(Base):
@@ -20,11 +18,11 @@ class LiveViewScreenshot(Base):
         String(36), ForeignKey("repository_external_links.id"), nullable=False
     )
     s3_url = Column(String(1024), nullable=False)
-    captured_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    captured_at = Column(TZDateTime(), nullable=False, default=now_utc)
     viewport_width = Column(Integer, default=1920)
     viewport_height = Column(Integer, default=1080)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository")

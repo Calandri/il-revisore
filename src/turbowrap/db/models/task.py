@@ -1,13 +1,11 @@
 """Task and AgentRun models."""
 
-from datetime import datetime
-
-from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Column, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class Task(Base, SoftDeleteMixin):
@@ -25,10 +23,10 @@ class Task(Base, SoftDeleteMixin):
     error = Column(Text, nullable=True)  # error message if failed
     progress = Column(Integer, default=0)  # 0-100 percentage
     progress_message = Column(String(255), nullable=True)  # Current step description
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(TZDateTime(), nullable=True)
+    completed_at = Column(TZDateTime(), nullable=True)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", back_populates="tasks")
@@ -59,7 +57,7 @@ class AgentRun(Base):
     input_hash = Column(String(64), nullable=True)  # for caching
     output = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     task = relationship("Task", back_populates="agent_runs")

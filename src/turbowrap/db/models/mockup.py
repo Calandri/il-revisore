@@ -1,14 +1,13 @@
 """Mockup models."""
 
-from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class MockupStatus(str, Enum):
@@ -31,8 +30,8 @@ class MockupProject(Base, SoftDeleteMixin):
     design_system = Column(String(100), nullable=True)  # tailwind, bootstrap, material, custom
     color = Column(String(20), default="#6366f1")
     icon = Column(String(50), default="layout")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", backref="mockup_projects")
@@ -82,8 +81,8 @@ class Mockup(Base, SoftDeleteMixin):
     # Link to chat session (if created from CLI)
     chat_session_id = Column(String(36), ForeignKey("cli_chat_sessions.id"), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     project = relationship("MockupProject", back_populates="mockups")

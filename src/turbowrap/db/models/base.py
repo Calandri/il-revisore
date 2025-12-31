@@ -3,9 +3,27 @@
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import DateTime
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
+
+# Re-export now_utc for convenience
+from turbowrap.utils.datetime_utils import now_utc
+
+__all__ = ["TZDateTime", "now_utc", "generate_uuid"]
+
+
+def TZDateTime() -> Any:  # noqa: N802
+    """Create a timezone-aware DateTime column.
+
+    Use this instead of raw DateTime for consistent timezone handling.
+    SQLite stores UTC, PostgreSQL uses timestamptz.
+
+    Usage:
+        created_at = Column(TZDateTime(), default=now_utc)
+    """
+    return DateTime(timezone=True)
 
 
 def generate_uuid() -> str:
@@ -40,7 +58,7 @@ class SoftDeleteMixin:
     @declared_attr
     def deleted_at(cls) -> Mapped[datetime | None]:  # noqa: N805
         """Timestamp when the record was soft-deleted. None means active."""
-        return mapped_column(DateTime, nullable=True, default=None, index=True)
+        return mapped_column(TZDateTime(), nullable=True, default=None, index=True)
 
     @property
     def is_deleted(self) -> bool:
@@ -49,7 +67,7 @@ class SoftDeleteMixin:
 
     def soft_delete(self) -> None:
         """Mark this record as deleted without removing from database."""
-        self.deleted_at = datetime.utcnow()
+        self.deleted_at = now_utc()
 
     def restore(self) -> None:
         """Restore a soft-deleted record."""

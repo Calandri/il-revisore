@@ -1,12 +1,9 @@
 """Test suite, run, and case models."""
 
-from datetime import datetime
-
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -18,7 +15,7 @@ from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import SoftDeleteMixin, generate_uuid
+from .base import SoftDeleteMixin, TZDateTime, generate_uuid, now_utc
 
 
 class TestSuite(Base, SoftDeleteMixin):
@@ -65,11 +62,11 @@ class TestSuite(Base, SoftDeleteMixin):
 
     # Discovery metadata
     is_auto_discovered = Column(Boolean, default=False)
-    discovered_at = Column(DateTime, nullable=True)
+    discovered_at = Column(TZDateTime(), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     # Relationships
     repository = relationship("Repository", backref="test_suites")
@@ -112,8 +109,8 @@ class TestRun(Base):
     commit_sha = Column(String(40), nullable=True)  # Git commit SHA
 
     # Timing
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    started_at = Column(TZDateTime(), nullable=True)
+    completed_at = Column(TZDateTime(), nullable=True)
     duration_seconds = Column(Float, nullable=True)
 
     # Results summary
@@ -144,7 +141,7 @@ class TestRun(Base):
     error_message = Column(Text, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     suite = relationship("TestSuite", back_populates="runs")
@@ -217,7 +214,7 @@ class TestCase(Base):
     # }
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
 
     # Relationships
     run = relationship("TestRun", back_populates="test_cases")

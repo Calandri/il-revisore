@@ -1,10 +1,10 @@
 """Mermaid diagram storage model."""
 
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, String, Text
+from sqlalchemy import Column, String, Text
 
 from turbowrap.db.base import Base
+
+from .base import TZDateTime, now_utc
 
 
 class MermaidDiagram(Base):
@@ -16,8 +16,8 @@ class MermaidDiagram(Base):
     document_key = Column(String(255), primary_key=True)
     mermaid_code = Column(Text, nullable=False)
     diagram_type = Column(String(50), default="flowchart")  # flowchart, sequence, etc.
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(TZDateTime(), default=now_utc)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc)
 
     def __repr__(self) -> str:
         return f"<MermaidDiagram {self.document_key}>"

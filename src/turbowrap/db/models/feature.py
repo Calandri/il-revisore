@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     JSON,
     Column,
-    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -20,7 +18,14 @@ from sqlalchemy.orm import relationship
 
 from turbowrap.db.base import Base
 
-from .base import FeatureRepositoryRole, FeatureStatus, SoftDeleteMixin, generate_uuid
+from .base import (
+    FeatureRepositoryRole,
+    FeatureStatus,
+    SoftDeleteMixin,
+    TZDateTime,
+    generate_uuid,
+    now_utc,
+)
 
 if TYPE_CHECKING:
     from .repository import Repository
@@ -44,7 +49,7 @@ class Feature(Base, SoftDeleteMixin):
 
     # Status tracking
     status = Column(String(20), default=FeatureStatus.ANALYSIS.value, nullable=False, index=True)
-    phase_started_at = Column(DateTime, nullable=True)  # When current phase started
+    phase_started_at = Column(TZDateTime(), nullable=True)  # When current phase started
 
     # Content
     title = Column(String(500), nullable=False)
@@ -79,8 +84,8 @@ class Feature(Base, SoftDeleteMixin):
     assignee_name = Column(String(255), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(TZDateTime(), default=now_utc, nullable=False)
+    updated_at = Column(TZDateTime(), default=now_utc, onupdate=now_utc, nullable=False)
 
     # Relationships
     mockup = relationship("Mockup", backref="features")
@@ -128,7 +133,7 @@ class FeatureRepository(Base):
     role = Column(String(20), default=FeatureRepositoryRole.PRIMARY.value, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(TZDateTime(), default=now_utc, nullable=False)
 
     # Relationships
     feature = relationship("Feature", back_populates="repository_links")

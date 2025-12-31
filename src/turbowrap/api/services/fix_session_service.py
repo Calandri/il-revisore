@@ -509,7 +509,8 @@ class FixSessionService:
                     request=session_info.fix_request,
                     issues=session_info.issues,
                     emit=progress_callback,
-                    operation_id=session_info.session_id,  # Use same ID as tracker
+                    operation_id=session_info.clarify_session_id
+                    or session_info.session_id,  # Use clarify as root parent
                 )
 
                 # CRITICAL: If orchestrator failed with empty results, reset issues!
