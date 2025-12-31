@@ -19,12 +19,14 @@ from ..schemas.settings import (
     LinearTeamIDUpdate,
     ModelUpdate,
     SettingsResponse,
+    VercelTokenUpdate,
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 # Setting keys
 GITHUB_TOKEN_KEY = "github_token"
+VERCEL_TOKEN_KEY = "vercel_token"
 LINEAR_API_KEY_KEY = "linear_api_key"
 LINEAR_TEAM_ID_KEY = "linear_team_id"
 CLAUDE_MODEL_KEY = "claude_model"
@@ -71,6 +73,7 @@ def get_settings(db: Session = Depends(get_db)) -> SettingsResponse:
     config = get_config()
 
     github_token = _get_setting(db, GITHUB_TOKEN_KEY)
+    vercel_token = _get_setting(db, VERCEL_TOKEN_KEY)
     linear_api_key = _get_setting(db, LINEAR_API_KEY_KEY)
     linear_team_id = _get_setting(db, LINEAR_TEAM_ID_KEY)
     claude_model = _get_setting(db, CLAUDE_MODEL_KEY)
@@ -80,6 +83,9 @@ def get_settings(db: Session = Depends(get_db)) -> SettingsResponse:
     return SettingsResponse(
         github_token="***" if github_token and github_token.value else None,
         github_token_set=bool(github_token and github_token.value),
+        # Vercel Integration
+        vercel_token="***" if vercel_token and vercel_token.value else None,
+        vercel_token_set=bool(vercel_token and vercel_token.value),
         # Linear Integration
         linear_api_key="***" if linear_api_key and linear_api_key.value else None,
         linear_api_key_set=bool(linear_api_key and linear_api_key.value),
@@ -129,6 +135,33 @@ def delete_github_token(db: Session = Depends(get_db)) -> dict[str, str]:
         db.delete(setting)
         db.commit()
     return {"status": "ok", "message": "GitHub token deleted"}
+
+
+# Vercel endpoints
+@router.put("/vercel-token")
+def set_vercel_token(
+    data: VercelTokenUpdate,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Set Vercel token for deployments and project management."""
+    _set_setting(
+        db,
+        key=VERCEL_TOKEN_KEY,
+        value=data.token,
+        is_secret="Y",
+        description="Vercel access token for deployments",
+    )
+    return {"status": "ok", "message": "Vercel token saved"}
+
+
+@router.delete("/vercel-token")
+def delete_vercel_token(db: Session = Depends(get_db)) -> dict[str, str]:
+    """Delete Vercel token."""
+    setting = _get_setting(db, VERCEL_TOKEN_KEY)
+    if setting:
+        db.delete(setting)
+        db.commit()
+    return {"status": "ok", "message": "Vercel token deleted"}
 
 
 # Linear endpoints

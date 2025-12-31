@@ -170,6 +170,105 @@
         </div>
     </div>
 
+    <!-- Vercel Token Section -->
+    <div class="config-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden" style="--card-color: #000000; --card-color-end: #333333">
+        <div class="p-6 border-b dark:border-gray-700">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-black dark:bg-white rounded-lg flex items-center justify-center icon-float">
+                    <svg class="w-6 h-6 text-white dark:text-black" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M24 22.525H0l12-21.05 12 21.05z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-semibold">Vercel Token</h2>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Per deploy e gestione progetti</p>
+                </div>
+                <div class="ml-auto">
+                    <span x-show="vercelTokenSet" class="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm font-medium">
+                        Configurato
+                    </span>
+                    <span x-show="!vercelTokenSet" class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-sm font-medium">
+                        Non configurato
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6">
+            <!-- Info box -->
+            <div class="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                <div class="flex gap-3">
+                    <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="text-sm text-blue-700 dark:text-blue-300">
+                        <p class="font-medium mb-1">Come ottenere un token Vercel:</p>
+                        <ol class="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400">
+                            <li>Vai su <a href="https://vercel.com/account/tokens" target="_blank" class="underline">Vercel Settings > Tokens</a></li>
+                            <li>Crea un nuovo token con scope <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">Full Account</code></li>
+                            <li>Copia e incolla il token qui sotto</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Token form -->
+            <form @submit.prevent="saveVercelToken()" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Access Token</label>
+                    <div class="relative">
+                        <input :type="showVercelToken ? 'text' : 'password'"
+                               x-model="vercelToken"
+                               placeholder="prj_xxxxxxxxxxxxxxxxxxxx"
+                               class="w-full px-4 py-3 pr-12 border dark:border-gray-600 rounded-lg
+                                      bg-white dark:bg-gray-700
+                                      focus:ring-2 focus:ring-primary focus:border-transparent
+                                      placeholder-gray-400 font-mono">
+                        <button type="button"
+                                @click="showVercelToken = !showVercelToken"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            <svg x-show="!showVercelToken" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <svg x-show="showVercelToken" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="submit"
+                            :disabled="savingVercel || !vercelToken"
+                            class="min-h-[44px] px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                        <svg x-show="savingVercel" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span x-text="savingVercel ? 'Salvataggio...' : 'Salva Token'"></span>
+                    </button>
+
+                    <button type="button"
+                            x-show="vercelTokenSet"
+                            @click="deleteVercelToken()"
+                            :disabled="deletingVercel"
+                            class="min-h-[44px] px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50">
+                        <span x-text="deletingVercel ? 'Eliminazione...' : 'Elimina Token'"></span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Success message -->
+            <div x-show="vercelMessage"
+                 x-transition
+                 class="mt-4 p-3 rounded-lg"
+                 :class="vercelMessageType === 'success' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'">
+                <span x-text="vercelMessage"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Linear Integration Section -->
     <div class="config-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden" style="--card-color: #4f46e5; --card-color-end: #6366f1">
         <div class="p-6 border-b dark:border-gray-700">
@@ -472,6 +571,15 @@ function settingsApp() {
         message: '',
         messageType: 'success',
 
+        // Vercel Token
+        vercelToken: '',
+        vercelTokenSet: {{ 'true' if vercel_token_set else 'false' }},
+        showVercelToken: false,
+        savingVercel: false,
+        deletingVercel: false,
+        vercelMessage: '',
+        vercelMessageType: 'success',
+
         // Linear Integration
         linearApiKey: '',
         linearApiKeySet: {{ 'true' if linear_api_key_set else 'false' }},
@@ -582,6 +690,67 @@ function settingsApp() {
             } finally {
                 this.deleting = false;
                 setTimeout(() => this.message = '', 5000);
+            }
+        },
+
+        // Vercel Token functions
+        async saveVercelToken() {
+            if (!this.vercelToken) return;
+
+            this.savingVercel = true;
+            this.vercelMessage = '';
+
+            try {
+                const response = await fetch('/api/settings/vercel-token', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: this.vercelToken })
+                });
+
+                if (response.ok) {
+                    this.vercelTokenSet = true;
+                    this.vercelToken = '';
+                    this.vercelMessage = 'Token Vercel salvato con successo!';
+                    this.vercelMessageType = 'success';
+                } else {
+                    const data = await response.json();
+                    this.vercelMessage = data.detail || 'Errore nel salvataggio';
+                    this.vercelMessageType = 'error';
+                }
+            } catch (error) {
+                this.vercelMessage = 'Errore di connessione';
+                this.vercelMessageType = 'error';
+            } finally {
+                this.savingVercel = false;
+                setTimeout(() => this.vercelMessage = '', 5000);
+            }
+        },
+
+        async deleteVercelToken() {
+            if (!confirm('Sei sicuro di voler eliminare il token Vercel?')) return;
+
+            this.deletingVercel = true;
+            this.vercelMessage = '';
+
+            try {
+                const response = await fetch('/api/settings/vercel-token', {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    this.vercelTokenSet = false;
+                    this.vercelMessage = 'Token Vercel eliminato';
+                    this.vercelMessageType = 'success';
+                } else {
+                    this.vercelMessage = 'Errore nell\'eliminazione';
+                    this.vercelMessageType = 'error';
+                }
+            } catch (error) {
+                this.vercelMessage = 'Errore di connessione';
+                this.vercelMessageType = 'error';
+            } finally {
+                this.deletingVercel = false;
+                setTimeout(() => this.vercelMessage = '', 5000);
             }
         },
 

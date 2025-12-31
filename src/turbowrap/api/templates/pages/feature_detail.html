@@ -1,0 +1,1221 @@
+{% extends "base.html" %}
+
+{% block title %}{{ feature.linear_identifier or feature.id[:8] }} - TurboWrap{% endblock %}
+
+{% block head %}
+<style>
+/* === CODE BLOCK === */
+.code-block { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; }
+
+/* === PRIORITY BADGES === */
+.priority-1 { background: linear-gradient(135deg, #ef4444, #dc2626); } /* Urgent */
+.priority-2 { background: linear-gradient(135deg, #f97316, #ea580c); } /* High */
+.priority-3 { background: linear-gradient(135deg, #6366f1, #4f46e5); } /* Normal */
+.priority-4 { background: linear-gradient(135deg, #6b7280, #4b5563); } /* Low */
+
+/* === STATUS BADGES (Feature workflow) === */
+.status-analysis { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+.status-design { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+.status-development { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+.status-review { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; border-color: rgba(20, 184, 166, 0.3); }
+.status-merged { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.status-on_hold { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+.status-cancelled { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+
+/* === LINEAR BRAND === */
+.linear-brand { background: linear-gradient(135deg, #5E6AD2, #4B51B6); }
+
+/* === COMMENT THREAD === */
+.comment-thread { border-left: 2px solid rgba(107, 114, 128, 0.3); }
+
+/* === HIDE SCROLLBAR === */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="featureDetailApp()" x-init="init()">
+
+    <!-- ============================================== -->
+    <!-- HEADER -->
+    <!-- ============================================== -->
+    <div class="flex flex-col gap-4 mb-6 md:mb-8">
+        <!-- Top row: Navigation + Feature code + Status badges -->
+        <div class="flex items-center gap-2 md:gap-4 flex-wrap">
+            <!-- Navigation: Back + Prev/Next -->
+            <div class="flex items-center gap-1">
+                <!-- Back to list -->
+                <a href="/features" class="p-1.5 md:p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors" title="Torna alla lista">
+                    <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </a>
+                <!-- Separator -->
+                <div class="w-px h-5 md:h-6 bg-gray-300 dark:bg-gray-600 mx-0.5 md:mx-1"></div>
+                <!-- Previous Feature -->
+                <a :href="prevFeature ? '/features/' + prevFeature.id + (filterParams ? '?' + filterParams : '') : '#'"
+                   :class="prevFeature ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
+                   class="p-1.5 md:p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
+                   :title="prevFeature ? (prevFeature.linear_identifier || prevFeature.id.slice(0,8)) : 'Nessuna feature precedente'">
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"/>
+                    </svg>
+                    <span class="text-[10px] md:text-xs font-mono hidden sm:inline" x-text="prevFeature ? (prevFeature.linear_identifier || prevFeature.id.slice(0,8)) : ''"></span>
+                </a>
+                <!-- Current position -->
+                <span class="px-1 md:px-2 text-[10px] md:text-xs text-gray-500" x-show="currentIndex >= 0" x-text="(currentIndex + 1) + '/' + totalFeatures"></span>
+                <!-- Next Feature -->
+                <a :href="nextFeature ? '/features/' + nextFeature.id + (filterParams ? '?' + filterParams : '') : '#'"
+                   :class="nextFeature ? 'hover:bg-gray-200 dark:hover:bg-gray-700' : 'opacity-30 cursor-not-allowed pointer-events-none'"
+                   class="p-1.5 md:p-2 rounded-lg bg-gray-100 dark:bg-gray-800 transition-colors flex items-center gap-1"
+                   :title="nextFeature ? (nextFeature.linear_identifier || nextFeature.id.slice(0,8)) : 'Nessuna feature successiva'">
+                    <span class="text-[10px] md:text-xs font-mono hidden sm:inline" x-text="nextFeature ? (nextFeature.linear_identifier || nextFeature.id.slice(0,8)) : ''"></span>
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                    </svg>
+                </a>
+            </div>
+            <!-- Feature code -->
+            <h1 class="text-lg md:text-2xl lg:text-3xl font-bold font-mono">{{ feature.linear_identifier or feature.id[:8] }}</h1>
+            <!-- Badges -->
+            <div class="flex flex-wrap items-center gap-1.5 md:gap-2">
+                <span class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-bold text-white priority-{{ feature.priority }}">
+                    {% if feature.priority == 1 %}Urgent{% elif feature.priority == 2 %}High{% elif feature.priority == 3 %}Normal{% else %}Low{% endif %}
+                </span>
+                <span class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-medium border status-{{ feature.status }}">{{ feature.status }}</span>
+                {% if feature.linear_identifier %}
+                <a href="{{ feature.linear_url or '#' }}" target="_blank"
+                   class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-medium text-white linear-brand flex items-center gap-1 md:gap-2 hover:opacity-90 transition-opacity">
+                    <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    {{ feature.linear_identifier }}
+                </a>
+                {% endif %}
+                {% if feature.assignee_name %}
+                <span class="px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs md:text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    👤 {{ feature.assignee_name }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Title -->
+        <h2 class="text-base md:text-xl text-gray-600 dark:text-gray-300">{{ feature.title }}</h2>
+
+        <!-- Metadata row -->
+        <div class="flex flex-wrap items-center gap-2 md:gap-4 text-xs md:text-sm text-gray-500">
+            {% if feature.estimated_effort %}
+            <span class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                Effort: {{ feature.estimated_effort }}/5
+            </span>
+            {% endif %}
+            {% if feature.estimated_days %}
+            <span class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                {{ feature.estimated_days }} giorni
+            </span>
+            {% endif %}
+            <span class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                {{ feature.created_at.strftime('%Y-%m-%d %H:%M') }}
+            </span>
+            {% if feature.phase_started_at %}
+            <span class="flex items-center gap-1 text-purple-500 dark:text-purple-400">
+                <svg class="w-3.5 h-3.5 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <span class="hidden sm:inline">In fase da</span> {{ feature.phase_started_at.strftime('%H:%M') }}
+            </span>
+            {% endif %}
+        </div>
+
+        <!-- Actions - mobile: full width grid, desktop: flex wrap -->
+        <div class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+            {% if feature.status in ['analysis', 'design'] %}
+            <!-- ANALYSIS/DESIGN: can advance to next phase or cancel -->
+            <button @click="advancePhase()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                </svg>
+                {% if feature.status == 'analysis' %}Go to Development{% else %}Go to Development{% endif %}
+            </button>
+            <button @click="cancelFeature()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                Cancel
+            </button>
+            {% elif feature.status == 'development' %}
+            <!-- DEVELOPMENT: can mark as In Review or put On Hold -->
+            <button @click="markAsReview()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                </svg>
+                In Review
+            </button>
+            <button @click="holdFeature()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                On Hold
+            </button>
+            {% elif feature.status == 'review' %}
+            <!-- REVIEW: can mark as Merged or send back to Development -->
+            <button @click="markAsMerged()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                Merged
+            </button>
+            <button @click="backToDevelopment()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/>
+                </svg>
+                Back to Dev
+            </button>
+            {% else %}
+            <!-- MERGED/ON_HOLD/CANCELLED: can Reopen -->
+            <button @click="reopenFeature()" :disabled="actionLoading"
+                    class="px-3 py-2 md:px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2 disabled:opacity-50 col-span-2 sm:col-span-1">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Reopen
+            </button>
+            {% endif %}
+            {% if feature.status in ['analysis', 'design', 'development'] %}
+            <button @click="startDevelop()"
+                    class="px-3 py-2 md:px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2">
+                <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                Develop
+            </button>
+            {% endif %}
+            {% if not feature.linear_identifier %}
+            <button @click="showLinkLinear = true"
+                    class="px-3 py-2 md:px-4 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-sm md:font-medium transition-colors flex items-center justify-center gap-1.5 md:gap-2">
+                <svg class="w-4 h-4 md:w-5 md:h-5" viewBox="0 0 100 100" fill="currentColor">
+                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                </svg>
+                <span class="hidden sm:inline">Link</span> Linear
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- MAIN GRID -->
+    <!-- ============================================== -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- LEFT COLUMN (2/3) -->
+        <div class="lg:col-span-2 space-y-6">
+
+            <!-- TABS CONTAINER -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <!-- Tab Navigation - scrollable on mobile -->
+                <div class="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto scrollbar-hide">
+                    <button @click="activeTab = 'details'"
+                            :class="activeTab === 'details' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Dettagli
+                    </button>
+                    <button @click="activeTab = 'comments'"
+                            :class="activeTab === 'comments' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                        <span class="hidden sm:inline">Discussione</span><span class="sm:hidden">Chat</span>
+                        {% if feature.comments and feature.comments|length > 0 %}
+                        <span class="px-1.5 md:px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] md:text-xs">{{ feature.comments|length }}</span>
+                        {% endif %}
+                    </button>
+                    <button @click="activeTab = 'attachments'"
+                            :class="activeTab === 'attachments' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors flex items-center gap-1 md:gap-2 whitespace-nowrap">
+                        <span class="hidden sm:inline">Allegati</span><span class="sm:hidden">Files</span>
+                        {% if feature.attachments and feature.attachments|length > 0 %}
+                        <span class="px-1.5 md:px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] md:text-xs">{{ feature.attachments|length }}</span>
+                        {% endif %}
+                    </button>
+                    <button @click="activeTab = 'history'"
+                            :class="activeTab === 'history' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-3 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        <span class="hidden sm:inline">Cronologia</span><span class="sm:hidden">Log</span>
+                    </button>
+                </div>
+
+                <!-- TAB: DETAILS -->
+                <div x-show="activeTab === 'details'" class="p-4 md:p-6 space-y-4 md:space-y-6">
+                    <!-- Description -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Descrizione
+                        </h3>
+                        <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300">
+                            {{ feature.description | safe if feature.description else 'Nessuna descrizione disponibile.' }}
+                        </div>
+                    </div>
+
+                    <!-- Improved Description (if AI-enhanced) -->
+                    {% if feature.improved_description %}
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                            Descrizione Migliorata (AI)
+                        </h3>
+                        <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 p-4 bg-purple-50 dark:bg-purple-500/10 rounded-lg border border-purple-200 dark:border-purple-500/20">
+                            {{ feature.improved_description | safe }}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Implementation Plan -->
+                    {% if feature.implementation_plan %}
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                            </svg>
+                            Piano di Implementazione
+                        </h3>
+                        <div class="space-y-2">
+                            {% for step in feature.implementation_plan %}
+                            <div class="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 {% if step.completed %}bg-green-500 text-white{% else %}bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400{% endif %}">
+                                    {% if step.completed %}
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    {% else %}
+                                    {{ loop.index }}
+                                    {% endif %}
+                                </div>
+                                <div class="flex-1">
+                                    <div class="{% if step.completed %}line-through text-gray-400{% else %}text-gray-700 dark:text-gray-300{% endif %}">
+                                        {{ step.step }}
+                                    </div>
+                                    {% if step.notes %}
+                                    <div class="text-sm text-gray-500 mt-1">{{ step.notes }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- User Q&A -->
+                    {% if feature.user_qa %}
+                    <div>
+                        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Domande & Risposte
+                        </h3>
+                        <div class="space-y-3">
+                            {% for qa in feature.user_qa %}
+                            <div class="p-3 bg-cyan-50 dark:bg-cyan-500/10 rounded-lg border border-cyan-200 dark:border-cyan-500/20">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    <span class="text-cyan-600 dark:text-cyan-400">Q:</span> {{ qa.question }}
+                                </div>
+                                {% if qa.why %}
+                                <div class="text-xs text-gray-500 mb-2 italic">{{ qa.why }}</div>
+                                {% endif %}
+                                <div class="text-sm text-gray-600 dark:text-gray-400">
+                                    <span class="text-green-600 dark:text-green-400">A:</span> {{ qa.answer or 'In attesa di risposta...' }}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- TAB: COMMENTS -->
+                <div x-show="activeTab === 'comments'" class="p-4 md:p-6">
+                    <div class="space-y-4">
+                        {% if feature.comments %}
+                        {% for comment in feature.comments %}
+                        <div class="comment-thread pl-4 py-2">
+                            <div class="flex items-start gap-3">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br {% if comment.type == 'ai' %}from-purple-500 to-indigo-500{% else %}from-blue-500 to-cyan-500{% endif %} flex items-center justify-center text-xs font-bold text-white shrink-0">
+                                    {% if comment.type == 'ai' %}
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                    {% else %}
+                                    {{ comment.author[:2]|upper }}
+                                    {% endif %}
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="font-medium text-gray-900 dark:text-white">{{ comment.author }}</span>
+                                        <span class="text-xs text-gray-500">{{ comment.created_at[:16] }}</span>
+                                        <span class="px-2 py-0.5 rounded text-xs {% if comment.type == 'ai' %}bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400{% else %}bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400{% endif %}">
+                                            {{ comment.type or 'human' }}
+                                        </span>
+                                    </div>
+                                    <p class="text-gray-700 dark:text-gray-300 text-sm">{{ comment.content }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <p class="text-center text-gray-500 py-8">Nessun commento ancora.</p>
+                        {% endif %}
+
+                        <!-- Add Comment -->
+                        <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <div class="flex gap-3">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-xs font-bold text-white shrink-0">U</div>
+                                <div class="flex-1">
+                                    <textarea x-model="newComment" rows="3" placeholder="Aggiungi un commento..."
+                                              class="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:border-primary resize-none"></textarea>
+                                    <div class="flex justify-end mt-2">
+                                        <button @click="addComment()" :disabled="!newComment || addingComment"
+                                                class="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                                            <span x-show="!addingComment">Invia</span>
+                                            <span x-show="addingComment">Invio...</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: ATTACHMENTS -->
+                <div x-show="activeTab === 'attachments'" class="p-4 md:p-6">
+                    <div class="space-y-3">
+                        {% if feature.attachments %}
+                        {% for attachment in feature.attachments %}
+                        <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group">
+                            <div class="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-medium text-gray-900 dark:text-white truncate">{{ attachment.filename }}</div>
+                                <div class="text-sm text-gray-500">{{ attachment.file_type }} - {{ attachment.uploaded_at[:10] }}</div>
+                            </div>
+                            <button class="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-white opacity-0 group-hover:opacity-100 transition-all">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                            </button>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <p class="text-center text-gray-500 py-4">Nessun allegato.</p>
+                        {% endif %}
+
+                        <!-- Upload area -->
+                        <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-gray-400 dark:hover:border-gray-500 transition-colors cursor-pointer">
+                            <svg class="w-10 h-10 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            <p class="text-gray-500 text-sm">Trascina file qui o <span class="text-primary">sfoglia</span></p>
+                            <p class="text-gray-400 text-xs mt-1">PDF, PNG, JPG fino a 10MB</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: HISTORY -->
+                <div x-show="activeTab === 'history'" class="p-4 md:p-6">
+                    <div class="space-y-4">
+                        <!-- Dynamic operations from API -->
+                        <template x-if="operationsLoading">
+                            <div class="flex items-center gap-2 text-gray-500">
+                                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <span class="text-sm">Caricamento operazioni...</span>
+                            </div>
+                        </template>
+
+                        <template x-for="op in operations" :key="op.id">
+                            <div class="flex items-start gap-3">
+                                <div class="w-2 h-2 rounded-full mt-2" :class="getOperationColor(op.operation_type, op.status)"></div>
+                                <div class="flex-1">
+                                    <div class="text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                                        <span x-text="getOperationLabel(op.operation_type)"></span>
+                                        <span x-show="op.details?.challenger_type" class="text-xs text-gray-500">(Gemini)</span>
+                                        <span x-show="op.status === 'failed'" class="text-xs text-red-500 font-medium">FAILED</span>
+                                        <span x-show="op.status === 'in_progress'" class="text-xs text-yellow-500 font-medium">IN PROGRESS</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500">
+                                        <span x-text="formatOperationTime(op.started_at)"></span>
+                                        <span x-show="op.duration_seconds"> - <span x-text="Math.round(op.duration_seconds) + 's'"></span></span>
+                                    </div>
+                                    <div x-show="op.error" class="text-xs text-red-400 mt-1" x-text="op.error"></div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Static entries (fallback/additions) -->
+                        {% if feature.fix_commit_sha %}
+                        <div class="flex items-start gap-3">
+                            <div class="w-2 h-2 rounded-full bg-green-500 mt-2"></div>
+                            <div>
+                                <div class="text-sm text-gray-900 dark:text-white">Sviluppo completato</div>
+                                <div class="text-xs text-gray-500">Commit: {{ feature.fix_commit_sha[:8] }}</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if feature.status == 'development' and operations.length == 0 %}
+                        <div class="flex items-start gap-3">
+                            <div class="w-2 h-2 rounded-full bg-yellow-500 mt-2"></div>
+                            <div>
+                                <div class="text-sm text-gray-900 dark:text-white">Stato cambiato in <span class="font-medium text-yellow-500">development</span></div>
+                                <div class="text-xs text-gray-500">{{ feature.phase_started_at.strftime('%Y-%m-%d %H:%M') if feature.phase_started_at else '-' }} - system</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="flex items-start gap-3">
+                            <div class="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
+                            <div>
+                                <div class="text-sm text-gray-900 dark:text-white">Feature creata</div>
+                                <div class="text-xs text-gray-500">{{ feature.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Empty state -->
+                        <template x-if="!operationsLoading && operations.length === 0">
+                            <div class="text-sm text-gray-500 italic">Nessuna operazione registrata</div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FIX RESULT (shown when fixed) -->
+            {% if issue.fix_code %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-green-300 dark:border-green-500/30 overflow-hidden">
+                <div class="px-4 md:px-6 py-3 md:py-4 border-b border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-500/10">
+                    <h3 class="text-base md:text-lg font-semibold flex flex-wrap items-center gap-2 text-green-700 dark:text-green-400">
+                        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Fix Applicato
+                        {% if issue.fixed_by and issue.fixed_at %}
+                        <span class="text-xs md:text-sm font-normal text-gray-500 dark:text-gray-400">da {{ issue.fixed_by }} il {{ issue.fixed_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        {% endif %}
+                    </h3>
+                </div>
+                <div class="p-4 md:p-6 space-y-4">
+                    {% if issue.fix_explanation %}
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Spiegazione</h4>
+                        <p class="text-gray-700 dark:text-gray-300 text-sm">{{ issue.fix_explanation }}</p>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Codice</h4>
+                        <pre class="p-4 overflow-x-auto code-block text-sm bg-gray-50 dark:bg-gray-900 rounded-lg"><code class="text-gray-800 dark:text-gray-300">{{ issue.fix_code }}</code></pre>
+                    </div>
+                    {% if issue.fix_files_modified %}
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">File Modificati</h4>
+                        <div class="flex flex-wrap gap-2">
+                            {% for file in issue.fix_files_modified %}
+                            <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm font-mono">{{ file }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    <div class="flex flex-wrap items-center gap-6 text-sm pt-2">
+                        {% if issue.fix_branch %}
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-500">Branch:</span>
+                            <span class="font-mono text-primary">{{ issue.fix_branch }}</span>
+                        </div>
+                        {% endif %}
+                        {% if issue.fix_commit_sha %}
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-500">Commit:</span>
+                            <span class="font-mono text-gray-700 dark:text-gray-300">{{ issue.fix_commit_sha[:8] }}</span>
+                        </div>
+                        {% endif %}
+                        {% if issue.fix_self_score is not none %}
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-500">Self Score:</span>
+                            <span class="font-semibold {% if issue.fix_self_score >= 90 %}text-green-600 dark:text-green-400{% elif issue.fix_self_score >= 70 %}text-yellow-600 dark:text-yellow-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ issue.fix_self_score }}%</span>
+                        </div>
+                        {% endif %}
+                        {% if issue.fix_gemini_score is not none %}
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-500">Gemini Score:</span>
+                            <span class="font-semibold {% if issue.fix_gemini_score >= 90 %}text-green-600 dark:text-green-400{% elif issue.fix_gemini_score >= 70 %}text-yellow-600 dark:text-yellow-400{% else %}text-red-600 dark:text-red-400{% endif %}">{{ issue.fix_gemini_score }}%</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+
+        <!-- ============================================== -->
+        <!-- RIGHT COLUMN (1/3) -->
+        <!-- ============================================== -->
+        <div class="space-y-4 md:space-y-6">
+
+            <!-- LINEAR INTEGRATION -->
+            {% if issue.linear_identifier %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-indigo-200 dark:border-indigo-500/30 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    Linear
+                </h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-500">Identifier</span>
+                        <span class="text-primary font-mono">{{ issue.linear_identifier }}</span>
+                    </div>
+                    {% if issue.linear_url %}
+                    <a href="{{ issue.linear_url }}" target="_blank"
+                       class="mt-3 w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm text-center transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                        </svg>
+                        Apri in Linear
+                    </a>
+                    {% endif %}
+                    <button @click="unlinkLinear()"
+                            class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm text-gray-500 transition-colors">
+                        Rimuovi collegamento
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- EFFORT ESTIMATION -->
+            {% if issue.estimated_effort %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Stima Effort
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">Complessita</span>
+                            <span class="font-bold text-lg">{{ issue.estimated_effort }}/5</span>
+                        </div>
+                        <div class="flex gap-1">
+                            {% for i in range(5) %}
+                            <div class="h-2 flex-1 rounded-full {% if i < issue.estimated_effort %}bg-yellow-500{% else %}bg-gray-200 dark:bg-gray-700{% endif %}"></div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% if issue.estimated_files_count %}
+                    <div class="flex items-center justify-between py-2 border-t border-gray-200 dark:border-gray-700">
+                        <span class="text-sm text-gray-500">File da modificare</span>
+                        <span class="font-medium">{{ issue.estimated_files_count }} file{% if issue.estimated_files_count > 1 %}s{% endif %}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- REFERENCES -->
+            {% if issue.references %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                    </svg>
+                    Riferimenti
+                </h3>
+                <div class="space-y-2">
+                    {% for ref in issue.references %}
+                    <a href="{{ ref }}" target="_blank" class="block p-3 bg-gray-50 dark:bg-gray-900 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <div class="text-sm font-medium text-primary truncate">{{ ref }}</div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- FLAGGED BY -->
+            {% if issue.flagged_by %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+                    </svg>
+                    Segnalato da
+                </h3>
+                <div class="flex flex-wrap gap-2">
+                    {% for agent in issue.flagged_by %}
+                    <span class="px-3 py-1 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 rounded-full text-sm">{{ agent }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- CLARIFICATIONS (Q&A from fix clarifier) -->
+            {% if issue.clarifications %}
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-cyan-200 dark:border-cyan-500/30 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Clarifications
+                    <span class="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 rounded-full text-xs">{{ issue.clarifications|length }}</span>
+                </h3>
+                <div class="space-y-3">
+                    {% for qa in issue.clarifications %}
+                    <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            <span class="text-cyan-600 dark:text-cyan-400">Q:</span> {{ qa.question }}
+                        </div>
+                        <div class="text-sm text-gray-600 dark:text-gray-400">
+                            <span class="text-green-600 dark:text-green-400">A:</span> {{ qa.answer }}
+                        </div>
+                        {% if qa.context %}
+                        <div class="text-xs text-gray-400 mt-1 italic">{{ qa.context }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- RELATED INFO -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Info
+                </h3>
+                <div class="space-y-3 text-sm">
+                    {% if repository %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Repository</span>
+                        <a href="/repos" class="text-primary hover:underline">{{ repository.name }}</a>
+                    </div>
+                    {% endif %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Issue ID</span>
+                        <span class="font-mono text-xs text-gray-600 dark:text-gray-300">{{ issue.id[:8] }}...</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Ultimo update</span>
+                        <span class="text-gray-600 dark:text-gray-300">{{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FIX LOG BUTTON -->
+            {% if issue.fix_session_id %}
+            <button @click="showFixLog = true" class="w-full px-3 md:px-4 py-2.5 md:py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 text-sm">
+                <svg class="w-4 h-4 md:w-5 md:h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span class="hidden sm:inline">Visualizza</span> Fix Log
+            </button>
+            {% endif %}
+
+            <!-- DANGER ZONE -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-red-300 dark:border-red-500/30 p-4 md:p-6">
+                <h3 class="text-base md:text-lg font-semibold mb-3 md:mb-4 flex items-center gap-2 text-red-600 dark:text-red-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    Zona Pericolosa
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-500 mb-2">Forza cambio stato</label>
+                        <select x-model="forceStatus" @change="forceChangeStatus()"
+                                class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm">
+                            <option value="">-- Seleziona stato --</option>
+                            <option value="open">Open</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="in_review">In Review</option>
+                            <option value="merged">Merged</option>
+                            <option value="ignored">Ignored</option>
+                            <option value="duplicate">Duplicate</option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">Usa solo se la issue è bloccata in uno stato errato</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- FIX LOG MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showFixLog" x-cloak x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showFixLog = false">
+        <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-4xl max-h-[90vh] flex flex-col">
+            <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
+                <h3 class="text-base md:text-lg font-semibold truncate">Fix Log - Session {{ issue.fix_session_id[:8] if issue.fix_session_id else '' }}...</h3>
+                <button @click="showFixLog = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 md:p-6">
+                <template x-if="fixLogLoading">
+                    <div class="flex items-center justify-center py-12">
+                        <svg class="animate-spin w-8 h-8 text-primary" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </div>
+                </template>
+                <template x-if="!fixLogLoading && fixLog">
+                    <div class="space-y-4 md:space-y-6">
+                        <div class="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                <div class="text-sm text-gray-500">Status</div>
+                                <div class="font-medium" x-text="fixLog.status"></div>
+                            </div>
+                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                <div class="text-sm text-gray-500">Issues Requested</div>
+                                <div class="font-medium" x-text="fixLog.issues_requested"></div>
+                            </div>
+                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                <div class="text-sm text-gray-500">Issues Fixed</div>
+                                <div class="font-medium" x-text="fixLog.issues_fixed"></div>
+                            </div>
+                            <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                <div class="text-sm text-gray-500">Branch</div>
+                                <div class="font-medium font-mono text-sm" x-text="fixLog.branch_name || '-'"></div>
+                            </div>
+                        </div>
+                        <template x-if="fixLog.claude_prompts && fixLog.claude_prompts.length > 0">
+                            <div>
+                                <h4 class="font-semibold mb-3">Claude Prompts</h4>
+                                <template x-for="(prompt, idx) in fixLog.claude_prompts" :key="idx">
+                                    <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <span class="px-2 py-1 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 rounded text-xs" x-text="prompt.type"></span>
+                                            <span class="text-sm text-gray-500" x-text="'Batch ' + prompt.batch"></span>
+                                        </div>
+                                        <pre class="text-xs overflow-x-auto whitespace-pre-wrap" x-text="prompt.prompt"></pre>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="fixLog.gemini_review">
+                            <div>
+                                <h4 class="font-semibold mb-3">Gemini Review</h4>
+                                <pre class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg text-sm overflow-x-auto whitespace-pre-wrap" x-text="fixLog.gemini_review"></pre>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <template x-if="!fixLogLoading && fixLogError">
+                    <div class="text-center py-12 text-red-500" x-text="fixLogError"></div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- LINK LINEAR MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showLinkLinear" x-cloak x-transition class="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 bg-black/50" @click.self="showLinkLinear = false">
+        <div class="bg-white dark:bg-gray-800 rounded-t-xl md:rounded-xl shadow-xl w-full md:max-w-md">
+            <div class="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 class="text-base md:text-lg font-semibold flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
+                        <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                    </svg>
+                    Collega a Linear
+                </h3>
+                <button @click="showLinkLinear = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4 md:p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Linear Issue ID o URL</label>
+                    <input type="text" x-model="linearIdentifier" placeholder="TEAM-123 o https://linear.app/..."
+                           class="w-full px-3 md:px-4 py-2.5 md:py-3 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-primary">
+                </div>
+                <p class="text-xs text-gray-500">Inserisci l'identificativo (es. TEAM-123) o l'URL completo dell'issue Linear.</p>
+                <div class="flex gap-3 pt-2">
+                    <button @click="showLinkLinear = false" class="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">Annulla</button>
+                    <button @click="linkLinear()" :disabled="!linearIdentifier || linkingLinear"
+                            class="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                        <span x-show="!linkingLinear">Collega</span>
+                        <span x-show="linkingLinear">Collegando...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function issueDetailApp() {
+    return {
+        issueId: '{{ issue.id }}',
+        issueCode: '{{ issue.issue_code }}',
+        repositoryId: '{{ issue.repository_id }}',
+        isViewed: {{ 'true' if issue.is_viewed else 'false' }},
+        activeTab: 'details',
+        actionLoading: false,
+        showFixLog: false,
+        fixLog: null,
+        fixLogLoading: false,
+        fixLogError: null,
+        showLinkLinear: false,
+        linearIdentifier: '',
+        linkingLinear: false,
+        newComment: '',
+        addingComment: false,
+        forceStatus: '',
+        // Navigation
+        prevIssue: null,
+        nextIssue: null,
+        currentIndex: -1,
+        totalIssues: 0,
+        filterParams: '',
+        // Operations history
+        operations: [],
+        operationsLoading: false,
+
+        async init() {
+            console.log('[IssueDetail] Initializing with issueId:', this.issueId, 'issueCode:', this.issueCode);
+            this.$watch('showFixLog', async (value) => {
+                if (value && !this.fixLog) {
+                    await this.loadFixLog();
+                }
+            });
+            // Load adjacent issues for navigation
+            await this.loadAdjacentIssues();
+            // Auto-detect merge status if issue has a commit
+            await this.autoDetectMerge();
+            // Load operations history for cronologia tab
+            await this.loadOperations();
+            // Keyboard shortcuts for navigation
+            document.addEventListener('keydown', (e) => {
+                // Skip if user is typing in an input
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                const params = this.filterParams ? '?' + this.filterParams : '';
+                if (e.key === 'ArrowLeft' && this.prevIssue) {
+                    window.location.href = '/issues/' + this.prevIssue.id + params;
+                } else if (e.key === 'ArrowRight' && this.nextIssue) {
+                    window.location.href = '/issues/' + this.nextIssue.id + params;
+                }
+            });
+        },
+
+        async autoDetectMerge() {
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/auto-detect-merge`, { method: 'POST' });
+                if (res.ok) {
+                    const result = await res.json();
+                    if (result.was_merged) {
+                        console.log('[AutoMerge] Issue auto-merged:', result.message);
+                        window.dispatchEvent(new CustomEvent('show-toast', {
+                            detail: { message: '✅ ' + result.message, type: 'success' }
+                        }));
+                        // Reload to show updated status
+                        setTimeout(() => window.location.reload(), 1500);
+                    } else {
+                        console.log('[AutoMerge] Not merged:', result.message);
+                    }
+                }
+            } catch (e) {
+                console.warn('[AutoMerge] Check failed:', e);
+            }
+        },
+
+        async loadOperations() {
+            this.operationsLoading = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/operations`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.operations = data.operations || [];
+                    console.log('[Operations] Loaded', this.operations.length, 'operations');
+                }
+            } catch (e) {
+                console.warn('[Operations] Failed to load:', e);
+            } finally {
+                this.operationsLoading = false;
+            }
+        },
+
+        getOperationLabel(type) {
+            const labels = {
+                'fix_clarification': 'Clarification',
+                'fix_planning': 'Planning',
+                'fix': 'Fix',
+                'review': 'Review'
+            };
+            return labels[type] || type;
+        },
+
+        getOperationColor(type, status) {
+            if (status === 'failed') return 'bg-red-500';
+            if (status === 'in_progress') return 'bg-yellow-500';
+            const colors = {
+                'fix_clarification': 'bg-teal-500',
+                'fix_planning': 'bg-sky-500',
+                'fix': 'bg-violet-500',
+                'review': 'bg-blue-500'
+            };
+            return colors[type] || 'bg-gray-500';
+        },
+
+        formatOperationTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+        },
+
+        async loadAdjacentIssues() {
+            try {
+                // Build API URL with same filters from URL params (passed from list page)
+                const urlParams = new URLSearchParams(window.location.search);
+                const apiParams = new URLSearchParams();
+
+                // Always filter by repository from context or URL
+                const repoId = urlParams.get('repository_id') || this.repositoryId;
+                if (repoId) apiParams.set('repository_id', repoId);
+
+                // Preserve filters from list page
+                if (urlParams.get('status')) apiParams.set('status', urlParams.get('status'));
+                if (urlParams.get('severity')) apiParams.set('severity', urlParams.get('severity'));
+                if (urlParams.get('category')) apiParams.set('category', urlParams.get('category'));
+                if (urlParams.get('search')) apiParams.set('search', urlParams.get('search'));
+                if (urlParams.get('linear_linked')) apiParams.set('linear_linked', urlParams.get('linear_linked'));
+
+                apiParams.set('limit', '500');
+
+                console.log('[Navigation] Fetching issues with params:', apiParams.toString());
+                const res = await fetch(`/api/issues?${apiParams.toString()}`);
+                if (!res.ok) {
+                    console.error('[Navigation] API error:', res.status);
+                    return;
+                }
+                const issues = await res.json();
+                console.log('[Navigation] Found', issues.length, 'issues');
+                this.totalIssues = issues.length;
+
+                // Find current issue index by ID (unique)
+                const idx = issues.findIndex(i => i.id === this.issueId);
+                console.log('[Navigation] Current issue id:', this.issueId, 'found at index:', idx);
+                if (idx === -1) {
+                    console.warn('[Navigation] Current issue not found in results');
+                    return;
+                }
+                this.currentIndex = idx;
+                this.prevIssue = idx > 0 ? issues[idx - 1] : null;
+                this.nextIssue = idx < issues.length - 1 ? issues[idx + 1] : null;
+
+                console.log('[Navigation] prevIssue:', this.prevIssue?.issue_code || null);
+                console.log('[Navigation] nextIssue:', this.nextIssue?.issue_code || null);
+
+                // Store filter params for navigation links
+                this.filterParams = urlParams.toString();
+            } catch (e) {
+                console.error('[Navigation] Failed to load adjacent issues:', e);
+            }
+        },
+
+        // Convert "BE-MEDIUM-001" to "BE-001" for compact display
+        getShortCode(code) {
+            const parts = code.split('-');
+            if (parts.length >= 3) {
+                return parts[0] + '-' + parts[parts.length - 1];
+            }
+            return code;
+        },
+
+        async linkLinear() {
+            if (!this.linearIdentifier) return;
+            this.linkingLinear = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/link-linear`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linear_identifier: this.linearIdentifier })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                window.location.reload();
+            } catch (e) {
+                TurboWrapError.handle('Link Linear Issue', e, { issueId: this.issueId });
+            }
+            this.linkingLinear = false;
+        },
+
+        async unlinkLinear() {
+            if (!confirm('Rimuovere collegamento Linear?')) return;
+            this.actionLoading = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/link-linear`, { method: 'DELETE' });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                window.location.reload();
+            } catch (e) {
+                TurboWrapError.handle('Unlink Linear Issue', e, { issueId: this.issueId });
+            }
+            this.actionLoading = false;
+        },
+
+        async addComment() {
+            if (!this.newComment.trim()) return;
+            this.addingComment = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/comments`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: this.newComment, author: 'user', comment_type: 'human' })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                window.location.reload();
+            } catch (e) {
+                TurboWrapError.handle('Add Comment', e, { issueId: this.issueId });
+            }
+            this.addingComment = false;
+        },
+
+        async markAsMerged() {
+            if (!confirm('Sei sicuro di voler segnare questa issue come MERGED?')) return;
+            await this.updateStatus('resolve');
+        },
+
+        async ignoreIssue() {
+            const note = prompt('Motivo per ignorare (opzionale):');
+            if (note === null) return;
+            await this.updateStatus('ignore', note);
+        },
+
+        async reopenIssue() {
+            await this.updateStatus('reopen');
+        },
+
+        async updateStatus(action, note = '') {
+            this.actionLoading = true;
+            try {
+                const url = `/api/issues/${this.issueId}/${action}${note ? '?note=' + encodeURIComponent(note) : ''}`;
+                const res = await fetch(url, { method: 'POST' });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+
+                // After status change, go to next/prev issue or list
+                const params = this.filterParams ? '?' + this.filterParams : '';
+                if (this.nextIssue) {
+                    window.location.href = '/issues/' + this.nextIssue.id + params;
+                } else if (this.prevIssue) {
+                    window.location.href = '/issues/' + this.prevIssue.id + params;
+                } else {
+                    window.location.href = '/issues';
+                }
+            } catch (e) {
+                TurboWrapError.handle('Update Issue Status', e, { issueId: this.issueId, action });
+            }
+            this.actionLoading = false;
+        },
+
+        startFix() {
+            window.location.href = `/issues?fix=${this.issueId}`;
+        },
+
+        async loadFixLog() {
+            this.fixLogLoading = true;
+            this.fixLogError = null;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/fix-log`);
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                this.fixLog = await res.json();
+            } catch (e) {
+                TurboWrapError.warning('Load Fix Log', e, { issueId: this.issueId });
+                this.fixLogError = e.message;
+            }
+            this.fixLogLoading = false;
+        },
+
+        copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Copiato negli appunti!', type: 'success' }
+                }));
+            });
+        },
+
+        async toggleViewed() {
+            const newState = !this.isViewed;
+            console.log('[Viewed] Toggling viewed state to:', newState, 'for issue:', this.issueId);
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/toggle-viewed?viewed=${newState}`, { method: 'POST' });
+                console.log('[Viewed] API response:', res.status);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                this.isViewed = newState;
+                console.log('[Viewed] State updated successfully');
+            } catch (e) {
+                console.error('[Viewed] Error:', e);
+                if (window.TurboWrapError) {
+                    TurboWrapError.warning('Toggle Viewed', e, { issueId: this.issueId });
+                }
+            }
+        },
+
+        async forceChangeStatus() {
+            if (!this.forceStatus) return;
+            if (!confirm(`Forzare stato a "${this.forceStatus}"? Azione pericolosa.`)) {
+                this.forceStatus = '';
+                return;
+            }
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}?force=true`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: this.forceStatus })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: `Stato: ${this.forceStatus}`, type: 'success' }
+                }));
+                window.location.reload();
+            } catch (e) {
+                TurboWrapError.handle('Force Change Status', e, { issueId: this.issueId, status: this.forceStatus });
+            }
+            this.forceStatus = '';
+        }
+    }
+}
+</script>
+{% endblock %}

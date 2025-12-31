@@ -1,0 +1,2541 @@
+{% extends "base.html" %}
+
+{% block title %}Features - TurboWrap{% endblock %}
+
+{% block head %}
+<style>
+
+/* === SEVERITY BADGES === */
+.severity-critical { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.severity-high { background: linear-gradient(135deg, #f97316, #ea580c); }
+.severity-medium { background: linear-gradient(135deg, #eab308, #ca8a04); }
+.severity-low { background: linear-gradient(135deg, #6b7280, #4b5563); }
+
+/* === STATUS BADGES === */
+.status-open { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+.status-in_progress { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
+.status-resolved { background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3); }
+.status-merged { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border-color: rgba(139, 92, 246, 0.3); }
+.status-in_review { background: rgba(234, 179, 8, 0.15); color: #facc15; border-color: rgba(234, 179, 8, 0.3); }
+.status-ignored { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border-color: rgba(107, 114, 128, 0.3); }
+
+/* === ANIMATIONS === */
+.stat-card { transition: all 0.2s ease; }
+.stat-card:hover { transform: translateY(-2px); }
+.issue-card { transition: all 0.2s ease; }
+.issue-card:hover { transform: translateY(-1px); box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3); }
+
+@keyframes pulse-critical {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+.pulse-critical { animation: pulse-critical 2s ease-in-out infinite; }
+
+@keyframes slide-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in { animation: slide-in 0.3s ease-out; }
+
+/* === LINEAR BRAND === */
+.linear-brand { background: linear-gradient(135deg, #5E6AD2, #4B51B6); }
+
+/* === CATEGORY BADGES === */
+.cat-security { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.cat-performance { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+.cat-architecture { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.cat-code_quality { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.cat-linting { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
+.cat-style { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
+.cat-logic { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.cat-ux { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
+.cat-testing { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.cat-documentation { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.cat-default { background: rgba(107, 114, 128, 0.1); color: #9ca3af; }
+
+/* === AI MODEL ICONS === */
+.ai-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.ai-icon-gemini { background: linear-gradient(135deg, #4285F4, #34A853, #FBBC04, #EA4335); }
+.ai-icon-grok { background: #000; }
+.ai-icon-claude { background: linear-gradient(135deg, #D97706, #B45309); }
+.ai-icon-openai { background: #10A37F; }
+
+/* === QUICK ACTIONS === */
+.quick-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.quick-btn-ignore {
+    background: rgba(107, 114, 128, 0.15);
+    color: #9ca3af;
+}
+.quick-btn-ignore:hover, .quick-btn-ignore:active {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+.quick-btn-merge {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+}
+.quick-btn-merge:hover, .quick-btn-merge:active {
+    background: rgba(34, 197, 94, 0.25);
+    color: #22c55e;
+}
+.quick-btn-reopen {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+}
+.quick-btn-reopen:hover, .quick-btn-reopen:active {
+    background: rgba(59, 130, 246, 0.25);
+    color: #3b82f6;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="featuresApp()">
+
+    <!-- ============================================== -->
+    <!-- HEADER -->
+    <!-- ============================================== -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3 flex-wrap">
+                <span>Issues</span>
+                <template x-if="$store.globalContext?.selectedRepo">
+                    <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
+                        per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
+                    </span>
+                </template>
+            </h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Problemi trovati nelle code review</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <!-- Lint+Fix -->
+            <div class="flex items-center gap-2">
+                <select x-model="lintFixCategory" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm border-0">
+                    <option value="BE">Backend</option>
+                    <option value="FE">Frontend</option>
+                    <option value="all">Tutti</option>
+                </select>
+                <button @click="runLintFix()"
+                        :disabled="isAnalyzing || !filters.repository_id"
+                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50">
+                    <svg class="w-5 h-5" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span class="hidden sm:inline">Lint+Fix</span>
+                </button>
+            </div>
+            <button @click="refresh()" :disabled="loading"
+                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="hidden sm:inline">Aggiorna</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="fixed top-4 right-4 z-[65] space-y-2" x-show="toasts.length > 0">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg animate-slide-in"
+                 :class="{
+                     'bg-blue-500 text-white': toast.level === 'INFO',
+                     'bg-yellow-500 text-white': toast.level === 'WARNING',
+                     'bg-red-500 text-white': toast.level === 'ERROR'
+                 }">
+                <span class="text-sm" x-text="toast.message"></span>
+                <span class="text-xs opacity-75" x-text="toast.timestamp"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- SUMMARY CARDS -->
+    <!-- ============================================== -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Totali</div>
+            <div class="text-3xl font-bold mt-1 text-gray-900 dark:text-white" x-text="summary.total || 0"></div>
+        </div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-red-200 dark:border-red-500/30">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-red-500" :class="(summary.by_severity?.CRITICAL || 0) > 0 && 'pulse-critical'"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase">Critical</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-red-600 dark:text-red-400" x-text="summary.by_severity?.CRITICAL || 0"></div>
+        </div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-orange-200 dark:border-orange-500/30">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase">High</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-orange-600 dark:text-orange-400" x-text="summary.by_severity?.HIGH || 0"></div>
+        </div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-yellow-200 dark:border-yellow-500/30">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase">Medium</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-yellow-600 dark:text-yellow-400" x-text="summary.by_severity?.MEDIUM || 0"></div>
+        </div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-blue-200 dark:border-blue-500/30">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                <span class="text-xs font-medium text-gray-500 uppercase">Low</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-blue-600 dark:text-blue-400" x-text="summary.by_severity?.LOW || 0"></div>
+        </div>
+        <div class="stat-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-indigo-200 dark:border-indigo-500/30">
+            <div class="flex items-center gap-2">
+                <svg class="w-3 h-3 text-indigo-500" viewBox="0 0 100 100" fill="currentColor">
+                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                </svg>
+                <span class="text-xs font-medium text-gray-500 uppercase">Linear</span>
+            </div>
+            <div class="text-3xl font-bold mt-1 text-indigo-600 dark:text-indigo-400" x-text="summary.linear_linked || 0"></div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- FILTERS -->
+    <!-- ============================================== -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl p-3 md:p-4 border border-gray-200 dark:border-gray-700">
+        <!-- Mobile: Search first, then collapsible filters -->
+        <div class="md:hidden space-y-3">
+            <!-- Search always visible -->
+            <div class="relative">
+                <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input type="text" x-model="filters.search" @input.debounce.300ms="refresh()"
+                       placeholder="Cerca..."
+                       class="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:border-primary">
+            </div>
+            <!-- Filter row: 2x2 grid -->
+            <div class="grid grid-cols-2 gap-2">
+                <select x-model="filters.status" @change="refresh()"
+                        class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs focus:outline-none focus:border-primary">
+                    <option value="">Stato</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="in_review">In Review</option>
+                    <option value="merged">Merged</option>
+                    <option value="ignored">Ignored</option>
+                </select>
+                <select x-model="filters.priority" @change="refresh()"
+                        class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs focus:outline-none focus:border-primary">
+                    <option value="">Severity</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+                <select x-model="filters.status" @change="refresh()"
+                        class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs focus:outline-none focus:border-primary">
+                    <option value="">Categoria</option>
+                    <option value="security">Security</option>
+                    <option value="performance">Performance</option>
+                    <option value="architecture">Architecture</option>
+                    <option value="code_quality">Code Quality</option>
+                    <option value="linting">Linting</option>
+                </select>
+                <select x-model="filters.linear_linked" @change="refresh()"
+                        class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs focus:outline-none focus:border-primary">
+                    <option value="">Linear</option>
+                    <option value="linked">Collegati</option>
+                    <option value="unlinked">Non collegati</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Desktop: horizontal layout -->
+        <div class="hidden md:flex flex-wrap gap-3 items-center">
+            <div class="flex-1 min-w-[140px]">
+                <select x-model="filters.status" @change="refresh()"
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Tutti gli stati</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="in_review">In Review</option>
+                    <option value="merged">Merged</option>
+                    <option value="ignored">Ignored</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <select x-model="filters.priority" @change="refresh()"
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Tutte le severity</option>
+                    <option value="CRITICAL">Critical</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <select x-model="filters.status" @change="refresh()"
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Tutte le categorie</option>
+                    <option value="security">Security</option>
+                    <option value="performance">Performance</option>
+                    <option value="architecture">Architecture</option>
+                    <option value="code_quality">Code Quality</option>
+                    <option value="linting">Linting</option>
+                </select>
+            </div>
+            <div class="flex-1 min-w-[140px]">
+                <select x-model="filters.linear_linked" @change="refresh()"
+                        class="w-full px-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:border-primary">
+                    <option value="">Linear: Tutti</option>
+                    <option value="linked">Collegati</option>
+                    <option value="unlinked">Non collegati</option>
+                </select>
+            </div>
+            <div class="flex-[2] min-w-[200px]">
+                <div class="relative">
+                    <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    <input type="text" x-model="filters.search" @input.debounce.300ms="refresh()"
+                           placeholder="Cerca per titolo, file, codice..."
+                           class="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:border-primary">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- VIEW TOGGLE + BULK ACTIONS -->
+    <!-- ============================================== -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <!-- Select All -->
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" x-model="selectAllChecked" @change="toggleSelectAll()"
+                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary">
+                <span class="text-xs sm:text-sm text-gray-500">Seleziona</span>
+            </label>
+            <!-- Bulk Actions -->
+            <template x-if="selectedFeatures.length > 0">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs sm:text-sm text-gray-500" x-text="selectedFeatures.length + ' sel.'"></span>
+                    <button @click="fixSelected()" :disabled="isFixing"
+                            class="px-2 sm:px-3 py-1 bg-green-600/20 text-green-600 dark:text-green-400 hover:bg-green-600/30 rounded text-xs sm:text-sm transition-colors disabled:opacity-50">
+                        Fix
+                    </button>
+                    <button @click="clearSelection()"
+                            class="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs sm:text-sm transition-colors">
+                        Clear
+                    </button>
+                </div>
+            </template>
+        </div>
+        <div class="flex items-center gap-2 sm:gap-3">
+            <!-- Group By Dropdown -->
+            <select x-model="groupBy"
+                    class="px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-xs sm:text-sm focus:outline-none focus:border-primary">
+                <option value="">No group</option>
+                <option value="file">By File</option>
+            </select>
+            <!-- View Toggle (only when not grouped) -->
+            <div class="flex items-center gap-1" x-show="!groupBy">
+                <button @click="viewMode = 'list'" title="Lista"
+                        :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                        class="p-1.5 sm:p-2 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                    </svg>
+                </button>
+                <button @click="viewMode = 'cards'" title="Cards"
+                        :class="viewMode === 'cards' ? 'bg-primary text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'"
+                        class="p-1.5 sm:p-2 rounded-lg transition-colors">
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- LOADING STATE -->
+    <!-- ============================================== -->
+    <div x-show="loading" class="bg-white dark:bg-gray-800 rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700">
+        <svg class="animate-spin w-8 h-8 mx-auto text-primary" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        <p class="mt-4 text-gray-500">Caricamento...</p>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- EMPTY STATE -->
+    <!-- ============================================== -->
+    <div x-show="!loading && features.length === 0" class="bg-white dark:bg-gray-800 rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700">
+        <svg class="w-12 h-12 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <template x-if="!filters.repository_id">
+            <div>
+                <p class="text-gray-500">Seleziona un repository</p>
+                <p class="text-xs mt-1 text-gray-400">dal footer in basso</p>
+            </div>
+        </template>
+        <template x-if="filters.repository_id">
+            <p class="text-gray-500">Nessuna issue trovata</p>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- ISSUES LIST VIEW -->
+    <!-- ============================================== -->
+    <div x-show="!loading && features.length > 0 && viewMode === 'list' && !groupBy"
+         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <!-- Table Header -->
+        <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <div class="col-span-1"></div>
+            <div class="col-span-4">Issue</div>
+            <div class="col-span-2">File</div>
+            <div class="col-span-1">Severity</div>
+            <div class="col-span-1">Status</div>
+            <div class="col-span-1">Linear</div>
+            <div class="col-span-1">Effort</div>
+            <div class="col-span-1">Modifica</div>
+        </div>
+
+        <!-- Issue Rows -->
+        <template x-for="feature in features" :key="feature.id">
+            <a :href="'/issues/' + feature.id + getFilterParams()"
+               class="issue-card block border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+               :class="{'opacity-60': feature.status === 'resolved' || feature.status === 'merged', 'bg-primary/5': selectedFeatures.includes(feature.id)}"
+               :data-issue-id="feature.id" :data-issue-code="feature.linear_identifier || feature.id.slice(0,8)">
+
+                <!-- MOBILE LAYOUT -->
+                <div class="md:hidden p-3">
+                    <!-- Top row: checkbox, severity bar, code, severity badge, status -->
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" :value="feature.id" x-model="selectedFeatures"
+                               :disabled="feature.status === 'resolved' || feature.status === 'merged' || feature.status === 'ignored'"
+                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary disabled:opacity-50 shrink-0"
+                               @click.stop>
+                        <div class="w-1 h-6 rounded-full shrink-0"
+                             :class="{
+                                 'severity-critical': feature.priority === 'CRITICAL',
+                                 'severity-high': feature.priority === 'HIGH',
+                                 'severity-medium': feature.priority === 'MEDIUM',
+                                 'severity-low': feature.priority === 'LOW'
+                             }"></div>
+                        <span class="font-mono text-sm font-medium text-gray-900 dark:text-white" x-text="feature.linear_identifier || feature.id.slice(0,8)"></span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0"
+                              :class="'cat-' + (feature.status || 'default')"
+                              x-text="feature.status || '-'"></span>
+                        <div class="flex-1"></div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-white shrink-0"
+                              :class="{
+                                  'severity-critical': feature.priority === 'CRITICAL',
+                                  'severity-high': feature.priority === 'HIGH',
+                                  'severity-medium': feature.priority === 'MEDIUM',
+                                  'severity-low': feature.priority === 'LOW'
+                              }"
+                              x-text="feature.priority"></span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] border shrink-0"
+                              :class="'status-' + feature.status"
+                              x-text="feature.status"></span>
+                    </div>
+                    <!-- Title -->
+                    <div class="text-sm text-gray-700 dark:text-gray-300 line-clamp-2 mb-1" x-text="feature.title"></div>
+                    <!-- File path -->
+                    <div class="text-xs font-mono text-gray-400 truncate" x-text="feature.assignee_name + (feature.estimated_days ? ':' + feature.estimated_days : '')"></div>
+                </div>
+
+                <!-- DESKTOP LAYOUT -->
+                <div class="hidden md:grid grid-cols-12 gap-4 px-4 py-4 items-center">
+                    <!-- Checkbox + Severity Bar -->
+                    <div class="col-span-1 flex items-center gap-2">
+                        <input type="checkbox" :value="feature.id" x-model="selectedFeatures"
+                               :disabled="feature.status === 'resolved' || feature.status === 'merged' || feature.status === 'ignored'"
+                               class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary disabled:opacity-50"
+                               @click.stop>
+                        <div class="w-1 h-8 rounded-full"
+                             :class="{
+                                 'severity-critical': feature.priority === 'CRITICAL',
+                                 'severity-high': feature.priority === 'HIGH',
+                                 'severity-medium': feature.priority === 'MEDIUM',
+                                 'severity-low': feature.priority === 'LOW'
+                             }"></div>
+                    </div>
+
+                    <!-- Issue Info -->
+                    <div class="col-span-4">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <!-- AI Icons inline -->
+                            <template x-for="reviewer in (feature.repository_links || []).slice(0, 2)" :key="reviewer">
+                                <div class="ai-icon" :class="getAiIconClass(reviewer)" :title="reviewer">
+                                    <template x-if="reviewer.includes('gemini')">
+                                        <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                                    </template>
+                                    <template x-if="reviewer.includes('grok')">
+                                        <span class="text-white text-[10px] font-bold">X</span>
+                                    </template>
+                                    <template x-if="reviewer.includes('claude')">
+                                        <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                                    </template>
+                                    <template x-if="!reviewer.includes('gemini') && !reviewer.includes('grok') && !reviewer.includes('claude')">
+                                        <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                    </template>
+                                </div>
+                            </template>
+                            <span class="font-mono text-sm font-medium text-gray-900 dark:text-white" x-text="feature.linear_identifier || feature.id.slice(0,8)"></span>
+                            <!-- Category badge -->
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                  :class="'cat-' + (feature.status || 'default')"
+                                  x-text="feature.status || '-'"></span>
+                            <!-- Viewed indicator -->
+                            <template x-if="feature.figma_link">
+                                <span class="flex items-center text-green-500" title="Reviewed">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                </span>
+                            </template>
+                            <!-- Comments count -->
+                            <template x-if="(feature.comments || []).length > 0">
+                                <span class="flex items-center gap-0.5 text-xs text-gray-400" :title="(feature.comments || []).length + ' commenti'">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                                    <span x-text="(feature.comments || []).length"></span>
+                                </span>
+                            </template>
+                            <!-- Quick actions inline -->
+                            <template x-if="feature.status === 'open' || feature.status === 'in_progress'">
+                                <button @click.stop.prevent="quickIgnore(issue)" class="quick-btn quick-btn-ignore" title="Ignora">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </template>
+                            <template x-if="feature.status === 'resolved' || feature.status === 'in_review'">
+                                <button @click.stop.prevent="quickMerge(issue)" class="quick-btn quick-btn-merge" title="Merged">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                </button>
+                            </template>
+                            <template x-if="feature.status === 'ignored'">
+                                <button @click.stop.prevent="quickReopen(issue)" class="quick-btn quick-btn-reopen" title="Riapri">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                </button>
+                            </template>
+                        </div>
+                        <div class="text-sm text-gray-500 dark:text-gray-400 truncate mt-1" x-text="feature.title"></div>
+                    </div>
+
+                    <!-- File -->
+                    <div class="col-span-2">
+                        <div class="text-xs font-mono text-gray-500 truncate" x-text="feature.assignee_name"></div>
+                        <div class="text-xs text-primary" x-text="feature.estimated_days ? ':' + feature.estimated_days : ''"></div>
+                    </div>
+
+                    <!-- Severity -->
+                    <div class="col-span-1">
+                        <span class="px-2 py-1 rounded-full text-xs font-bold text-white"
+                              :class="{
+                                  'severity-critical': feature.priority === 'CRITICAL',
+                                  'severity-high': feature.priority === 'HIGH',
+                                  'severity-medium': feature.priority === 'MEDIUM',
+                                  'severity-low': feature.priority === 'LOW'
+                              }"
+                              x-text="feature.priority"></span>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="col-span-1">
+                        <span class="px-2 py-1 rounded-full text-xs border"
+                              :class="'status-' + feature.status"
+                              x-text="feature.status"></span>
+                    </div>
+
+                    <!-- Linear -->
+                    <div class="col-span-1">
+                        <template x-if="feature.linear_identifier">
+                            <span @click.stop class="px-2 py-1 rounded text-xs font-medium text-white linear-brand inline-flex items-center gap-1">
+                                <svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+                                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                                </svg>
+                                <span x-text="feature.linear_identifier.split('-')[1]"></span>
+                            </span>
+                        </template>
+                        <template x-if="!feature.linear_identifier">
+                            <button @click.stop.prevent="openLinkLinearModal(issue)"
+                                    class="px-2 py-1 rounded text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border border-dashed border-gray-300 dark:border-gray-600 hover:border-gray-400 transition-colors">
+                                + Link
+                            </button>
+                        </template>
+                    </div>
+
+                    <!-- Effort -->
+                    <div class="col-span-1">
+                        <template x-if="feature.estimated_effort">
+                            <div class="flex flex-col gap-0.5">
+                                <div class="flex items-center gap-1">
+                                    <div class="w-10 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                        <div class="h-full bg-yellow-500 rounded-full" :style="'width: ' + (feature.estimated_effort * 20) + '%'"></div>
+                                    </div>
+                                    <span class="text-xs text-gray-500" x-text="feature.estimated_effort"></span>
+                                </div>
+                                <template x-if="feature.estimated_days">
+                                    <span class="text-[10px] text-gray-400 flex items-center gap-0.5">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                        <span x-text="feature.estimated_days"></span>
+                                    </span>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="!feature.estimated_effort">
+                            <span class="text-xs text-gray-400">-</span>
+                        </template>
+                    </div>
+
+                    <!-- Date (updated) -->
+                    <div class="col-span-1 text-xs text-gray-500" x-text="formatDate(feature.updated_at || feature.created_at)"></div>
+                </div>
+            </a>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- ISSUES CARDS VIEW -->
+    <!-- ============================================== -->
+    <div x-show="!loading && features.length > 0 && viewMode === 'cards' && !groupBy"
+         class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="feature in features" :key="feature.id">
+            <a :href="'/issues/' + feature.id + getFilterParams()"
+               class="issue-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 block"
+               :class="{'opacity-60': feature.status === 'resolved' || feature.status === 'merged'}"
+               :data-issue-id="feature.id" :data-issue-code="feature.linear_identifier || feature.id.slice(0,8)">
+                <!-- Header row -->
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <!-- AI Icons -->
+                        <template x-for="reviewer in (feature.repository_links || []).slice(0, 2)" :key="reviewer">
+                            <div class="ai-icon" :class="getAiIconClass(reviewer)" :title="reviewer">
+                                <template x-if="reviewer.includes('gemini')">
+                                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+                                </template>
+                                <template x-if="reviewer.includes('grok')">
+                                    <span class="text-white text-[10px] font-bold">X</span>
+                                </template>
+                                <template x-if="reviewer.includes('claude')">
+                                    <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+                                </template>
+                            </div>
+                        </template>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold text-white"
+                              :class="{
+                                  'severity-critical': feature.priority === 'CRITICAL',
+                                  'severity-high': feature.priority === 'HIGH',
+                                  'severity-medium': feature.priority === 'MEDIUM',
+                                  'severity-low': feature.priority === 'LOW'
+                              }"
+                              x-text="feature.priority"></span>
+                        <span class="px-2 py-0.5 rounded-full text-xs border"
+                              :class="'status-' + feature.status"
+                              x-text="feature.status"></span>
+                        <!-- Category badge -->
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                              :class="'cat-' + (feature.status || 'default')"
+                              x-text="feature.status || '-'"></span>
+                        <!-- Viewed indicator -->
+                        <template x-if="feature.figma_link">
+                            <span class="flex items-center text-green-500" title="Reviewed">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            </span>
+                        </template>
+                    </div>
+                    <!-- Quick action -->
+                    <template x-if="feature.status === 'open' || feature.status === 'in_progress'">
+                        <button @click.stop.prevent="quickIgnore(issue)" class="quick-btn quick-btn-ignore" title="Ignora">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </template>
+                    <template x-if="feature.status === 'resolved' || feature.status === 'in_review'">
+                        <button @click.stop.prevent="quickMerge(issue)" class="quick-btn quick-btn-merge" title="Merged">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        </button>
+                    </template>
+                    <template x-if="feature.status === 'ignored'">
+                        <button @click.stop.prevent="quickReopen(issue)" class="quick-btn quick-btn-reopen" title="Riapri">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        </button>
+                    </template>
+                </div>
+                <!-- Issue code & title -->
+                <div class="font-mono text-sm font-medium text-gray-900 dark:text-white" x-text="feature.linear_identifier || feature.id.slice(0,8)"></div>
+                <div class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2" x-text="feature.title"></div>
+                <!-- File -->
+                <div class="text-xs font-mono text-gray-400 mt-2 truncate" x-text="feature.assignee_name + (feature.estimated_days ? ':' + feature.estimated_days : '')"></div>
+                <!-- Footer -->
+                <div class="flex items-center justify-between text-xs text-gray-400 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                    <div class="flex items-center gap-2">
+                        <template x-if="feature.linear_identifier">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-medium text-white linear-brand inline-flex items-center gap-1">
+                                <svg class="w-2.5 h-2.5" viewBox="0 0 100 100" fill="currentColor">
+                                    <path d="M1.22 61.4a48.99 48.99 0 0 1 37.38-60.18A49.05 49.05 0 0 1 98.78 38.6a48.99 48.99 0 0 1-37.38 60.18A49.05 49.05 0 0 1 1.22 61.4Z"/>
+                                </svg>
+                                <span x-text="feature.linear_identifier.split('-')[1]"></span>
+                            </span>
+                        </template>
+                        <template x-if="feature.estimated_effort">
+                            <span class="flex items-center gap-1" :title="'Effort: ' + feature.estimated_effort + '/5'">
+                                <div class="w-8 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div class="h-full bg-yellow-500 rounded-full" :style="'width: ' + (feature.estimated_effort * 20) + '%'"></div>
+                                </div>
+                                <template x-if="feature.estimated_days">
+                                    <span class="flex items-center gap-0.5">
+                                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                        <span x-text="feature.estimated_days"></span>
+                                    </span>
+                                </template>
+                            </span>
+                        </template>
+                        <template x-if="(feature.comments || []).length > 0">
+                            <span class="flex items-center gap-0.5">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                                </svg>
+                                <span x-text="(feature.comments || []).length"></span>
+                            </span>
+                        </template>
+                    </div>
+                    <span x-text="formatDate(feature.updated_at || feature.created_at)"></span>
+                </div>
+            </a>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- ISSUES GROUP BY FILE VIEW -->
+    <!-- ============================================== -->
+    <div x-show="!loading && features.length > 0 && groupBy === 'file'" class="space-y-4">
+        <template x-for="[file, fileIssues] in Object.entries(getIssuesByFile())" :key="file">
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <!-- File Header -->
+                <div class="px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="font-mono text-sm truncate max-w-[400px]" x-text="file" :title="file"></span>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 dark:bg-gray-700" x-text="fileIssues.length + ' issue' + (fileIssues.length > 1 ? 's' : '')"></span>
+                    </div>
+                    <button @click="createBatchFromFile(file, fileIssues)"
+                            class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        Fix Batch
+                    </button>
+                </div>
+                <!-- Issues in this file -->
+                <div class="divide-y divide-gray-100 dark:divide-gray-700">
+                    <template x-for="issue in fileIssues" :key="feature.id">
+                        <a :href="'/issues/' + feature.id + getFilterParams()"
+                           class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                            <!-- Severity bar -->
+                            <div class="w-1 h-8 rounded-full flex-shrink-0"
+                                 :class="{
+                                     'severity-critical': feature.priority === 'CRITICAL',
+                                     'severity-high': feature.priority === 'HIGH',
+                                     'severity-medium': feature.priority === 'MEDIUM',
+                                     'severity-low': feature.priority === 'LOW'
+                                 }"></div>
+                            <!-- Issue info -->
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono text-xs text-gray-500" x-text="feature.linear_identifier || feature.id.slice(0,8)"></span>
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                          :class="'cat-' + (feature.status || 'default')"
+                                          x-text="feature.status || '-'"></span>
+                                    <template x-if="feature.estimated_days">
+                                        <span class="text-xs text-gray-400">L<span x-text="feature.estimated_days"></span></span>
+                                    </template>
+                                </div>
+                                <p class="text-sm truncate mt-0.5" x-text="feature.title"></p>
+                            </div>
+                            <!-- Status -->
+                            <span class="px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0"
+                                  :class="'status-' + feature.status"
+                                  x-text="feature.status"></span>
+                        </a>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- LINK LINEAR MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showLinkLinearModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showLinkLinearModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 class="font-semibold text-lg mb-4">Collega a Linear</h3>
+            <p class="text-sm text-gray-500 mb-4">Inserisci l'identificatore Linear (es. TEAM-123) o l'URL</p>
+            <input type="text" x-model="linkLinearInput"
+                   placeholder="TEAM-123 o https://linear.app/..."
+                   class="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg mb-4 bg-gray-50 dark:bg-gray-900">
+            <div class="flex justify-end gap-3">
+                <button @click="showLinkLinearModal = false" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
+                <button @click="linkLinear()" :disabled="!linkLinearInput || linkingLinear"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90 disabled:opacity-50">
+                    <span x-show="!linkingLinear">Collega</span>
+                    <span x-show="linkingLinear">Collegamento...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- FIX PROGRESS MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showFixModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeFixModal()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg flex items-center justify-center"
+                             :class="fixProgress.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30' : fixProgress.status === 'error' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-blue-100 dark:bg-blue-900/30'">
+                            <svg x-show="isFixing" class="w-6 h-6 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                            <svg x-show="!isFixing && fixProgress.status === 'completed'" class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            <svg x-show="!isFixing && fixProgress.status === 'error'" class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold">Fix Issues</h3>
+                            <p x-show="fixProgress.branchName" class="text-xs text-gray-500 italic">
+                                <code class="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded" x-text="fixProgress.branchName"></code>
+                            </p>
+                        </div>
+                    </div>
+                    <button @click="showFixModal = false" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <!-- Issue Chips -->
+                <div class="flex gap-2 overflow-x-auto pb-2">
+                    <template x-for="issueId in fixProgress.fixingIssueIds" :key="issueId">
+                        <div class="shrink-0 px-2.5 py-1 rounded-full text-xs font-mono flex items-center gap-1.5"
+                             :class="{
+                                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': fixProgress.issueStates[issueId]?.status === 'pending',
+                                 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 ring-2 ring-yellow-400': fixProgress.issueStates[issueId]?.status === 'in_progress',
+                                 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300': fixProgress.issueStates[issueId]?.status === 'completed',
+                                 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300': fixProgress.issueStates[issueId]?.status === 'failed'
+                             }">
+                            <span x-text="fixProgress.issueStates[issueId]?.code || issueId.slice(0,8)"></span>
+                            <svg x-show="fixProgress.issueStates[issueId]?.status === 'in_progress'" class="w-3 h-3 animate-spin" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            <svg x-show="fixProgress.issueStates[issueId]?.status === 'completed'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Step Indicator (for step-by-step execution) -->
+                <div x-show="fixProgress.totalSteps > 0" class="mt-3 p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-2">
+                            <span class="font-medium text-indigo-700 dark:text-indigo-300">
+                                Step <span x-text="fixProgress.currentStep"></span>/<span x-text="fixProgress.totalSteps"></span>
+                            </span>
+                            <span x-show="fixProgress.stepReason" class="text-indigo-600 dark:text-indigo-400 text-xs" x-text="fixProgress.stepReason"></span>
+                        </div>
+                        <!-- Progress dots -->
+                        <div class="flex gap-1">
+                            <template x-for="step in fixProgress.totalSteps" :key="step">
+                                <div class="w-2 h-2 rounded-full"
+                                     :class="step < fixProgress.currentStep ? 'bg-green-500' :
+                                             step === fixProgress.currentStep ? 'bg-indigo-500 animate-pulse' :
+                                             'bg-gray-300 dark:bg-gray-600'"></div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Billing Error Banner -->
+            <div x-show="fixProgress.billingError" class="mx-4 mt-4 p-4 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg">
+                <div class="flex items-start gap-3">
+                    <div class="text-white text-2xl">&#128179;</div>
+                    <div>
+                        <h4 class="text-white font-bold">Credito Anthropic Esaurito!</h4>
+                        <p class="text-white/90 text-sm" x-text="fixProgress.billingError"></p>
+                        <a href="https://console.anthropic.com/settings/billing" target="_blank"
+                           class="inline-block mt-2 px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold text-sm hover:bg-orange-50">
+                            Ricarica Credito
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900/50">
+                <div class="space-y-1.5">
+                    <template x-for="(log, idx) in fixProgress.logs" :key="idx">
+                        <div class="py-1.5 px-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+                            <div class="flex items-start gap-2">
+                                <span class="shrink-0 text-sm" x-text="log.icon"></span>
+                                <span class="text-xs text-gray-400 shrink-0 font-mono" x-text="log.timestamp"></span>
+                                <span class="text-sm flex-1" :class="log.color" x-text="log.message"></span>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="fixProgress.logs.length === 0" class="text-gray-400 text-center py-8">
+                        Avvio del fix in corso...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800">
+                <div class="text-sm">
+                    <template x-if="fixProgress.status === 'running'">
+                        <span class="text-blue-500 flex items-center gap-2">
+                            <span class="relative flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                            </span>
+                            Elaborazione...
+                        </span>
+                    </template>
+                    <template x-if="fixProgress.status === 'completed'">
+                        <span class="text-green-500">Completato! Score: <span class="font-bold" x-text="fixProgress.lastScore || '-'"></span>%</span>
+                    </template>
+                    <template x-if="fixProgress.status === 'error'">
+                        <span class="text-red-500">Errore durante il fix</span>
+                    </template>
+                </div>
+                <button @click="showFixModal = false" class="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90">
+                    <span x-show="!isFixing">Chiudi</span>
+                    <span x-show="isFixing">Chiudi (continua in background)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- LINT MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showLintModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="closeLintModal()">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden">
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-indigo-600" :class="isAnalyzing && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold">Analisi Codice</h3>
+                        <p class="text-sm text-gray-500" x-text="lintProgress.message || 'Linting e analisi statica...'"></p>
+                    </div>
+                </div>
+                <button @click="closeLintModal()" :disabled="isAnalyzing" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg disabled:opacity-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <div x-show="isAnalyzing" class="flex items-center justify-center py-8">
+                    <div class="text-center">
+                        <svg class="animate-spin w-12 h-12 mx-auto text-indigo-500 mb-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <p class="text-gray-500" x-text="lintProgress.phase || 'Elaborazione...'"></p>
+                    </div>
+                </div>
+                <div x-show="!isAnalyzing && lintProgress.status === 'completed'" class="text-center py-8">
+                    <svg class="w-16 h-16 mx-auto text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h4 class="text-xl font-semibold mb-2">Analisi Completata!</h4>
+                    <p class="text-gray-500">
+                        <span x-text="lintProgress.issuesFound || 0"></span> issues trovate,
+                        <span x-text="lintProgress.issuesCreated || 0"></span> nuove create
+                    </p>
+                </div>
+                <div x-show="!isAnalyzing && lintProgress.status === 'error'" class="text-center py-8">
+                    <svg class="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h4 class="text-xl font-semibold mb-2 text-red-600">Errore</h4>
+                    <p class="text-gray-500" x-text="lintProgress.error"></p>
+                </div>
+                <div x-show="lintProgress.logs.length > 0" class="mt-4 max-h-48 overflow-y-auto font-mono text-xs space-y-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
+                    <template x-for="(log, idx) in lintProgress.logs" :key="idx">
+                        <div class="flex items-start gap-2 py-0.5">
+                            <span class="text-gray-400 shrink-0" x-text="log.timestamp"></span>
+                            <span :class="log.type === 'error' ? 'text-red-500' : 'text-gray-600 dark:text-gray-300'" x-text="log.message"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex justify-end">
+                <button @click="closeLintModal()" x-show="!isAnalyzing" class="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90">Chiudi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- NOTES MODAL (before fix) -->
+    <!-- ============================================== -->
+    <div x-show="showNotesModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showNotesModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="font-semibold">Note per il Fixer</h3>
+                    <p class="text-sm text-gray-500">Aggiungi istruzioni o contesto per l'AI</p>
+                </div>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                <span class="font-medium text-green-600" x-text="selectedFeatures.length"></span>
+                <span x-text="selectedFeatures.length === 1 ? 'issue selezionata' : 'issues selezionate'"></span>
+            </p>
+            <textarea x-model="fixNotes" rows="4"
+                      class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 resize-none"
+                      placeholder="Es: Usa l'endpoint /api/v2/users invece di /api/users&#10;Es: Mantieni la compatibilità con Python 3.9"></textarea>
+            <p class="mt-2 text-xs text-gray-400">Queste note verranno passate all'AI che risolverà le issues.</p>
+
+            <!-- Multi-Agent Toggle -->
+            <div class="mt-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <span class="font-medium text-sm text-gray-700 dark:text-gray-200">Multi-Agent Mode</span>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Splitta issue grandi in sub-task paralleli</p>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <input type="checkbox" x-model="enableSubtasks" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-purple-600"></div>
+                    </div>
+                </label>
+            </div>
+            <div class="flex justify-end gap-3 mt-4">
+                <button @click="showNotesModal = false; fixNotes = ''" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Annulla</button>
+                <button @click="showNotesModal = false; confirmFixWithNotes()" class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Avvia Fix
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- CLARIFICATION MODAL -->
+    <!-- ============================================== -->
+    <div x-show="clarification.show" x-cloak x-transition
+         @click.self="confirmCancelClarification()"
+         @keydown.escape.window="clarification.show && confirmCancelClarification()"
+         x-init="$watch('clarification.show', v => v ? _addBeforeUnloadWarning() : _removeBeforeUnloadWarning())"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div @click.stop class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-lg">Pre-Fix Clarification</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">OPUS sta analizzando le issue prima di procedere</p>
+                </div>
+                <button @click="confirmCancelClarification()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Selected Issues -->
+            <div class="px-4 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div class="flex flex-wrap gap-1.5">
+                    <template x-for="issueId in selectedFeatures" :key="issueId">
+                        <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded"
+                              x-text="issues.find(i => i.id === issueId)?.issue_code || issueId.slice(0,8)"></span>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-4 overflow-y-auto flex-1">
+                <!-- Loading state -->
+                <div x-show="clarification.loading" class="flex flex-col items-center py-8">
+                    <svg class="w-12 h-12 text-indigo-500 animate-spin mb-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-500 dark:text-gray-400" x-text="clarification.message"></p>
+                </div>
+
+                <!-- Message from OPUS -->
+                <div x-show="!clarification.loading && clarification.message" class="mb-4">
+                    <div class="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
+                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                                </svg>
+                            </div>
+                            <p class="text-sm text-indigo-700 dark:text-indigo-300" x-text="clarification.message"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Questions Grouped by Issue -->
+                <div x-show="!clarification.loading && clarification.questionsByIssue.length > 0" class="space-y-6">
+                    <template x-for="group in clarification.questionsByIssue" :key="group.issue_code">
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                            <!-- Issue Header -->
+                            <div class="px-4 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="group.issue_code"></span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400" x-text="group.questions.length + ' domanda/e'"></span>
+                                </div>
+                            </div>
+                            <!-- Questions for this issue -->
+                            <div class="p-4 space-y-4">
+                                <template x-for="(q, idx) in group.questions" :key="q.id">
+                                    <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <div class="flex items-start gap-2 mb-2">
+                                            <span class="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-xs font-medium flex items-center justify-center shrink-0" x-text="idx + 1"></span>
+                                            <p class="font-medium text-gray-900 dark:text-gray-100 text-sm" x-text="q.question"></p>
+                                        </div>
+                                        <p x-show="q.context" class="text-xs text-gray-500 dark:text-gray-400 mb-2 ml-7" x-text="q.context"></p>
+                                        <textarea
+                                            x-model="clarification.answers[q.id]"
+                                            rows="2"
+                                            class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 resize-none ml-7 text-sm"
+                                            placeholder="La tua risposta..."></textarea>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Legacy: Questions flat list (fallback) -->
+                <div x-show="!clarification.loading && clarification.questions.length > 0 && clarification.questionsByIssue.length === 0" class="space-y-4">
+                    <template x-for="(q, idx) in clarification.questions" :key="q.id">
+                        <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                            <div class="flex items-start gap-2 mb-2">
+                                <span class="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-sm font-medium flex items-center justify-center shrink-0" x-text="idx + 1"></span>
+                                <p class="font-medium text-gray-900 dark:text-gray-100" x-text="q.question"></p>
+                            </div>
+                            <p x-show="q.context" class="text-xs text-gray-500 dark:text-gray-400 mb-2 ml-8" x-text="q.context"></p>
+                            <textarea
+                                x-model="clarification.answers[q.id]"
+                                rows="2"
+                                class="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 resize-none ml-8 text-sm"
+                                placeholder="La tua risposta..."></textarea>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Ready to fix message (no questions) -->
+                <div x-show="!clarification.loading && !hasQuestions() && clarification.readyToFix" class="text-center py-8">
+                    <svg class="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-lg font-medium text-gray-900 dark:text-gray-100">Pronto per il fix!</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">OPUS ha confermato che le issue sono chiare.</p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div x-show="!clarification.loading" class="p-4 border-t dark:border-gray-700 flex justify-between items-center shrink-0">
+                <button @click="skipClarification()" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    Salta e procedi direttamente
+                </button>
+                <div class="flex gap-3">
+                    <button @click="confirmCancelClarification()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                        Annulla
+                    </button>
+                    <button
+                        x-show="hasQuestions()"
+                        @click="submitClarificationAnswers()"
+                        :disabled="clarification.loading"
+                        class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                        </svg>
+                        Invia Risposte
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- PLAN PREVIEW MODAL -->
+    <!-- ============================================== -->
+    <div x-show="planPreview.show" x-cloak x-transition
+         @click.self="confirmCancelPlanPreview()"
+         @keydown.escape.window="planPreview.show && confirmCancelPlanPreview()"
+         x-init="$watch('planPreview.show', v => v ? _addBeforeUnloadWarning() : _removeBeforeUnloadWarning())"
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div @click.stop class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <!-- Header -->
+            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3 shrink-0">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-semibold text-lg">Piano di Esecuzione</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        <span x-text="planPreview.totalIssues"></span> issues in <span x-text="planPreview.totalSteps"></span> step
+                    </p>
+                </div>
+                <button @click="confirmCancelPlanPreview()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="p-4 overflow-y-auto flex-1">
+                <!-- Loading state -->
+                <div x-show="planPreview.loading" class="flex flex-col items-center py-8">
+                    <svg class="w-12 h-12 text-emerald-500 animate-spin mb-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-500 dark:text-gray-400">Generazione piano in corso...</p>
+                </div>
+
+                <!-- Execution Steps -->
+                <div x-show="!planPreview.loading" class="space-y-4">
+                    <template x-for="step in planPreview.executionSteps" :key="step.step">
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                            <!-- Step Header -->
+                            <div class="px-4 py-2 bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <span class="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-bold text-sm flex items-center justify-center" x-text="step.step"></span>
+                                    <span class="text-sm font-medium" x-text="step.features.length + ' issue' + (step.features.length > 1 ? 's' : '')"></span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 italic" x-text="'(in parallelo)'"></span>
+                                </div>
+                            </div>
+                            <!-- Issues in this step -->
+                            <div class="p-3 space-y-2">
+                                <template x-for="issue in step.issues" :key="issue.code">
+                                    <div class="flex items-center gap-2 text-sm">
+                                        <span class="px-2 py-0.5 text-xs font-mono bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded" x-text="issue.code"></span>
+                                        <span class="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded" x-text="issue.agent_type"></span>
+                                    </div>
+                                </template>
+                                <!-- Step reason -->
+                                <p x-show="step.reason" class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic" x-text="step.reason"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div x-show="!planPreview.loading" class="p-4 border-t dark:border-gray-700 flex justify-between items-center shrink-0">
+                <button @click="confirmCancelPlanPreview()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    Annulla
+                </button>
+                <button @click="executePlan()" class="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Esegui Piano
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- PENDING BRANCH MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showPendingBranchModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showPendingBranchModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full overflow-hidden">
+            <div class="p-4 border-b dark:border-gray-700 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 class="font-semibold">Branch di Fix Non Mergiato</h3>
+                    <p class="text-sm text-gray-500">Ci sono fix precedenti non ancora mergiati</p>
+                </div>
+            </div>
+            <div class="p-4">
+                <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 mb-4">
+                    <div class="text-sm text-gray-500 mb-1">Branch:</div>
+                    <code class="text-sm font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded" x-text="pendingBranch?.branch_name"></code>
+                    <div class="mt-2 text-sm">
+                        <span class="text-gray-500">Issues fixate:</span>
+                        <span x-text="pendingBranch?.issues_count"></span>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 dark:text-gray-300">Cosa vuoi fare prima di lanciare i nuovi fix?</p>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex flex-col gap-2">
+                <!-- 1. Merge in main -->
+                <button @click="handlePendingBranch('merge')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span x-text="pendingBranchLoading ? 'Merging...' : 'Merge in Main'"></span>
+                </button>
+                <!-- 2. Usa branch esistente -->
+                <button @click="handlePendingBranch('continue')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                    </svg>
+                    Usa Branch Esistente
+                </button>
+                <!-- 3. Crea nuovo branch -->
+                <button @click="handlePendingBranch('new-branch')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Crea Nuovo Branch
+                </button>
+                <button @click="handlePendingBranch('cancel')" :disabled="pendingBranchLoading"
+                        class="w-full px-4 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                    Annulla
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- SCOPE VIOLATION MODAL -->
+    <!-- ============================================== -->
+    <div x-show="fixProgress.scopeViolation.show" x-cloak x-transition class="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div class="p-4 border-b dark:border-gray-700 bg-amber-50 dark:bg-amber-900/20">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg text-amber-900 dark:text-amber-100">Modifiche Fuori Scope</h3>
+                        <p class="text-sm text-amber-700 dark:text-amber-300">L'agente ha modificato file fuori dalla workspace</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 space-y-4">
+                <p class="text-gray-700 dark:text-gray-300">Le seguenti directory sono state modificate al di fuori del workspace scope:</p>
+                <div class="bg-gray-100 dark:bg-gray-900 rounded-lg p-3 space-y-1">
+                    <template x-for="dir in fixProgress.scopeViolation.dirs" :key="dir">
+                        <div class="flex items-center gap-2 text-sm font-mono">
+                            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <span x-text="dir" class="text-gray-800 dark:text-gray-200"></span>
+                        </div>
+                    </template>
+                </div>
+                <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Aggiungere all'allowlist?</strong><br>
+                    Se confermi, queste directory saranno aggiunte ai path permessi per questa repo e il fix continuerà.
+                </div>
+            </div>
+            <div class="p-4 border-t dark:border-gray-700 flex gap-3 justify-end">
+                <button @click="respondToScopeViolation(false)" :disabled="fixProgress.scopeViolation.responding"
+                        class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50">
+                    Annulla Fix
+                </button>
+                <button @click="respondToScopeViolation(true)" :disabled="fixProgress.scopeViolation.responding"
+                        class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2">
+                    <svg x-show="fixProgress.scopeViolation.responding" class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Aggiungi e Prosegui
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- IGNORE ISSUE MODAL -->
+    <!-- ============================================== -->
+    <div x-show="showIgnoreModal" x-cloak x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showIgnoreModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" @click.stop>
+            <!-- Header with gradient -->
+            <div class="bg-gradient-to-r from-gray-100 to-gray-50 dark:from-gray-700 dark:to-gray-800 p-5 border-b border-gray-200 dark:border-gray-700">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                        <svg class="w-6 h-6 text-gray-500 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg text-gray-900 dark:text-white">Ignora Issue</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 font-mono" x-text="ignoreIssue?.issue_code"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Motivo <span class="text-gray-400 font-normal">(opzionale)</span>
+                    </label>
+                    <textarea x-model="ignoreReason" rows="3"
+                              placeholder="Es: False positive, già gestito altrove, non rilevante per questo progetto..."
+                              class="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-600 focus:border-transparent resize-none transition-all"></textarea>
+                </div>
+
+                <!-- Quick reasons -->
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" @click="ignoreReason = 'False positive'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        False positive
+                    </button>
+                    <button type="button" @click="ignoreReason = 'Gestito altrove'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Gestito altrove
+                    </button>
+                    <button type="button" @click="ignoreReason = 'Non rilevante'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Non rilevante
+                    </button>
+                    <button type="button" @click="ignoreReason = 'Wont fix'"
+                            class="px-3 py-1.5 text-xs rounded-full border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        Won't fix
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-5 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
+                <button @click="showIgnoreModal = false; ignoreIssue = null; ignoreReason = ''"
+                        class="px-4 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium">
+                    Annulla
+                </button>
+                <button @click="confirmIgnore()" :disabled="ignoringIssue"
+                        class="px-5 py-2.5 bg-gray-700 dark:bg-gray-600 text-white rounded-xl hover:bg-gray-800 dark:hover:bg-gray-500 transition-colors font-medium flex items-center gap-2 disabled:opacity-50">
+                    <template x-if="ignoringIssue">
+                        <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </template>
+                    <svg x-show="!ignoringIssue" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                    </svg>
+                    <span x-text="ignoringIssue ? 'Ignorando...' : 'Ignora Issue'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function featuresApp() {
+    return {
+        loading: true,
+        features: [],
+        summary: {},
+        selectedFeatures: [],
+        viewMode: 'list',
+        groupBy: '',
+        selectAllChecked: false,
+        isFixing: false,
+        isAnalyzing: false,
+        toasts: [],
+        showFixModal: false,
+        showLintModal: false,
+        showNotesModal: false,
+        showPendingBranchModal: false,
+        showLinkLinearModal: false,
+        showIgnoreModal: false,
+        linkLinearInput: '',
+        linkingLinear: false,
+        currentIssueForLink: null,
+        ignoreIssue: null,
+        ignoreReason: '',
+        ignoringIssue: false,
+        fixNotes: '',
+        enableSubtasks: false,  // Multi-agent mode for multi-file issues
+        pendingBranch: null,
+        pendingBranchLoading: false,
+        pendingFixRequest: null,
+        lintFixCategory: 'BE',
+        lintProgress: {
+            status: 'idle',
+            phase: '',
+            message: '',
+            issuesFound: 0,
+            issuesCreated: 0,
+            error: null,
+            logs: []
+        },
+        fixProgress: {
+            current: 0,
+            total: 0,
+            currentIssue: null,
+            logs: [],
+            status: 'idle',
+            branchName: null,
+            issueStates: {},
+            fixingIssueIds: [],
+            streamingContent: '',
+            showStreamingDetails: false,
+            lastScore: null,
+            billingError: null,
+            scopeViolation: { show: false, sessionId: null, dirs: [], responding: false },
+            // Step-by-step execution tracking
+            currentStep: 0,
+            totalSteps: 0,
+            stepReason: ''
+        },
+        // Pre-fix clarification state
+        clarification: {
+            show: false,
+            loading: false,
+            sessionId: null,
+            questions: [],           // Current batch of questions
+            questionsByIssue: [],    // Current batch grouped by issue
+            allQuestions: [],        // ALL questions history (accumulated)
+            allAnswers: {},          // ALL answers history (accumulated)
+            answers: {},             // Current batch answers
+            message: '',
+            readyToFix: false,
+            pendingRequest: null,  // Stores the pending fix request details
+            pingInterval: null     // Auto-ping interval to keep cache warm
+        },
+        // Execution plan preview state
+        planPreview: {
+            show: false,
+            loading: false,
+            masterTodoPath: null,
+            executionSteps: [],      // [{step: 1, issues: [...], reason: "..."}]
+            totalIssues: 0,
+            totalSteps: 0
+        },
+        _streamingBuffer: '',
+        _updateScheduled: false,
+        _eventBuffer: [],
+        filters: {
+            repository_id: '',
+            priority: '',
+            status: '',  // analysis, design, development, review, merged, on_hold, cancelled
+            search: '',
+            order_by: 'priority'
+        },
+
+        async init() {
+            const store = Alpine.store('globalContext');
+            if (store?.selectedRepoId) {
+                this.filters.repository_id = store.selectedRepoId;
+            }
+            window.addEventListener('global-context-changed', (e) => {
+                const newRepoId = e.detail.repoId || '';
+                if (newRepoId !== this.filters.repository_id) {
+                    this.filters.repository_id = newRepoId;
+                    this.refresh();
+                }
+            });
+
+            // Handle ?fix= parameter from issue detail page - check BEFORE refresh
+            const urlParams = new URLSearchParams(window.location.search);
+            const fixIssueId = urlParams.get('fix');
+            if (fixIssueId) {
+                // Clear status filter to ensure we can find in_progress issues
+                this.filters.status = '';
+            }
+
+            await this.refresh();
+
+            if (fixIssueId) {
+                // Clean URL without reload
+                window.history.replaceState({}, '', '/issues');
+                // Select the issue and open notes modal
+                const issueToFix = this.features.find(i => i.id === fixIssueId);
+                if (issueToFix && (issueToFix.status === 'open' || issueToFix.status === 'in_progress')) {
+                    this.selectedFeatures = [fixIssueId];
+                    this.fixNotes = '';
+                    this.showNotesModal = true;
+                } else if (!issueToFix) {
+                    // Issue not found - maybe it was already resolved or doesn't exist
+                    console.warn('Issue not found for fix:', fixIssueId);
+                }
+            }
+        },
+
+        // Build URL params from current filters for navigation preservation
+        getFilterParams() {
+            const params = new URLSearchParams();
+            if (this.filters.repository_id) params.set('repository_id', this.filters.repository_id);
+            if (this.filters.priority) params.set('severity', this.filters.priority);
+            if (this.filters.status) params.set('status', this.filters.status);
+            if (this.filters.status) params.set('category', this.filters.status);
+            if (this.filters.search) params.set('search', this.filters.search);
+            if (this.filters.linear_linked) params.set('linear_linked', this.filters.linear_linked);
+            const str = params.toString();
+            return str ? '?' + str : '';
+        },
+
+        _scheduleUpdate() {
+            if (this._updateScheduled) return;
+            this._updateScheduled = true;
+            requestAnimationFrame(() => {
+                this._flushBuffers();
+                this._updateScheduled = false;
+            });
+        },
+
+        _flushBuffers() {
+            if (this._streamingBuffer) {
+                this.fixProgress.streamingContent += this._streamingBuffer;
+                if (this.fixProgress.streamingContent.length > 2000) {
+                    this.fixProgress.streamingContent = this.fixProgress.streamingContent.slice(-2000);
+                }
+                this._streamingBuffer = '';
+            }
+            if (this._eventBuffer.length > 0) {
+                const events = this._eventBuffer;
+                this._eventBuffer = [];
+                events.forEach(event => this._processEvent(event));
+            }
+        },
+
+        async refresh() {
+            this.loading = true;
+            try {
+                const params = new URLSearchParams();
+                if (this.filters.repository_id) params.set('repository_id', this.filters.repository_id);
+                if (this.filters.priority) params.set('severity', this.filters.priority);
+                if (this.filters.status) params.set('status', this.filters.status);
+                if (this.filters.status) params.set('category', this.filters.status);
+                if (this.filters.search) params.set('search', this.filters.search);
+                if (this.filters.order_by) params.set('order_by', this.filters.order_by);
+                if (this.filters.linear_linked) params.set('linear_linked', this.filters.linear_linked);
+
+                const [issuesRes, summaryRes] = await Promise.all([
+                    fetch('/api/features?' + params.toString()),
+                    fetch('/api/features/summary?' + params.toString())
+                ]);
+                this.features = await issuesRes.json();
+                this.summary = await summaryRes.json();
+            } catch (error) {
+                console.error('Error loading issues:', error);
+            }
+            this.loading = false;
+        },
+
+        toggleSelectAll() {
+            if (this.selectAllChecked) {
+                this.selectedFeatures = this.features
+                    .filter(i => i.status === 'open' || i.status === 'in_progress')
+                    .map(i => i.id);
+            } else {
+                this.selectedFeatures = [];
+            }
+        },
+
+        clearSelection() {
+            this.selectedFeatures = [];
+            this.selectAllChecked = false;
+        },
+
+        openLinkLinearModal(issue) {
+            this.currentIssueForLink = issue;
+            this.linkLinearInput = '';
+            this.showLinkLinearModal = true;
+        },
+
+        async linkLinear() {
+            if (!this.linkLinearInput || !this.currentIssueForLink) return;
+            this.linkingLinear = true;
+            try {
+                const res = await fetch(`/api/features/${this.currentIssueForLink.id}/link-linear`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linear_identifier: this.linkLinearInput })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                this.showLinkLinearModal = false;
+                await this.refresh();
+            } catch (e) {
+                TurboWrapError.handle('Link Linear Issue', e);
+            }
+            this.linkingLinear = false;
+        },
+
+        async fixSelected() {
+            if (this.selectedFeatures.length === 0 || this.isFixing) return;
+            this.fixNotes = '';
+            this.showNotesModal = true;
+        },
+
+        async confirmFixWithNotes() {
+            if (this.selectedFeatures.length === 0 || this.isFixing) return;
+            const firstIssue = this.features.find(i => i.id === this.selectedFeatures[0]);
+            if (!firstIssue || !firstIssue.repository_id || !firstIssue.task_id) {
+                alert('Errore: Dati issue incompleti');
+                return;
+            }
+
+            // Store pending request for after clarification
+            this.clarification.pendingRequest = {
+                firstIssue,
+                branchOptions: null,
+            };
+
+            // Check for pending branches first
+            try {
+                const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
+                if (pendingRes.ok) {
+                    const pendingData = await pendingRes.json();
+                    if (pendingData.has_pending && pendingData.branches.length > 0) {
+                        this.pendingFixRequest = {
+                            repository_id: firstIssue.repository_id,
+                            task_id: firstIssue.task_id,
+                            issue_ids: [...this.selectedFeatures],
+                            user_notes: this.fixNotes || null,
+                        };
+                        this.pendingBranch = pendingData.branches[0];
+                        this.showPendingBranchModal = true;
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[FIX] Could not check pending branches:', e);
+            }
+
+            // Start clarification phase
+            await this._startClarification(firstIssue);
+        },
+
+        // Pre-fix clarification with OPUS
+        async _startClarification(firstIssue) {
+            this.clarification.loading = true;
+            this.clarification.show = true;
+            this.clarification.message = 'OPUS sta analizzando le issue...';
+
+            try {
+                const response = await fetch('/api/fix/clarify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: firstIssue.repository_id,
+                        issue_ids: this.selectedFeatures,
+                        session_id: this.clarification.sessionId,
+                        // Send ALL accumulated answers (current + previous)
+                        answers: Object.keys(this.clarification.allAnswers).length > 0
+                            ? { ...this.clarification.allAnswers, ...this.clarification.answers }
+                            : (Object.keys(this.clarification.answers).length > 0 ? this.clarification.answers : null),
+                        // Send ALL accumulated questions
+                        previous_questions: this.clarification.allQuestions.length > 0
+                            ? this.clarification.allQuestions : null,
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Clarification failed');
+                }
+
+                const data = await response.json();
+                this.clarification.sessionId = data.session_id;
+                this._startClarifyPing();  // Keep cache warm while user thinks
+                this.clarification.message = data.message;
+                this.clarification.readyToFix = data.ready_to_fix || data.ready_to_plan;
+
+                // ACCUMULATE: Save current answers to history before processing new questions
+                if (Object.keys(this.clarification.answers).length > 0) {
+                    this.clarification.allAnswers = {
+                        ...this.clarification.allAnswers,
+                        ...this.clarification.answers
+                    };
+                }
+
+                // ACCUMULATE: Add current questions to history
+                if (this.clarification.questions.length > 0) {
+                    this.clarification.allQuestions = [
+                        ...this.clarification.allQuestions,
+                        ...this.clarification.questions
+                    ];
+                }
+
+                // Set new batch of questions
+                this.clarification.questions = data.questions || [];
+                this.clarification.questionsByIssue = data.questions_by_issue || [];
+
+                // Reset answers only for NEW questions
+                this.clarification.answers = {};
+                if (this.clarification.questionsByIssue.length > 0) {
+                    // Grouped questions by issue
+                    this.clarification.questionsByIssue.forEach(group => {
+                        group.questions?.forEach(q => {
+                            this.clarification.answers[q.id] = '';
+                        });
+                    });
+                } else {
+                    // Legacy flat list
+                    data.questions?.forEach(q => {
+                        this.clarification.answers[q.id] = '';
+                    });
+                }
+
+                // If ready to plan/fix, show plan preview then proceed
+                if (data.ready_to_fix || data.ready_to_plan) {
+                    this._stopClarifyPing();  // No more need to keep cache warm
+                    this.clarification.message = '✨ OPUS has everything clear! Generating execution plan...';
+                    this.clarification.loading = true;
+
+                    // Brief pause to show the message
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    this.clarification.show = false;
+                    // Show plan preview instead of starting fix directly
+                    await this.createExecutionPlan();
+                }
+            } catch (error) {
+                console.error('Clarification error:', error);
+                this.clarification.message = 'Errore: ' + error.message;
+            } finally {
+                this.clarification.loading = false;
+            }
+        },
+
+        // Submit clarification answers and continue
+        async submitClarificationAnswers() {
+            if (this.clarification.loading) return;
+
+            // Validate all answers are provided (support both grouped and flat)
+            let unansweredCount = 0;
+            if (this.clarification.questionsByIssue.length > 0) {
+                // Grouped questions
+                this.clarification.questionsByIssue.forEach(group => {
+                    group.questions?.forEach(q => {
+                        if (!this.clarification.answers[q.id]?.trim()) {
+                            unansweredCount++;
+                        }
+                    });
+                });
+            } else {
+                // Legacy flat list
+                unansweredCount = this.clarification.questions.filter(
+                    q => !this.clarification.answers[q.id]?.trim()
+                ).length;
+            }
+
+            if (unansweredCount > 0) {
+                alert('Rispondi a tutte le domande prima di procedere.');
+                return;
+            }
+
+            // Continue clarification with answers
+            await this._startClarification(this.clarification.pendingRequest.firstIssue);
+        },
+
+        // Helper to check if there are any questions (grouped or flat)
+        hasQuestions() {
+            return this.clarification.questionsByIssue.length > 0 || this.clarification.questions.length > 0;
+        },
+
+        // Skip clarification and proceed directly to fix
+        skipClarification() {
+            this._stopClarifyPing();
+            this.clarification.show = false;
+            this._startFixProcess(
+                this.clarification.pendingRequest.firstIssue,
+                this.clarification.pendingRequest.branchOptions
+            );
+        },
+
+        // Auto-ping to keep Claude cache warm (every 3 min)
+        _startClarifyPing() {
+            this._stopClarifyPing();
+            this.clarification.pingInterval = setInterval(() => {
+                if (!this.clarification.show || this.clarification.readyToFix || this.clarification.loading) {
+                    this._stopClarifyPing();
+                    return;
+                }
+                this._pingClarifySession();
+            }, 180000); // 3 minutes
+            console.log('[CLARIFY] 🔄 Started cache ping (every 3min)');
+        },
+
+        _stopClarifyPing() {
+            if (this.clarification.pingInterval) {
+                clearInterval(this.clarification.pingInterval);
+                this.clarification.pingInterval = null;
+                console.log('[CLARIFY] ⏹️ Stopped cache ping');
+            }
+        },
+
+        async _pingClarifySession() {
+            if (!this.clarification.sessionId) return;
+            const firstIssue = this.clarification.pendingRequest?.firstIssue;
+            if (!firstIssue) return;
+
+            try {
+                console.log('[CLARIFY] 📡 Pinging to keep cache warm...');
+                const response = await fetch('/api/fix/clarify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: firstIssue.repository_id,
+                        issue_ids: this.selectedFeatures,
+                        session_id: this.clarification.sessionId,
+                        answers: null,
+                        previous_questions: null,
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    this.clarification.sessionId = data.session_id;
+                    console.log('[CLARIFY] ✅ Cache ping OK');
+                }
+            } catch (e) {
+                console.warn('[CLARIFY] ⚠️ Ping failed:', e.message);
+            }
+        },
+
+        // Confirm before canceling clarification
+        async confirmCancelClarification() {
+            const confirmed = await TurboConfirm.show({
+                title: '⚠️ Annullare il processo?',
+                message: 'Il processo di clarification/planning verrà annullato e perderai il contesto accumulato.',
+                confirmText: 'Sì, annulla',
+                cancelText: 'Continua',
+                variant: 'warning'
+            });
+            if (confirmed) {
+                this.cancelClarification();
+            }
+        },
+
+        // Browser back/refresh warning
+        _beforeUnloadHandler: null,
+
+        _addBeforeUnloadWarning() {
+            this._beforeUnloadHandler = (e) => {
+                e.preventDefault();
+                e.returnValue = 'Il processo di clarification verrà annullato. Sei sicuro?';
+                return e.returnValue;
+            };
+            window.addEventListener('beforeunload', this._beforeUnloadHandler);
+        },
+
+        _removeBeforeUnloadWarning() {
+            if (this._beforeUnloadHandler) {
+                window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+                this._beforeUnloadHandler = null;
+            }
+        },
+
+        // Cancel clarification
+        cancelClarification() {
+            this._stopClarifyPing();
+            this._removeBeforeUnloadWarning();
+            this.clarification.show = false;
+            this.clarification.sessionId = null;
+            this.clarification.questions = [];
+            this.clarification.questionsByIssue = [];
+            this.clarification.answers = {};
+            this.clarification.allQuestions = [];  // Clear accumulated history
+            this.clarification.allAnswers = {};    // Clear accumulated history
+            this.clarification.message = '';
+            this.clarification.pendingRequest = null;
+        },
+
+        // Plan Preview functions
+        async confirmCancelPlanPreview() {
+            const confirmed = await TurboConfirm.show({
+                title: '⚠️ Annullare il piano?',
+                message: 'Il piano di esecuzione verrà annullato.',
+                confirmText: 'Sì, annulla',
+                cancelText: 'Continua',
+                variant: 'warning'
+            });
+            if (confirmed) {
+                this.cancelPlanPreview();
+            }
+        },
+
+        cancelPlanPreview() {
+            this._removeBeforeUnloadWarning();
+            this.planPreview.show = false;
+            this.planPreview.loading = false;
+            this.planPreview.masterTodoPath = null;
+            this.planPreview.executionSteps = [];
+            this.planPreview.totalIssues = 0;
+            this.planPreview.totalSteps = 0;
+        },
+
+        async createExecutionPlan() {
+            // Called after clarification is ready_to_plan
+            this.planPreview.show = true;
+            this.planPreview.loading = true;
+
+            try {
+                const response = await fetch('/api/fix/plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repository_id: this.filters.repository_id,
+                        issue_ids: this.selectedFeatures,
+                        clarify_session_id: this.clarification.sessionId,
+                        enable_subtasks: this.enableSubtasks
+                    })
+                });
+
+                if (!response.ok) throw new Error('Failed to create plan');
+
+                const data = await response.json();
+                this.planPreview.masterTodoPath = data.master_todo_path;
+                this.planPreview.executionSteps = data.execution_steps || [];
+                this.planPreview.totalIssues = data.issue_count;
+                this.planPreview.totalSteps = data.step_count;
+                this.planPreview.loading = false;
+
+            } catch (error) {
+                console.error('Plan creation error:', error);
+                this.planPreview.loading = false;
+                // Fallback: proceed without plan
+                this.cancelPlanPreview();
+                this._startFixProcess(this.clarification.pendingRequest?.firstIssue, this.clarification.pendingRequest?.branchOptions);
+            }
+        },
+
+        async executePlan() {
+            // Execute the planned fix
+            this.planPreview.show = false;
+            const branchOptions = this.clarification.pendingRequest?.branchOptions;
+            const firstIssue = this.clarification.pendingRequest?.firstIssue;
+
+            // Pass master_todo_path to the fix process
+            await this._startFixProcess(firstIssue, branchOptions, false, this.planPreview.masterTodoPath);
+        },
+
+        async _startFixProcess(firstIssue, branchOptions = null, forceRestart = false, masterTodoPath = null) {
+            this.isFixing = true;
+            this.showFixModal = true;
+
+            const issueStates = {};
+            this.selectedFeatures.forEach(id => {
+                const issue = this.features.find(i => i.id === id);
+                issueStates[id] = { code: issue?.issue_code || id.slice(0, 8), status: 'pending', score: null };
+            });
+
+            this.fixProgress = {
+                current: 0, total: this.selectedFeatures.length, currentIssue: null, logs: [], status: 'running',
+                branchName: branchOptions?.existing_branch_name || null, issueStates: issueStates,
+                fixingIssueIds: [...this.selectedFeatures], streamingContent: '', showStreamingDetails: false,
+                lastScore: null, billingError: null, scopeViolation: { show: false, sessionId: null, dirs: [], responding: false },
+                currentStep: 0, totalSteps: 0, stepReason: ''
+            };
+            this._streamingBuffer = '';
+            this._eventBuffer = [];
+            this._updateScheduled = false;
+
+            try {
+                // Always use the original task_id - branch name is generated from issue titles
+                const requestBody = {
+                    repository_id: firstIssue.repository_id,
+                    task_id: firstIssue.task_id,
+                    issue_ids: this.selectedFeatures,
+                    force: forceRestart,
+                };
+                if (this.fixNotes && this.fixNotes.trim()) requestBody.user_notes = this.fixNotes.trim();
+                if (branchOptions) {
+                    requestBody.use_existing_branch = branchOptions.use_existing_branch || false;
+                    requestBody.existing_branch_name = branchOptions.existing_branch_name || null;
+                }
+                // Add master_todo_path for step-by-step execution
+                if (masterTodoPath) {
+                    requestBody.master_todo_path = masterTodoPath;
+                    // Also set step info in fixProgress for UI
+                    this.fixProgress.totalSteps = this.planPreview.totalSteps;
+                    this.fixProgress.currentStep = 1;
+                }
+                // Add clarify_session_id for operation grouping
+                if (this.clarification && this.clarification.sessionId) {
+                    requestBody.clarify_session_id = this.clarification.sessionId;
+                }
+
+                const response = await fetch('/api/fix/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                });
+
+                if (response.status === 409) {
+                    const errorData = await response.json();
+                    const stuckSession = errorData.detail;
+                    if (confirm(`Una sessione di fix è già in corso (${stuckSession.session_id.slice(0, 8)}...).\n\nForzare il riavvio?`)) {
+                        this.showFixModal = false;
+                        this.isFixing = false;
+                        await this._startFixProcess(firstIssue, branchOptions, true);
+                        return;
+                    } else {
+                        throw new Error('Sessione già in corso');
+                    }
+                }
+
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+                window.dispatchEvent(new CustomEvent('operation-started'));
+                this.selectedFeatures.forEach(id => {
+                    const issue = this.features.find(i => i.id === id);
+                    if (issue) feature.status = 'in_progress';
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const event = JSON.parse(line.slice(6));
+                                this.handleFixEvent(event);
+                            } catch (e) {}
+                        }
+                    }
+                }
+                this.fixProgress.status = 'completed';
+            } catch (error) {
+                console.error('Fix error:', error);
+                this.fixProgress.status = 'error';
+                this.fixProgress.logs.push({ type: 'error', message: error.message, icon: '&#10060;', color: 'text-red-500', timestamp: new Date().toLocaleTimeString() });
+            }
+            this.isFixing = false;
+            this.selectedFeatures = [];
+            await this.refresh();
+        },
+
+        handleFixEvent(event) {
+            const eventType = event.type || event.event;
+            if (event.content && (eventType === 'fix_issue_streaming' || eventType === 'fix_challenger_evaluating')) {
+                this._streamingBuffer += event.content;
+                this._scheduleUpdate();
+                return;
+            }
+            const criticalEvents = ['fix_session_error', 'fix_billing_error', 'fix_session_completed'];
+            if (criticalEvents.includes(eventType)) {
+                this._processEvent(event);
+                return;
+            }
+            this._eventBuffer.push(event);
+            this._scheduleUpdate();
+        },
+
+        _processEvent(event) {
+            const eventType = event.type || event.event;
+            if (eventType === 'fix_session_started' && event.branch_name) this.fixProgress.branchName = event.branch_name;
+            // Step tracking events (from step-by-step execution)
+            if (eventType === 'fix_step_started') {
+                this.fixProgress.currentStep = event.current_step || 0;
+                this.fixProgress.totalSteps = event.total_steps || 0;
+                this.fixProgress.stepReason = event.step_reason || '';
+            }
+            if (eventType === 'fix_step_completed') {
+                // Move visual indicator to next step (current is now done)
+                this.fixProgress.currentStep = (event.current_step || 0) + 1;
+            }
+            if (eventType === 'fix_challenger_result' && event.message) {
+                const batchScoreMatch = event.message.match(/score:\s*(\d+)/);
+                if (batchScoreMatch) this.fixProgress.lastScore = parseInt(batchScoreMatch[1]);
+            }
+            if (eventType === 'fix_challenger_approved' && event.issue_ids) {
+                event.issue_ids.forEach(issueId => {
+                    if (this.fixProgress.issueStates[issueId]) {
+                        this.fixProgress.issueStates[issueId].status = 'completed';
+                        this.fixProgress.issueStates[issueId].score = this.fixProgress.lastScore;
+                    }
+                });
+            }
+            if (eventType === 'fix_batch_failed' && event.issue_ids) {
+                event.issue_ids.forEach(issueId => {
+                    if (this.fixProgress.issueStates[issueId]) this.fixProgress.issueStates[issueId].status = 'failed';
+                });
+            }
+            if (eventType === 'fix_session_completed') {
+                Object.keys(this.fixProgress.issueStates).forEach(id => {
+                    const state = this.fixProgress.issueStates[id];
+                    if (state.status !== 'failed') { state.status = 'completed'; state.score = this.fixProgress.lastScore; }
+                });
+            }
+            if (eventType === 'fix_session_error') {
+                Object.keys(this.fixProgress.issueStates).forEach(id => {
+                    if (this.fixProgress.issueStates[id].status === 'in_progress') this.fixProgress.issueStates[id].status = 'failed';
+                });
+            }
+            if (eventType === 'fix_billing_error') {
+                this.fixProgress.billingError = event.error || event.message || 'Credit balance is too low';
+                Object.keys(this.fixProgress.issueStates).forEach(id => {
+                    const state = this.fixProgress.issueStates[id];
+                    if (state.status === 'in_progress' || state.status === 'pending') state.status = 'failed';
+                });
+            }
+            if (eventType === 'fix_scope_violation_prompt') {
+                this.fixProgress.scopeViolation = { show: true, sessionId: event.session_id, dirs: event.scope_violation_dirs || [], responding: false };
+            }
+            if (eventType === 'fix_log' && event.message) {
+                const toastId = Date.now();
+                this.toasts.push({ id: toastId, level: event.log_level || 'INFO', message: event.message, timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}) });
+                setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== toastId); }, 3000);
+                if (this.toasts.length > 5) this.toasts = this.toasts.slice(-5);
+                return;
+            }
+            if (event.message) {
+                if (eventType === 'fix_issue_generating' || eventType === 'fix_challenger_evaluating') {
+                    this.fixProgress.streamingContent = '';
+                    this._streamingBuffer = '';
+                }
+                this.fixProgress.logs.push({
+                    type: eventType, message: event.message, timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
+                    icon: this.getEventIcon(eventType), color: this.getEventColor(eventType), quality_scores: event.quality_scores || null
+                });
+                if (this.fixProgress.logs.length > 30) this.fixProgress.logs = this.fixProgress.logs.slice(-30);
+            }
+        },
+
+        getEventIcon(type) {
+            const icons = { 'fix_session_started': '&#128640;', 'fix_step_started': '&#127937;', 'fix_step_completed': '&#9989;', 'fix_issue_generating': '&#128203;', 'fix_issue_streaming': '&#128295;', 'fix_challenger_evaluating': '&#129514;', 'fix_challenger_result': '&#128202;', 'fix_challenger_approved': '&#9989;', 'fix_batch_committed': '&#128190;', 'fix_batch_failed': '&#9888;', 'fix_regenerating': '&#128260;', 'fix_session_completed': '&#127881;', 'fix_session_error': '&#10060;', 'fix_billing_error': '&#128179;' };
+            return icons[type] || '&#128221;';
+        },
+
+        getEventColor(type) {
+            if (type === 'fix_billing_error') return 'text-orange-500';
+            if (type.includes('error') || type.includes('failed')) return 'text-red-500';
+            if (type.includes('approved') || type.includes('completed')) return 'text-green-500';
+            if (type.includes('step_')) return 'text-indigo-500';
+            if (type.includes('challenger')) return 'text-purple-500';
+            return 'text-gray-700 dark:text-gray-300';
+        },
+
+        closeFixModal() { if (!this.isFixing) this.showFixModal = false; },
+
+        async respondToScopeViolation(allow) {
+            const sv = this.fixProgress.scopeViolation;
+            if (!sv.sessionId || sv.responding) return;
+            sv.responding = true;
+            try {
+                const response = await fetch(`/api/fix/sessions/${sv.sessionId}/scope-response`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ allow })
+                });
+                if (response.ok) this.fixProgress.scopeViolation.show = false;
+            } catch (error) { console.error('[FIX] Error sending scope response:', error); }
+            sv.responding = false;
+        },
+
+        async runLintFix() {
+            if (!this.filters.repository_id || this.isAnalyzing) return;
+            this.isAnalyzing = true;
+            this.showLintModal = true;
+            this.lintProgress = { status: 'running', phase: '', message: `Avvio Lint+Fix (${this.lintFixCategory})...`, issuesFound: 0, issuesCreated: 0, error: null, logs: [] };
+            try {
+                const response = await fetch('/api/analysis/lint-fix', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repository_id: this.filters.repository_id, category: this.lintFixCategory })
+                });
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const text = decoder.decode(value);
+                    for (const line of text.split('\n')) {
+                        if (line.startsWith('data: ')) {
+                            try { this.handleLintFixEvent(JSON.parse(line.slice(6))); } catch (e) {}
+                        }
+                    }
+                }
+                if (this.lintProgress.status !== 'error') this.lintProgress.status = 'completed';
+            } catch (error) {
+                this.lintProgress.status = 'error';
+                this.lintProgress.error = error.message;
+            }
+            this.isAnalyzing = false;
+            await this.refresh();
+        },
+
+        handleLintFixEvent(data) {
+            if (data.message) {
+                this.lintProgress.message = data.message;
+                this.lintProgress.logs.push({ type: data.phase === 'error' ? 'error' : 'info', message: data.message, timestamp: new Date().toLocaleTimeString() });
+            }
+            if (data.total_fixed !== undefined) this.lintProgress.issuesCreated = data.total_fixed;
+            if (data.error) { this.lintProgress.status = 'error'; this.lintProgress.error = data.error; }
+            if (this.lintProgress.logs.length > 30) this.lintProgress.logs = this.lintProgress.logs.slice(-30);
+        },
+
+        closeLintModal() { if (!this.isAnalyzing) this.showLintModal = false; },
+
+        async handlePendingBranch(action) {
+            if (action === 'cancel') { this.showPendingBranchModal = false; this.pendingBranch = null; this.pendingFixRequest = null; return; }
+            this.pendingBranchLoading = true;
+            try {
+                if (action === 'open-pr') {
+                    const prRes = await fetch('/api/fix/open-pr', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ repository_id: this.pendingBranch.repository_id, branch_name: this.pendingBranch.branch_name, task_id: this.pendingBranch.task_id })
+                    });
+                    if (!prRes.ok) throw new Error((await prRes.json()).detail || 'Failed to create PR');
+                    const prResult = await prRes.json();
+                    window.open(prResult.pr_url, '_blank');
+                    this.showPendingBranchModal = false;
+                    this.pendingBranchLoading = false;
+                    this.pendingBranch = null;
+                    this.pendingFixRequest = null;
+                    return;
+                }
+                if (action === 'merge') {
+                    const mergeRes = await fetch('/api/fix/merge', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ repository_id: this.pendingBranch.repository_id, branch_name: this.pendingBranch.branch_name })
+                    });
+                    if (!mergeRes.ok) throw new Error((await mergeRes.json()).detail || 'Merge failed');
+                    await this.refresh();
+                }
+                this.showPendingBranchModal = false;
+                if (this.pendingFixRequest) {
+                    const firstIssue = this.features.find(i => i.id === this.pendingFixRequest.issue_ids[0]);
+                    if (firstIssue) {
+                        this.selectedFeatures = this.pendingFixRequest.issue_ids;
+                        // continue = usa branch esistente, new-branch/merge = crea nuovo branch
+                        const branchOptions = action === 'continue'
+                            ? { use_existing_branch: true, existing_branch_name: this.pendingBranch.branch_name }
+                            : null;
+                        // ALWAYS go through clarification phase (even on resume/continue)
+                        this.clarification.pendingRequest = { firstIssue, branchOptions };
+                        await this._startClarification(firstIssue);
+                    }
+                }
+            } catch (error) { alert('Errore: ' + error.message); }
+            finally { this.pendingBranchLoading = false; this.pendingBranch = null; this.pendingFixRequest = null; }
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            if (diffMins < 60) return `${diffMins}m fa`;
+            if (diffHours < 24) return `${diffHours}h fa`;
+            if (diffDays < 7) return `${diffDays}g fa`;
+            return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+        },
+
+        getAiIconClass(reviewer) {
+            if (!reviewer) return 'bg-gray-200 dark:bg-gray-700';
+            const r = reviewer.toLowerCase();
+            if (r.includes('gemini')) return 'ai-icon-gemini';
+            if (r.includes('grok')) return 'ai-icon-grok';
+            if (r.includes('claude')) return 'ai-icon-claude';
+            if (r.includes('openai') || r.includes('gpt')) return 'ai-icon-openai';
+            return 'bg-gray-200 dark:bg-gray-700';
+        },
+
+        // Group issues by file path, sorted by number of issues (descending)
+        getIssuesByFile() {
+            const byFile = {};
+            for (const issue of this.features) {
+                const file = feature.assignee_name || 'unknown';
+                if (!byFile[file]) byFile[file] = [];
+                byFile[file].push(issue);
+            }
+            // Sort by count descending
+            const sorted = Object.entries(byFile)
+                .sort((a, b) => b[1].length - a[1].length);
+            return Object.fromEntries(sorted);
+        },
+
+        // Select all issues from a file for batch fix - directly opens clarification popup
+        async createBatchFromFile(file, fileIssues) {
+            // Filter only fixable issues (open status)
+            const fixableIds = fileIssues
+                .filter(i => i.status === 'open')
+                .map(i => i.id);
+            if (fixableIds.length === 0) {
+                this.showToast('Nessuna issue open da fixare in questo file', 'warning');
+                return;
+            }
+            // Set selection
+            this.selectedFeatures = fixableIds;
+            this.fixNotes = '';
+
+            // Find first issue for repository/task info
+            const firstIssue = fileIssues.find(i => i.status === 'open');
+            if (!firstIssue || !firstIssue.repository_id || !firstIssue.task_id) {
+                this.showToast('Errore: Dati issue incompleti', 'error');
+                return;
+            }
+
+            // Store pending request
+            this.clarification.pendingRequest = {
+                firstIssue,
+                branchOptions: null,
+            };
+
+            // Check for pending branches first
+            try {
+                const pendingRes = await fetch(`/api/fix/pending-branches/${firstIssue.repository_id}`);
+                if (pendingRes.ok) {
+                    const pendingData = await pendingRes.json();
+                    if (pendingData.has_pending && pendingData.branches.length > 0) {
+                        this.pendingFixRequest = {
+                            repository_id: firstIssue.repository_id,
+                            task_id: firstIssue.task_id,
+                            issue_ids: [...this.selectedFeatures],
+                            user_notes: null,
+                        };
+                        this.pendingBranch = pendingData.branches[0];
+                        this.showPendingBranchModal = true;
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[FIX] Could not check pending branches:', e);
+            }
+
+            // Go directly to clarification popup
+            await this._startClarification(firstIssue);
+        },
+
+        quickIgnore(issue) {
+            this.ignoreIssue = issue;
+            this.ignoreReason = '';
+            this.showIgnoreModal = true;
+        },
+
+        async confirmIgnore() {
+            if (!this.ignoreIssue || this.ignoringIssue) return;
+            this.ignoringIssue = true;
+            try {
+                const body = { status: 'ignored' };
+                if (this.ignoreReason.trim()) {
+                    body.resolution_note = this.ignoreReason.trim();
+                }
+                const issueCode = this.ignoreIssue.issue_code;
+                const res = await fetch(`/api/features/${this.ignoreIssue.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                this.showIgnoreModal = false;
+                this.ignoreIssue = null;
+                this.ignoreReason = '';
+                await this.refresh();
+
+                // Show confirmation toast
+                const toastId = Date.now();
+                this.toasts.push({
+                    id: toastId,
+                    level: 'INFO',
+                    message: `Issue ${issueCode} ignored. Click "Ignored" filter to view.`,
+                    timestamp: new Date().toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit', second: '2-digit'})
+                });
+                setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== toastId); }, 5000);
+            } catch (e) {
+                TurboWrapError.handle('Ignore Issue', e, { issueId: this.ignoreIssue?.id });
+            }
+            this.ignoringIssue = false;
+        },
+
+        async quickMerge(issue) {
+            try {
+                const res = await fetch(`/api/features/${feature.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'merged' })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                feature.status = 'merged';
+                await this.refresh();
+            } catch (e) {
+                TurboWrapError.handle('Mark Issue Merged', e, { issueId: feature.id });
+            }
+        },
+
+        async quickReopen(issue) {
+            try {
+                const res = await fetch(`/api/features/${feature.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'open' })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail || `HTTP ${res.status}`);
+                feature.status = 'open';
+                await this.refresh();
+            } catch (e) {
+                TurboWrapError.handle('Reopen Issue', e, { issueId: feature.id });
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

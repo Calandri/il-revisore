@@ -27,6 +27,10 @@ class SettingsResponse(BaseModel):
     github_token: str | None = Field(default=None, description="GitHub token (masked)")
     github_token_set: bool = Field(default=False, description="Whether GitHub token is configured")
 
+    # Vercel Integration
+    vercel_token: str | None = Field(default=None, description="Vercel token (masked)")
+    vercel_token_set: bool = Field(default=False, description="Whether Vercel token is configured")
+
     # Linear Integration
     linear_api_key: str | None = Field(default=None, description="Linear API key (masked)")
     linear_api_key_set: bool = Field(
@@ -62,3 +66,9 @@ class ModelUpdate(BaseModel):
     """Request to update an AI model setting."""
 
     model: str = Field(..., min_length=1, description="Model name/ID")
+
+
+class VercelTokenUpdate(BaseModel):
+    """Request to update Vercel token."""
+
+    token: str = Field(..., min_length=1, description="Vercel access token")
