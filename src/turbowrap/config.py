@@ -211,6 +211,30 @@ class ThinkingSettings(BaseSettings):
     )
 
 
+class FixPlannerSettings(BaseSettings):
+    """Fix planner configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="TURBOWRAP_FIX_PLANNER_")
+
+    enable_subtasks: bool = Field(
+        default=False,
+        description="Enable sub-task splitting for multi-file issues. "
+        "When True, planner can split one issue into multiple parallel sub-agents.",
+    )
+    min_files_for_split: int = Field(
+        default=3,
+        ge=2,
+        le=10,
+        description="Minimum number of independent files to trigger a split",
+    )
+    max_subtasks_per_issue: int = Field(
+        default=5,
+        ge=2,
+        le=10,
+        description="Maximum number of sub-tasks per issue",
+    )
+
+
 class SelfReportSettings(BaseSettings):
     """Self-reporting configuration for TurboWrap errors."""
 
@@ -248,6 +272,7 @@ class Settings(BaseSettings):
     thinking: ThinkingSettings = Field(default_factory=ThinkingSettings)
     logs: LogsSettings = Field(default_factory=LogsSettings)
     self_report: SelfReportSettings = Field(default_factory=SelfReportSettings)
+    fix_planner: FixPlannerSettings = Field(default_factory=FixPlannerSettings)
 
     # Paths
     repos_dir: Path = Field(

@@ -494,14 +494,33 @@ class IssueTodo(BaseModel):
 
 
 class IssueEntry(BaseModel):
-    """Entry for a single issue in an execution step."""
+    """Entry for a single issue (or sub-task) in an execution step."""
 
-    code: str = Field(..., description="Issue code")
+    code: str = Field(..., description="Issue code (or sub-task code like BE-001-models)")
     todo_file: str = Field(..., description="Path to issue TODO file")
     agent_type: str = Field(
         default="fixer-single",
         description="Agent type: fixer-single | fixer-refactor | fixer-complex",
     )
+
+    # Sub-task fields (optional, for multi-file issue splitting)
+    parent_issue: str | None = Field(
+        default=None,
+        description="Parent issue code if this is a sub-task (e.g., BE-001 for BE-001-models)",
+    )
+    target_files: list[str] = Field(
+        default_factory=list,
+        description="Files this sub-agent is responsible for modifying",
+    )
+    subtask_index: int | None = Field(
+        default=None,
+        description="Sub-task index (1, 2, 3...) for ordering within parent issue",
+    )
+
+    @property
+    def is_subtask(self) -> bool:
+        """Check if this entry is a sub-task of a larger issue."""
+        return self.parent_issue is not None
 
 
 class ExecutionStep(BaseModel):

@@ -208,3 +208,103 @@ After reading files, your `issue_todos` MUST include:
   }
 }
 ```
+
+---
+
+## Sub-Task Splitting (Multi-Agent Mode)
+
+**NOTE**: This feature is controlled by configuration. The prompt will indicate if subtasks are enabled.
+
+When sub-task splitting is **ENABLED**, you can split a single issue into multiple parallel sub-agents.
+
+### When to Split an Issue
+
+Split an issue if it requires changes to **multiple INDEPENDENT files**:
+
+**Criteria for Splitting:**
+- Issue affects 3+ files in different modules/directories
+- Files can be modified independently (no cross-dependencies within the fix)
+- Each file change is self-contained and doesn't depend on other file changes
+
+**Do NOT Split if:**
+- Issue affects only 1-2 files
+- Files have tight dependencies (changes must be coordinated)
+- Changes are small (< 20 lines total across all files)
+- One file change requires reading the result of another file change
+
+### How to Create Sub-Tasks
+
+1. Create sub-task codes: `{issue_code}-{component}`
+2. Each sub-task gets its own `fix_todo_{code}.json` file
+3. All sub-tasks of the same parent go in the SAME step (parallel execution)
+4. Set `parent_issue` to the original issue code
+5. Set `target_files` to the files this sub-task modifies
+
+### Sub-Task Output Format
+
+```json
+{
+  "step": 1,
+  "issues": [
+    {
+      "code": "BE-001-models",
+      "parent_issue": "BE-001",
+      "target_files": ["src/models/user.py"],
+      "todo_file": "fix_todo_BE-001-models.json",
+      "agent_type": "fixer-single",
+      "subtask_index": 1
+    },
+    {
+      "code": "BE-001-routes",
+      "parent_issue": "BE-001",
+      "target_files": ["src/api/routes.py"],
+      "todo_file": "fix_todo_BE-001-routes.json",
+      "agent_type": "fixer-single",
+      "subtask_index": 2
+    },
+    {
+      "code": "BE-001-tests",
+      "parent_issue": "BE-001",
+      "target_files": ["tests/test_user.py"],
+      "todo_file": "fix_todo_BE-001-tests.json",
+      "agent_type": "fixer-single",
+      "subtask_index": 3
+    }
+  ],
+  "reason": "BE-001 split into 3 parallel sub-tasks (models, routes, tests)"
+}
+```
+
+### Sub-Task TODO File
+
+Each sub-task TODO file contains:
+- The sub-task code (e.g., `BE-001-models`)
+- Reference to parent issue ID
+- Only the files this sub-task is responsible for
+- Specific plan steps for this sub-task only
+
+```json
+{
+  "issue_code": "BE-001-models",
+  "parent_issue_code": "BE-001",
+  "issue_id": "uuid-of-parent-issue",
+  "file": "src/models/user.py",
+  "target_files": ["src/models/user.py"],
+  "title": "[Sub-task 1/3] Add validation to User model",
+  "plan": {
+    "approach": "patch",
+    "steps": [
+      "1. Read User model at src/models/user.py",
+      "2. Add email validation in __init__",
+      "3. Add unit test for validation"
+    ]
+  }
+}
+```
+
+### Rules for Sub-Tasks
+
+1. **Same step**: All sub-tasks of an issue run in parallel (same step)
+2. **No overlap**: Each sub-task owns specific files - no overlapping target_files
+3. **Independent**: Sub-tasks must not depend on each other's changes
+4. **Aggregate later**: Results will be merged back to parent issue by orchestrator

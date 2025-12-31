@@ -214,3 +214,69 @@ If a sub-agent fails:
 - Continue with remaining issues in the step
 - Continue with remaining steps
 - Mark failed issues with `"status": "failed"`
+
+---
+
+## Sub-Task Aggregation (Multi-Agent Mode)
+
+When the master_todo contains sub-tasks (entries with `parent_issue` field), you must aggregate their results back to the parent issue.
+
+### Detecting Sub-Tasks
+
+Sub-tasks have these fields in the master_todo:
+```json
+{
+  "code": "BE-001-models",
+  "parent_issue": "BE-001",      // <-- This indicates it's a sub-task
+  "target_files": ["src/models/user.py"],
+  "subtask_index": 1
+}
+```
+
+### Aggregation Rules
+
+1. **Collect all sub-task results** for each parent issue
+2. **Merge files_modified** into a single list
+3. **Concatenate changes_summary** from all sub-tasks
+4. **Compute aggregate status**:
+   - All `"fixed"` → parent is `"fixed"`
+   - Any `"failed"` → parent is `"failed"`
+   - Mix of `"fixed"` and `"skipped"` → parent is `"partial"`
+5. **Average confidence scores** across sub-tasks
+
+### Aggregated Output Format
+
+```json
+{
+  "issues": {
+    "BE-001": {
+      "status": "fixed",
+      "files_modified": [
+        "src/models/user.py",
+        "src/api/routes.py",
+        "tests/test_user.py"
+      ],
+      "changes_summary": "[models] Added validation. [routes] Updated endpoint. [tests] Added test cases.",
+      "self_evaluation": {
+        "confidence": 92,
+        "completeness": "full",
+        "risks": []
+      },
+      "subtasks": ["BE-001-models", "BE-001-routes", "BE-001-tests"]
+    }
+  },
+  "summary": {
+    "total": 1,
+    "fixed": 1,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+```
+
+### Important Notes
+
+- **Do NOT include sub-task codes** in the top-level `issues` object
+- Only include the **parent issue code** (e.g., `BE-001`, not `BE-001-models`)
+- The `subtasks` field lists which sub-tasks contributed to this result
+- If a parent has NO sub-tasks, treat it normally (single agent result)

@@ -142,9 +142,33 @@ class FixPlanService:
 
     def _build_planning_prompt(self, issues: list[Issue]) -> str:
         """Build the planning prompt for Claude."""
+        from turbowrap.config import get_settings
+
+        settings = get_settings()
         issues_text = self._format_issues(issues)
 
+        # Build subtasks configuration note
+        if settings.fix_planner.enable_subtasks:
+            subtasks_note = f"""
+## Sub-Task Splitting: ENABLED
+
+You MAY split issues into parallel sub-tasks if:
+- Issue affects {settings.fix_planner.min_files_for_split}+ independent files
+- Each file can be modified independently
+- Max {settings.fix_planner.max_subtasks_per_issue} sub-tasks per issue
+
+See "Sub-Task Splitting" section in your instructions for format.
+"""
+        else:
+            subtasks_note = """
+## Sub-Task Splitting: DISABLED
+
+Do NOT split issues into sub-tasks. Each issue = 1 agent.
+Use standard output format (no parent_issue or target_files fields).
+"""
+
         return f"""Proceed to the PLANNING phase.
+{subtasks_note}
 
 Issues to plan:
 
@@ -324,6 +348,10 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
                         code=ie.get("code", ""),
                         todo_file=ie.get("todo_file", f"fix_todo_{ie.get('code', '')}.json"),
                         agent_type=ie.get("agent_type", "fixer-single"),
+                        # Sub-task fields (optional, for multi-file splitting)
+                        parent_issue=ie.get("parent_issue"),
+                        target_files=ie.get("target_files", []),
+                        subtask_index=ie.get("subtask_index"),
                     )
                     for ie in step_data.get("issues", [])
                 ],

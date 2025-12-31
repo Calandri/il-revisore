@@ -336,6 +336,10 @@ class FixOrchestrator:
             return None
 
         fix_results = parse_llm_json(result.output) or {}
+
+        # Aggregate sub-task results back to parent issues (if any)
+        fix_results = self._aggregate_subtask_results(fix_results, pending_issues)
+
         self._log_fix_results(fix_results)
 
         # Evaluate with Gemini
@@ -360,10 +364,133 @@ class FixOrchestrator:
             for code, data in fix_results["issues"].items():
                 summary = data.get("changes_summary", "MISSING")
                 summary_preview = summary[:100] if summary else "MISSING"
+                subtasks = data.get("subtasks", [])
                 logger.info(
                     f"[FIX] Issue {code}: status={data.get('status')}, "
-                    f"changes_summary={summary_preview}"
+                    f"subtasks={subtasks}, changes_summary={summary_preview}"
                 )
+
+    def _aggregate_subtask_results(
+        self,
+        fix_results: dict[str, Any],
+        issues: list[Issue],
+    ) -> dict[str, Any]:
+        """Aggregate sub-task results back to parent issues.
+
+        If the fixer agent returned sub-task codes (e.g., BE-001-models),
+        this method aggregates them back to the parent issue (BE-001).
+
+        The fixer.md agent SHOULD already aggregate, but this is a fallback
+        in case it doesn't.
+        """
+        issues_data = fix_results.get("issues", {})
+        if not issues_data:
+            return fix_results
+
+        # Build mapping of parent issue codes for validation
+        valid_parent_codes = {str(issue.issue_code) for issue in issues if issue.issue_code}
+
+        # Separate parent results from orphan sub-task results
+        parent_results: dict[str, Any] = {}
+        orphan_subtasks: dict[str, list[tuple[str, Any]]] = defaultdict(list)
+
+        for code, data in issues_data.items():
+            # Check if this is already a parent result (has subtasks field or is a valid parent)
+            if data.get("subtasks") or code in valid_parent_codes:
+                parent_results[code] = data
+            else:
+                # This might be a sub-task code like BE-001-models
+                # Try to extract parent code by removing suffix
+                for valid_code in valid_parent_codes:
+                    if code.startswith(f"{valid_code}-"):
+                        orphan_subtasks[valid_code].append((code, data))
+                        break
+                else:
+                    # Not a sub-task, keep as-is (unknown issue code)
+                    parent_results[code] = data
+
+        # Aggregate orphan sub-tasks into their parents
+        for parent_code, subtask_list in orphan_subtasks.items():
+            if parent_code in parent_results:
+                # Parent already exists, merge subtasks info
+                existing = parent_results[parent_code]
+                existing_subtasks = existing.get("subtasks", [])
+                existing.setdefault("subtasks", existing_subtasks)
+                for subtask_code, _ in subtask_list:
+                    if subtask_code not in existing["subtasks"]:
+                        existing["subtasks"].append(subtask_code)
+            else:
+                # Need to aggregate from scratch
+                all_files = []
+                all_summaries = []
+                all_statuses = []
+                all_confidences = []
+                subtask_codes = []
+
+                for subtask_code, subtask_data in subtask_list:
+                    subtask_codes.append(subtask_code)
+
+                    # Collect files
+                    files = subtask_data.get("files_modified", [])
+                    if not files:
+                        file_mod = subtask_data.get("file_modified")
+                        if file_mod:
+                            files = [file_mod]
+                    all_files.extend(files)
+
+                    # Collect summary
+                    summary = subtask_data.get("changes_summary", "")
+                    if summary:
+                        # Add subtask label to summary
+                        suffix = subtask_code.replace(f"{parent_code}-", "")
+                        all_summaries.append(f"[{suffix}] {summary}")
+
+                    # Collect status
+                    status = subtask_data.get("status", "unknown")
+                    all_statuses.append(status)
+
+                    # Collect confidence
+                    self_eval = subtask_data.get("self_evaluation", {})
+                    if isinstance(self_eval, dict):
+                        conf = self_eval.get("confidence")
+                        if conf is not None:
+                            all_confidences.append(conf)
+
+                # Compute aggregate status
+                if all(s == "fixed" for s in all_statuses):
+                    agg_status = "fixed"
+                elif any(s == "failed" for s in all_statuses):
+                    agg_status = "failed"
+                elif any(s == "fixed" for s in all_statuses):
+                    agg_status = "partial"
+                else:
+                    agg_status = "skipped"
+
+                # Compute average confidence
+                avg_confidence = (
+                    int(sum(all_confidences) / len(all_confidences)) if all_confidences else None
+                )
+
+                parent_results[parent_code] = {
+                    "status": agg_status,
+                    "files_modified": list(set(all_files)),
+                    "changes_summary": " ".join(all_summaries),
+                    "self_evaluation": {
+                        "confidence": avg_confidence,
+                        "completeness": "full" if agg_status == "fixed" else "partial",
+                        "risks": [],
+                    },
+                    "subtasks": subtask_codes,
+                }
+
+        # Log aggregation if any happened
+        if orphan_subtasks:
+            logger.info(
+                f"[FIX] Aggregated {sum(len(v) for v in orphan_subtasks.values())} "
+                f"sub-tasks into {len(orphan_subtasks)} parent issues"
+            )
+
+        return {**fix_results, "issues": parent_results}
 
     async def _process_approved_issues(
         self,
@@ -388,13 +515,20 @@ class FixOrchestrator:
             issue_code = str(issue.issue_code)
             issue_data = fix_results.get("issues", {}).get(issue_code, {})
 
-            # Extract file_modified (handle singular from agent output)
-            file_modified = issue_data.get("file_modified")
-            files_modified = [file_modified] if file_modified else []
+            # Extract files_modified (handle both singular and plural forms)
+            # Plural form comes from aggregated sub-task results
+            files_modified = issue_data.get("files_modified", [])
+            if not files_modified:
+                # Fallback to singular form from single-agent output
+                file_modified = issue_data.get("file_modified")
+                files_modified = [file_modified] if file_modified else []
 
             # Extract self_evaluation.confidence → fix_self_score
             self_eval = issue_data.get("self_evaluation", {})
-            self_score = self_eval.get("confidence")
+            self_score = self_eval.get("confidence") if isinstance(self_eval, dict) else None
+
+            # Check if this was from aggregated sub-tasks
+            subtasks = issue_data.get("subtasks", [])
 
             all_results[issue_code] = IssueFixResult(
                 issue_id=str(issue.id),
@@ -407,6 +541,9 @@ class FixOrchestrator:
                 fix_self_score=self_score,
                 fix_gemini_score=gemini_scores.get(issue_code),
             )
+
+            if subtasks:
+                logger.info(f"[FIX] Issue {issue_code} aggregated from sub-tasks: {subtasks}")
 
     def _mark_remaining_failed(
         self,
