@@ -1119,6 +1119,17 @@ class FixOrchestrator:
                                 "false_positive": True,
                             }
                             group_successful.extend(batch)
+                            # BUGFIX: Also update per-issue status to SOLVED for false positives
+                            # Without this, issue_status_map stays IN_PROGRESS and issues
+                            # don't get marked as resolved in the database
+                            for issue in batch:
+                                code = str(issue.issue_code)
+                                group_issue_updates[code] = {
+                                    "status": "SOLVED",
+                                    "score": 100.0,
+                                    "false_positive": True,
+                                }
+                                logger.debug(f"[FIX] Marked false positive {code} as SOLVED")
                             await safe_emit(
                                 FixProgressEvent(
                                     type=FixEventType.FIX_ISSUE_STREAMING,
@@ -1726,17 +1737,21 @@ class FixOrchestrator:
 
                 # First, try to get commit_sha from per-issue status map (more reliable)
                 # This handles cases where issue was removed from batch during retry
-                issue_commit_sha = issue_status_map.get(issue_code, {}).get("commit_sha")
+                issue_status_data = issue_status_map.get(issue_code, {})
+                issue_commit_sha = issue_status_data.get("commit_sha")
 
                 issue_codes_for_msg = issue_code
-                is_false_positive = False
+                # Check issue_status_map first for false_positive (set in group_issue_updates)
+                is_false_positive = issue_status_data.get("false_positive", False)
 
                 # Fallback to batch_results for commit_sha and other metadata
                 for _batch_id, data in batch_results.items():
                     if issue in data.get("issues", []):
                         if not issue_commit_sha:
                             issue_commit_sha = data.get("commit_sha")
-                        is_false_positive = data.get("false_positive", False)
+                        # Also check batch for false_positive if not already set
+                        if not is_false_positive:
+                            is_false_positive = data.get("false_positive", False)
                         issue_codes_for_msg = ", ".join(
                             str(i.issue_code) for i in data.get("issues", [])
                         )
