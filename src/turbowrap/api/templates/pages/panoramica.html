@@ -24,6 +24,32 @@
 .task-failed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 .task-pending { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
 
+/* === GIT GRAPH === */
+.git-graph-line {
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+    letter-spacing: -0.5px;
+    line-height: 1.4;
+}
+.git-graph-line:hover {
+    background: rgba(99, 102, 241, 0.08);
+}
+.git-graph-char {
+    display: inline-block;
+    text-align: center;
+    min-width: 1ch;
+}
+.git-dot {
+    font-size: 1.1em;
+    text-shadow: 0 0 6px currentColor;
+}
+.git-dot-main { color: #22c55e; }
+.git-dot-fix { color: #f59e0b; }
+.git-dot-feature { color: #3b82f6; }
+.git-dot-merge { color: #a855f7; }
+.git-dot-default { color: #6366f1; }
+.git-line { color: #4b5563; opacity: 0.7; }
+.dark .git-line { color: #6b7280; }
+
 @keyframes pulse-indicator {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -170,44 +196,48 @@
 
                         <!-- Git Graph Lines (like git log --graph) -->
                         <template x-if="!loadingGitGraph">
-                            <div class="font-mono text-xs">
+                            <div class="text-xs">
                                 <template x-for="(line, idx) in gitGraph.lines" :key="idx">
-                                    <div class="flex items-center hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
-                                         :class="line.sha ? 'py-1' : 'py-0'">
-                                        <!-- Graph characters (ASCII art) -->
-                                        <div class="flex-shrink-0 whitespace-pre text-gray-400 dark:text-gray-500 select-none pl-2"
+                                    <div class="git-graph-line flex items-center transition-colors rounded-sm"
+                                         :class="line.sha ? 'py-1' : 'py-0.5'">
+                                        <!-- Graph characters (ASCII art) with colors -->
+                                        <div class="flex-shrink-0 whitespace-pre select-none pl-2"
                                              x-html="renderGraphChars(line.graph_chars, line)"></div>
 
                                         <!-- Commit info (only if this line has a commit) -->
                                         <template x-if="line.sha">
-                                            <div class="flex-1 flex items-center gap-2 min-w-0 pr-2">
-                                                <!-- SHA -->
-                                                <span class="text-indigo-600 dark:text-indigo-400 flex-shrink-0"
-                                                      x-text="line.short_sha"></span>
+                                            <div class="flex-1 flex items-center gap-2 min-w-0 pr-3 ml-1">
+                                                <!-- SHA with monospace -->
+                                                <code class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex-shrink-0"
+                                                      x-text="line.short_sha"></code>
 
                                                 <!-- Message -->
-                                                <span class="text-gray-900 dark:text-white truncate flex-1"
+                                                <span class="text-gray-700 dark:text-gray-200 truncate flex-1 text-[11px]"
                                                       x-text="line.message"></span>
 
                                                 <!-- Branch tag -->
                                                 <template x-if="line.branch">
-                                                    <span class="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+                                                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 border"
                                                           :class="{
-                                                              'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': line.branch === 'main' || line.branch === 'master',
-                                                              'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400': line.branch?.startsWith('fix/'),
-                                                              'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': line.branch?.startsWith('feature/') || line.branch?.startsWith('feat/'),
-                                                              'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400': !['main', 'master'].includes(line.branch) && !line.branch?.startsWith('fix/') && !line.branch?.startsWith('feature/') && !line.branch?.startsWith('feat/')
+                                                              'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800': line.branch === 'main' || line.branch === 'master',
+                                                              'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800': line.branch?.startsWith('fix/'),
+                                                              'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800': line.branch?.startsWith('feature/') || line.branch?.startsWith('feat/'),
+                                                              'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800': !['main', 'master'].includes(line.branch) && !line.branch?.startsWith('fix/') && !line.branch?.startsWith('feature/') && !line.branch?.startsWith('feat/')
                                                           }"
                                                           x-text="line.branch"></span>
                                                 </template>
 
                                                 <!-- Merge badge -->
                                                 <template x-if="line.is_merge">
-                                                    <span class="text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded flex-shrink-0">M</span>
+                                                    <span class="text-[9px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded-full flex-shrink-0 border border-purple-200 dark:border-purple-700">
+                                                        <svg class="w-2.5 h-2.5 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M8 7v10M16 7v10M8 12h8"/>
+                                                        </svg>
+                                                    </span>
                                                 </template>
 
                                                 <!-- Date -->
-                                                <span class="text-gray-400 dark:text-gray-500 flex-shrink-0"
+                                                <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0"
                                                       x-text="formatDate(line.date)"></span>
                                             </div>
                                         </template>
@@ -224,17 +254,22 @@
                     </div>
 
                     <!-- Footer: Legend -->
-                    <div class="px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center gap-3 text-[10px] text-gray-500">
-                        <div class="flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                    <div class="px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center gap-4 text-[10px] text-gray-500">
+                        <span class="text-gray-400 dark:text-gray-600">Legenda:</span>
+                        <div class="flex items-center gap-1.5">
+                            <span class="git-dot git-dot-main">●</span>
                             <span>main</span>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <div class="flex items-center gap-1.5">
+                            <span class="git-dot git-dot-fix">●</span>
                             <span>fix</span>
                         </div>
-                        <div class="flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                        <div class="flex items-center gap-1.5">
+                            <span class="git-dot git-dot-feature">●</span>
+                            <span>feature</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="git-dot git-dot-merge">●</span>
                             <span>merge</span>
                         </div>
                     </div>
@@ -497,36 +532,38 @@ function panoramicaApp() {
         },
 
         renderGraphChars(graphChars, line) {
-            // Render ASCII graph characters with colors
-            // * = commit point, | = branch line, / \ = merge/branch lines
+            // Convert ASCII graph chars to styled HTML with colors
             if (!graphChars) return '';
 
-            // Color scheme for different elements
-            const colors = {
-                commit: line.branch === 'main' || line.branch === 'master'
-                    ? 'text-green-500'
-                    : line.branch?.startsWith('fix/')
-                        ? 'text-amber-500'
-                        : line.is_merge
-                            ? 'text-purple-500'
-                            : 'text-indigo-500',
-                line: 'text-gray-400 dark:text-gray-600',
-                merge: 'text-purple-500'
-            };
+            // Determine dot color class based on branch/merge
+            let dotClass = 'git-dot-default';
+            if (line?.branch === 'main' || line?.branch === 'master') {
+                dotClass = 'git-dot-main';
+            } else if (line?.branch?.startsWith('fix/')) {
+                dotClass = 'git-dot-fix';
+            } else if (line?.branch?.startsWith('feature/') || line?.branch?.startsWith('feat/')) {
+                dotClass = 'git-dot-feature';
+            } else if (line?.is_merge) {
+                dotClass = 'git-dot-merge';
+            }
 
-            // Replace characters with colored spans
-            let result = graphChars
-                // Commit points
-                .replace(/\*/g, `<span class="${colors.commit} font-bold">●</span>`)
-                // Merge/branch indicators
-                .replace(/\\/g, `<span class="${colors.merge}">╲</span>`)
-                .replace(/\//g, `<span class="${colors.merge}">╱</span>`)
-                // Vertical lines
-                .replace(/\|/g, `<span class="${colors.line}">│</span>`)
-                // Horizontal lines and dashes
-                .replace(/-/g, `<span class="${colors.line}">─</span>`)
-                .replace(/_/g, `<span class="${colors.line}">─</span>`);
-
+            let result = '';
+            for (const char of graphChars) {
+                if (char === '*') {
+                    // Commit dot - colored based on branch
+                    result += `<span class="git-dot ${dotClass}">●</span>`;
+                } else if (char === '|') {
+                    result += `<span class="git-line">│</span>`;
+                } else if (char === '\\') {
+                    result += `<span class="git-line">╲</span>`;
+                } else if (char === '/') {
+                    result += `<span class="git-line">╱</span>`;
+                } else if (char === '-' || char === '_') {
+                    result += `<span class="git-line">─</span>`;
+                } else {
+                    result += char; // Keep spaces as-is
+                }
+            }
             return result;
         }
     };
