@@ -641,13 +641,45 @@ Respond ONLY with valid JSON:
                     )
                 )
 
+    ready_to_fix = data.get("ready_to_fix", False)
+
+    # Save clarifications to issues when ready to fix
+    if ready_to_fix and request.answers and request.previous_questions:
+        from datetime import datetime, timezone
+
+        # Build clarification records from Q&A
+        clarification_records = []
+        for q in request.previous_questions:
+            if q.id in request.answers:
+                clarification_records.append(
+                    {
+                        "question_id": q.id,
+                        "question": q.question,
+                        "context": q.context,
+                        "answer": request.answers[q.id],
+                        "asked_at": datetime.now(timezone.utc).isoformat(),
+                        "answered_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+
+        # Save to each issue
+        if clarification_records:
+            for issue in issues:
+                existing = issue.clarifications or []
+                issue.clarifications = existing + clarification_records
+            db.commit()
+            logger.info(
+                f"[CLARIFY] Saved {len(clarification_records)} clarifications "
+                f"to {len(issues)} issues"
+            )
+
     return PreFixClarifyResponse(
         has_questions=data.get("has_questions", False),
         questions=questions,
         questions_by_issue=questions_by_issue,
         message=data.get("message", ""),
         session_id=result.session_id,  # Return Claude session ID for resume
-        ready_to_fix=data.get("ready_to_fix", False),
+        ready_to_fix=ready_to_fix,
     )
 
 

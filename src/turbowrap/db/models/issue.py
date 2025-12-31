@@ -61,6 +61,10 @@ class Issue(Base, SoftDeleteMixin):
     # Discussion (Linear-style comments)
     comments = Column(JSON, nullable=True)  # [{id, author, content, created_at, type}]
 
+    # Clarifier Q&A (saved for future fixes)
+    # Format: [{"question_id": "q1", "question": "...", "context": "...", "answer": "...", "asked_at": "...", "answered_at": "..."}]
+    clarifications = Column(JSON, nullable=True)
+
     # Workload estimation (populated by reviewer agent)
     estimated_effort = Column(Integer, nullable=True)  # 1-5 scale (1=trivial, 5=major refactor)
     estimated_files_count = Column(Integer, nullable=True)  # Number of files to modify
