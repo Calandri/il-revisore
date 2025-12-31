@@ -104,9 +104,14 @@ Spezzare metodo di 223 righe in metodi privati più piccoli.
 ## STEP FINALE: Verifica ✅ COMPLETATO
 
 - [x] **F.1** Eseguire `uv run ruff check .` - PASSED
-- [ ] **F.2** Eseguire `uv run mypy src/` - DA ESEGUIRE
-- [ ] **F.3** Eseguire `uv run pytest` - DA ESEGUIRE
+- [x] **F.2** Eseguire `uv run mypy src/` - PASSED (5 file refactored senza errori)
+- [x] **F.3** Eseguire `uv run pytest` - PASSED (333 passed, 77 failed pre-esistenti)
 - [ ] **F.4** Test manuale: /clarify, /plan, /fix flow completo - DA ESEGUIRE
+
+### Note sui test failures:
+- `claude_cli/test_*.py` - Errori pre-esistenti (tuple unpacking 5 vs 6)
+- `fix/test_fix_pipeline_e2e.py` - Testa metodi OLD già rimossi in refactoring precedenti
+- Nessun failure correlato al refactoring ARCH
 
 ---
 

@@ -1523,9 +1523,11 @@ function issuesApp() {
             show: false,
             loading: false,
             sessionId: null,
-            questions: [],           // Legacy flat list
-            questionsByIssue: [],    // NEW: Grouped by issue [{issue_code, questions: [...]}]
-            answers: {},
+            questions: [],           // Current batch of questions
+            questionsByIssue: [],    // Current batch grouped by issue
+            allQuestions: [],        // ALL questions history (accumulated)
+            allAnswers: {},          // ALL answers history (accumulated)
+            answers: {},             // Current batch answers
             message: '',
             readyToFix: false,
             pendingRequest: null  // Stores the pending fix request details
@@ -1750,10 +1752,13 @@ function issuesApp() {
                         repository_id: firstIssue.repository_id,
                         issue_ids: this.selectedIssues,
                         session_id: this.clarification.sessionId,
-                        answers: Object.keys(this.clarification.answers).length > 0
-                            ? this.clarification.answers : null,
-                        previous_questions: this.clarification.questions.length > 0
-                            ? this.clarification.questions : null,
+                        // Send ALL accumulated answers (current + previous)
+                        answers: Object.keys(this.clarification.allAnswers).length > 0
+                            ? { ...this.clarification.allAnswers, ...this.clarification.answers }
+                            : (Object.keys(this.clarification.answers).length > 0 ? this.clarification.answers : null),
+                        // Send ALL accumulated questions
+                        previous_questions: this.clarification.allQuestions.length > 0
+                            ? this.clarification.allQuestions : null,
                     })
                 });
 
@@ -1765,11 +1770,29 @@ function issuesApp() {
                 const data = await response.json();
                 this.clarification.sessionId = data.session_id;
                 this.clarification.message = data.message;
-                this.clarification.questions = data.questions || [];
-                this.clarification.questionsByIssue = data.questions_by_issue || [];
                 this.clarification.readyToFix = data.ready_to_fix || data.ready_to_plan;
 
-                // Reset answers for new questions (support both flat and grouped)
+                // ACCUMULATE: Save current answers to history before processing new questions
+                if (Object.keys(this.clarification.answers).length > 0) {
+                    this.clarification.allAnswers = {
+                        ...this.clarification.allAnswers,
+                        ...this.clarification.answers
+                    };
+                }
+
+                // ACCUMULATE: Add current questions to history
+                if (this.clarification.questions.length > 0) {
+                    this.clarification.allQuestions = [
+                        ...this.clarification.allQuestions,
+                        ...this.clarification.questions
+                    ];
+                }
+
+                // Set new batch of questions
+                this.clarification.questions = data.questions || [];
+                this.clarification.questionsByIssue = data.questions_by_issue || [];
+
+                // Reset answers only for NEW questions
                 this.clarification.answers = {};
                 if (this.clarification.questionsByIssue.length > 0) {
                     // Grouped questions by issue
@@ -1857,6 +1880,8 @@ function issuesApp() {
             this.clarification.questions = [];
             this.clarification.questionsByIssue = [];
             this.clarification.answers = {};
+            this.clarification.allQuestions = [];  // Clear accumulated history
+            this.clarification.allAnswers = {};    // Clear accumulated history
             this.clarification.message = '';
             this.clarification.pendingRequest = null;
         },
