@@ -72,7 +72,7 @@ def generate_branch_name(issues: list[Issue], prefix: str = "fix") -> str:
     if not issues:
         return f"{prefix}/{uuid.uuid4().hex[:12]}"
 
-    first_title = issues[0].title if issues[0].title else ""
+    first_title = str(issues[0].title) if issues[0].title else ""
     slug = re.sub(r"^\[?\w{2,4}\]?\s*:?\s*", "", first_title, flags=re.IGNORECASE)
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", slug.lower())
     slug = re.sub(r"-+", "-", slug).strip("-")
@@ -547,7 +547,7 @@ class FixOrchestrator:
     def _get_code_snippet(self, issue: Issue, context_lines: int = 5) -> str:
         """Extract code snippet from file around the issue location."""
         if issue.current_code:
-            return issue.current_code
+            return str(issue.current_code)
 
         if not issue.line or not issue.file:
             return ""
@@ -560,7 +560,7 @@ class FixOrchestrator:
             with open(file_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
 
-            issue_line = issue.line
+            issue_line = int(issue.line) if issue.line else 1
             issue_end_line = int(issue.end_line) if issue.end_line else issue_line
             start_line = max(1, issue_line - context_lines)
             end_line = min(len(lines), issue_end_line + context_lines)

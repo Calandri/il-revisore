@@ -960,7 +960,7 @@ async def merge_and_push(
         context_id=f"merge-{request.branch_name}-{datetime.now().strftime('%H%M%S')}",
         # Explicit tracking parameters
         operation_type="git_merge",
-        repo_name=repo.name,
+        repo_name=str(repo.name) if repo.name else "unknown",
     )
 
     logger.info(f"[MERGE] Completed: success={result.success}")

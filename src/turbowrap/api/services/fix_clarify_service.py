@@ -120,8 +120,8 @@ class FixClarifyService:
         """Mark issues as IN_PROGRESS on first call."""
         for issue in issues:
             if issue.status == IssueStatus.OPEN.value:
-                issue.status = IssueStatus.IN_PROGRESS.value
-                issue.phase_started_at = datetime.now(timezone.utc)
+                issue.status = IssueStatus.IN_PROGRESS.value  # type: ignore[assignment]
+                issue.phase_started_at = datetime.now(timezone.utc)  # type: ignore[assignment]
         self.db.commit()
         logger.info(f"[CLARIFY] Marked {len(issues)} issues as IN_PROGRESS")
 
@@ -211,7 +211,7 @@ Respond ONLY with valid JSON:
         result = await cli.run(
             prompt=prompt,
             operation_type="fix_clarification",
-            repo_name=self.repo.name or "unknown",
+            repo_name=str(self.repo.name) if self.repo.name else "unknown",
             resume_session_id=session_id,
             operation_details={
                 "issue_codes": [i.issue_code for i in issues if i.issue_code],
@@ -317,8 +317,8 @@ Respond ONLY with valid JSON:
 
         if clarification_records:
             for issue in issues:
-                existing = issue.clarifications or []
-                issue.clarifications = existing + clarification_records
+                existing: list[Any] = list(issue.clarifications or [])
+                issue.clarifications = existing + clarification_records  # type: ignore[assignment]
             self.db.commit()
             logger.info(
                 f"[CLARIFY] Saved {len(clarification_records)} clarifications "
