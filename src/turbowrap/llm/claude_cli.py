@@ -765,7 +765,13 @@ class ClaudeCLI(OperationTrackingMixin):
             await stderr_task
 
             logger.info("[CLAUDE CLI] Waiting for process to exit...")
-            await process.wait()
+            # Wait for process with timeout (30s should be enough after output is done)
+            try:
+                await asyncio.wait_for(process.wait(), timeout=30.0)
+            except asyncio.TimeoutError:
+                logger.error("[CLAUDE CLI] Process wait timeout after 30s, killing")
+                process.kill()
+                return None, [], None, None, "Process wait timeout", session_id, set(), 0
             logger.info(f"[CLAUDE CLI] Process exited with code {process.returncode}")
 
             stderr_text = "".join(stderr_chunks)

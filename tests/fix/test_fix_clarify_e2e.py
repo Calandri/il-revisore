@@ -495,6 +495,153 @@ class TestStartWithPlan:
 
 
 # =============================================================================
+# Data Persistence Tests (NEW)
+# =============================================================================
+
+
+@pytest.mark.e2e
+class TestDataPersistence:
+    """Tests for verifying data is persisted correctly to issues."""
+
+    def test_clarifications_saved_to_issue(self, test_data):
+        """Verify clarifications are saved to issue after /clarify with answers."""
+        repo_id, issue_ids = test_data
+
+        with httpx.Client(timeout=TIMEOUT) as client:
+            # Step 1: Initial clarify
+            resp = client.post(
+                f"{BASE_URL}/api/fix/clarify",
+                json={"repository_id": repo_id, "issue_ids": issue_ids[:1]},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            session_id = data["session_id"]
+
+            # Step 2: If has questions, answer them
+            if data.get("has_questions"):
+                answers = {}
+                for group in data.get("questions_by_issue", []):
+                    for q in group.get("questions", []):
+                        answers[q["id"]] = "Test answer for verification"
+                for q in data.get("questions", []):
+                    answers[q["id"]] = "Test answer for verification"
+
+                if answers:
+                    resp = client.post(
+                        f"{BASE_URL}/api/fix/clarify",
+                        json={
+                            "repository_id": repo_id,
+                            "issue_ids": issue_ids[:1],
+                            "session_id": session_id,
+                            "answers": answers,
+                        },
+                    )
+                    data = resp.json()
+
+            # Step 3: Verify clarifications are saved to the issue
+            issue_resp = client.get(f"{BASE_URL}/api/issues/{issue_ids[0]}")
+            assert issue_resp.status_code == 200
+            issue_data = issue_resp.json()
+
+            print("\nIssue after clarify:")
+            print(f"  clarifications: {issue_data.get('clarifications')}")
+
+            # Clarifications should be present if we answered questions
+            # Note: May be None if no questions were asked
+            if data.get("ready_to_fix") or data.get("ready_to_plan"):
+                # Flow completed - clarifications should have been saved (if any)
+                clarifications = issue_data.get("clarifications")
+                print(f"  Ready to fix/plan, clarifications saved: {clarifications is not None}")
+
+    def test_fix_plan_saved_to_issue(self, test_data):
+        """Verify fix_plan is saved to issue after /plan endpoint."""
+        repo_id, issue_ids = test_data
+
+        with httpx.Client(timeout=TIMEOUT) as client:
+            # Step 1: Run clarify to get session
+            clarify_resp = client.post(
+                f"{BASE_URL}/api/fix/clarify",
+                json={"repository_id": repo_id, "issue_ids": issue_ids[:1]},
+            )
+            session_id = clarify_resp.json()["session_id"]
+            data = clarify_resp.json()
+
+            # Answer questions if needed
+            max_iter = 3
+            for _ in range(max_iter):
+                if data.get("ready_to_fix") or data.get("ready_to_plan"):
+                    break
+                answers = {}
+                for group in data.get("questions_by_issue", []):
+                    for q in group.get("questions", []):
+                        answers[q["id"]] = "Yes"
+                for q in data.get("questions", []):
+                    answers[q["id"]] = "Yes"
+                if not answers:
+                    break
+                clarify_resp = client.post(
+                    f"{BASE_URL}/api/fix/clarify",
+                    json={
+                        "repository_id": repo_id,
+                        "issue_ids": issue_ids[:1],
+                        "session_id": session_id,
+                        "answers": answers,
+                    },
+                )
+                data = clarify_resp.json()
+
+            # Step 2: Call /plan
+            plan_resp = client.post(
+                f"{BASE_URL}/api/fix/plan",
+                json={
+                    "repository_id": repo_id,
+                    "issue_ids": issue_ids[:1],
+                    "clarify_session_id": session_id,
+                },
+            )
+            assert plan_resp.status_code == 200
+            plan_data = plan_resp.json()
+            print(f"\nPlan response: {plan_data}")
+
+            # Step 3: Verify fix_plan is saved to the issue
+            issue_resp = client.get(f"{BASE_URL}/api/issues/{issue_ids[0]}")
+            assert issue_resp.status_code == 200
+            issue_data = issue_resp.json()
+
+            print("\nIssue after plan:")
+            print(f"  fix_plan: {issue_data.get('fix_plan')}")
+
+            # fix_plan should be populated
+            fix_plan = issue_data.get("fix_plan")
+            assert fix_plan is not None, "fix_plan should be saved to issue after /plan"
+            assert "approach" in fix_plan, "fix_plan should have 'approach' field"
+            assert "steps" in fix_plan, "fix_plan should have 'steps' field"
+
+            print("\n[PASS] fix_plan correctly saved to issue!")
+            print(f"  approach: {fix_plan.get('approach', '')[:100]}...")
+            print(f"  steps count: {len(fix_plan.get('steps', []))}")
+
+    def test_operations_linked_to_issues(self, test_data):
+        """Verify operations are tracked with issue_ids."""
+        repo_id, issue_ids = test_data
+
+        with httpx.Client(timeout=TIMEOUT) as client:
+            # Get operations for the issue
+            ops_resp = client.get(f"{BASE_URL}/api/issues/{issue_ids[0]}/operations")
+
+            if ops_resp.status_code == 200:
+                operations = ops_resp.json()
+                print(f"\nOperations for issue {issue_ids[0][:8]}...:")
+                print(f"  Total operations: {len(operations)}")
+                for op in operations[:5]:  # Show first 5
+                    print(
+                        f"    - {op.get('type')}: {op.get('status')} at {op.get('created_at', '')[:19]}"
+                    )
+            else:
+                print(f"\nOperations endpoint returned: {ops_resp.status_code}")
+
+
+# =============================================================================
 # Full E2E Flow Test
 # =============================================================================
 

@@ -105,9 +105,16 @@ class FixOrchestrator:
         self.repo_path = repo_path
         self.settings = get_settings()
         self.satisfaction_threshold = self.settings.fix_challenger.satisfaction_threshold
-        # S3 for fix log storage
-        self.s3_client = boto3.client("s3")
+        # S3 for fix log storage (lazy loaded)
+        self._s3_client: Any | None = None
         self.s3_bucket = self.settings.s3_bucket
+
+    @property
+    def s3_client(self) -> Any:
+        """Lazy load S3 client."""
+        if self._s3_client is None:
+            self._s3_client = boto3.client("s3")
+        return self._s3_client
 
     async def fix_issues(
         self,
@@ -667,8 +674,9 @@ The following issues failed Gemini validation. Please fix them based on the feed
     ) -> str | None:
         """Commit approved fixes."""
         try:
-            # Get modified files from git
-            result = subprocess.run(
+            # Get modified files from git (non-blocking)
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["git", "status", "--porcelain"],
                 cwd=self.repo_path,
                 capture_output=True,
@@ -679,8 +687,9 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 logger.info("[FIX] No changes to commit")
                 return None
 
-            # Stage all changes
-            subprocess.run(
+            # Stage all changes (non-blocking)
+            await asyncio.to_thread(
+                subprocess.run,
                 ["git", "add", "-A"],
                 cwd=self.repo_path,
                 check=True,
@@ -695,8 +704,9 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 if len(issue_codes) > 3:
                     commit_msg += f" and {len(issue_codes) - 3} more"
 
-            # Commit
-            result = subprocess.run(
+            # Commit (non-blocking)
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["git", "commit", "-m", commit_msg],
                 cwd=self.repo_path,
                 capture_output=True,
@@ -707,8 +717,9 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 logger.error(f"[FIX] Commit failed: {result.stderr}")
                 return None
 
-            # Get commit SHA
-            result = subprocess.run(
+            # Get commit SHA (non-blocking)
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["git", "rev-parse", "HEAD"],
                 cwd=self.repo_path,
                 capture_output=True,
@@ -851,14 +862,14 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 "gemini_feedback": gemini_feedback[:3000] if gemini_feedback else None,
             }
 
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.s3_client.put_object(
-                    Bucket=self.s3_bucket,
-                    Key=s3_key,
-                    Body=json.dumps(log_data, indent=2, default=str).encode("utf-8"),
-                    ContentType="application/json",
-                ),
+            # Prepare body outside of thread call
+            body = json.dumps(log_data, indent=2, default=str).encode("utf-8")
+            await asyncio.to_thread(
+                self.s3_client.put_object,
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=body,
+                ContentType="application/json",
             )
 
             s3_url = f"s3://{self.s3_bucket}/{s3_key}"

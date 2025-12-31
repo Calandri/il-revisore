@@ -244,7 +244,13 @@ class GeminiFixChallenger(OperationTrackingMixin):
                 process.kill()
                 return None
 
-            await process.wait()
+            # Wait for process with timeout (30s should be enough after output is done)
+            try:
+                await asyncio.wait_for(process.wait(), timeout=30.0)
+            except asyncio.TimeoutError:
+                logger.error("[FIX CHALLENGER] Process wait timeout after 30s, killing")
+                process.kill()
+                return None
 
             if process.returncode != 0:
                 if process.stderr is not None:

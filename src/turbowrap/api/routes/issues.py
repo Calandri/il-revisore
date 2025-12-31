@@ -97,6 +97,16 @@ class IssueResponse(BaseModel):
     estimated_effort: int | None = None  # 1-5 scale (1=trivial, 5=major)
     estimated_files_count: int | None = None
 
+    # Fix scores (populated by fixer and challenger)
+    fix_self_score: int | None = None  # Fixer's self-confidence (0-100)
+    fix_gemini_score: int | None = None  # Challenger's satisfaction score (0-100)
+
+    # Clarifications (populated during clarify phase)
+    clarifications: list[Any] | None = None  # Q&A from clarify phase
+
+    # Fix plan (populated during plan phase)
+    fix_plan: dict[str, Any] | None = None  # {"approach": "...", "steps": [...], ...}
+
     class Config:
         from_attributes = True
 
