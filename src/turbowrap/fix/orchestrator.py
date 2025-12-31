@@ -1343,6 +1343,21 @@ class FixOrchestrator:
                                     # All issue status updates now happen atomically at the end
                                     # via update_issue_statuses() in fix_session_service.py
 
+                                    # Propagate commit_sha to SOLVED issues in per-issue status map
+                                    # This ensures issues keep their commit_sha even if removed from batch
+                                    for issue in batch:
+                                        code = str(issue.issue_code)
+                                        if (
+                                            group_issue_updates.get(code, {}).get("status")
+                                            == "SOLVED"
+                                        ):
+                                            group_issue_updates[code]["commit_sha"] = (
+                                                batch_commit_sha
+                                            )
+                                            logger.debug(
+                                                f"[FIX] Propagated commit_sha to SOLVED issue {code}"
+                                            )
+
                                     await emit_log(
                                         "INFO",
                                         f"{batch_id} committed: {batch_commit_sha[:7] if batch_commit_sha else 'unknown'}",
@@ -1541,10 +1556,26 @@ class FixOrchestrator:
                 uncommitted = await self._get_uncommitted_files()
                 if not uncommitted:
                     # Files might have been committed in a previous partial commit
-                    logger.info(
-                        f"[FIX] {batch_id}: {len(solved_in_failed_batch)} SOLVED issues "
-                        "but no uncommitted files"
-                    )
+                    # Get the commit_sha from the most recent commit so issues get marked RESOLVED
+                    commit_sha, modified_files, _ = await self._get_git_info()
+                    if commit_sha:
+                        batch_data["commit_sha"] = commit_sha
+                        batch_data["modified_files"] = modified_files
+                        # Propagate commit_sha to per-issue status map for SOLVED issues
+                        for issue in solved_in_failed_batch:
+                            code = str(issue.issue_code)
+                            if code in issue_status_map:
+                                issue_status_map[code]["commit_sha"] = commit_sha
+                                logger.debug(f"[FIX] Propagated commit_sha to SOLVED issue {code}")
+                        logger.info(
+                            f"[FIX] {batch_id}: {len(solved_in_failed_batch)} SOLVED issues "
+                            f"already committed ({commit_sha[:7]})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[FIX] {batch_id}: {len(solved_in_failed_batch)} SOLVED issues "
+                            "but no uncommitted files and no commit found"
+                        )
                     # Still mark them as successful since they were SOLVED
                     for issue in solved_in_failed_batch:
                         if issue not in successful_issues:
@@ -1586,6 +1617,13 @@ class FixOrchestrator:
                         batch_data["passed"] = (
                             True  # Mark as passed now that SOLVED issues committed
                         )
+
+                        # Propagate commit_sha to per-issue status map for SOLVED issues
+                        for issue in solved_in_failed_batch:
+                            code = str(issue.issue_code)
+                            if code in issue_status_map:
+                                issue_status_map[code]["commit_sha"] = commit_sha
+                                logger.debug(f"[FIX] Propagated commit_sha to SOLVED issue {code}")
 
                         await emit_log(
                             "INFO",
@@ -1686,17 +1724,38 @@ class FixOrchestrator:
                 issue_code = str(issue.issue_code)
                 fix_code = await self._get_diff_for_file(issue_file)
 
-                issue_commit_sha = None
+                # First, try to get commit_sha from per-issue status map (more reliable)
+                # This handles cases where issue was removed from batch during retry
+                issue_commit_sha = issue_status_map.get(issue_code, {}).get("commit_sha")
+
                 issue_codes_for_msg = issue_code
                 is_false_positive = False
+
+                # Fallback to batch_results for commit_sha and other metadata
                 for _batch_id, data in batch_results.items():
                     if issue in data.get("issues", []):
-                        issue_commit_sha = data.get("commit_sha")
+                        if not issue_commit_sha:
+                            issue_commit_sha = data.get("commit_sha")
                         is_false_positive = data.get("false_positive", False)
                         issue_codes_for_msg = ", ".join(
                             str(i.issue_code) for i in data.get("issues", [])
                         )
                         break
+
+                # Last resort: if SOLVED but still no commit_sha, get from git HEAD
+                # This handles the case where issue was SOLVED in iteration 1, removed from batch,
+                # and a later iteration committed without including this issue
+                if not issue_commit_sha and not is_false_positive:
+                    git_commit_sha, _, _ = await self._get_git_info()
+                    if git_commit_sha:
+                        issue_commit_sha = git_commit_sha
+                        # Also update the status map for consistency
+                        if issue_code in issue_status_map:
+                            issue_status_map[issue_code]["commit_sha"] = git_commit_sha
+                        logger.warning(
+                            f"[FIX] Issue {issue_code} SOLVED but no commit_sha, "
+                            f"using git HEAD: {git_commit_sha[:7]}"
+                        )
 
                 # Use per-issue data from Claude fixer if available
                 issue_fix_data = claude_fix_data.get(issue_code, {})

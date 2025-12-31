@@ -1184,3 +1184,48 @@ Event-stream con: progress, log, error, done
 <div x-data="{ open: false }"
      @htmx:after-settle="open = true">
 ```
+
+---
+
+## 11. CLI TASKS E S3 STORAGE
+
+I log delle esecuzioni CLI (Claude/Gemini) sono salvati su **S3 bucket `turbowrap-thinking`**.
+
+### Struttura S3
+```
+turbowrap-thinking/
+├── claude-cli/YYYY/MM/DD/HHMMSS/
+│   ├── {agent}_prompt.md           # Prompt inviato
+│   ├── {agent}_output.jsonl        # Output raw (JSON lines)
+│   ├── {agent}_output_readable.md  # Output human-readable
+│   └── {agent}_thinking.md         # Extended thinking (se abilitato)
+└── gemini-cli/YYYY/MM/DD/HHMMSS/
+    └── (stessa struttura)
+```
+
+### Comandi AWS utili
+```bash
+# Lista sessioni di oggi
+aws s3 ls s3://turbowrap-thinking/claude-cli/2025/12/31/ --recursive
+
+# Leggi output di una sessione
+aws s3 cp s3://turbowrap-thinking/claude-cli/2025/12/31/231400/linear_question_generator_output_readable.md -
+
+# Cerca per contenuto (scarica e grep)
+aws s3 cp s3://turbowrap-thinking/claude-cli/2025/12/31/ /tmp/logs/ --recursive
+grep -r "session_id" /tmp/logs/
+```
+
+### Formato output.jsonl
+Il file `*_output.jsonl` contiene eventi streaming:
+- `{"type": "system", "subtype": "init", "session_id": "..."}` - Inizio sessione
+- `{"type": "assistant", "message": "..."}` - Risposta AI
+- `{"type": "result", "tokens_in": N, "tokens_out": M}` - Token usage
+
+### Agent comuni
+| Agent | Scopo |
+|-------|-------|
+| `linear_question_generator` | Genera domande per Linear issue |
+| `fixer_single` | Fix singola issue |
+| `fix_challenger` | Valida fix (Gemini) |
+| `reviewer_be_quality` | Review qualità backend |
