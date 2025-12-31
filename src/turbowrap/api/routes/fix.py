@@ -962,6 +962,20 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
         todo_manager = TodoManager(session_id)
         paths = await todo_manager.save_all(master_todo, issue_todos)
 
+        # Save plan to each issue in database
+        for issue_todo in issue_todos:
+            issue = issue_code_map.get(issue_todo.issue_code)
+            if issue and issue_todo.plan:
+                issue.fix_plan = {
+                    "approach": issue_todo.plan.approach,
+                    "steps": issue_todo.plan.steps,
+                    "estimated_lines_changed": issue_todo.plan.estimated_lines_changed,
+                    "risks": issue_todo.plan.risks or [],
+                    "verification": issue_todo.plan.verification,
+                }
+        db.commit()
+        logger.info(f"[PLAN] Saved fix_plan to {len(issue_todos)} issues")
+
         step_infos = [
             FixPlanStepInfo(
                 step=step.step,

@@ -92,6 +92,9 @@ class Issue(Base, SoftDeleteMixin):
     fixed_by = Column(String(50), nullable=True)  # Agent che ha fixato (e.g., "fixer_claude")
     fix_self_score = Column(Integer, nullable=True)  # Self-evaluation score (0-100)
     fix_gemini_score = Column(Integer, nullable=True)  # Gemini challenger score (0-100)
+    fix_plan = Column(
+        JSON, nullable=True
+    )  # Execution plan: {"approach": "...", "steps": [...], ...}
 
     # Timestamps
     created_at = Column(TZDateTime(), default=now_utc)

@@ -168,6 +168,7 @@ class FixOrchestrator:
             # Resume from clarify/plan session to preserve context
             claude_session_id = request.clarify_session_id
             gemini_feedback: str = ""
+            gemini_scores: dict[str, int] = {}
 
             for round_num in range(1, MAX_ROUNDS + 1):
                 logger.info(f"[FIX] Round {round_num}/{MAX_ROUNDS} - {len(pending_issues)} issues")
@@ -253,7 +254,7 @@ class FixOrchestrator:
                     },
                 )
 
-                approved, failed, gemini_feedback = await self._evaluate_fixes(
+                approved, failed, gemini_feedback, gemini_scores = await self._evaluate_fixes(
                     challenger,
                     fix_results,
                     pending_issues,
@@ -282,6 +283,15 @@ class FixOrchestrator:
                     for issue in approved:
                         issue_code = str(issue.issue_code)
                         issue_data = fix_results.get("issues", {}).get(issue_code, {})
+
+                        # Extract file_modified (handle singular from agent output)
+                        file_modified = issue_data.get("file_modified")
+                        files_modified = [file_modified] if file_modified else []
+
+                        # Extract self_evaluation.confidence → fix_self_score
+                        self_eval = issue_data.get("self_evaluation", {})
+                        self_score = self_eval.get("confidence")
+
                         all_results[issue_code] = IssueFixResult(
                             issue_id=str(issue.id),
                             issue_code=issue_code,
@@ -289,6 +299,9 @@ class FixOrchestrator:
                             commit_sha=commit_sha,
                             changes_made=issue_data.get("changes_summary"),
                             fix_explanation=issue_data.get("changes_summary"),
+                            fix_files_modified=files_modified,
+                            fix_self_score=self_score,
+                            fix_gemini_score=gemini_scores.get(issue_code),
                         )
 
                 # Check if done
@@ -539,7 +552,7 @@ The following issues failed Gemini validation. Please fix them based on the feed
         branch_name: str,
         session_id: str,
         parent_session_id: str | None,
-    ) -> tuple[list[Issue], list[Issue], str]:
+    ) -> tuple[list[Issue], list[Issue], str, dict[str, int]]:
         """
         Evaluate all fixes with Gemini Challenger using CLI.
 
@@ -549,11 +562,13 @@ The following issues failed Gemini validation. Please fix them based on the feed
         - Verify fixes match what was claimed
 
         Returns:
-            Tuple of (approved_issues, failed_issues, feedback_text)
+            Tuple of (approved_issues, failed_issues, feedback_text, gemini_scores)
+            gemini_scores: dict mapping issue_code -> satisfaction_score (0-100)
         """
         approved: list[Issue] = []
         failed: list[Issue] = []
         feedback_parts: list[str] = []
+        gemini_scores: dict[str, int] = {}
 
         issues_data = fix_results.get("issues", {})
 
@@ -599,7 +614,7 @@ The following issues failed Gemini validation. Please fix them based on the feed
 
         # If no issues need evaluation, return early
         if not contexts:
-            return approved, failed, "\n".join(feedback_parts)
+            return approved, failed, "\n".join(feedback_parts), gemini_scores
 
         # Call Gemini CLI with batch evaluation
         try:
@@ -624,6 +639,9 @@ The following issues failed Gemini validation. Please fix them based on the feed
                     approved.append(issue)
                     continue
 
+                # Store Gemini score for this issue
+                gemini_scores[issue_code] = int(feedback.satisfaction_score)
+
                 if feedback.status == FixChallengerStatus.APPROVED:
                     approved.append(issue)
                 else:
@@ -639,7 +657,7 @@ The following issues failed Gemini validation. Please fix them based on the feed
             for issue in issues_to_evaluate:
                 approved.append(issue)
 
-        return approved, failed, "\n".join(feedback_parts)
+        return approved, failed, "\n".join(feedback_parts), gemini_scores
 
     async def _commit_fixes(
         self,
