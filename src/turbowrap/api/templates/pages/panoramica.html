@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}Panoramica - TurboWrap{% endblock %}
+
+{% block head %}
+<style>
+/* === KPI CARDS === */
+.kpi-card {
+    transition: all 0.2s ease;
+}
+.kpi-card:hover {
+    transform: translateY(-2px);
+}
+
+/* === STATUS COLORS === */
+.status-open { color: #60a5fa; }
+.status-resolved { color: #4ade80; }
+.status-merged { color: #a78bfa; }
+.status-in_progress { color: #c084fc; }
+
+/* === TASK STATUS === */
+.task-completed { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.task-running { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.task-failed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.task-pending { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+
+@keyframes pulse-indicator {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.pulse-indicator { animation: pulse-indicator 2s ease-in-out infinite; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="panoramicaApp()">
+
+    <!-- ============================================== -->
+    <!-- HEADER -->
+    <!-- ============================================== -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3 flex-wrap">
+                <span>Panoramica</span>
+                <template x-if="$store.globalContext?.selectedRepo">
+                    <span class="text-lg font-normal text-gray-500 dark:text-gray-400">
+                        per <span class="font-medium text-primary" x-text="$store.globalContext.selectedRepo.name"></span>
+                    </span>
+                </template>
+            </h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">Overview del repository: issues, branch e task</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <button @click="refreshAll()" :disabled="loading"
+                    class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="hidden sm:inline">Aggiorna</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- No repo selected message -->
+    <template x-if="!$store.globalContext?.selectedRepoId">
+        <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
+            <svg class="w-12 h-12 mx-auto text-yellow-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+            </svg>
+            <p class="text-yellow-800 dark:text-yellow-200 font-medium">Seleziona un repository dalla sidebar</p>
+            <p class="text-yellow-600 dark:text-yellow-400 text-sm mt-1">Per vedere la panoramica, seleziona prima un repository</p>
+        </div>
+    </template>
+
+    <template x-if="$store.globalContext?.selectedRepoId">
+        <div class="space-y-6">
+
+            <!-- ============================================== -->
+            <!-- KPI CARDS - ISSUE STATS -->
+            <!-- ============================================== -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <!-- Total Issues -->
+                <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                    <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Issue Totali</div>
+                    <div class="text-3xl font-bold mt-1 text-gray-900 dark:text-white" x-text="issueSummary.total || 0"></div>
+                    <div class="text-xs text-gray-400 mt-1">nel repository</div>
+                </div>
+
+                <!-- Open Issues -->
+                <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span class="text-xs font-medium text-gray-500 uppercase">Open</span>
+                    </div>
+                    <div class="text-3xl font-bold mt-1 status-open" x-text="issueSummary.by_status?.open || 0"></div>
+                    <div class="text-xs text-gray-400 mt-1">da risolvere</div>
+                </div>
+
+                <!-- In Progress -->
+                <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-purple-200 dark:border-purple-800">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-purple-500 pulse-indicator"></span>
+                        <span class="text-xs font-medium text-gray-500 uppercase">In Progress</span>
+                    </div>
+                    <div class="text-3xl font-bold mt-1 status-in_progress" x-text="issueSummary.by_status?.in_progress || 0"></div>
+                    <div class="text-xs text-gray-400 mt-1">in lavorazione</div>
+                </div>
+
+                <!-- Resolved -->
+                <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-green-200 dark:border-green-800">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                        <span class="text-xs font-medium text-gray-500 uppercase">Resolved</span>
+                    </div>
+                    <div class="text-3xl font-bold mt-1 status-resolved" x-text="issueSummary.by_status?.resolved || 0"></div>
+                    <div class="text-xs text-gray-400 mt-1">risolte</div>
+                </div>
+
+                <!-- Merged -->
+                <div class="kpi-card bg-white dark:bg-gray-800 rounded-xl p-4 border border-violet-200 dark:border-violet-800">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-violet-500"></span>
+                        <span class="text-xs font-medium text-gray-500 uppercase">Merged</span>
+                    </div>
+                    <div class="text-3xl font-bold mt-1 status-merged" x-text="issueSummary.by_status?.merged || 0"></div>
+                    <div class="text-xs text-gray-400 mt-1">in produzione</div>
+                </div>
+            </div>
+
+            <!-- ============================================== -->
+            <!-- TWO COLUMN LAYOUT -->
+            <!-- ============================================== -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                <!-- LEFT COLUMN: Branch da Mergiare -->
+                <div class="space-y-6">
+                    <!-- Include existing unmerged branches component -->
+                    {% include "components/unmerged_branches.html" %}
+
+                    <!-- Empty state when no branches -->
+                    <div x-show="branches.length === 0 && !loadingBranches"
+                         class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center">
+                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-gray-600 dark:text-gray-400 font-medium">Tutti i branch sono mergiati</p>
+                        <p class="text-gray-500 text-sm mt-1">Nessun branch fix in attesa</p>
+                    </div>
+                </div>
+
+                <!-- RIGHT COLUMN: Ultimi 20 Task -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <!-- Header -->
+                    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                                <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 dark:text-white">Ultimi Task</h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Review, fix e operazioni recenti</p>
+                            </div>
+                        </div>
+                        <button @click="fetchTasks()" :disabled="loadingTasks"
+                                class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <svg class="w-4 h-4" :class="loadingTasks && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Tasks List -->
+                    <div class="divide-y divide-gray-100 dark:divide-gray-700 max-h-[500px] overflow-y-auto">
+                        <template x-if="loadingTasks">
+                            <div class="p-6 text-center">
+                                <svg class="w-8 h-8 mx-auto text-gray-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                <p class="text-gray-500 text-sm mt-2">Caricamento task...</p>
+                            </div>
+                        </template>
+
+                        <template x-if="!loadingTasks && tasks.length === 0">
+                            <div class="p-6 text-center">
+                                <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                                <p class="text-gray-600 dark:text-gray-400">Nessun task trovato</p>
+                            </div>
+                        </template>
+
+                        <template x-for="task in tasks" :key="task.id">
+                            <div class="p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                                        <!-- Type icon -->
+                                        <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                             :class="{
+                                                 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400': task.type === 'review',
+                                                 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': task.type === 'fix',
+                                                 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400': task.type === 'lint',
+                                                 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400': !['review', 'fix', 'lint'].includes(task.type)
+                                             }">
+                                            <template x-if="task.type === 'review'">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                                                </svg>
+                                            </template>
+                                            <template x-if="task.type === 'fix'">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                </svg>
+                                            </template>
+                                            <template x-if="!['review', 'fix'].includes(task.type)">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                                </svg>
+                                            </template>
+                                        </div>
+
+                                        <!-- Task info -->
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-sm font-medium text-gray-900 dark:text-white capitalize" x-text="task.type"></span>
+                                                <span class="text-xs px-2 py-0.5 rounded-full"
+                                                      :class="{
+                                                          'task-completed': task.status === 'completed',
+                                                          'task-running': task.status === 'running' || task.status === 'in_progress',
+                                                          'task-failed': task.status === 'failed',
+                                                          'task-pending': task.status === 'pending'
+                                                      }"
+                                                      x-text="task.status"></span>
+                                            </div>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400 truncate" x-text="formatDate(task.created_at)"></p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Duration -->
+                                    <div class="text-right flex-shrink-0">
+                                        <template x-if="task.completed_at">
+                                            <span class="text-xs text-gray-500" x-text="formatDuration(task.created_at, task.completed_at)"></span>
+                                        </template>
+                                        <template x-if="!task.completed_at && task.status === 'running'">
+                                            <span class="text-xs text-blue-500 pulse-indicator">in corso...</span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Footer link -->
+                    <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                        <a href="/live-tasks" class="text-sm text-primary hover:underline flex items-center gap-1">
+                            Vedi tutti i task
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </template>
+
+</div>
+
+<script>
+function panoramicaApp() {
+    return {
+        loading: false,
+        loadingTasks: false,
+        loadingBranches: false,
+
+        issueSummary: {
+            total: 0,
+            by_status: {}
+        },
+        tasks: [],
+        branches: [],
+
+        get selectedRepoId() {
+            return Alpine.store('globalContext')?.selectedRepoId;
+        },
+
+        init() {
+            // Fetch data if repo is selected
+            if (this.selectedRepoId) {
+                this.refreshAll();
+            }
+
+            // Watch for repo selection changes
+            this.$watch('$store.globalContext.selectedRepoId', (repoId) => {
+                if (repoId) {
+                    this.refreshAll();
+                } else {
+                    this.issueSummary = { total: 0, by_status: {} };
+                    this.tasks = [];
+                    this.branches = [];
+                }
+            });
+        },
+
+        async refreshAll() {
+            this.loading = true;
+            await Promise.all([
+                this.fetchIssueSummary(),
+                this.fetchTasks()
+            ]);
+            this.loading = false;
+        },
+
+        async fetchIssueSummary() {
+            const repoId = this.selectedRepoId;
+            if (!repoId) return;
+
+            try {
+                // Fetch all statuses
+                const response = await fetch(`/api/issues/summary?repository_id=${repoId}&status=all`);
+                if (response.ok) {
+                    this.issueSummary = await response.json();
+                }
+            } catch (error) {
+                console.error('Error fetching issue summary:', error);
+            }
+        },
+
+        async fetchTasks() {
+            const repoId = this.selectedRepoId;
+            if (!repoId) return;
+
+            this.loadingTasks = true;
+            try {
+                const response = await fetch(`/api/tasks?repository_id=${repoId}&limit=20`);
+                if (response.ok) {
+                    this.tasks = await response.json();
+                }
+            } catch (error) {
+                console.error('Error fetching tasks:', error);
+            } finally {
+                this.loadingTasks = false;
+            }
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'adesso';
+            if (diffMins < 60) return `${diffMins} min fa`;
+            if (diffHours < 24) return `${diffHours} ore fa`;
+            if (diffDays < 7) return `${diffDays} giorni fa`;
+
+            return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+        },
+
+        formatDuration(startStr, endStr) {
+            if (!startStr || !endStr) return '';
+            const start = new Date(startStr);
+            const end = new Date(endStr);
+            const diffMs = end - start;
+            const diffSecs = Math.floor(diffMs / 1000);
+            const diffMins = Math.floor(diffMs / 60000);
+
+            if (diffSecs < 60) return `${diffSecs}s`;
+            if (diffMins < 60) return `${diffMins}m`;
+            return `${Math.floor(diffMins / 60)}h ${diffMins % 60}m`;
+        }
+    };
+}
+</script>
+{% endblock %}

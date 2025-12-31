@@ -151,6 +151,25 @@ async def issues_page(request: Request, db: Session = Depends(get_db)) -> Respon
     )
 
 
+@router.get("/panoramica", response_class=HTMLResponse)
+async def panoramica_page(request: Request, db: Session = Depends(get_db)) -> Response:
+    """Panoramica page - repository overview with KPIs, branches, and tasks."""
+    repos = db.query(Repository).filter(Repository.status != "deleted").all()
+    templates = request.app.state.templates
+    return cast(
+        Response,
+        templates.TemplateResponse(
+            "pages/panoramica.html",
+            {
+                "request": request,
+                "repos": repos,
+                "active_page": "panoramica",
+                "current_user": get_current_user(request),
+            },
+        ),
+    )
+
+
 @router.get("/issues/{issue_id}", response_class=HTMLResponse)
 async def issue_detail_page(
     request: Request,

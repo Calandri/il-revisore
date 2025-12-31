@@ -124,6 +124,7 @@ ISSUE_STATUS_TRANSITIONS: dict["IssueStatus", list["IssueStatus"]] = {
     ],
     IssueStatus.RESOLVED: [
         IssueStatus.IN_REVIEW,
+        IssueStatus.MERGED,  # Direct merge (skip review phase)
         IssueStatus.OPEN,  # Reopen
     ],
     IssueStatus.IN_REVIEW: [
