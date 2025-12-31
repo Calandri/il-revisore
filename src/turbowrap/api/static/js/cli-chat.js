@@ -807,6 +807,37 @@ Contesto: ${contextStr}`;
         },
 
         /**
+         * Handle Enter key in textarea
+         * - ENTER alone: send message
+         * - CTRL+ENTER or SHIFT+ENTER: insert new line
+         */
+        handleEnterKey(event) {
+            if (event.ctrlKey || event.shiftKey) {
+                // Insert newline at cursor position
+                const textarea = event.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const value = this.inputMessage;
+
+                this.inputMessage = value.substring(0, start) + '\n' + value.substring(end);
+
+                // Use nextTick to set cursor position after Alpine updates the value
+                this.$nextTick(() => {
+                    textarea.selectionStart = textarea.selectionEnd = start + 1;
+                    // Trigger resize
+                    textarea.style.height = 'auto';
+                    textarea.style.height = textarea.scrollHeight + 'px';
+                });
+            } else {
+                // Send message
+                event.preventDefault();
+                if (this.inputMessage.trim() && !this.streaming) {
+                    this.sendMessage();
+                }
+            }
+        },
+
+        /**
          * Send a message and stream response via SSE
          * Uses SharedWorker if available, falls back to direct fetch
          */

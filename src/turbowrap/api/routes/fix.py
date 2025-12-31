@@ -1,6 +1,5 @@
 """Fix routes for issue remediation."""
 
-import asyncio
 import hashlib
 import logging
 import re
@@ -17,8 +16,12 @@ from sse_starlette.sse import EventSourceResponse
 
 from turbowrap.api.deps import get_current_user, get_db
 from turbowrap.api.services.operation_tracker import get_tracker
+from turbowrap.api.services.pending_question_store import (
+    ScopeViolationResponse,
+    get_pending_question_store,
+)
 from turbowrap.db.models import Issue, IssueStatus, Repository
-from turbowrap.fix import ClarificationAnswer, ClarificationQuestion
+from turbowrap.fix import ClarificationAnswer
 from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
@@ -48,51 +51,6 @@ def _load_agent(agent_path: Path) -> str:
             content = content[3 + end_match.end() :]
 
     return content.strip()
-
-
-_pending_clarifications: dict[str, ClarificationQuestion] = {}
-_clarification_answers: dict[str, asyncio.Future[ClarificationAnswer]] = {}
-
-_pending_scope_violations: dict[str, dict[str, Any]] = {}
-_scope_violation_responses: dict[str, asyncio.Future["ScopeViolationResponse"]] = {}
-
-
-class ScopeViolationResponse(BaseModel):
-    """Response to a scope violation prompt."""
-
-    allow: bool = Field(..., description="Whether to allow the paths")
-    paths: list[str] = Field(default_factory=list, description="Paths to add")
-
-
-def register_scope_question(question_id: str, dirs: set[str], repo_id: str) -> None:
-    """Register a pending scope violation question.
-
-    Called by the orchestrator when scope violations are detected.
-    Creates a Future that will be resolved when the user responds.
-    """
-    _pending_scope_violations[question_id] = {
-        "dirs": list(dirs),
-        "repo_id": repo_id,
-    }
-    loop = asyncio.get_event_loop()
-    _scope_violation_responses[question_id] = loop.create_future()
-
-
-async def wait_for_scope_response(question_id: str) -> ScopeViolationResponse:
-    """Wait for user response to a scope violation prompt.
-
-    Args:
-        question_id: The question ID (usually "scope_{session_id}")
-
-    Returns:
-        The user's response
-
-    Raises:
-        KeyError: If no pending question with this ID
-    """
-    if question_id not in _scope_violation_responses:
-        raise KeyError(f"No pending scope question: {question_id}")
-    return await _scope_violation_responses[question_id]
 
 
 # Idempotency tracking
@@ -468,8 +426,8 @@ def update_issue(
     return {"status": "updated", "issue_id": issue_id, "new_status": data.status}
 
 
-def _format_issues_for_clarify(issues: list[Issue]) -> str:
-    """Format issues for the clarification prompt."""
+def _format_issues_for_plan(issues: list[Issue]) -> str:
+    """Format issues for prompts (used by /plan endpoint)."""
     lines = []
     for i, issue in enumerate(issues, 1):
         lines.append(f"## Issue {i}: {issue.issue_code}")
@@ -480,14 +438,6 @@ def _format_issues_for_clarify(issues: list[Issue]) -> str:
         if issue.suggested_fix:
             lines.append(f"**Suggested Fix:** {issue.suggested_fix}")
         lines.append("")
-    return "\n".join(lines)
-
-
-def _format_answers_for_clarify(answers: dict[str, str]) -> str:
-    """Format user answers for the follow-up prompt."""
-    lines = []
-    for qid, answer in answers.items():
-        lines.append(f"- **{qid}:** {answer}")
     return "\n".join(lines)
 
 
@@ -509,6 +459,11 @@ async def clarify_before_fix(
     4. Repeat until ready_to_fix=true
     5. Call /start with clarify_session_id for context preservation
     """
+    from turbowrap.api.services.fix_clarify_service import (
+        ClarifyQuestion,
+        FixClarifyService,
+    )
+
     # Load repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
     if not repo:
@@ -519,178 +474,47 @@ async def clarify_before_fix(
     if not issues:
         raise HTTPException(status_code=404, detail="No issues found")
 
-    # First call only: mark issues as IN_PROGRESS
-    if not request.session_id:
-        from datetime import datetime, timezone
+    # Convert request questions to service format
+    previous_questions: list[ClarifyQuestion] | None = None
+    if request.previous_questions:
+        previous_questions = [
+            ClarifyQuestion(id=q.id, question=q.question, context=q.context)
+            for q in request.previous_questions
+        ]
 
-        for issue in issues:
-            if issue.status == IssueStatus.OPEN.value:
-                issue.status = IssueStatus.IN_PROGRESS.value
-                issue.phase_started_at = datetime.now(timezone.utc)
-        db.commit()
-        logger.info(f"[CLARIFY] Marked {len(issues)} issues as IN_PROGRESS")
-
-    # Format issues for prompt
-    issues_text = _format_issues_for_clarify(issues)
-
-    # Build prompt based on whether this is first call or resume
-    if request.answers and request.session_id:
-        # Resume with answers
-        answers_text = _format_answers_for_clarify(request.answers)
-
-        # Format previous questions for context
-        prev_q_text = ""
-        if request.previous_questions:
-            prev_q_text = "\n".join(f"- {q.id}: {q.question}" for q in request.previous_questions)
-
-        prompt = f"""Your previous questions:
-{prev_q_text}
-
-User's answers:
-{answers_text}
-
-Do you have any other questions or are you ready to proceed with the fix?
-
-Respond ONLY with valid JSON:
-{{"has_questions": bool, "questions": [...], "message": "...", "ready_to_fix": bool}}"""
-    else:
-        # First call
-        prompt = f"""You need to fix these issues:
-
-{issues_text}
-
-What do you think? Are they all clear? Do you have enough context to proceed?
-If you have questions, feel free to ask them. Otherwise, confirm that you're ready.
-
-Respond ONLY with valid JSON:
-{{"has_questions": bool, "questions": [...], "message": "...", "ready_to_fix": bool}}"""
-
-    # Run HAIKU for quick clarification (doesn't need complex reasoning)
-    cli = ClaudeCLI(
-        working_dir=Path(repo.local_path) if repo.local_path else None,
-        model="haiku",
-        agent_md_path=FIX_CLARIFIER_AGENT if FIX_CLARIFIER_AGENT.exists() else None,
-    )
-
+    # Run clarification service
     try:
-        result = await cli.run(
-            prompt=prompt,
-            operation_type="fix_clarification",
-            repo_name=repo.name or "unknown",
-            resume_session_id=request.session_id,  # None first call, previous result.session_id on resume
-            operation_details={
-                "issue_codes": [i.issue_code for i in issues if i.issue_code],
-                "issue_ids": [str(i.id) for i in issues],
-                "issue_count": len(issues),
-                # Link resume calls to root clarify session
-                "parent_session_id": request.session_id if request.session_id else None,
-            },
+        service = FixClarifyService(repo, db)
+        result = await service.clarify(
+            issues=issues,
+            session_id=request.session_id,
+            answers=request.answers,
+            previous_questions=previous_questions,
         )
     except Exception as e:
         logger.exception(f"Clarification failed: {e}")
         raise HTTPException(status_code=500, detail=f"Clarification failed: {e}")
 
-    # Parse JSON response
-    if not result.output:
-        raise HTTPException(status_code=500, detail="No response from OPUS")
-
-    # Ensure session_id is set (ClaudeCLI.run() always sets it)
-    if not result.session_id:
-        raise HTTPException(status_code=500, detail="Claude CLI did not return a session ID")
-
-    # NOTE: No manual FIX wrapper registration needed!
-    # ClaudeCLI now auto-registers with unified_id = operation_id = session_id
-    # The fix_clarification operation becomes the root, and /plan links via parent_session_id
-
-    data = parse_llm_json(result.output)
-    if not data:
-        # Fallback: assume ready to fix if parsing fails
-        logger.warning(f"Failed to parse clarify response: {result.output[:500]}")
-        return PreFixClarifyResponse(
-            has_questions=False,
-            questions=[],
-            questions_by_issue=[],
-            message="Analysis complete. Ready to proceed with the fix.",
-            session_id=result.session_id,  # Return Claude session ID for resume
-            ready_to_fix=True,
-        )
-
-    # Build response - parse both flat and grouped questions
-    questions: list[PreFixClarifyQuestion] = []
-    questions_by_issue: list[PreFixClarifyQuestionGroup] = []
-
-    # Try grouped format first (from fix_clarify_planner.md style)
-    for group in data.get("questions_by_issue", []):
-        if isinstance(group, dict) and "issue_code" in group:
-            group_questions: list[PreFixClarifyQuestion] = []
-            for q in group.get("questions", []):
-                if isinstance(q, dict) and "question" in q:
-                    group_questions.append(
-                        PreFixClarifyQuestion(
-                            id=q.get("id", f"{group['issue_code']}-q{len(group_questions)+1}"),
-                            question=q["question"],
-                            context=q.get("context"),
-                        )
-                    )
-            questions_by_issue.append(
-                PreFixClarifyQuestionGroup(
-                    issue_code=group["issue_code"],
-                    questions=group_questions,
-                )
-            )
-            questions.extend(group_questions)  # Also populate flat list
-
-    # Fallback to flat list if no grouped questions
-    if not questions_by_issue:
-        for q in data.get("questions", []):
-            if isinstance(q, dict) and "question" in q:
-                questions.append(
-                    PreFixClarifyQuestion(
-                        id=q.get("id", f"q{len(questions)+1}"),
-                        question=q["question"],
-                        context=q.get("context"),
-                    )
-                )
-
-    ready_to_fix = data.get("ready_to_fix", False)
-
-    # Save clarifications to issues when ready to fix
-    if ready_to_fix and request.answers and request.previous_questions:
-        from datetime import datetime, timezone
-
-        # Build clarification records from Q&A
-        clarification_records = []
-        for q in request.previous_questions:
-            if q.id in request.answers:
-                clarification_records.append(
-                    {
-                        "question_id": q.id,
-                        "question": q.question,
-                        "context": q.context,
-                        "answer": request.answers[q.id],
-                        "asked_at": datetime.now(timezone.utc).isoformat(),
-                        "answered_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
-
-        # Save to each issue
-        if clarification_records:
-            for issue in issues:
-                existing = issue.clarifications or []
-                issue.clarifications = existing + clarification_records
-            db.commit()
-            logger.info(
-                f"[CLARIFY] Saved {len(clarification_records)} clarifications "
-                f"to {len(issues)} issues"
-            )
-
+    # Convert service result to response model
     return PreFixClarifyResponse(
-        has_questions=data.get("has_questions", False),
-        questions=questions,
-        questions_by_issue=questions_by_issue,
-        message=data.get("message", ""),
-        session_id=result.session_id,  # Return Claude session ID for resume
-        ready_to_fix=ready_to_fix,
+        has_questions=result.has_questions,
+        questions=[
+            PreFixClarifyQuestion(id=q.id, question=q.question, context=q.context)
+            for q in result.questions
+        ],
+        questions_by_issue=[
+            PreFixClarifyQuestionGroup(
+                issue_code=g.issue_code,
+                questions=[
+                    PreFixClarifyQuestion(id=q.id, question=q.question, context=q.context)
+                    for q in g.questions
+                ],
+            )
+            for g in result.questions_by_issue
+        ],
+        message=result.message,
+        session_id=result.session_id,
+        ready_to_fix=result.ready_to_fix,
     )
 
 
@@ -735,7 +559,7 @@ async def create_fix_plan(
         raise HTTPException(status_code=404, detail="No issues found")
 
     # Format issues for prompt
-    issues_text = _format_issues_for_clarify(issues)
+    issues_text = _format_issues_for_plan(issues)
 
     # Build planning prompt
     prompt = f"""Proceed to the PLANNING phase.
@@ -1133,8 +957,9 @@ async def submit_clarification(data: ClarificationAnswerRequest) -> dict[str, st
     This unblocks the fix process waiting for user input.
     """
     question_id = data.question_id
+    store = get_pending_question_store()
 
-    if question_id not in _clarification_answers:
+    if not store.has_pending_clarification(question_id):
         raise HTTPException(
             status_code=404,
             detail="No pending clarification with this ID",
@@ -1145,9 +970,7 @@ async def submit_clarification(data: ClarificationAnswerRequest) -> dict[str, st
         answer=data.answer,
     )
 
-    future = _clarification_answers[question_id]
-    if not future.done():
-        future.set_result(answer)
+    store.resolve_clarification(question_id, answer)
 
     return {"status": "received", "question_id": question_id}
 
@@ -1174,24 +997,22 @@ async def respond_to_scope_violation(
     - allow=False: Cancel the fix and revert all changes
     """
     question_id = f"scope_{session_id}"
+    store = get_pending_question_store()
 
-    if question_id not in _scope_violation_responses:
+    if not store.has_pending_scope_violation(question_id):
         raise HTTPException(
             status_code=404,
             detail="No pending scope violation for this session",
         )
 
-    pending = _pending_scope_violations.get(question_id, {})
+    pending = store.get_scope_violation(question_id) or {}
     response = ScopeViolationResponse(
         allow=data.allow,
         paths=pending.get("dirs", []),
     )
 
-    future = _scope_violation_responses[question_id]
-    if not future.done():
-        future.set_result(response)
-
-    _pending_scope_violations.pop(question_id, None)
+    store.resolve_scope_violation(question_id, response)
+    store.remove_scope_violation(question_id)
 
     return {
         "status": "received",
