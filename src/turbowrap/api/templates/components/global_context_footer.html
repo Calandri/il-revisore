@@ -84,15 +84,29 @@
                  x-transition:enter="transition ease-out duration-100"
                  x-transition:enter-start="opacity-0 -translate-y-1"
                  x-transition:enter-end="opacity-100 translate-y-0"
-                 class="absolute bottom-full left-0 mb-0.5 w-48 max-h-64 overflow-y-auto bg-gray-900 border border-purple-500/30 rounded shadow-xl">
+                 class="absolute bottom-full left-0 mb-0.5 w-56 max-h-64 overflow-y-auto bg-gray-900 border border-purple-500/30 rounded shadow-xl">
                 <div class="py-1">
                     <template x-for="branch in $store.globalContext.branches" :key="branch">
-                        <button @click="selectBranch(branch); showBranchDropdown = false"
-                                class="w-full px-3 py-1.5 text-left text-xs hover:bg-purple-600/50 flex items-center gap-2"
-                                :class="{ 'bg-purple-600/50': $store.globalContext.selectedBranch === branch }">
-                            <span x-text="branch" class="truncate"></span>
-                            <span x-show="branch === syncStatus?.branch" class="text-[10px] opacity-50">(current)</span>
-                        </button>
+                        <div class="flex items-center group">
+                            <button @click="selectBranch(branch); showBranchDropdown = false"
+                                    class="flex-1 px-3 py-1.5 text-left text-xs hover:bg-purple-600/50 flex items-center gap-2"
+                                    :class="{ 'bg-purple-600/50': $store.globalContext.selectedBranch === branch }">
+                                <span x-text="branch" class="truncate"></span>
+                                <span x-show="branch === syncStatus?.branch" class="text-[10px] opacity-50">(current)</span>
+                            </button>
+                            <!-- Delete button (disabled for main/master) -->
+                            <button @click.stop="!['main', 'master'].includes(branch) && deleteBranchByName(branch)"
+                                    :disabled="['main', 'master'].includes(branch)"
+                                    class="px-2 py-1.5 transition-all"
+                                    :class="['main', 'master'].includes(branch)
+                                        ? 'text-gray-600 cursor-not-allowed opacity-30'
+                                        : 'text-gray-500 hover:text-red-400 hover:bg-red-500/20 opacity-0 group-hover:opacity-100'"
+                                    :title="['main', 'master'].includes(branch) ? 'Cannot delete main branch' : 'Delete branch'">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
                     </template>
                     <div x-show="$store.globalContext.branches.length === 0" class="px-3 py-2 text-xs opacity-50">
                         No branches found
@@ -187,6 +201,21 @@
                 <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.5 2.5 0 0 0 6 8.5h1.5V14a1 1 0 0 0 1 1h.5a1 1 0 0 0 1-1V8.5H11.5a2.5 2.5 0 0 0 2.5-2.5v-.878a2.25 2.25 0 1 0-1.5 0V6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-.628zM11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
             </svg>
             <span class="text-[10px]">Merge</span>
+        </button>
+
+        <!-- Delete Branch Button (disabled for main/master) -->
+        <button x-show="$store.globalContext.selectedRepoId && syncStatus"
+                @click="deleteBranch()"
+                :disabled="gitLoading || ['main', 'master'].includes(syncStatus?.branch)"
+                class="h-full px-2 flex items-center gap-1 transition-colors"
+                :class="['main', 'master'].includes(syncStatus?.branch)
+                    ? 'text-gray-500 cursor-not-allowed opacity-40'
+                    : 'hover:bg-red-500/20 text-red-300 hover:text-red-200 cursor-pointer'"
+                :title="['main', 'master'].includes(syncStatus?.branch) ? 'Cannot delete main branch' : 'Delete current branch'">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            <span class="text-[10px]">Delete</span>
         </button>
     </div>
 
@@ -491,6 +520,64 @@ function globalContextFooter() {
                 console.error('[globalContextFooter] Merge failed:', e);
                 window.dispatchEvent(new CustomEvent('show-toast', {
                     detail: { message: 'Merge failed', type: 'error' }
+                }));
+            } finally {
+                this.gitLoading = false;
+            }
+        },
+
+        async deleteBranch() {
+            // Delete current branch
+            const currentBranch = this.syncStatus?.branch || Alpine.store('globalContext').selectedBranch;
+            if (!currentBranch) return;
+            await this.deleteBranchByName(currentBranch);
+        },
+
+        async deleteBranchByName(branchName) {
+            const repoId = Alpine.store('globalContext').selectedRepoId;
+            if (!repoId || this.gitLoading) return;
+
+            // Use the secure branch delete modal from confirm_modal.html
+            const result = await TurboConfirm.deleteBranch(branchName);
+            if (!result.confirmed) return;
+
+            const deleteRemote = result.deleteRemote !== false;
+            const isCurrentBranch = branchName === (this.syncStatus?.branch || Alpine.store('globalContext').selectedBranch);
+
+            this.gitLoading = 'delete';
+            this.showBranchDropdown = false;
+
+            try {
+                const res = await fetch(`/api/git/repositories/${repoId}/branches/${encodeURIComponent(branchName)}?force=true&delete_remote=${deleteRemote}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: data.message, type: 'success' }
+                    }));
+
+                    // Reload branches
+                    await Alpine.store('globalContext').loadBranches();
+
+                    // If we deleted current branch, switch to main
+                    if (isCurrentBranch) {
+                        const branches = Alpine.store('globalContext').branches;
+                        const mainBranch = branches.includes('main') ? 'main' : 'master';
+                        await Alpine.store('globalContext').selectBranch(mainBranch);
+                    }
+
+                    await this.loadSyncStatus();
+                } else {
+                    window.dispatchEvent(new CustomEvent('show-toast', {
+                        detail: { message: `Delete failed: ${data.message}`, type: 'error' }
+                    }));
+                }
+            } catch (e) {
+                console.error('[globalContextFooter] Delete branch failed:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Delete branch failed', type: 'error' }
                 }));
             } finally {
                 this.gitLoading = false;
