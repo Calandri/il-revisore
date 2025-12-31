@@ -748,11 +748,16 @@ def _check_widget_installed(repo_path: Path) -> WidgetStatus:
         r'<script[^>]*src=["\'][^"\']*bug-widget[^"\']*["\']',
         r"turbowrap\.widget",
         r"TurboWrapWidget",
+        r"IssueWidget",  # React component name
+        r"@turbowrap/widget",  # npm package import
     ]
 
     # Search in HTML files
     html_files = list(repo_path.rglob("*.html"))[:50]  # Limit search
     for html_file in html_files:
+        # Skip .next build artifacts
+        if ".next" in str(html_file):
+            continue
         try:
             content = html_file.read_text(encoding="utf-8", errors="ignore")
             for pattern in widget_patterns:
@@ -765,6 +770,28 @@ def _check_widget_installed(repo_path: Path) -> WidgetStatus:
                         script_url=url_match.group(1) if url_match else None,
                         last_checked=datetime.utcnow().isoformat(),
                         file_path=str(html_file.relative_to(repo_path)),
+                    )
+        except Exception:
+            continue
+
+    # Search in React/TS/JS files (tsx, ts, jsx, js)
+    react_files: list[Path] = []
+    for ext in ["*.tsx", "*.jsx", "*.ts", "*.js"]:
+        react_files.extend(list(repo_path.rglob(ext))[:30])
+
+    for react_file in react_files:
+        # Skip node_modules and .next
+        if "node_modules" in str(react_file) or ".next" in str(react_file):
+            continue
+        try:
+            content = react_file.read_text(encoding="utf-8", errors="ignore")
+            for pattern in widget_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    return WidgetStatus(
+                        installed=True,
+                        last_checked=datetime.utcnow().isoformat(),
+                        file_path=str(react_file.relative_to(repo_path)),
                     )
         except Exception:
             continue
