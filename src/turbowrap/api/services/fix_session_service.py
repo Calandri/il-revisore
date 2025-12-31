@@ -62,8 +62,10 @@ from ...fix import (  # noqa: E402
 )
 from ...linear import LinearStateManager  # noqa: E402
 from ...review.integrations.linear import LinearClient  # noqa: E402
+from .operation_tracker import get_tracker  # noqa: E402
 
 # NOTE: Operation tracking is now handled atomically at the ClaudeCLI/GeminiCLI level
+# The FIX wrapper operation is registered in /clarify and completed here
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,7 @@ class FixSessionInfo:
     issues: list[Issue]
     fix_request: FixRequest
     idempotency_key: str
+    clarify_session_id: str | None = None  # FIX wrapper operation ID for tracking
 
 
 @dataclass
@@ -118,6 +121,8 @@ class FixSessionService:
         force: bool = False,
         user_name: str | None = None,
         user_notes: str | None = None,
+        clarify_session_id: str | None = None,
+        master_todo_path: str | None = None,
     ) -> tuple[FixSessionInfo | None, dict[str, Any] | None]:
         """
         Validate request and prepare fix session.
@@ -249,6 +254,8 @@ class FixSessionService:
                 list[str] | None, repo.allowed_extra_paths
             ),  # Extra allowed paths
             user_notes=user_notes,  # User-provided context/instructions
+            clarify_session_id=clarify_session_id,  # Session from pre-fix clarification
+            master_todo_path=master_todo_path,  # Master TODO from planning phase
         )
 
         # NOTE: Operation tracking is now handled atomically at the ClaudeCLI level
@@ -268,6 +275,7 @@ class FixSessionService:
                 issues=issues,
                 fix_request=fix_request,
                 idempotency_key=idempotency_key,
+                clarify_session_id=clarify_session_id,  # FIX wrapper ID
             ),
             None,
         )
@@ -547,7 +555,21 @@ class FixSessionService:
                     },
                 )
 
-                # NOTE: Operation tracking is handled atomically by ClaudeCLI/GeminiCLI
+                # Complete the FIX wrapper operation registered in /clarify
+                if session_info.clarify_session_id:
+                    tracker = get_tracker()
+                    tracker.complete(
+                        session_info.clarify_session_id,
+                        result={
+                            "completed": completed_count,
+                            "failed": failed_count,
+                            "total": len(result.results),
+                            "branch": result.branch_name,
+                        },
+                    )
+                    logger.info(
+                        f"[FIX] Completed wrapper operation: {session_info.clarify_session_id}"
+                    )
 
             except ScopeValidationError as e:
                 # Workspace scope violation - files modified outside allowed workspace
@@ -559,6 +581,10 @@ class FixSessionService:
                 )
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
+                # Fail the FIX wrapper operation
+                if session_info.clarify_session_id:
+                    tracker = get_tracker()
+                    tracker.fail(session_info.clarify_session_id, error="SCOPE_VIOLATION")
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
@@ -573,6 +599,10 @@ class FixSessionService:
                 logger.warning(f"Fix task cancelled for session {session_info.session_id}")
                 await self.reset_issues_on_error(fix_db, session_info.issues, "Fix cancelled")
                 self.idempotency.update_status(idempotency_key, "cancelled")
+                # Fail the FIX wrapper operation
+                if session_info.clarify_session_id:
+                    tracker = get_tracker()
+                    tracker.fail(session_info.clarify_session_id, error="CANCELLED")
                 raise  # Re-raise to properly signal cancellation
 
             except Exception as e:
@@ -580,6 +610,10 @@ class FixSessionService:
                 await self.reset_issues_on_error(fix_db, session_info.issues)
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
+                # Fail the FIX wrapper operation
+                if session_info.clarify_session_id:
+                    tracker = get_tracker()
+                    tracker.fail(session_info.clarify_session_id, error=str(e)[:100])
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,

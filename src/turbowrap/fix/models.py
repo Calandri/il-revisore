@@ -5,6 +5,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from turbowrap.utils.datetime_utils import now_utc
+
 
 class ScopeValidationError(Exception):
     """Raised when modified files are outside the allowed workspace scope.
@@ -35,6 +37,7 @@ class FixStatus(str, Enum):
     APPLYING = "applying"
     COMMITTING = "committing"
     COMPLETED = "completed"
+    PARTIAL = "partial"  # Some issues fixed, some failed
     FAILED = "failed"
     SKIPPED = "skipped"
 
@@ -82,6 +85,10 @@ class FixEventType(str, Enum):
     # Batch-level commit events (for atomic per-batch commits)
     FIX_BATCH_COMMITTED = "fix_batch_committed"
     FIX_BATCH_FAILED = "fix_batch_failed"
+
+    # Step-level events (for step-by-step execution from planning)
+    FIX_STEP_STARTED = "fix_step_started"
+    FIX_STEP_COMPLETED = "fix_step_completed"
 
 
 class FixChallengerStatus(str, Enum):
@@ -139,7 +146,7 @@ class FixChallengerFeedback(BaseModel):
     """Feedback from the fix challenger."""
 
     iteration: int = Field(..., description="Challenger iteration number")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=now_utc)
 
     satisfaction_score: float = Field(
         ..., ge=0, le=100, description="Overall satisfaction with the fix"
@@ -236,6 +243,13 @@ class FixRequest(BaseModel):
         default=None,
         description="Session ID from pre-fix clarification phase. "
         "If provided, the fixer will resume this session to preserve clarification context.",
+    )
+
+    # Master TODO path for step-by-step execution
+    master_todo_path: str | None = Field(
+        default=None,
+        description="Path to master_todo.json from planning phase. "
+        "If provided, uses step-by-step execution with Issue TODOs.",
     )
 
 
@@ -346,7 +360,7 @@ class FixProgressEvent(BaseModel):
     """Progress event for fix operations."""
 
     type: FixEventType = Field(..., description="Event type")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=now_utc)
 
     # Session info
     session_id: str | None = Field(default=None)
@@ -370,6 +384,11 @@ class FixProgressEvent(BaseModel):
     batch_type: str | None = Field(
         default=None, description="Batch type: BE, FE, or DB (for streaming events)"
     )
+
+    # Step tracking (for step-by-step execution from planning)
+    current_step: int | None = Field(default=None, description="Current step number (1-based)")
+    total_steps: int | None = Field(default=None, description="Total number of steps")
+    step_reason: str | None = Field(default=None, description="Reason for step grouping")
 
     # Clarification
     clarification: ClarificationQuestion | None = Field(default=None)
@@ -530,7 +549,7 @@ class MasterTodo(BaseModel):
     """Master TODO for the orchestrator (defines execution order)."""
 
     session_id: str = Field(..., description="Fix session ID")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_utc)
     branch_name: str | None = Field(default=None, description="Git branch name")
 
     execution_steps: list[ExecutionStep] = Field(

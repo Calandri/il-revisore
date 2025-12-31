@@ -249,10 +249,26 @@ class ClaudeCLI(OperationTrackingMixin):
         """
         start_time = time.time()
 
+        # Session ID logic:
+        # - HEAD (first call): Generate new UUID, same for session and operation
+        # - TAIL (resume): Use resume_session_id for Claude CLI, NEW UUID for operation
+        is_resume = bool(resume_session_id)
+
+        # For Claude CLI: session_id is the resume ID (if resuming) or a new UUID
+        session_id = resume_session_id or context_id or str(uuid.uuid4())
+
+        # For operation tracking:
+        # - HEAD: same as session_id (unified - single source of truth)
+        # - TAIL: NEW UUID (separate operation, linked via parent_session_id in details)
+        if is_resume:
+            operation_id = context_id or str(uuid.uuid4())  # New operation for resume calls
+        else:
+            operation_id = session_id  # Unified with session for first call
+
         operation = None
         if track_operation:
             operation = self._register_operation(
-                context_id=context_id,
+                context_id=operation_id,  # Use operation_id (not session_id for resume!)
                 prompt=prompt,
                 operation_type=operation_type,
                 repo_name=repo_name,
@@ -273,7 +289,8 @@ class ClaudeCLI(OperationTrackingMixin):
                 on_stderr=on_stderr,
                 operation=operation,
                 start_time=start_time,
-                resume_session_id=resume_session_id,
+                session_id=session_id,  # Claude CLI session (resume if resuming)
+                is_resume=is_resume,
             )
         except Exception as e:
             if operation:
@@ -293,7 +310,8 @@ class ClaudeCLI(OperationTrackingMixin):
         on_stderr: Callable[[str], Awaitable[None]] | None,
         operation: Any,
         start_time: float,
-        resume_session_id: str | None = None,
+        session_id: str,  # Unified ID (same as operation_id)
+        is_resume: bool = False,
     ) -> ClaudeCLIResult:
         """Internal method that runs CLI with operation tracking.
 
@@ -341,15 +359,17 @@ class ClaudeCLI(OperationTrackingMixin):
             thinking,
             raw_output,
             error,
-            session_id,
+            _,  # session_id returned by _execute_cli (same as passed session_id)
             tools_used,
+            agents_launched,
         ) = await self._execute_cli(
             full_prompt,
             thinking_budget,
             effective_on_chunk,
             on_thinking,
             on_stderr,
-            resume_session_id,
+            session_id,  # Unified ID (same as operation_id)
+            is_resume,
         )
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -418,6 +438,7 @@ class ClaudeCLI(OperationTrackingMixin):
                 duration_ms=duration_ms,
                 model_usage=model_usage,
                 tools_used=tools_used,
+                agents_launched=agents_launched,
                 s3_prompt_url=s3_prompt_url,
                 s3_output_url=s3_output_url,
             )
@@ -510,9 +531,10 @@ class ClaudeCLI(OperationTrackingMixin):
         on_chunk: Callable[[str], Awaitable[None]] | None,
         on_thinking: Callable[[str], Awaitable[None]] | None,
         on_stderr: Callable[[str], Awaitable[None]] | None,
-        resume_session_id: str | None = None,
+        session_id: str,  # Unified ID (same as operation_id) - NEVER generate here
+        is_resume: bool = False,
     ) -> tuple[
-        str | None, list[ModelUsage], str | None, str | None, str | None, str | None, set[str]
+        str | None, list[ModelUsage], str | None, str | None, str | None, str | None, set[str], int
     ]:
         """Execute Claude CLI subprocess.
 
@@ -522,10 +544,11 @@ class ClaudeCLI(OperationTrackingMixin):
             on_chunk: Callback for text output chunks.
             on_thinking: Callback for thinking chunks (extended thinking).
             on_stderr: Callback for stderr output.
-            resume_session_id: Session ID to resume (uses --resume instead of --session-id).
+            session_id: Unified session ID (same as operation_id for tracking).
+            is_resume: If True, uses --resume flag; otherwise uses --session-id.
 
         Returns:
-            Tuple of (output, model_usage, thinking, raw_output, error, session_id, tools_used)
+            Tuple of (output, model_usage, thinking, raw_output, error, session_id, tools_used, agents_launched)
         """
         try:
             env = os.environ.copy()
@@ -542,7 +565,7 @@ class ClaudeCLI(OperationTrackingMixin):
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
             else:
-                return None, [], None, None, "ANTHROPIC_API_KEY not found", None, set()
+                return None, [], None, None, "ANTHROPIC_API_KEY not found", None, set(), 0
 
             env["TMPDIR"] = "/tmp"
 
@@ -551,11 +574,10 @@ class ClaudeCLI(OperationTrackingMixin):
                 env["MAX_THINKING_TOKENS"] = str(budget)
                 logger.info(f"[CLAUDE CLI] Extended thinking: {budget} tokens")
 
-            if resume_session_id:
-                session_id = resume_session_id
+            # session_id is now passed in (unified with operation_id)
+            if is_resume:
                 logger.info(f"[CLAUDE CLI] Resuming session: {session_id[:8]}...")
             else:
-                session_id = str(uuid.uuid4())
                 logger.info(f"[CLAUDE CLI] New session: {session_id[:8]}...")
 
             args = [
@@ -572,7 +594,7 @@ class ClaudeCLI(OperationTrackingMixin):
                 args.extend(["--tools", self.tools])
                 logger.info(f"[CLAUDE CLI] Tools limited to: {self.tools}")
 
-            if resume_session_id:
+            if is_resume:
                 args.extend(["--resume", session_id])
             else:
                 args.extend(["--session-id", session_id])
@@ -738,7 +760,7 @@ class ClaudeCLI(OperationTrackingMixin):
                 logger.error(f"[CLAUDE CLI] TIMEOUT after {self.timeout}s!")
                 stderr_task.cancel()
                 process.kill()
-                return None, [], None, None, f"Timeout after {self.timeout}s", session_id, set()
+                return None, [], None, None, f"Timeout after {self.timeout}s", session_id, set(), 0
 
             await stderr_task
 
@@ -761,8 +783,9 @@ class ClaudeCLI(OperationTrackingMixin):
                 thinking: str | None = None
                 api_error: str | None = None
                 tools_used: set[str] = set()
+                agents_launched: int = 0
                 if raw_output:
-                    (output, model_usage, thinking, api_error, tools_used) = (
+                    (output, model_usage, thinking, api_error, tools_used, agents_launched) = (
                         self._parse_stream_json(raw_output)
                     )
                     logger.info(
@@ -774,43 +797,71 @@ class ClaudeCLI(OperationTrackingMixin):
                 if api_error:
                     error_msg = f"{error_msg}\nAPI Error: {api_error}"
 
-                return output, model_usage, thinking, raw_output, error_msg, session_id, tools_used
+                return (
+                    output,
+                    model_usage,
+                    thinking,
+                    raw_output,
+                    error_msg,
+                    session_id,
+                    tools_used,
+                    agents_launched,
+                )
 
             if not raw_output:
                 logger.warning("[CLAUDE CLI] No output received from CLI")
-                return None, [], None, None, "No output received from CLI", session_id, set()
+                return None, [], None, None, "No output received from CLI", session_id, set(), 0
 
-            (output, model_usage, thinking, api_error, tools_used) = self._parse_stream_json(
-                raw_output
+            (output, model_usage, thinking, api_error, tools_used, agents_launched) = (
+                self._parse_stream_json(raw_output)
             )
 
             if api_error:
-                return output, model_usage, thinking, raw_output, api_error, session_id, tools_used
+                return (
+                    output,
+                    model_usage,
+                    thinking,
+                    raw_output,
+                    api_error,
+                    session_id,
+                    tools_used,
+                    agents_launched,
+                )
 
-            return output, model_usage, thinking, raw_output, None, session_id, tools_used
+            return (
+                output,
+                model_usage,
+                thinking,
+                raw_output,
+                None,
+                session_id,
+                tools_used,
+                agents_launched,
+            )
 
         except FileNotFoundError:
-            return None, [], None, None, "Claude CLI not found", None, set()
+            return None, [], None, None, "Claude CLI not found", None, set(), 0
         except Exception as e:
             logger.exception(f"[CLAUDE CLI] Exception: {e}")
-            return None, [], None, None, str(e), None, set()
+            return None, [], None, None, str(e), None, set(), 0
 
     def _parse_stream_json(
         self, raw_output: str
-    ) -> tuple[str, list[ModelUsage], str | None, str | None, set[str]]:
+    ) -> tuple[str, list[ModelUsage], str | None, str | None, set[str], int]:
         """Parse stream-json NDJSON output.
 
         Handles both regular events and stream_event wrappers
         (from --include-partial-messages).
 
         Returns:
-            Tuple of (output, model_usage, thinking, api_error, tools_used)
+            Tuple of (output, model_usage, thinking, api_error, tools_used, agents_launched)
         """
         output = ""
         model_usage_list = []
         thinking_chunks = []
         api_error = None
         tools_used: set[str] = set()
+        agents_launched: int = 0  # Count Task tool invocations (sub-agents)
 
         for line in raw_output.strip().split("\n"):
             if not line.strip():
@@ -833,6 +884,8 @@ class ClaudeCLI(OperationTrackingMixin):
                             tool_name = block.get("name")
                             if tool_name:
                                 tools_used.add(tool_name)
+                                if tool_name == "Task":
+                                    agents_launched += 1
 
                 if event_type == "result":
                     output = event.get("result", "")
@@ -863,7 +916,7 @@ class ClaudeCLI(OperationTrackingMixin):
             logger.warning("[CLAUDE CLI] No result in stream-json, using raw output")
             output = raw_output
 
-        return output, model_usage_list, thinking, api_error, tools_used
+        return output, model_usage_list, thinking, api_error, tools_used, agents_launched
 
     def _complete_operation(
         self,
@@ -871,6 +924,7 @@ class ClaudeCLI(OperationTrackingMixin):
         duration_ms: int,
         model_usage: list[ModelUsage],
         tools_used: set[str] | None = None,
+        agents_launched: int = 0,
         s3_prompt_url: str | None = None,
         s3_output_url: str | None = None,
     ) -> None:
@@ -918,6 +972,7 @@ class ClaudeCLI(OperationTrackingMixin):
                     "models_used": list({u.model for u in model_usage}),
                     "model_usage": model_usage_list,
                     "tools_used": sorted(tools_used) if tools_used else [],
+                    "agents_launched": agents_launched,
                     # S3 artifact URLs
                     "s3_prompt_url": s3_prompt_url,
                     "s3_output_url": s3_output_url,
