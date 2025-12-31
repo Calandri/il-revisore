@@ -117,7 +117,7 @@ class FixPlanService:
         return self._build_result(result.session_id, master_todo, paths)
 
     def _format_issues(self, issues: list[Issue]) -> str:
-        """Format issues for the planning prompt."""
+        """Format issues for the planning prompt, including clarifications."""
         lines = []
         for i, issue in enumerate(issues, 1):
             lines.append(f"## Issue {i}: {issue.issue_code}")
@@ -127,6 +127,16 @@ class FixPlanService:
             lines.append(f"**Description:** {issue.description}")
             if issue.suggested_fix:
                 lines.append(f"**Suggested Fix:** {issue.suggested_fix}")
+
+            # Include clarifications if present (redundancy for robustness)
+            if issue.clarifications:
+                lines.append("\n**Clarifications (from user):**")
+                for c in issue.clarifications:
+                    q = c.get("question", "")
+                    a = c.get("answer", "")
+                    lines.append(f"- Q: {q}")
+                    lines.append(f"  A: {a}")
+
             lines.append("")
         return "\n".join(lines)
 
@@ -145,6 +155,7 @@ Generate the execution plan. For each issue:
 2. Search for similar patterns in the codebase
 3. Identify dependencies between issues
 4. Generate a step-by-step plan
+5. **IMPORTANT**: If clarifications are provided, incorporate user preferences into your plan
 
 Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
 {{
@@ -198,7 +209,7 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
         result = await cli.run(
             prompt=prompt,
             operation_type="fix_planning",
-            repo_name=self.repo.name or "unknown",
+            repo_name=str(self.repo.name) if self.repo.name else "unknown",
             resume_session_id=clarify_session_id,
             operation_details={
                 "parent_session_id": clarify_session_id,
@@ -435,12 +446,14 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
         issues: list[Issue],
     ) -> None:
         """Save fix plans to issues in database."""
-        issue_code_map = {issue.issue_code: issue for issue in issues if issue.issue_code}
+        issue_code_map: dict[str, Issue] = {
+            str(issue.issue_code): issue for issue in issues if issue.issue_code
+        }
 
         for issue_todo in issue_todos:
-            issue = issue_code_map.get(issue_todo.issue_code)
+            issue = issue_code_map.get(str(issue_todo.issue_code))
             if issue and issue_todo.plan:
-                issue.fix_plan = {
+                issue.fix_plan = {  # type: ignore[assignment]
                     "approach": issue_todo.plan.approach,
                     "steps": issue_todo.plan.steps,
                     "estimated_lines_changed": issue_todo.plan.estimated_lines_changed,
