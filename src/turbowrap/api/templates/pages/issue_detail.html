@@ -405,6 +405,37 @@
                 <!-- TAB: HISTORY -->
                 <div x-show="activeTab === 'history'" class="p-4 md:p-6">
                     <div class="space-y-4">
+                        <!-- Dynamic operations from API -->
+                        <template x-if="operationsLoading">
+                            <div class="flex items-center gap-2 text-gray-500">
+                                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <span class="text-sm">Caricamento operazioni...</span>
+                            </div>
+                        </template>
+
+                        <template x-for="op in operations" :key="op.id">
+                            <div class="flex items-start gap-3">
+                                <div class="w-2 h-2 rounded-full mt-2" :class="getOperationColor(op.operation_type, op.status)"></div>
+                                <div class="flex-1">
+                                    <div class="text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                                        <span x-text="getOperationLabel(op.operation_type)"></span>
+                                        <span x-show="op.details?.challenger_type" class="text-xs text-gray-500">(Gemini)</span>
+                                        <span x-show="op.status === 'failed'" class="text-xs text-red-500 font-medium">FAILED</span>
+                                        <span x-show="op.status === 'in_progress'" class="text-xs text-yellow-500 font-medium">IN PROGRESS</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500">
+                                        <span x-text="formatOperationTime(op.started_at)"></span>
+                                        <span x-show="op.duration_seconds"> - <span x-text="Math.round(op.duration_seconds) + 's'"></span></span>
+                                    </div>
+                                    <div x-show="op.error" class="text-xs text-red-400 mt-1" x-text="op.error"></div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Static entries (fallback/additions) -->
                         {% if issue.fix_code %}
                         <div class="flex items-start gap-3">
                             <div class="w-2 h-2 rounded-full bg-green-500 mt-2"></div>
@@ -414,7 +445,7 @@
                             </div>
                         </div>
                         {% endif %}
-                        {% if issue.status == 'in_progress' %}
+                        {% if issue.status == 'in_progress' and operations.length == 0 %}
                         <div class="flex items-start gap-3">
                             <div class="w-2 h-2 rounded-full bg-purple-500 mt-2"></div>
                             <div>
@@ -430,6 +461,11 @@
                                 <div class="text-xs text-gray-500">{{ issue.created_at.strftime('%Y-%m-%d %H:%M') }} - {% if issue.flagged_by %}{{ issue.flagged_by[0] }}{% else %}reviewer{% endif %}</div>
                             </div>
                         </div>
+
+                        <!-- Empty state -->
+                        <template x-if="!operationsLoading && operations.length === 0">
+                            <div class="text-sm text-gray-500 italic">Nessuna operazione registrata</div>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -835,6 +871,9 @@ function issueDetailApp() {
         currentIndex: -1,
         totalIssues: 0,
         filterParams: '',
+        // Operations history
+        operations: [],
+        operationsLoading: false,
 
         async init() {
             console.log('[IssueDetail] Initializing with issueId:', this.issueId, 'issueCode:', this.issueCode);
@@ -847,6 +886,8 @@ function issueDetailApp() {
             await this.loadAdjacentIssues();
             // Auto-detect merge status if issue has a commit
             await this.autoDetectMerge();
+            // Load operations history for cronologia tab
+            await this.loadOperations();
             // Keyboard shortcuts for navigation
             document.addEventListener('keydown', (e) => {
                 // Skip if user is typing in an input
@@ -879,6 +920,50 @@ function issueDetailApp() {
             } catch (e) {
                 console.warn('[AutoMerge] Check failed:', e);
             }
+        },
+
+        async loadOperations() {
+            this.operationsLoading = true;
+            try {
+                const res = await fetch(`/api/issues/${this.issueId}/operations`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.operations = data.operations || [];
+                    console.log('[Operations] Loaded', this.operations.length, 'operations');
+                }
+            } catch (e) {
+                console.warn('[Operations] Failed to load:', e);
+            } finally {
+                this.operationsLoading = false;
+            }
+        },
+
+        getOperationLabel(type) {
+            const labels = {
+                'fix_clarification': 'Clarification',
+                'fix_planning': 'Planning',
+                'fix': 'Fix',
+                'review': 'Review'
+            };
+            return labels[type] || type;
+        },
+
+        getOperationColor(type, status) {
+            if (status === 'failed') return 'bg-red-500';
+            if (status === 'in_progress') return 'bg-yellow-500';
+            const colors = {
+                'fix_clarification': 'bg-teal-500',
+                'fix_planning': 'bg-sky-500',
+                'fix': 'bg-violet-500',
+                'review': 'bg-blue-500'
+            };
+            return colors[type] || 'bg-gray-500';
+        },
+
+        formatOperationTime(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
         },
 
         async loadAdjacentIssues() {

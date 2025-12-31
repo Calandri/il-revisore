@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 
-from ...db.models import Issue, IssueStatus, Repository, is_valid_issue_transition
+from ...db.models import Issue, IssueStatus, Operation, Repository, is_valid_issue_transition
 from ...utils.aws_clients import get_s3_client
 from ...utils.git_utils import is_commit_in_branch
 from ..deps import get_db, get_or_404
@@ -745,6 +745,83 @@ def delete_comment_from_issue(
 
     logger.info(f"Deleted comment {comment_id} from issue {issue_id}")
     return issue
+
+
+# =============================================================================
+# ISSUE OPERATIONS (HISTORY/CRONOLOGIA)
+# =============================================================================
+
+
+class IssueOperationResponse(BaseModel):
+    """Response for a single operation related to an issue."""
+
+    id: str
+    operation_type: str
+    status: str
+    started_at: str | None
+    completed_at: str | None
+    duration_seconds: float | None
+    details: dict[str, Any] | None
+    result: dict[str, Any] | None
+    error: str | None
+
+
+class IssueOperationsResponse(BaseModel):
+    """Response for issue operations endpoint."""
+
+    operations: list[IssueOperationResponse]
+    total: int
+
+
+@router.get("/{issue_id}/operations", response_model=IssueOperationsResponse)
+def get_issue_operations(
+    issue_id: str,
+    db: Session = Depends(get_db),
+) -> IssueOperationsResponse:
+    """
+    Get all operations related to a specific issue.
+
+    Searches for operations where details.issue_ids contains this issue_id.
+    Returns operations ordered by started_at descending (most recent first).
+    """
+    # Verify issue exists (raises 404 if not found)
+    get_or_404(db, Issue, issue_id)
+
+    # Query operations where details->issue_ids contains this issue_id
+    # SQLite JSON: json_extract(details, '$.issue_ids') LIKE '%issue_id%'
+    operations = (
+        db.query(Operation)
+        .filter(
+            Operation.details.isnot(None),
+            Operation.details.cast(str).contains(issue_id),
+        )
+        .order_by(Operation.started_at.desc())
+        .all()
+    )
+
+    # Filter to only operations that actually have this issue_id in their issue_ids array
+    filtered_ops = []
+    for op in operations:
+        if op.details and "issue_ids" in op.details:
+            if issue_id in op.details["issue_ids"]:
+                filtered_ops.append(op)
+
+    response_ops = [
+        IssueOperationResponse(
+            id=op.id,
+            operation_type=op.operation_type,
+            status=op.status,
+            started_at=op.started_at.isoformat() if op.started_at else None,
+            completed_at=op.completed_at.isoformat() if op.completed_at else None,
+            duration_seconds=op.duration_seconds,
+            details=op.details,
+            result=op.result,
+            error=op.error,
+        )
+        for op in filtered_ops
+    ]
+
+    return IssueOperationsResponse(operations=response_ops, total=len(response_ops))
 
 
 # =============================================================================

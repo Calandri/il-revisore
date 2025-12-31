@@ -18,8 +18,10 @@ class DatabaseSettings(BaseSettings):
         description="Database URL (SQLite or PostgreSQL)",
     )
     echo: bool = Field(default=False, description="Echo SQL queries")
-    pool_size: int = Field(default=5, ge=1, le=50, description="Connection pool size")
+    pool_size: int = Field(default=10, ge=1, le=50, description="Connection pool size")
+    max_overflow: int = Field(default=20, ge=0, le=100, description="Max overflow connections")
     pool_recycle: int = Field(default=3600, ge=60, description="Pool recycle time in seconds")
+    pool_timeout: int = Field(default=30, ge=5, le=120, description="Pool checkout timeout")
 
     @field_validator("url")
     @classmethod

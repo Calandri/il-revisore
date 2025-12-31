@@ -125,6 +125,7 @@ class GeminiFixChallenger(OperationTrackingMixin):
                 "parent_session_id": parent_session_id,
                 "challenger_type": "gemini-fix",
                 "issue_count": len(issues),
+                "issue_ids": [ctx.issue_id for ctx in issues],
                 "issue_codes": [ctx.issue_code for ctx in issues],
                 "branch_name": branch_name,
             },

@@ -41,6 +41,9 @@ def get_engine() -> Engine:
                 db_url,
                 pool_pre_ping=True,
                 pool_size=settings.database.pool_size,
+                max_overflow=settings.database.max_overflow,
+                pool_timeout=settings.database.pool_timeout,
+                pool_recycle=settings.database.pool_recycle,
                 echo=settings.database.echo,
             )
 

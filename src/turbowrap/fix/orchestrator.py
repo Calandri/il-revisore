@@ -14,14 +14,20 @@ Architecture:
 - Failed fixes → retry with Gemini feedback (max 2 rounds)
 """
 
+import asyncio
+import json
 import logging
 import re
 import subprocess
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import boto3
+from botocore.exceptions import ClientError
 
 from turbowrap.chat_cli.context_generator import load_structure_documentation
 from turbowrap.config import get_settings
@@ -99,6 +105,9 @@ class FixOrchestrator:
         self.repo_path = repo_path
         self.settings = get_settings()
         self.satisfaction_threshold = self.settings.fix_challenger.satisfaction_threshold
+        # S3 for fix log storage
+        self.s3_client = boto3.client("s3")
+        self.s3_bucket = self.settings.s3_bucket
 
     async def fix_issues(
         self,
@@ -156,7 +165,8 @@ class FixOrchestrator:
             # Track results
             all_results: dict[str, IssueFixResult] = {}
             pending_issues = issues.copy()
-            claude_session_id: str | None = None
+            # Resume from clarify/plan session to preserve context
+            claude_session_id = request.clarify_session_id
             gemini_feedback: str = ""
 
             for round_num in range(1, MAX_ROUNDS + 1):
@@ -204,6 +214,10 @@ class FixOrchestrator:
                         # Link to clarify session for grouping
                         "parent_session_id": parent_session_id,
                         "round": round_num,
+                        # Issue tracking for history
+                        "issue_ids": [str(issue.id) for issue in pending_issues],
+                        "issue_codes": [str(issue.issue_code) for issue in pending_issues],
+                        "issue_count": len(pending_issues),
                     },
                 )
 
@@ -219,6 +233,15 @@ class FixOrchestrator:
 
                 claude_session_id = result.session_id
                 fix_results = parse_llm_json(result.output) or {}
+
+                # Debug: log parsed results to understand structure
+                logger.info(f"[FIX] Parsed fix_results keys: {list(fix_results.keys())}")
+                if "issues" in fix_results:
+                    for code, data in fix_results["issues"].items():
+                        logger.info(
+                            f"[FIX] Issue {code}: status={data.get('status')}, "
+                            f"changes_summary={data.get('changes_summary', 'MISSING')[:100] if data.get('changes_summary') else 'MISSING'}"
+                        )
 
                 # Evaluate with Gemini
                 await self._emit(
@@ -286,7 +309,12 @@ class FixOrchestrator:
                     )
 
             # Build final result
-            return self._build_result(session_id, request, branch_name, issues, all_results)
+            final_result = self._build_result(session_id, request, branch_name, issues, all_results)
+
+            # Save fix log to S3 for debugging
+            await self._save_fix_log_to_s3(session_id, final_result, issues, gemini_feedback)
+
+            return final_result
 
         except Exception as e:
             logger.exception(f"[FIX] Unexpected error: {e}")
@@ -749,3 +777,79 @@ The following issues failed Gemini validation. Please fix them based on the feed
                 await emit(FixProgressEvent(type=event_type, **data))
             except Exception as e:
                 logger.warning(f"[FIX] Failed to emit event: {e}")
+
+    async def _save_fix_log_to_s3(
+        self,
+        session_id: str,
+        result: FixSessionResult,
+        issues: list[Issue],
+        gemini_feedback: str | None = None,
+    ) -> str | None:
+        """
+        Save fix session log to S3 for debugging.
+
+        Path: s3://{bucket}/fix-logs/{date}/{session_id}.json
+        Retention: 10 days (configured via S3 lifecycle)
+        """
+        try:
+            date_str = datetime.utcnow().strftime("%Y-%m-%d")
+            s3_key = f"fix-logs/{date_str}/{session_id}.json"
+
+            log_data = {
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": result.status.value,
+                "branch_name": result.branch_name,
+                "issues_requested": result.issues_requested,
+                "issues_fixed": result.issues_fixed,
+                "issues_failed": result.issues_failed,
+                "repo_path": str(self.repo_path),
+                "satisfaction_threshold": self.satisfaction_threshold,
+                "issues": [
+                    {
+                        "id": issue.id,
+                        "code": issue.issue_code,
+                        "title": issue.title,
+                        "file": issue.file,
+                        "severity": issue.severity,
+                    }
+                    for issue in issues
+                ],
+                "results": [
+                    {
+                        "issue_id": r.issue_id,
+                        "issue_code": r.issue_code,
+                        "status": r.status.value,
+                        "commit_sha": r.commit_sha,
+                        "fix_code": r.fix_code,
+                        "fix_explanation": r.fix_explanation,
+                        "fix_files_modified": r.fix_files_modified,
+                        "error": r.error,
+                        "fix_self_score": r.fix_self_score,
+                        "fix_gemini_score": r.fix_gemini_score,
+                    }
+                    for r in result.results
+                ],
+                "gemini_feedback": gemini_feedback[:3000] if gemini_feedback else None,
+            }
+
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=json.dumps(log_data, indent=2, default=str).encode("utf-8"),
+                    ContentType="application/json",
+                ),
+            )
+
+            s3_url = f"s3://{self.s3_bucket}/{s3_key}"
+            logger.info(f"[FIX] Log saved to {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.warning(f"[FIX] Failed to save log to S3: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"[FIX] Failed to save log to S3: {e}")
+            return None
