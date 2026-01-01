@@ -485,14 +485,16 @@
                             </div>
                         </div>
                         {% endif %}
-                        {% if feature.status == 'development' and operations.length == 0 %}
-                        <div class="flex items-start gap-3">
-                            <div class="w-2 h-2 rounded-full bg-yellow-500 mt-2"></div>
-                            <div>
-                                <div class="text-sm text-gray-900 dark:text-white">Stato cambiato in <span class="font-medium text-yellow-500">development</span></div>
-                                <div class="text-xs text-gray-500">{{ feature.phase_started_at.strftime('%Y-%m-%d %H:%M') if feature.phase_started_at else '-' }} - system</div>
+                        {% if feature.status == 'development' %}
+                        <template x-if="operations.length === 0">
+                            <div class="flex items-start gap-3">
+                                <div class="w-2 h-2 rounded-full bg-yellow-500 mt-2"></div>
+                                <div>
+                                    <div class="text-sm text-gray-900 dark:text-white">Stato cambiato in <span class="font-medium text-yellow-500">development</span></div>
+                                    <div class="text-xs text-gray-500">{{ feature.phase_started_at.strftime('%Y-%m-%d %H:%M') if feature.phase_started_at else '-' }} - system</div>
+                                </div>
                             </div>
-                        </div>
+                        </template>
                         {% endif %}
                         <div class="flex items-start gap-3">
                             <div class="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>

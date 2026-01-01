@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import subprocess
 import uuid
 from collections import defaultdict
@@ -87,6 +88,39 @@ def generate_branch_name(issues: list[Issue], prefix: str = "fix") -> str:
         slug = uuid.uuid4().hex[:12]
 
     return f"{prefix}/{slug}"
+
+
+def generate_fix_flow_id(issues: list[Issue]) -> str:
+    """Generate a human-readable fix flow ID from issue codes.
+
+    Format: fix_{issue_codes}_{random6}
+    Example: fix_BE-001-FE-003_aB3xY9
+
+    Args:
+        issues: List of issues to include in the ID.
+
+    Returns:
+        A unique, readable fix flow identifier.
+    """
+    # Generate 6 URL-safe characters for uniqueness (uses secrets for crypto-safe randomness)
+    short_id = secrets.token_urlsafe(4)[:6]  # 4 bytes → 6 base64 chars
+
+    if not issues:
+        return f"fix_{short_id}"
+
+    # Get unique issue codes, sorted for consistency
+    codes = sorted({str(i.issue_code) for i in issues if i.issue_code})
+
+    if not codes:
+        return f"fix_{short_id}"
+
+    # Limit to first 3 codes to keep ID reasonable
+    if len(codes) > 3:
+        codes_str = "-".join(codes[:3]) + f"-plus{len(codes) - 3}"
+    else:
+        codes_str = "-".join(codes)
+
+    return f"fix_{codes_str}_{short_id}"
 
 
 class FixOrchestrator:

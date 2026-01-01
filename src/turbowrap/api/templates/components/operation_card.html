@@ -224,6 +224,35 @@
             </div>
         </template>
 
+        <!-- Input Prompt (for history operations) -->
+        <template x-if="!isLive && (op.details?.prompt_preview || op.details?.s3_prompt_url)">
+            <div class="border-t border-gray-200 dark:border-gray-700 pt-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-gray-500 text-xs flex items-center gap-2">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                        Input Prompt
+                    </span>
+                    <template x-if="op.details?.s3_prompt_url">
+                        <button @click.stop="showFullPrompt(op.operation_id)" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">
+                            View Full
+                        </button>
+                    </template>
+                </div>
+                <template x-if="op.details?.prompt_preview">
+                    <div class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-3 font-mono text-xs text-gray-700 dark:text-gray-300 max-h-24 overflow-y-auto whitespace-pre-wrap">
+                        <span x-text="op.details?.prompt_preview || 'No prompt preview'"></span>
+                    </div>
+                </template>
+                <template x-if="!op.details?.prompt_preview && op.details?.s3_prompt_url">
+                    <div class="text-xs text-gray-500 dark:text-gray-400 italic">
+                        Click "View Full" to load prompt from S3
+                    </div>
+                </template>
+            </div>
+        </template>
+
         <!-- Tools Used (full list) -->
         <div x-show="getToolsUsed(op).length > 0">
             <span class="text-gray-500 text-xs block mb-2" x-text="'Tools Used (' + getToolsUsed(op).length + ')'"></span>

@@ -445,14 +445,16 @@
                             </div>
                         </div>
                         {% endif %}
-                        {% if issue.status == 'in_progress' and operations.length == 0 %}
-                        <div class="flex items-start gap-3">
-                            <div class="w-2 h-2 rounded-full bg-purple-500 mt-2"></div>
-                            <div>
-                                <div class="text-sm text-gray-900 dark:text-white">Stato cambiato in <span class="font-medium text-purple-500">in_progress</span></div>
-                                <div class="text-xs text-gray-500">{{ issue.phase_started_at.strftime('%Y-%m-%d %H:%M') if issue.phase_started_at else '-' }} - system</div>
+                        {% if issue.status == 'in_progress' %}
+                        <template x-if="operations.length === 0">
+                            <div class="flex items-start gap-3">
+                                <div class="w-2 h-2 rounded-full bg-purple-500 mt-2"></div>
+                                <div>
+                                    <div class="text-sm text-gray-900 dark:text-white">Stato cambiato in <span class="font-medium text-purple-500">in_progress</span></div>
+                                    <div class="text-xs text-gray-500">{{ issue.phase_started_at.strftime('%Y-%m-%d %H:%M') if issue.phase_started_at else '-' }} - system</div>
+                                </div>
                             </div>
-                        </div>
+                        </template>
                         {% endif %}
                         <div class="flex items-start gap-3">
                             <div class="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>
