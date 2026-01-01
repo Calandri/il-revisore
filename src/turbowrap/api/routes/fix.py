@@ -233,6 +233,12 @@ class FixStartRequest(BaseModel):
         description="Session ID from pre-fix clarification phase (for resume with context)",
     )
 
+    # Fix flow ID for hierarchical tracking
+    fix_flow_id: str | None = Field(
+        default=None,
+        description="Fix flow ID from clarification phase (for hierarchical tracking)",
+    )
+
     # Master TODO path from planning phase
     master_todo_path: str | None = Field(
         default=None,
@@ -264,6 +270,10 @@ class PreFixClarifyRequest(BaseModel):
     session_id: str | None = Field(
         default=None, description="Session ID for resume (from previous clarify call)"
     )
+    fix_flow_id: str | None = Field(
+        default=None,
+        description="Fix flow ID for tracking (generated on first call, reused on resume)",
+    )
     answers: dict[str, str] | None = Field(
         default=None, description="Answers to previous questions (key=question_id, value=answer)"
     )
@@ -284,6 +294,7 @@ class PreFixClarifyResponse(BaseModel):
     )
     message: str = Field(..., description="AI message explaining the analysis")
     session_id: str = Field(..., description="Session ID for resume")
+    fix_flow_id: str = Field(..., description="Fix flow ID for tracking entire flow")
     ready_to_fix: bool = Field(..., description="Whether ready to proceed with fix")
 
 
@@ -296,6 +307,7 @@ class FixPlanRequest(BaseModel):
     clarify_session_id: str = Field(
         ..., description="Session ID from clarification phase (required)"
     )
+    fix_flow_id: str = Field(..., description="Fix flow ID from clarification phase (required)")
     enable_subtasks: bool = Field(
         default=False,
         description="Enable multi-agent mode for splitting large issues into parallel sub-tasks",
@@ -314,6 +326,7 @@ class FixPlanResponse(BaseModel):
     """Response from fix planning phase."""
 
     session_id: str = Field(..., description="Fix session ID")
+    fix_flow_id: str = Field(..., description="Fix flow ID for tracking entire flow")
     master_todo_path: str = Field(..., description="Path to master_todo.json")
     issue_count: int = Field(..., description="Number of issues planned")
     step_count: int = Field(..., description="Number of execution steps")
@@ -449,6 +462,7 @@ async def clarify_before_fix(
         ClarifyQuestion,
         FixClarifyService,
     )
+    from turbowrap.fix.orchestrator import generate_fix_flow_id
 
     # Load repository
     repo = db.query(Repository).filter(Repository.id == request.repository_id).first()
@@ -460,6 +474,9 @@ async def clarify_before_fix(
     if not issues:
         raise HTTPException(status_code=404, detail="No issues found")
 
+    # Generate or reuse fix_flow_id
+    fix_flow_id = request.fix_flow_id or generate_fix_flow_id(issues)
+
     # Convert request questions to service format
     previous_questions: list[ClarifyQuestion] | None = None
     if request.previous_questions:
@@ -470,7 +487,7 @@ async def clarify_before_fix(
 
     # Run clarification service
     try:
-        service = FixClarifyService(repo, db)
+        service = FixClarifyService(repo, db, fix_flow_id=fix_flow_id)
         result = await service.clarify(
             issues=issues,
             session_id=request.session_id,
@@ -500,6 +517,7 @@ async def clarify_before_fix(
         ],
         message=result.message,
         session_id=result.session_id,
+        fix_flow_id=fix_flow_id,
         ready_to_fix=result.ready_to_fix,
     )
 
@@ -537,7 +555,7 @@ async def create_fix_plan(
 
     # Run planning service
     try:
-        service = FixPlanService(repo, db)
+        service = FixPlanService(repo, db, fix_flow_id=request.fix_flow_id)
         result = await service.create_plan(
             issues=issues,
             clarify_session_id=request.clarify_session_id,
@@ -550,6 +568,7 @@ async def create_fix_plan(
     # Convert service result to response model
     return FixPlanResponse(
         session_id=result.session_id,
+        fix_flow_id=request.fix_flow_id,
         master_todo_path=result.master_todo_path,
         issue_count=result.issue_count,
         step_count=result.step_count,

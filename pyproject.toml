@@ -43,6 +43,8 @@ dependencies = [
     "pyyaml>=6.0",
     # Token counting (real BPE tokenization)
     "tiktoken>=0.7.0",
+    # LLM CLI Wrappers (local package)
+    "turbowrap-llm",
     # AI Clients
     "anthropic>=0.40.0",
     "google-genai>=1.0.0",
@@ -221,3 +223,4 @@ exclude_lines = [
 
 [tool.uv.sources]
 turbowrap-errors = { path = "packages/turbowrap-errors-py", editable = true }
+turbowrap-llm = { path = "packages/turbowrap-llm", editable = true }

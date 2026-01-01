@@ -234,6 +234,7 @@ class Operation:
             "repository_name": self.repository_name,
             "branch_name": self.branch_name,
             "user_name": self.user_name,
+            "parent_session_id": self.parent_session_id,
             "details": self.details,
             "result": self.result,
             "started_at": format_iso(self.created_at) if self.created_at else None,

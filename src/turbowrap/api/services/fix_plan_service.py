@@ -70,14 +70,17 @@ class FixPlanService:
         self,
         repo: Repository,
         db: Session,
+        fix_flow_id: str | None = None,
     ) -> None:
         """Initialize the service.
 
         Args:
             repo: Repository to work with.
             db: Database session.
+            fix_flow_id: Fix flow ID for hierarchical tracking.
         """
         self.repo = repo
+        self.fix_flow_id = fix_flow_id
         self.db = db
         self.cli: ClaudeCLI | None = None
 
@@ -249,7 +252,8 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
             repo_name=str(self.repo.name) if self.repo.name else "unknown",
             resume_session_id=clarify_session_id,
             operation_details={
-                "parent_session_id": clarify_session_id,
+                "parent_session_id": self.fix_flow_id or clarify_session_id,
+                "clarify_session_id": clarify_session_id,
                 "issue_codes": [i.issue_code for i in issues if i.issue_code],
                 "issue_ids": [str(i.id) for i in issues],
                 "issue_count": len(issues),
