@@ -177,14 +177,10 @@ async def list_operation_history(
         # Get total count
         total = query.count()
 
-        # Paginate and order by parent_session_id (to group related ops) then started_at
-        # This ensures operations with the same parent are contiguous for frontend grouping
+        # Order by started_at DESC - let frontend group by parent_session_id
+        # Recent operations first, frontend handles grouping for display
         operations = (
-            query.order_by(
-                desc(DBOperation.parent_session_id.is_(None)),  # Non-null parents first
-                desc(DBOperation.parent_session_id),
-                desc(DBOperation.started_at),
-            )
+            query.order_by(desc(DBOperation.started_at))
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()

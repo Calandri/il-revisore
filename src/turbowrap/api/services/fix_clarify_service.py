@@ -145,7 +145,11 @@ class FixClarifyService:
         logger.info(f"[CLARIFY] Marked {len(issues)} issues as IN_PROGRESS")
 
     def _format_issues(self, issues: list[Issue]) -> str:
-        """Format issues for the clarification prompt."""
+        """Format issues for the clarification prompt.
+
+        Includes any existing clarifications from previous sessions so Claude
+        has full context even on the first call.
+        """
         lines = []
         for i, issue in enumerate(issues, 1):
             lines.append(f"## Issue {i}: {issue.issue_code}")
@@ -155,6 +159,17 @@ class FixClarifyService:
             lines.append(f"**Description:** {issue.description}")
             if issue.suggested_fix:
                 lines.append(f"**Suggested Fix:** {issue.suggested_fix}")
+
+            # Include existing clarifications from DB (from previous sessions)
+            existing_clarifications = list(issue.clarifications or [])
+            if existing_clarifications:
+                lines.append("\n**Previous Clarifications (from user):**")
+                for c in existing_clarifications:
+                    q = c.get("question", "")
+                    a = c.get("answer", "")
+                    lines.append(f"- Q: {q}")
+                    lines.append(f"  A: {a}")
+
             lines.append("")
         return "\n".join(lines)
 

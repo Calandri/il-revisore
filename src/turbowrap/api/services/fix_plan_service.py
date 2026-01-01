@@ -2,6 +2,8 @@
 Fix plan service - handles execution plan generation for fixing issues.
 
 Extracted from the fat controller in fix.py to follow Single Responsibility Principle.
+
+Uses turbowrap_llm.ClaudeSession for multi-turn conversations with native --resume.
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
+from turbowrap_llm import ClaudeCLI
+from turbowrap_llm.claude.session import ClaudeSession
 
 from turbowrap.db.models import Issue
 from turbowrap.fix.models import (
@@ -25,7 +29,6 @@ from turbowrap.fix.models import (
     MasterTodoSummary,
 )
 from turbowrap.fix.todo_manager import TodoManager
-from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 if TYPE_CHECKING:
@@ -64,6 +67,8 @@ class FixPlanService:
 
     Analyzes issues, generates execution steps (parallel vs serial),
     and creates TODO files for the fixer agents.
+
+    Uses ClaudeSession for native multi-turn support with --resume.
     """
 
     def __init__(
@@ -82,7 +87,8 @@ class FixPlanService:
         self.repo = repo
         self.fix_flow_id = fix_flow_id
         self.db = db
-        self.cli: ClaudeCLI | None = None
+        self._cli: ClaudeCLI | None = None
+        self._session: ClaudeSession | None = None
 
     async def create_plan(
         self,
@@ -210,7 +216,7 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
         issues: list[Issue],
         clarify_session_id: str,
     ) -> Any:
-        """Run Claude CLI for planning.
+        """Run Claude CLI for planning using ClaudeSession.
 
         Args:
             prompt: The prompt to send.
@@ -223,48 +229,68 @@ Respond ONLY with valid JSON in the PHASE 2 (Planning) format:
         Raises:
             Exception: If CLI fails.
         """
-        from turbowrap.api.services.operation_tracker import get_tracker
+        # Lazy imports to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+        from turbowrap.config import get_settings
+        from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
+        settings = get_settings()
         working_dir = Path(self.repo.local_path) if self.repo.local_path else None
         agent_path = FIX_PLANNER_AGENT if FIX_PLANNER_AGENT.exists() else None
-        logger.info(f"[PLAN] Creating CLI with working_dir={working_dir}, agent={agent_path}")
 
-        cli = ClaudeCLI(
-            working_dir=working_dir,
-            model="opus",
-            agent_md_path=agent_path,
-        )
-        self.cli = cli
+        # Create CLI if not exists
+        if self._cli is None:
+            # S3 artifact saver
+            artifact_saver = S3ArtifactSaver(
+                bucket=settings.thinking.s3_bucket,
+                region=settings.thinking.s3_region,
+                prefix="plan-logs",
+            )
+
+            # Extract issue info for frontend display
+            issue_codes = [str(i.issue_code) for i in issues if i.issue_code]
+            issue_ids = [str(i.id) for i in issues]
+
+            # Tracker adapter with parent_session_id for hierarchical grouping
+            tracker = TurboWrapTrackerAdapter(
+                tracker=get_tracker(),
+                operation_type=OperationType.FIX_PLANNING,
+                repo_id=str(self.repo.id),
+                repo_name=str(self.repo.name),
+                parent_session_id=self.fix_flow_id,
+                initial_details={
+                    "issue_codes": issue_codes,
+                    "issue_ids": issue_ids,
+                    "issue_count": len(issues),
+                    "working_dir": str(working_dir) if working_dir else None,
+                    "clarify_session_id": clarify_session_id,
+                },
+            )
+
+            self._cli = ClaudeCLI(
+                working_dir=working_dir,
+                model="opus",
+                thinking_enabled=True,
+                agent_md_path=agent_path,
+                artifact_saver=artifact_saver,
+                tracker=tracker,
+            )
+            logger.info(
+                f"[PLAN] Created CLI with S3 saver (bucket={settings.thinking.s3_bucket}) "
+                f"and tracker (parent={self.fix_flow_id}, issues: {issue_codes})"
+            )
 
         # Resume the clarify session to preserve context
-        logger.info(f"[PLAN] Running CLI (resuming session={clarify_session_id})")
+        # Use session for native --resume support
+        self._session = self._cli.session(session_id=clarify_session_id, resume=True)
+        logger.info(f"[PLAN] Resuming session {clarify_session_id[:8]}... for planning")
 
-        # Update clarify operation to show we're now in planning phase
-        tracker = get_tracker()
-        tracker.update(
-            clarify_session_id,
-            details={"phase": "planning"},
-        )
-
-        result = await cli.run(
-            prompt=prompt,
-            operation_type="fix_planning",
-            repo_name=str(self.repo.name) if self.repo.name else "unknown",
-            resume_session_id=clarify_session_id,
-            operation_details={
-                "parent_session_id": self.fix_flow_id or clarify_session_id,
-                "clarify_session_id": clarify_session_id,
-                "issue_codes": [i.issue_code for i in issues if i.issue_code],
-                "issue_ids": [str(i.id) for i in issues],
-                "issue_count": len(issues),
-            },
-        )
+        result = await self._session.send(prompt)
         logger.info(f"[PLAN] CLI run complete, output length: {len(result.output or '')}")
 
         if not result.output:
             raise Exception("No response from planner")
-        if not result.session_id:
-            raise Exception("Claude CLI did not return a session ID")
 
         return result
 

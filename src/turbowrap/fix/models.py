@@ -252,6 +252,13 @@ class FixRequest(BaseModel):
         "If provided, uses step-by-step execution with Issue TODOs.",
     )
 
+    # Fix flow ID for hierarchical operation grouping
+    fix_flow_id: str | None = Field(
+        default=None,
+        description="Fix flow ID for hierarchical grouping in operations tracker. "
+        "All operations in the same fix flow share this parent ID.",
+    )
+
 
 class ClarificationQuestion(BaseModel):
     """Question requiring user clarification."""

@@ -29,6 +29,8 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
+from turbowrap_llm import ClaudeCLI
+from turbowrap_llm.claude.session import ClaudeSession
 
 from turbowrap.chat_cli.context_generator import load_structure_documentation
 from turbowrap.config import get_settings
@@ -52,8 +54,8 @@ from turbowrap.fix.models import (
     MasterTodoSummary,
 )
 from turbowrap.fix.todo_manager import TodoManager
-from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -132,16 +134,40 @@ class FixOrchestrator:
     2. Call Claude CLI with fixer.md → fixes all issues
     3. Gemini evaluates ALL fixes
     4. Commit approved, retry failed (max 2 rounds)
+
+    Uses turbowrap_llm.ClaudeCLI with:
+    - TurboWrapTrackerAdapter for operation tracking
+    - S3ArtifactSaver for prompt/output persistence
+    - ClaudeSession for multi-round conversations with --resume
     """
 
-    def __init__(self, repo_path: Path):
-        """Initialize orchestrator."""
+    def __init__(
+        self,
+        repo_path: Path,
+        fix_flow_id: str | None = None,
+        repo_id: str | None = None,
+        repo_name: str | None = None,
+    ):
+        """Initialize orchestrator.
+
+        Args:
+            repo_path: Path to the repository.
+            fix_flow_id: Fix flow ID for hierarchical tracking (groups all operations).
+            repo_id: Repository ID for operation tracking.
+            repo_name: Repository name for operation tracking.
+        """
         self.repo_path = repo_path
+        self.fix_flow_id = fix_flow_id
+        self.repo_id = repo_id
+        self.repo_name = repo_name or repo_path.name
         self.settings = get_settings()
         self.satisfaction_threshold = self.settings.fix_challenger.satisfaction_threshold
         # S3 for fix log storage (lazy loaded)
         self._s3_client: Any | None = None
         self.s3_bucket = self.settings.thinking.s3_bucket
+        # CLI and session (created on first use)
+        self._cli: ClaudeCLI | None = None
+        self._session: ClaudeSession | None = None
 
     @property
     def s3_client(self) -> Any:
@@ -233,26 +259,104 @@ class FixOrchestrator:
         issues: list[Issue],
         request: FixRequest,
     ) -> tuple[ClaudeCLI, GeminiFixChallenger, Path]:
-        """Setup fix session components: TODO files, CLI, and Challenger."""
+        """Setup fix session components: TODO files, CLI, and Challenger.
+
+        Creates the CLI with:
+        - TurboWrapTrackerAdapter for operation tracking
+        - S3ArtifactSaver for prompt/output persistence
+        - Agent MD file for fixer instructions
+        """
+        # Lazy imports to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
         # Prepare TODO files
         todo_manager = TodoManager(session_id)
         master_todo, issue_todos = self._create_todos(issues, session_id, branch_name, request)
         await todo_manager.save_all(master_todo, issue_todos)
         master_todo_path = todo_manager.get_local_path()
 
-        # Initialize Claude CLI (reused across rounds)
+        # Create S3 artifact saver
+        artifact_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="fix-logs",
+        )
+
+        # Extract issue info for tracker
+        issue_codes = [str(i.issue_code) for i in issues if i.issue_code]
+        issue_ids = [str(i.id) for i in issues]
+
+        # Create tracker adapter with issue details
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.FIX,
+            repo_id=self.repo_id,
+            repo_name=self.repo_name,
+            branch=branch_name,
+            parent_session_id=self.fix_flow_id,
+            initial_details={
+                "issue_codes": issue_codes,
+                "issue_ids": issue_ids,
+                "issue_count": len(issues),
+                "working_dir": str(self.repo_path),
+                "session_id": session_id,
+            },
+        )
+
+        # Initialize Claude CLI with new package
         cli = ClaudeCLI(
             working_dir=self.repo_path,
-            agent_md_path=FIXER_AGENT,
             model="opus",
+            thinking_enabled=True,
+            thinking_budget=16000,  # Extended thinking for complex fixes
+            agent_md_path=FIXER_AGENT if FIXER_AGENT.exists() else None,
+            allowed_tools=["Bash", "Read", "Edit", "Write", "Glob", "Grep", "TodoWrite", "Task"],
+            artifact_saver=artifact_saver,
+            tracker=tracker,
             timeout=CLAUDE_CLI_TIMEOUT,
-            tools="fix",
+        )
+
+        self._cli = cli
+        logger.info(
+            f"[FIX] Created CLI with S3 saver and tracker "
+            f"(issues: {issue_codes}, fix_flow_id: {self.fix_flow_id})"
         )
 
         # Initialize Gemini Challenger
         challenger = GeminiFixChallenger(satisfaction_threshold=self.satisfaction_threshold)
 
         return cli, challenger, master_todo_path
+
+    def _get_or_create_session(
+        self,
+        cli: ClaudeCLI,
+        session_id: str | None,
+    ) -> ClaudeSession:
+        """Get existing session or create a new one.
+
+        Args:
+            cli: The ClaudeCLI instance.
+            session_id: Existing session ID to resume, or None for new session.
+
+        Returns:
+            ClaudeSession instance.
+        """
+        # If resuming from a previous session (e.g., clarify phase or previous round)
+        if session_id:
+            if self._session and self._session.session_id == session_id:
+                # Reuse existing session object
+                logger.info(f"[FIX] Reusing session: {session_id[:8]}...")
+                return self._session
+            # Create session with resume=True to use --resume
+            logger.info(f"[FIX] Resuming session: {session_id[:8]}...")
+            self._session = cli.session(session_id=session_id, resume=True)
+            return self._session
+
+        # Create new session (first call)
+        logger.info("[FIX] Creating new session...")
+        self._session = cli.session()
+        return self._session
 
     async def _run_fix_rounds(
         self,
@@ -343,31 +447,28 @@ class FixOrchestrator:
                 [str(i.issue_code) for i in pending_issues], previous_feedback
             )
 
-        # Call Claude CLI
+        # Call Claude CLI via session (supports multi-round with --resume)
         await self._emit(
             emit,
             FixEventType.FIX_ISSUE_GENERATING,
             {"round": round_num, "message": "Claude is fixing issues..."},
         )
 
-        result = await cli.run(
-            prompt=prompt,
-            operation_type="fix",
-            repo_name=self.repo_path.name,
-            context_id=session_id,
-            resume_session_id=claude_session_id,
-            operation_details={
-                "parent_session_id": parent_session_id,
-                "round": round_num,
-                "issue_ids": [str(issue.id) for issue in pending_issues],
-                "issue_codes": [str(issue.issue_code) for issue in pending_issues],
-                "issue_count": len(pending_issues),
-            },
+        # Get or create session (resumes from clarify phase or previous round)
+        session = self._get_or_create_session(cli, claude_session_id)
+        logger.info(
+            f"[FIX] Sending prompt to session {session.session_id[:8]}... "
+            f"(round {round_num}, issues: {len(pending_issues)})"
         )
+
+        result = await session.send(prompt)
 
         if not result.success:
             logger.error(f"[FIX] Claude CLI failed: {result.error}")
             return None
+
+        # Update claude_session_id for next round (use the session's ID)
+        new_claude_session_id = session.session_id
 
         fix_results = parse_llm_json(result.output) or {}
 
@@ -389,7 +490,7 @@ class FixOrchestrator:
 
         logger.info(f"[FIX] Round {round_num}: {len(approved)} approved, {len(failed)} failed")
 
-        return approved, failed, gemini_feedback, gemini_scores, result.session_id, fix_results
+        return approved, failed, gemini_feedback, gemini_scores, new_claude_session_id, fix_results
 
     def _log_fix_results(self, fix_results: dict[str, Any]) -> None:
         """Log parsed fix results for debugging."""

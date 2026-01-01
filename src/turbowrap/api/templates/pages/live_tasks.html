@@ -279,16 +279,16 @@
         </template>
     </div> <!-- End History Tab -->
 
-    <!-- Full Prompt Modal -->
-    <div x-show="showPromptModal"
+    <!-- Content Viewer Modal (Prompt/Output) -->
+    <div x-show="contentModal.show"
          x-cloak
          class="fixed inset-0 z-50 overflow-y-auto"
-         @keydown.escape.window="closePromptModal()">
+         @keydown.escape.window="closeContentModal()">
         <div class="min-h-screen px-4 text-center">
             <!-- Background overlay -->
             <div class="fixed inset-0 bg-black/50 transition-opacity"
-                 @click="closePromptModal()"
-                 x-show="showPromptModal"
+                 @click="closeContentModal()"
+                 x-show="contentModal.show"
                  x-transition:enter="ease-out duration-300"
                  x-transition:enter-start="opacity-0"
                  x-transition:enter-end="opacity-100"
@@ -300,8 +300,8 @@
             <span class="inline-block h-screen align-middle" aria-hidden="true">&#8203;</span>
 
             <!-- Modal panel -->
-            <div class="inline-block w-full max-w-4xl my-8 text-left align-middle transition-all transform bg-white dark:bg-gray-800 shadow-xl rounded-2xl"
-                 x-show="showPromptModal"
+            <div class="inline-block w-full max-w-5xl my-8 text-left align-middle transition-all transform bg-white dark:bg-gray-800 shadow-xl rounded-2xl"
+                 x-show="contentModal.show"
                  x-transition:enter="ease-out duration-300"
                  x-transition:enter-start="opacity-0 scale-95"
                  x-transition:enter-end="opacity-100 scale-100"
@@ -311,50 +311,142 @@
                  @click.stop>
                 <!-- Header -->
                 <div class="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700">
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                        Full Prompt
-                    </h3>
-                    <button @click="closePromptModal()"
-                            class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
+                    <div class="flex items-center gap-4">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                            <template x-if="contentModal.type === 'prompt'">
+                                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                            </template>
+                            <template x-if="contentModal.type === 'output'">
+                                <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </template>
+                            <span x-text="contentModal.type === 'prompt' ? 'Input Prompt' : 'Output'"></span>
+                        </h3>
+                        <!-- View Mode Tabs -->
+                        <div class="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                            <button @click="contentModal.viewMode = 'raw'"
+                                    :class="contentModal.viewMode === 'raw' ? 'bg-white dark:bg-gray-600 shadow-sm' : ''"
+                                    class="px-3 py-1 text-xs font-medium rounded-md transition-colors">
+                                Raw
+                            </button>
+                            <button @click="contentModal.viewMode = 'markdown'"
+                                    :class="contentModal.viewMode === 'markdown' ? 'bg-white dark:bg-gray-600 shadow-sm' : ''"
+                                    class="px-3 py-1 text-xs font-medium rounded-md transition-colors">
+                                Markdown
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <!-- Search -->
+                        <div class="relative">
+                            <input type="text"
+                                   x-model="contentModal.searchQuery"
+                                   @input="highlightSearch()"
+                                   placeholder="Search..."
+                                   class="w-48 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 border-0 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <template x-if="contentModal.searchQuery && contentModal.searchMatches > 0">
+                                <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500"
+                                      x-text="contentModal.searchMatches + ' found'"></span>
+                            </template>
+                        </div>
+                        <button @click="closeContentModal()"
+                                class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <!-- Content -->
-                <div class="px-6 py-4 max-h-[70vh] overflow-y-auto">
-                    <template x-if="promptModalLoading">
+                <div class="px-6 py-4 max-h-[70vh] overflow-y-auto" x-ref="contentModalBody">
+                    <template x-if="contentModal.loading">
                         <div class="flex items-center justify-center py-12">
                             <svg class="w-8 h-8 animate-spin text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                             </svg>
                         </div>
                     </template>
-                    <template x-if="!promptModalLoading">
-                        <pre class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 font-mono text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap overflow-x-auto" x-text="promptModalContent"></pre>
+                    <template x-if="!contentModal.loading && contentModal.viewMode === 'raw'">
+                        <pre class="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 font-mono text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap overflow-x-auto"
+                             x-html="highlightedContent()"></pre>
+                    </template>
+                    <template x-if="!contentModal.loading && contentModal.viewMode === 'markdown'">
+                        <div class="prose prose-sm dark:prose-invert max-w-none markdown-content"
+                             x-html="renderMarkdownContent()"></div>
                     </template>
                 </div>
                 <!-- Footer -->
-                <div class="px-6 py-4 border-t dark:border-gray-700 flex justify-end gap-3">
-                    <button @click="navigator.clipboard.writeText(promptModalContent); showToast('Prompt copied!', 'success')"
-                            class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
-                        </svg>
-                        Copy
-                    </button>
-                    <button @click="closePromptModal()"
-                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors">
-                        Close
-                    </button>
+                <div class="px-6 py-4 border-t dark:border-gray-700 flex justify-between">
+                    <div class="text-xs text-gray-500">
+                        <span x-text="contentModal.content.length.toLocaleString() + ' characters'"></span>
+                    </div>
+                    <div class="flex gap-3">
+                        <button @click="navigator.clipboard.writeText(contentModal.content); showToast('Content copied!', 'success')"
+                                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                            </svg>
+                            Copy
+                        </button>
+                        <a :href="contentModal.s3Url" target="_blank"
+                           class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                            Open in S3
+                        </a>
+                        <button @click="closeContentModal()"
+                                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors">
+                            Close
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Marked.js for markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+/* Markdown content styles */
+.markdown-content { line-height: 1.7; color: #1f2937; }
+.dark .markdown-content { color: #e5e7eb; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3 { font-weight: 600; margin-top: 1.5em; margin-bottom: 0.5em; color: #111827; }
+.dark .markdown-content h1, .dark .markdown-content h2, .dark .markdown-content h3 { color: #f9fafb; }
+.markdown-content h1 { font-size: 1.5em; border-bottom: 2px solid #6366f1; padding-bottom: 0.3em; }
+.markdown-content h2 { font-size: 1.25em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.2em; }
+.dark .markdown-content h2 { border-bottom-color: #374151; }
+.markdown-content h3 { font-size: 1.1em; }
+.markdown-content p { margin-bottom: 1em; }
+.markdown-content strong { color: #4f46e5; font-weight: 600; }
+.dark .markdown-content strong { color: #818cf8; }
+.markdown-content ul, .markdown-content ol { margin-left: 1.5em; margin-bottom: 1em; }
+.markdown-content li { margin-bottom: 0.25em; }
+.markdown-content ul { list-style-type: disc; }
+.markdown-content ol { list-style-type: decimal; }
+.markdown-content pre { background: #0f172a; color: #e2e8f0; border-radius: 0.5rem; padding: 1rem; overflow-x: auto; margin: 1em 0; border: 1px solid #334155; }
+.markdown-content pre code { background: transparent; padding: 0; color: inherit; }
+.markdown-content code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.875em; }
+.markdown-content :not(pre) > code { background: #e0e7ff; color: #4338ca; padding: 0.125rem 0.375rem; border-radius: 0.25rem; }
+.dark .markdown-content :not(pre) > code { background: #312e81; color: #c7d2fe; }
+.markdown-content blockquote { border-left: 4px solid #6366f1; padding-left: 1rem; color: #6b7280; margin: 1em 0; background: #f5f3ff; padding: 0.5rem 1rem; border-radius: 0 0.375rem 0.375rem 0; }
+.dark .markdown-content blockquote { background: #1e1b4b; color: #a5b4fc; }
+.markdown-content hr { border: 0; border-top: 2px solid #e5e7eb; margin: 1.5em 0; }
+.dark .markdown-content hr { border-top-color: #374151; }
+.markdown-content table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+.markdown-content th, .markdown-content td { border: 1px solid #e5e7eb; padding: 0.5rem; text-align: left; }
+.dark .markdown-content th, .dark .markdown-content td { border-color: #374151; }
+.markdown-content th { background: #f9fafb; font-weight: 600; }
+.dark .markdown-content th { background: #1f2937; }
+/* Search highlight */
+.search-highlight { background: #fef08a; color: #000; padding: 0 2px; border-radius: 2px; }
+.dark .search-highlight { background: #ca8a04; color: #fff; }
+</style>
 
 <script>
 function liveTasksApp() {
@@ -627,10 +719,17 @@ function liveTasksApp() {
             });
         },
 
-        // Full prompt modal state
-        showPromptModal: false,
-        promptModalContent: '',
-        promptModalLoading: false,
+        // Content viewer modal state (for prompt/output)
+        contentModal: {
+            show: false,
+            type: 'prompt',  // 'prompt' or 'output'
+            content: '',
+            s3Url: '',
+            loading: false,
+            viewMode: 'raw',  // 'raw' or 'markdown'
+            searchQuery: '',
+            searchMatches: 0
+        },
 
         // Stream control functions (using SharedWorker SSE)
         getStreamOutput(operationId) {
@@ -799,21 +898,201 @@ function liveTasksApp() {
 
         // Show full prompt in modal
         async showFullPrompt(operationId) {
-            this.showPromptModal = true;
-            this.promptModalLoading = true;
-            this.promptModalContent = '';
+            const op = this.findOperation(operationId);
+            this.contentModal.show = true;
+            this.contentModal.type = 'prompt';
+            this.contentModal.loading = true;
+            this.contentModal.content = '';
+            this.contentModal.viewMode = 'markdown';  // Default to markdown for better readability
+            this.contentModal.s3Url = op?.details?.s3_prompt_url || '';
+            this.contentModal.searchQuery = '';
+            this.contentModal.searchMatches = 0;
             try {
-                this.promptModalContent = await this.fetchPrompt(operationId);
+                this.contentModal.content = await this.fetchPrompt(operationId);
             } catch (error) {
-                this.promptModalContent = 'Error loading prompt: ' + error.message;
+                this.contentModal.content = 'Error loading prompt: ' + error.message;
             } finally {
-                this.promptModalLoading = false;
+                this.contentModal.loading = false;
             }
         },
 
-        closePromptModal() {
-            this.showPromptModal = false;
-            this.promptModalContent = '';
+        // Show full output in modal
+        async showFullOutput(operationId) {
+            const op = this.findOperation(operationId);
+            this.contentModal.show = true;
+            this.contentModal.type = 'output';
+            this.contentModal.loading = true;
+            this.contentModal.content = '';
+            this.contentModal.viewMode = 'markdown';  // Default to markdown for output
+            this.contentModal.s3Url = op?.result?.s3_output_url || op?.details?.s3_output_url || '';
+            this.contentModal.searchQuery = '';
+            this.contentModal.searchMatches = 0;
+            try {
+                this.contentModal.content = await this.fetchOutput(operationId);
+            } catch (error) {
+                this.contentModal.content = 'Error loading output: ' + error.message;
+            } finally {
+                this.contentModal.loading = false;
+            }
+        },
+
+        closeContentModal() {
+            this.contentModal.show = false;
+            this.contentModal.content = '';
+            this.contentModal.searchQuery = '';
+        },
+
+        // Find operation by ID (in live or history)
+        findOperation(operationId) {
+            return this.operations.find(op => op.operation_id === operationId) ||
+                   this.historyOperations.find(op => op.operation_id === operationId);
+        },
+
+        // Highlight search matches in content
+        highlightedContent() {
+            if (!this.contentModal.searchQuery || !this.contentModal.content) {
+                return this.escapeHtml(this.contentModal.content);
+            }
+            const query = this.contentModal.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${query})`, 'gi');
+            const escaped = this.escapeHtml(this.contentModal.content);
+            const matches = escaped.match(regex);
+            this.contentModal.searchMatches = matches ? matches.length : 0;
+            return escaped.replace(regex, '<mark class="search-highlight">$1</mark>');
+        },
+
+        highlightSearch() {
+            // Trigger re-render by updating searchMatches
+            this.$nextTick(() => {
+                const content = this.contentModal.content;
+                if (!this.contentModal.searchQuery || !content) {
+                    this.contentModal.searchMatches = 0;
+                    return;
+                }
+                const query = this.contentModal.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(query, 'gi');
+                const matches = content.match(regex);
+                this.contentModal.searchMatches = matches ? matches.length : 0;
+            });
+        },
+
+        // Render markdown content
+        renderMarkdownContent() {
+            if (!this.contentModal.content) return '';
+            try {
+                if (typeof marked !== 'undefined') {
+                    marked.setOptions({ breaks: true, gfm: true });
+
+                    // Pre-process content to wrap JSON blocks in code fences
+                    let processedContent = this.preprocessMarkdownContent(this.contentModal.content);
+
+                    let html = marked.parse(processedContent);
+                    // Apply search highlighting to markdown
+                    if (this.contentModal.searchQuery) {
+                        const query = this.contentModal.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`(${query})`, 'gi');
+                        html = html.replace(regex, '<mark class="search-highlight">$1</mark>');
+                    }
+                    return html;
+                }
+                return this.escapeHtml(this.contentModal.content);
+            } catch (e) {
+                return this.escapeHtml(this.contentModal.content);
+            }
+        },
+
+        // Pre-process content to properly format JSON and code blocks
+        preprocessMarkdownContent(content) {
+            if (!content) return '';
+
+            // Split content into lines for processing
+            const lines = content.split('\n');
+            const result = [];
+            let inJsonBlock = false;
+            let jsonBuffer = [];
+            let braceCount = 0;
+            let bracketCount = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const trimmed = line.trim();
+
+                // Detect start of JSON object or array
+                if (!inJsonBlock && (trimmed.startsWith('{') || trimmed.startsWith('['))) {
+                    // Skip if it looks like a markdown link [text](url) or checkbox [ ]
+                    if (trimmed.startsWith('[') && (trimmed.match(/^\[[^\]]*\]\(/) || trimmed.match(/^\[\s*[xX ]?\s*\]/))) {
+                        result.push(line);
+                        continue;
+                    }
+                    inJsonBlock = true;
+                    jsonBuffer = [line];
+                    braceCount = (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
+                    bracketCount = (line.match(/\[/g) || []).length - (line.match(/]/g) || []).length;
+
+                    // Check if JSON is complete on single line
+                    if (braceCount === 0 && bracketCount === 0) {
+                        // Try to prettify
+                        try {
+                            const parsed = JSON.parse(jsonBuffer.join('\n'));
+                            result.push('```json');
+                            result.push(JSON.stringify(parsed, null, 2));
+                            result.push('```');
+                        } catch {
+                            // Not valid JSON, just add as code block
+                            result.push('```');
+                            result.push(...jsonBuffer);
+                            result.push('```');
+                        }
+                        inJsonBlock = false;
+                        jsonBuffer = [];
+                    }
+                    continue;
+                }
+
+                if (inJsonBlock) {
+                    jsonBuffer.push(line);
+                    braceCount += (line.match(/{/g) || []).length - (line.match(/}/g) || []).length;
+                    bracketCount += (line.match(/\[/g) || []).length - (line.match(/]/g) || []).length;
+
+                    // Check if JSON is complete
+                    if (braceCount <= 0 && bracketCount <= 0) {
+                        // Try to prettify
+                        try {
+                            const parsed = JSON.parse(jsonBuffer.join('\n'));
+                            result.push('```json');
+                            result.push(JSON.stringify(parsed, null, 2));
+                            result.push('```');
+                        } catch {
+                            // Not valid JSON, just add as code block
+                            result.push('```');
+                            result.push(...jsonBuffer);
+                            result.push('```');
+                        }
+                        inJsonBlock = false;
+                        jsonBuffer = [];
+                    }
+                    continue;
+                }
+
+                result.push(line);
+            }
+
+            // Handle unclosed JSON block
+            if (jsonBuffer.length > 0) {
+                result.push('```');
+                result.push(...jsonBuffer);
+                result.push('```');
+            }
+
+            return result.join('\n');
+        },
+
+        // Escape HTML for safe display
+        escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         },
 
         // Refresh live operations
@@ -878,6 +1157,31 @@ function liveTasksApp() {
                 return data.content || 'No prompt content returned';
             } catch (error) {
                 console.error(`Error fetching prompt for ${operationId}:`, error);
+                return `Fetch error: ${error.message}`;
+            }
+        },
+
+        // Fetch full output for an operation
+        async fetchOutput(operationId) {
+            try {
+                const response = await fetch(`/api/operations/${operationId}/output`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    return `HTTP Error ${response.status}: ${data.detail || data.message || 'Unknown error'}`;
+                }
+
+                if (data.status === 'error') {
+                    return `Error: ${data.error || 'Unknown error'}\nS3 URL: ${data.s3_url || 'N/A'}\n\nFallback content:\n${data.content || 'None'}`;
+                }
+
+                if (data.status === 'no_output') {
+                    return data.content || 'No output available';
+                }
+
+                return data.content || 'No output content returned';
+            } catch (error) {
+                console.error(`Error fetching output for ${operationId}:`, error);
                 return `Fetch error: ${error.message}`;
             }
         },

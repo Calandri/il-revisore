@@ -631,6 +631,7 @@ async def start_fix(
             user_notes=request.user_notes,
             clarify_session_id=request.clarify_session_id,
             master_todo_path=request.master_todo_path,
+            fix_flow_id=request.fix_flow_id,
         )
 
         # Handle duplicate request (already processed)
@@ -639,16 +640,17 @@ async def start_fix(
 
         assert session_info is not None
 
-        # Update FIX wrapper phase to "fixing"
-        if request.clarify_session_id:
+        # Update FIX wrapper phase to "fixing" (uses fix_flow_id, not clarify_session_id)
+        # Note: clarify_session_id is the Claude session ID for --resume, NOT an operation ID
+        if request.fix_flow_id:
             tracker = get_tracker()
             updated = tracker.update(
-                request.clarify_session_id,
+                request.fix_flow_id,
                 details={"phase": "fixing"},
             )
             if not updated:
-                logger.warning(
-                    f"[START] FIX wrapper operation not found: {request.clarify_session_id}"
+                logger.debug(
+                    f"[START] FIX wrapper operation not registered yet: {request.fix_flow_id}"
                 )
 
         return EventSourceResponse(service.execute_fixes(session_info))

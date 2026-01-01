@@ -1553,6 +1553,7 @@ function issuesApp() {
             show: false,
             loading: false,
             sessionId: null,
+            fixFlowId: null,         // Persistent ID for grouping operations
             questions: [],           // Current batch of questions
             questionsByIssue: [],    // Current batch grouped by issue
             allQuestions: [],        // ALL questions history (accumulated)
@@ -1775,6 +1776,16 @@ function issuesApp() {
             this.clarification.show = true;
             this.clarification.message = 'OPUS sta analizzando le issue...';
 
+            // Generate fix_flow_id once at the start of the flow
+            if (!this.clarification.fixFlowId) {
+                const codes = this.selectedIssues.map(id => {
+                    const issue = this.issues.find(i => i.id === id);
+                    return issue?.issue_code || '';
+                }).filter(Boolean).sort().slice(0, 3).join('-');
+                const suffix = Math.random().toString(36).substring(2, 8);
+                this.clarification.fixFlowId = codes ? `fix_${codes}_${suffix}` : `fix_${suffix}`;
+            }
+
             try {
                 const response = await fetch('/api/fix/clarify', {
                     method: 'POST',
@@ -1783,6 +1794,7 @@ function issuesApp() {
                         repository_id: firstIssue.repository_id,
                         issue_ids: this.selectedIssues,
                         session_id: this.clarification.sessionId,
+                        fix_flow_id: this.clarification.fixFlowId,
                         // Send ALL accumulated answers (current + previous)
                         answers: Object.keys(this.clarification.allAnswers).length > 0
                             ? { ...this.clarification.allAnswers, ...this.clarification.answers }
@@ -1995,6 +2007,7 @@ function issuesApp() {
             this._removeBeforeUnloadWarning();
             this.clarification.show = false;
             this.clarification.sessionId = null;
+            this.clarification.fixFlowId = null;  // Reset for next flow
             this.clarification.questions = [];
             this.clarification.questionsByIssue = [];
             this.clarification.answers = {};
@@ -2041,6 +2054,7 @@ function issuesApp() {
                         repository_id: this.filters.repository_id,
                         issue_ids: this.selectedIssues,
                         clarify_session_id: this.clarification.sessionId,
+                        fix_flow_id: this.clarification.fixFlowId,
                         enable_subtasks: this.enableSubtasks
                     })
                 });
@@ -2114,9 +2128,13 @@ function issuesApp() {
                     this.fixProgress.totalSteps = this.planPreview.totalSteps;
                     this.fixProgress.currentStep = 1;
                 }
-                // Add clarify_session_id for operation grouping
+                // Add clarify_session_id for Claude session resume
                 if (this.clarification && this.clarification.sessionId) {
                     requestBody.clarify_session_id = this.clarification.sessionId;
+                }
+                // Add fix_flow_id for operation grouping in History
+                if (this.clarification && this.clarification.fixFlowId) {
+                    requestBody.fix_flow_id = this.clarification.fixFlowId;
                 }
 
                 const response = await fetch('/api/fix/start', {

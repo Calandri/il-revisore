@@ -123,6 +123,7 @@ class FixSessionService:
         user_notes: str | None = None,
         clarify_session_id: str | None = None,
         master_todo_path: str | None = None,
+        fix_flow_id: str | None = None,
     ) -> tuple[FixSessionInfo | None, dict[str, Any] | None]:
         """
         Validate request and prepare fix session.
@@ -256,6 +257,7 @@ class FixSessionService:
             user_notes=user_notes,  # User-provided context/instructions
             clarify_session_id=clarify_session_id,  # Session from pre-fix clarification
             master_todo_path=master_todo_path,  # Master TODO from planning phase
+            fix_flow_id=fix_flow_id,  # For hierarchical operation grouping
         )
 
         # NOTE: Operation tracking is now handled atomically at the ClaudeCLI level
@@ -504,13 +506,25 @@ class FixSessionService:
             fix_db = SessionLocal()
 
             try:
-                orchestrator = FixOrchestrator(repo_path=repo_path)
+                # Use fix_flow_id from request (for hierarchical grouping in operations)
+                # Falls back to clarify_session_id for backwards compatibility, then session_id
+                fix_flow_id = (
+                    session_info.fix_request.fix_flow_id
+                    or session_info.clarify_session_id
+                    or session_info.session_id
+                )
+
+                orchestrator = FixOrchestrator(
+                    repo_path=repo_path,
+                    fix_flow_id=fix_flow_id,
+                    repo_id=str(session_info.repository.id),
+                    repo_name=str(session_info.repository.name),
+                )
                 result = await orchestrator.fix_issues(
                     request=session_info.fix_request,
                     issues=session_info.issues,
                     emit=progress_callback,
-                    operation_id=session_info.clarify_session_id
-                    or session_info.session_id,  # Use clarify as root parent
+                    operation_id=fix_flow_id,  # Use fix_flow_id as root parent
                 )
 
                 # CRITICAL: If orchestrator failed with empty results, reset issues!
@@ -556,11 +570,12 @@ class FixSessionService:
                     },
                 )
 
-                # Complete the FIX wrapper operation registered in /clarify
-                if session_info.clarify_session_id:
+                # Complete the FIX wrapper operation (uses fix_flow_id for grouping)
+                # Note: clarify_session_id is the Claude session ID, NOT an operation ID
+                if fix_flow_id:
                     tracker = get_tracker()
                     tracker.complete(
-                        session_info.clarify_session_id,
+                        fix_flow_id,
                         result={
                             "completed": completed_count,
                             "failed": failed_count,
@@ -568,9 +583,7 @@ class FixSessionService:
                             "branch": result.branch_name,
                         },
                     )
-                    logger.info(
-                        f"[FIX] Completed wrapper operation: {session_info.clarify_session_id}"
-                    )
+                    logger.info(f"[FIX] Completed wrapper operation: {fix_flow_id}")
 
             except ScopeValidationError as e:
                 # Workspace scope violation - files modified outside allowed workspace
@@ -582,10 +595,10 @@ class FixSessionService:
                 )
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
-                # Fail the FIX wrapper operation
-                if session_info.clarify_session_id:
+                # Fail the FIX wrapper operation (uses fix_flow_id, not clarify_session_id)
+                if fix_flow_id:
                     tracker = get_tracker()
-                    tracker.fail(session_info.clarify_session_id, error="SCOPE_VIOLATION")
+                    tracker.fail(fix_flow_id, error="SCOPE_VIOLATION")
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
@@ -600,10 +613,10 @@ class FixSessionService:
                 logger.warning(f"Fix task cancelled for session {session_info.session_id}")
                 await self.reset_issues_on_error(fix_db, session_info.issues, "Fix cancelled")
                 self.idempotency.update_status(idempotency_key, "cancelled")
-                # Fail the FIX wrapper operation
-                if session_info.clarify_session_id:
+                # Fail the FIX wrapper operation (uses fix_flow_id, not clarify_session_id)
+                if fix_flow_id:
                     tracker = get_tracker()
-                    tracker.fail(session_info.clarify_session_id, error="CANCELLED")
+                    tracker.fail(fix_flow_id, error="CANCELLED")
                 raise  # Re-raise to properly signal cancellation
 
             except Exception as e:
@@ -611,10 +624,10 @@ class FixSessionService:
                 await self.reset_issues_on_error(fix_db, session_info.issues)
                 # Mark idempotency entry as failed
                 self.idempotency.update_status(idempotency_key, "failed")
-                # Fail the FIX wrapper operation
-                if session_info.clarify_session_id:
+                # Fail the FIX wrapper operation (uses fix_flow_id, not clarify_session_id)
+                if fix_flow_id:
                     tracker = get_tracker()
-                    tracker.fail(session_info.clarify_session_id, error=str(e)[:100])
+                    tracker.fail(fix_flow_id, error=str(e)[:100])
                 await event_queue.put(
                     FixProgressEvent(
                         type=FixEventType.FIX_SESSION_ERROR,
