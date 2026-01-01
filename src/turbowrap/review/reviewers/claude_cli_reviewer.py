@@ -4,18 +4,22 @@ Claude CLI-based reviewer implementation.
 Uses Claude CLI subprocess instead of SDK, allowing the model to autonomously
 explore the codebase via its own file reading capabilities.
 
-Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
+Uses the turbowrap_llm package for Claude CLI execution with tracker integration.
 """
 
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
-from turbowrap.llm.claude_cli import ClaudeCLI, ModelUsage
+from turbowrap_llm import ClaudeCLI
+
+from turbowrap.config import get_settings
 from turbowrap.review.models.challenger import ChallengerFeedback
 from turbowrap.review.models.review import ModelUsageInfo, ReviewOutput
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.base_cli_reviewer import BaseCLIReviewer
 from turbowrap.review.reviewers.constants import DEFAULT_CLI_TIMEOUT
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +34,7 @@ class ClaudeCLIReviewer(BaseCLIReviewer):
     3. Runs Claude CLI with cwd=repo_path
     4. Claude CLI reads files autonomously and can explore beyond the initial list
 
-    Uses the centralized ClaudeCLI utility for Claude CLI execution.
+    Uses turbowrap_llm package with TurboWrapTrackerAdapter for operation tracking.
     """
 
     def __init__(
@@ -48,24 +52,58 @@ class ClaudeCLIReviewer(BaseCLIReviewer):
         super().__init__(name, model="claude-cli", timeout=timeout)
 
     def _get_cli(self, context: ReviewContext) -> ClaudeCLI:
-        """Create ClaudeCLI instance for this review context."""
+        """Create ClaudeCLI instance for this review context.
+
+        Uses turbowrap_llm package with TurboWrapTrackerAdapter for operation tracking.
+        """
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        settings = get_settings()
+
+        # S3 artifact saver for prompts/outputs
+        artifact_saver = S3ArtifactSaver(
+            bucket=settings.thinking.s3_bucket,
+            region=settings.thinking.s3_region,
+            prefix=f"reviews/{self.name}",
+        )
+
+        # Get review metadata
+        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
+
+        # Create tracker adapter for operation visibility
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,
+            repo_name=repo_name,
+            initial_details={
+                "reviewer": self.name,
+                "review_id": review_id,
+                "workspace_path": context.workspace_path,
+                "files_count": len(context.files) if context.files else 0,
+            },
+        )
+
         return ClaudeCLI(
             working_dir=context.repo_path,
             model="opus",  # Use Opus for comprehensive reviews
-            timeout=self.timeout,
-            s3_prefix=f"reviews/{self.name}",
+            thinking_enabled=True,
+            artifact_saver=artifact_saver,
+            tracker=tracker,
         )
 
-    def _convert_model_usage(self, usage_list: list[ModelUsage]) -> list[ModelUsageInfo]:
+    def _convert_model_usage(self, usage_list: list[Any]) -> list[ModelUsageInfo]:
         """Convert ClaudeCLI ModelUsage to review ModelUsageInfo."""
         return [
             ModelUsageInfo(
-                model=u.model,
-                input_tokens=u.input_tokens,
-                output_tokens=u.output_tokens,
-                cache_read_tokens=u.cache_read_tokens,
-                cache_creation_tokens=u.cache_creation_tokens,
-                cost_usd=u.cost_usd,
+                model=getattr(u, "model", "unknown"),
+                input_tokens=getattr(u, "input_tokens", 0),
+                output_tokens=getattr(u, "output_tokens", 0),
+                cache_read_tokens=getattr(u, "cache_read_tokens", 0),
+                cache_creation_tokens=getattr(u, "cache_creation_tokens", 0),
+                cost_usd=getattr(u, "cost_usd", 0.0),
             )
             for u in usage_list
         ]
@@ -81,7 +119,7 @@ class ClaudeCLIReviewer(BaseCLIReviewer):
 
         Claude-specific implementation that also returns model usage information.
 
-        Uses the centralized ClaudeCLI utility for execution and S3 logging.
+        Uses the turbowrap_llm package for execution with tracker integration.
 
         Strategy:
         1. Ask Claude to write JSON to file (most reliable)
@@ -103,27 +141,12 @@ class ClaudeCLIReviewer(BaseCLIReviewer):
         if output_file.exists():
             self._cleanup_file(output_file)
 
-        # Get review_id for S3 logging
-        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
-
-        # Run Claude CLI with centralized utility
+        # Run Claude CLI with turbowrap_llm package
+        # Tracker adapter handles all operation tracking automatically
         cli = self._get_cli(context)
-        repo_name = context.repo_path.name if context.repo_path else "unknown"
         result = await cli.run(
-            prompt,
-            operation_type="review",
-            repo_name=repo_name,
-            context_id=f"{review_id}_{self.name}",
-            save_prompt=True,
-            save_output=True,
-            save_thinking=True,
+            prompt=prompt,
             on_chunk=on_chunk,
-            track_operation=True,
-            user_name="system",
-            operation_details={
-                "reviewer": self.name,
-                "workspace_path": context.workspace_path,
-            },
         )
 
         # Check if CLI failed

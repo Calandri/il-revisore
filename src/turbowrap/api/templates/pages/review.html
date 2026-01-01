@@ -460,55 +460,6 @@
                    x-text="reviewMode === 'initial' ? 'Review architetturale basata su documentazione' : 'Review dettagliata del codice modificato'"></p>
             </div>
 
-            <!-- Review Mode: Triple LLM vs Challenger Loop -->
-            <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Modalità Review</label>
-                <div class="flex gap-2">
-                    <!-- Triple LLM Button -->
-                    <button type="button" @click="challengerEnabled = false" :disabled="isRunning"
-                            class="mode-toggle-btn flex-1 px-3 py-3 text-sm font-medium rounded-xl border-2 transition-all disabled:opacity-50"
-                            :class="!challengerEnabled
-                                ? 'active border-indigo-500 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 shadow-lg shadow-indigo-500/20'
-                                : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'"
-                            title="Review parallela con 3 LLM: Claude, Gemini e Grok analizzano insieme">
-                        <div class="flex items-center justify-center gap-1.5 mb-1.5">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                            </svg>
-                            <span class="font-semibold text-sm">Parallel</span>
-                        </div>
-                        <div class="flex items-center justify-center gap-0.5 text-[10px]">
-                            <span class="px-1.5 py-0.5 rounded font-medium bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">C</span>
-                            <span class="opacity-60">+</span>
-                            <span class="px-1.5 py-0.5 rounded font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">G</span>
-                            <span class="opacity-60">+</span>
-                            <span class="px-1.5 py-0.5 rounded font-medium bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400">X</span>
-                        </div>
-                    </button>
-                    <!-- Challenger Loop Button -->
-                    <button type="button" @click="challengerEnabled = true" :disabled="isRunning"
-                            class="mode-toggle-btn flex-1 px-3 py-3 text-sm font-medium rounded-xl border-2 transition-all disabled:opacity-50"
-                            :class="challengerEnabled
-                                ? 'active border-purple-500 dark:border-purple-400 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 shadow-lg shadow-purple-500/20'
-                                : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'"
-                            title="Review iterativa: Claude propone, Gemini critica, loop fino a convergenza">
-                        <div class="flex items-center justify-center gap-1.5 mb-1.5">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                            </svg>
-                            <span class="font-semibold text-sm">Challenger</span>
-                        </div>
-                        <div class="flex items-center justify-center gap-0.5 text-[10px]">
-                            <span class="px-1.5 py-0.5 rounded font-medium bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">C</span>
-                            <span class="opacity-60">→</span>
-                            <span class="px-1.5 py-0.5 rounded font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400">G</span>
-                            <span class="opacity-60">→</span>
-                            <span class="text-purple-500 font-bold">⟳</span>
-                        </div>
-                    </button>
-                </div>
-            </div>
-
             <!-- Functional analyst toggle -->
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Analyst Funzionale</label>
@@ -1403,7 +1354,6 @@ function reviewApp() {
     return {
         selectedRepo: '',
         reviewMode: 'initial',
-        challengerEnabled: true,
         includeFunctional: true,
         isRunning: false,
         isCancelling: false,
@@ -1567,7 +1517,6 @@ function reviewApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         mode: this.reviewMode,
-                        challenger_enabled: this.challengerEnabled,
                         include_functional: this.includeFunctional,
                     }),
                 });
@@ -1779,9 +1728,7 @@ function reviewApp() {
                 const response = await fetch(`/api/tasks/${this.taskId}/review/restart/${reviewerName}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        challenger_enabled: this.challengerEnabled,
-                    }),
+                    body: JSON.stringify({}),
                 });
 
                 const reader = response.body.getReader();
@@ -1851,7 +1798,6 @@ function reviewApp() {
                     },
                     body: JSON.stringify({
                         mode: this.reviewMode,
-                        challenger_enabled: this.challengerEnabled,
                         include_functional: this.includeFunctional,
                         resume: resume,
                     }),

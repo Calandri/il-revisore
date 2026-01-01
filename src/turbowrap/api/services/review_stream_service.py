@@ -69,7 +69,6 @@ class ReviewStreamService:
         self,
         repository_id: str,
         mode: str,
-        challenger_enabled: bool,
     ) -> Task:
         """Create a new task record in the database."""
         task = Task(
@@ -78,7 +77,6 @@ class ReviewStreamService:
             status="running",
             config={
                 "mode": mode,
-                "challenger_enabled": challenger_enabled,
             },
         )
         self.db.add(task)
@@ -91,9 +89,9 @@ class ReviewStreamService:
         repository_id: str,
         repo: Repository,
         mode: str,
-        challenger_enabled: bool,
         include_functional: bool,
         resume: bool = False,
+        regenerate_structure: bool = False,
     ) -> ReviewSessionInfo:
         """
         Start a new review or reconnect to an existing one.
@@ -102,7 +100,6 @@ class ReviewStreamService:
             repository_id: The repository ID
             repo: The repository object
             mode: Review mode ('initial' or 'diff')
-            challenger_enabled: Whether to enable challenger loop
             include_functional: Whether to include functional analyst
             resume: If True, resume from checkpoints of the most recent failed review
 
@@ -164,7 +161,7 @@ class ReviewStreamService:
 
         # Create new task if not resuming
         if not resume_task_id:
-            task = self.create_task_record(repository_id, mode, challenger_enabled)
+            task = self.create_task_record(repository_id, mode)
             task_id = cast(str, task.id)
 
             # Soft delete all "open" (TO DO) issues for this repository - fresh start
@@ -196,6 +193,7 @@ class ReviewStreamService:
         review_mode = mode
         repo_workspace_path = cast(str | None, repo.workspace_path)  # Monorepo workspace scope
         checkpoints_for_closure = completed_checkpoints  # Capture for closure
+        regenerate_structure_flag = regenerate_structure  # Capture for closure
 
         # Extract repo name for display
         repo_url = cast(str, repo.url) if repo.url else ""
@@ -251,11 +249,10 @@ class ReviewStreamService:
                     ),
                     options=ReviewOptions(
                         mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
-                        challenger_enabled=challenger_enabled,
                         include_functional=include_functional,
                         severity_threshold=IssueSeverity.LOW,
                         output_format="both",
-                        satisfaction_threshold=50,
+                        regenerate_structure=regenerate_structure_flag,
                     ),
                 )
 

@@ -4,7 +4,7 @@ Triple-LLM Review Runner.
 Runs Claude, Gemini, and Grok reviews in parallel for the same task,
 then merges the outputs using deduplication.
 
-Replaces ChallengerLoop when challenger_enabled=False.
+This is the default review mode (ParallelTripleLLMRunner).
 """
 
 from __future__ import annotations

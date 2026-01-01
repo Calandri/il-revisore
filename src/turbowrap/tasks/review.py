@@ -163,8 +163,6 @@ class ReviewTask(BaseTask):
             mode=ReviewMode.DIFF,
             include_functional=config.get("include_functional", True),
             severity_threshold=severity_threshold,
-            challenger_enabled=config.get("challenger_enabled", True),
-            satisfaction_threshold=config.get("satisfaction_threshold", 99),
             output_format=config.get("output_format", "both"),
         )
 

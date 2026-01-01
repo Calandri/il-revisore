@@ -49,7 +49,6 @@ Environment Variables:
 Examples:
     python turbowrap.py ~/code/my-project
     python turbowrap.py ~/code/my-project --output ./reviews
-    python turbowrap.py ~/code/my-project --no-challenger
     python turbowrap.py ~/code/my-project --no-functional
         """,
     )
@@ -62,18 +61,7 @@ Examples:
         help="Output directory (default: <repo>/.reviews)",
     )
     parser.add_argument(
-        "--no-challenger",
-        action="store_true",
-        help="Disable challenger loop (faster but less thorough)",
-    )
-    parser.add_argument(
         "--no-functional", action="store_true", help="Skip functional analysis reviewer"
-    )
-    parser.add_argument(
-        "--satisfaction-threshold",
-        type=int,
-        default=99,
-        help="Challenger satisfaction threshold 0-100 (default: 99)",
     )
     parser.add_argument(
         "--format",
@@ -105,7 +93,6 @@ Examples:
     print(f"   Repository: {repo_path}")
     print(f"   Output: {output_dir}")
     print(f"   Mode: {args.mode.upper()}")
-    print(f"   Challenger: {'Enabled' if not args.no_challenger else 'Disabled'}")
     print(f"   Functional: {'Enabled' if not args.no_functional else 'Disabled'}")
     print("=" * 60)
 
@@ -132,8 +119,6 @@ Examples:
         options=ReviewOptions(
             mode=review_mode,
             include_functional=not args.no_functional,
-            challenger_enabled=not args.no_challenger,
-            satisfaction_threshold=args.satisfaction_threshold,
             output_format=args.format,
         ),
     )
@@ -143,7 +128,7 @@ Examples:
     if args.mode == "initial":
         print("   Mode: INITIAL - Analyzing STRUCTURE.md files only")
     else:
-        print("   Mode: DIFF - Reviewing changed files with challenger loop")
+        print("   Mode: DIFF - Reviewing changed files")
     print("")
 
     try:

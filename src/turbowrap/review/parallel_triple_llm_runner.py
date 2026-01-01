@@ -19,6 +19,8 @@ Benefits vs old approach (15 CLI processes):
 - 3 CLI processes instead of 15 (5 specialists × 3 LLMs)
 - Cache shared within each LLM session
 - ~80% reduction in cache creation costs
+
+Uses turbowrap_llm package with TurboWrapTrackerAdapter for operation tracking.
 """
 
 from __future__ import annotations
@@ -33,10 +35,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from turbowrap_llm import ClaudeCLI, GeminiCLI, GrokCLI
+
 from turbowrap.config import get_settings
-from turbowrap.llm.claude_cli import ClaudeCLI
-from turbowrap.llm.gemini import GeminiCLI
-from turbowrap.llm.grok import GrokCLI
 from turbowrap.orchestration.report_utils import deduplicate_issues
 from turbowrap.review.models.review import (
     Issue,
@@ -45,6 +46,7 @@ from turbowrap.review.models.review import (
     ReviewSummary,
 )
 from turbowrap.review.reviewers.utils import convert_dict_to_review_output, parse_review_output
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 if TYPE_CHECKING:
     from turbowrap.review.reviewers.base import ReviewContext
@@ -464,6 +466,45 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
 
         return "".join(sections)
 
+    def _create_claude_cli(self, context: ReviewContext) -> ClaudeCLI:
+        """Create ClaudeCLI instance with tracker adapter."""
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        meta = context.metadata or {}
+        review_id = meta.get("review_id", "unknown")
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
+
+        # S3 artifact saver
+        artifact_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="reviews/claude_parallel",
+        )
+
+        # Tracker adapter
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,
+            repo_name=repo_name,
+            initial_details={
+                "reviewer": "parallel_claude",
+                "review_id": review_id,
+                "specialists": self.specialists,
+                "workspace_path": context.workspace_path,
+                "files_count": len(context.files) if context.files else 0,
+            },
+        )
+
+        return ClaudeCLI(
+            working_dir=context.repo_path,
+            model="opus",
+            thinking_enabled=True,
+            artifact_saver=artifact_saver,
+            tracker=tracker,
+        )
+
     async def _run_claude(
         self,
         context: ReviewContext,
@@ -473,33 +514,10 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
         """Run Claude CLI with parallel specialists."""
         start_time = time.time()
         try:
-            cli = ClaudeCLI(
-                working_dir=context.repo_path,
-                model="opus",
-                timeout=self.timeout,
-                s3_prefix="reviews/claude_parallel",
-            )
-
-            meta = context.metadata or {}
-            review_id = meta.get("review_id", "unknown")
-            repo_name = context.repo_path.name if context.repo_path else "unknown"
-
+            cli = self._create_claude_cli(context)
             result = await cli.run(
-                prompt,
-                operation_type="review",
-                repo_name=repo_name,
-                context_id=f"{review_id}_parallel_claude",
-                save_prompt=True,
-                save_output=True,
+                prompt=prompt,
                 on_chunk=on_chunk,
-                track_operation=True,
-                user_name="system",
-                operation_details={
-                    "reviewer": "parallel_claude",
-                    "specialists": self.specialists,
-                    "workspace_path": context.workspace_path,
-                    "parent_session_id": review_id,
-                },
             )
 
             if not result.success:
@@ -519,6 +537,44 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
             logger.exception(f"[PARALLEL-CLAUDE] Exception: {e}")
             raise
 
+    def _create_gemini_cli(self, context: ReviewContext) -> GeminiCLI:
+        """Create GeminiCLI instance with tracker adapter."""
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        meta = context.metadata or {}
+        review_id = meta.get("review_id", "unknown")
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
+
+        # S3 artifact saver
+        artifact_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="reviews/gemini_parallel",
+        )
+
+        # Tracker adapter
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,
+            repo_name=repo_name,
+            initial_details={
+                "reviewer": "parallel_gemini",
+                "review_id": review_id,
+                "specialists": self.specialists,
+                "workspace_path": context.workspace_path,
+                "files_count": len(context.files) if context.files else 0,
+            },
+        )
+
+        return GeminiCLI(
+            working_dir=context.repo_path,
+            model="gemini-3-flash-preview",
+            artifact_saver=artifact_saver,
+            tracker=tracker,
+        )
+
     async def _run_gemini(
         self,
         context: ReviewContext,
@@ -528,33 +584,10 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
         """Run Gemini CLI with parallel specialists."""
         start_time = time.time()
         try:
-            cli = GeminiCLI(
-                working_dir=context.repo_path,
-                model="gemini-3-flash-preview",
-                timeout=self.timeout,
-                s3_prefix="reviews/gemini_parallel",
-            )
-
-            meta = context.metadata or {}
-            review_id = meta.get("review_id", "unknown")
-            repo_name = context.repo_path.name if context.repo_path else "unknown"
-
+            cli = self._create_gemini_cli(context)
             result = await cli.run(
-                prompt,
-                operation_type="review",
-                repo_name=repo_name,
-                context_id=f"{review_id}_parallel_gemini",
-                save_prompt=True,
-                save_output=True,
+                prompt=prompt,
                 on_chunk=on_chunk,
-                track_operation=True,
-                user_name="system",
-                operation_details={
-                    "reviewer": "parallel_gemini",
-                    "specialists": self.specialists,
-                    "workspace_path": context.workspace_path,
-                    "parent_session_id": review_id,
-                },
             )
 
             if not result.success:
@@ -574,6 +607,44 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
             logger.exception(f"[PARALLEL-GEMINI] Exception: {e}")
             raise
 
+    def _create_grok_cli(self, context: ReviewContext) -> GrokCLI:
+        """Create GrokCLI instance with tracker adapter."""
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        meta = context.metadata or {}
+        review_id = meta.get("review_id", "unknown")
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
+
+        # S3 artifact saver
+        artifact_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="reviews/grok_parallel",
+        )
+
+        # Tracker adapter
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,
+            repo_name=repo_name,
+            initial_details={
+                "reviewer": "parallel_grok",
+                "review_id": review_id,
+                "specialists": self.specialists,
+                "workspace_path": context.workspace_path,
+                "files_count": len(context.files) if context.files else 0,
+            },
+        )
+
+        return GrokCLI(
+            working_dir=context.repo_path,
+            model="grok-4-1-fast-reasoning",
+            artifact_saver=artifact_saver,
+            tracker=tracker,
+        )
+
     async def _run_grok(
         self,
         context: ReviewContext,
@@ -583,33 +654,10 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
         """Run Grok CLI with parallel specialists."""
         start_time = time.time()
         try:
-            cli = GrokCLI(
-                working_dir=context.repo_path,
-                model="grok-4-1-fast-reasoning",
-                timeout=self.timeout,
-                s3_prefix="reviews/grok_parallel",
-            )
-
-            meta = context.metadata or {}
-            review_id = meta.get("review_id", "unknown")
-            repo_name = context.repo_path.name if context.repo_path else "unknown"
-
+            cli = self._create_grok_cli(context)
             result = await cli.run(
-                prompt,
-                operation_type="review",
-                repo_name=repo_name,
-                context_id=f"{review_id}_parallel_grok",
-                save_prompt=True,
-                save_output=True,
+                prompt=prompt,
                 on_chunk=on_chunk,
-                track_operation=True,
-                user_name="system",
-                operation_details={
-                    "reviewer": "parallel_grok",
-                    "specialists": self.specialists,
-                    "workspace_path": context.workspace_path,
-                    "parent_session_id": review_id,
-                },
             )
 
             if not result.success:

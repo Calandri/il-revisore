@@ -4,7 +4,7 @@ Gemini CLI-based reviewer implementation.
 Uses Gemini CLI subprocess for code review, allowing the model to autonomously
 explore the codebase via its own file reading capabilities.
 
-Mirrors the ClaudeCLIReviewer pattern but with Gemini CLI execution.
+Uses turbowrap_llm package with TurboWrapTrackerAdapter for operation tracking.
 """
 
 from __future__ import annotations
@@ -12,10 +12,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 
-from turbowrap.llm.gemini import GeminiCLI
+from turbowrap_llm import GeminiCLI
+
+from turbowrap.config import get_settings
 from turbowrap.review.reviewers.base import ReviewContext
 from turbowrap.review.reviewers.base_cli_reviewer import BaseCLIReviewer
 from turbowrap.review.reviewers.constants import DEFAULT_CLI_TIMEOUT
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +32,14 @@ class GeminiCLIReviewer(BaseCLIReviewer):
     2. Passes a list of files to analyze
     3. Runs Gemini CLI with cwd=repo_path
     4. Gemini CLI reads files autonomously
+
+    Uses turbowrap_llm package with TurboWrapTrackerAdapter for operation tracking.
     """
 
     def __init__(
         self,
         name: str = "reviewer_be",
         timeout: int = DEFAULT_CLI_TIMEOUT,
-        cli_path: str = "gemini",
     ):
         """
         Initialize Gemini CLI reviewer.
@@ -43,18 +47,49 @@ class GeminiCLIReviewer(BaseCLIReviewer):
         Args:
             name: Reviewer identifier (reviewer_be_architecture, etc.)
             timeout: Timeout in seconds for CLI execution
-            cli_path: Path to Gemini CLI executable
         """
         super().__init__(name, model="gemini-cli", timeout=timeout)
-        self.cli_path = cli_path
 
     def _get_cli(self, context: ReviewContext) -> GeminiCLI:
-        """Create GeminiCLI instance for this review context."""
+        """Create GeminiCLI instance for this review context.
+
+        Uses turbowrap_llm package with TurboWrapTrackerAdapter for operation tracking.
+        """
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        settings = get_settings()
+
+        # S3 artifact saver for prompts/outputs
+        artifact_saver = S3ArtifactSaver(
+            bucket=settings.thinking.s3_bucket,
+            region=settings.thinking.s3_region,
+            prefix=f"reviews/{self.name}",
+        )
+
+        # Get review metadata
+        review_id = context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
+        repo_name = context.repo_path.name if context.repo_path else "unknown"
+
+        # Create tracker adapter for operation visibility
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,
+            repo_name=repo_name,
+            initial_details={
+                "reviewer": self.name,
+                "review_id": review_id,
+                "workspace_path": context.workspace_path,
+                "files_count": len(context.files) if context.files else 0,
+            },
+        )
+
         return GeminiCLI(
             working_dir=context.repo_path,
             model="pro",  # Use Pro for comprehensive reviews
-            timeout=self.timeout,
-            s3_prefix=f"reviews/{self.name}",
+            artifact_saver=artifact_saver,
+            tracker=tracker,
         )
 
     def _get_output_file_suffix(self) -> str:
@@ -68,7 +103,7 @@ class GeminiCLIReviewer(BaseCLIReviewer):
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[str | None, str | None]:
         """
-        Run Gemini CLI using centralized GeminiCLI class (with operation tracking).
+        Run Gemini CLI using turbowrap_llm package (with operation tracking).
 
         Args:
             prompt: The prompt to send to Gemini CLI
@@ -79,26 +114,12 @@ class GeminiCLIReviewer(BaseCLIReviewer):
             Tuple of (output content or None, error message or None)
         """
         try:
+            # Run Gemini CLI with turbowrap_llm package
+            # Tracker adapter handles all operation tracking automatically
             cli = self._get_cli(context)
-            repo_name = context.repo_path.name if context.repo_path else "unknown"
-            review_id = (
-                context.metadata.get("review_id", "unknown") if context.metadata else "unknown"
-            )
-
             result = await cli.run(
-                prompt,
-                operation_type="review",
-                repo_name=repo_name,
-                context_id=f"{review_id}_{self.name}",
-                save_prompt=True,
-                save_output=True,
+                prompt=prompt,
                 on_chunk=on_chunk,
-                track_operation=True,
-                user_name="system",
-                operation_details={
-                    "reviewer": self.name,
-                    "workspace_path": context.workspace_path,
-                },
             )
 
             if not result.success:
@@ -107,8 +128,8 @@ class GeminiCLIReviewer(BaseCLIReviewer):
             return result.output, None
 
         except FileNotFoundError:
-            logger.error(f"[GEMINI CLI] Not found at: {self.cli_path}")
-            return None, f"CLI not found at: {self.cli_path}"
+            logger.error("[GEMINI CLI] Not found")
+            return None, "Gemini CLI not found"
         except Exception as e:
             logger.exception(f"[GEMINI CLI] Exception: {e}")
             return None, f"CLI exception: {e}"

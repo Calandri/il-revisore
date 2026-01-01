@@ -1,8 +1,20 @@
 """
-Challenger loop implementation for the dual-reviewer system.
+DEPRECATED: Legacy challenger loop implementation.
+
+WARNING: This module should NOT be used for new code.
+
+Problem: ChallengerLoop creates a separate CLI process for each reviewer,
+resulting in 5 parallel CLI processes instead of 1 CLI with 5 agents.
+This wastes cache tokens and system resources.
+
+Use ParallelTripleLLMRunner instead, which runs all specialists in a single
+CLI session per LLM (3 CLI total instead of 5×N).
+
+This module is kept for backwards compatibility only.
 """
 
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -15,6 +27,13 @@ from turbowrap.review.reviewers.claude_cli_reviewer import ClaudeCLIReviewer
 from turbowrap.review.reviewers.gemini_cli_challenger import GeminiCLIChallenger
 
 logger = logging.getLogger(__name__)
+
+# Emit deprecation warning when module is imported
+warnings.warn(
+    "ChallengerLoop is deprecated. Use ParallelTripleLLMRunner instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Callback types
 IterationCallback = Callable[

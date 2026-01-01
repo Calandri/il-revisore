@@ -19,7 +19,12 @@ import pytest
 
 from turbowrap.review.challenger_loop import ChallengerLoopResult
 from turbowrap.review.models.progress import ProgressEvent, ProgressEventType
-from turbowrap.review.models.report import ConvergenceStatus, FinalReport, Recommendation, RepoType
+from turbowrap.review.models.report import (
+    ConvergenceStatus,
+    FinalReport,
+    Recommendation,
+    RepoType,
+)
 from turbowrap.review.models.review import (
     Issue,
     IssueCategory,
@@ -313,7 +318,6 @@ class TestBackendRepoReview:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -349,7 +353,6 @@ class TestBackendRepoReview:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -380,7 +383,6 @@ class TestBackendRepoReview:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -424,7 +426,6 @@ class TestFrontendRepoReview:
                     source=ReviewRequestSource(directory=str(frontend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -460,7 +461,6 @@ class TestFrontendRepoReview:
                     source=ReviewRequestSource(directory=str(frontend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -510,7 +510,6 @@ class TestFullstackRepoReview:
                     source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=True,  # Include functional
                     ),
                 )
@@ -555,7 +554,6 @@ class TestFullstackRepoReview:
                     source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -603,7 +601,6 @@ class TestProgressCallbacks:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -658,7 +655,6 @@ class TestProgressCallbacks:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -740,7 +736,6 @@ class TestCheckpointResume:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -802,7 +797,6 @@ class TestCheckpointResume:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -869,7 +863,6 @@ class TestIssueHandling:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -919,7 +912,6 @@ class TestIssueHandling:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -963,7 +955,6 @@ class TestScoreAndRecommendation:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -1007,7 +998,6 @@ class TestScoreAndRecommendation:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )
@@ -1050,7 +1040,6 @@ class TestReportSaving:
                     source=ReviewRequestSource(directory=str(backend_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        challenger_enabled=True,
                         include_functional=False,
                     ),
                 )

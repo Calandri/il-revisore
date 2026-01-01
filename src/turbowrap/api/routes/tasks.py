@@ -317,12 +317,15 @@ class ReviewStreamRequest(BaseModel):
         default="initial",
         description="Review mode: 'initial' for .llms/structure.xml only, 'diff' for changed files",
     )
-    challenger_enabled: bool = Field(default=True, description="Enable challenger validation loop")
     include_functional: bool = Field(
         default=True, description="Include functional analyst reviewer"
     )
     resume: bool = Field(
         default=False, description="Resume from checkpoints of the most recent failed review"
+    )
+    regenerate_structure: bool = Field(
+        default=False,
+        description="Force regeneration of .llms/structure.xml even if it exists",
     )
 
 
@@ -353,9 +356,9 @@ async def stream_review(
         repository_id=repository_id,
         repo=repo,
         mode=request_body.mode,
-        challenger_enabled=request_body.challenger_enabled,
         include_functional=request_body.include_functional,
         resume=request_body.resume,
+        regenerate_structure=request_body.regenerate_structure,
     )
 
     return EventSourceResponse(service.generate_events(session_info))
@@ -364,7 +367,7 @@ async def stream_review(
 class RestartReviewerRequest(BaseModel):
     """Request body for restarting a single reviewer."""
 
-    challenger_enabled: bool = Field(default=True, description="Enable challenger validation loop")
+    pass  # No options needed - challenger loop deprecated
 
 
 @router.post("/{task_id}/review/restart/{reviewer_name}")
@@ -447,14 +450,12 @@ async def restart_reviewer(
             # Build review context
             local_path = repo.local_path
             review_mode = task.config.get("mode", "initial") if task.config else "initial"
-            challenger_enabled = request_body.challenger_enabled
 
             request = ReviewRequest(
                 type="directory",
                 source=ReviewRequestSource(directory=cast(str, local_path)),
                 options=ReviewOptions(
                     mode=ReviewMode.INITIAL if review_mode == "initial" else ReviewMode.DIFF,
-                    challenger_enabled=challenger_enabled,
                 ),
             )
 

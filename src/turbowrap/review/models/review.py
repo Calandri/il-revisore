@@ -180,9 +180,8 @@ class ReviewOptions(BaseModel):
         IssueSeverity.LOW, description="Minimum severity to report"
     )
     output_format: str = Field("both", description="Output format: markdown, json, both")
-    challenger_enabled: bool = Field(True, description="Enable challenger loop")
-    satisfaction_threshold: int = Field(
-        50, ge=0, le=100, description="Challenger satisfaction threshold"
+    regenerate_structure: bool = Field(
+        False, description="Force regeneration of .llms/structure.xml even if it exists"
     )
 
 

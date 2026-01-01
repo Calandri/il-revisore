@@ -23,7 +23,6 @@ from turbowrap.orchestration import (
     deduplicate_issues,
     prioritize_issues,
 )
-from turbowrap.review.challenger_loop import ChallengerLoop, ChallengerLoopResult
 from turbowrap.review.dual_llm_runner import TripleLLMResult, TripleLLMRunner
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.progress import (
@@ -137,420 +136,229 @@ class Orchestrator:
         logger.info(f"Running reviewers: {reviewers}")
         reviewer_results: list[ReviewerResult] = []
         all_issues: list[Issue] = []
-        loop_results: list[ChallengerLoopResult] = []
 
-        checkpoints = completed_checkpoints or {}
+        # Parallel Triple-LLM mode: 3 CLI processes instead of 15
+        # Each LLM (Claude, Gemini, Grok) runs IN PARALLEL
+        # This shares cache within each LLM session, reducing costs by ~80%
 
-        if request.options.challenger_enabled:
+        started_at = datetime.utcnow()
 
-            async def run_reviewer_with_progress(
-                reviewer_name: str,
-            ) -> tuple[str, str, Any]:
-                """Run a single reviewer with progress events."""
-                display_name = get_reviewer_display_name(reviewer_name)
+        # Emit start events for the 3 LLM streams
+        await emit(
+            ProgressEvent(
+                type=ProgressEventType.REVIEWER_STARTED,
+                reviewer_name="parallel_claude",
+                reviewer_display_name="Claude (All Specialists)",
+                message="Starting Claude parallel review...",
+            )
+        )
+        await emit(
+            ProgressEvent(
+                type=ProgressEventType.REVIEWER_STARTED,
+                reviewer_name="parallel_gemini",
+                reviewer_display_name="Gemini (All Specialists)",
+                message="Starting Gemini parallel review...",
+            )
+        )
+        await emit(
+            ProgressEvent(
+                type=ProgressEventType.REVIEWER_STARTED,
+                reviewer_name="parallel_grok",
+                reviewer_display_name="Grok (All Specialists)",
+                message="Starting Grok parallel review...",
+            )
+        )
 
-                if reviewer_name in checkpoints:
-                    checkpoint = checkpoints[reviewer_name]
-                    issues_count = len(checkpoint.get("issues_data", []))
-                    satisfaction = checkpoint.get("final_satisfaction", 0.0)
-                    iterations = checkpoint.get("iterations", 1)
-
-                    logger.info(f"Skipping {reviewer_name} - restored from checkpoint")
-
-                    await emit(
-                        ProgressEvent(
-                            type=ProgressEventType.REVIEWER_COMPLETED,
-                            reviewer_name=reviewer_name,
-                            reviewer_display_name=display_name,
-                            iteration=iterations,
-                            satisfaction_score=satisfaction,
-                            issues_found=issues_count,
-                            message=(
-                                f"⚡ {display_name} restored from checkpoint "
-                                f"({issues_count} issues)"
-                            ),
-                        )
-                    )
-
-                    await emit_log(
-                        "INFO",
-                        f"⚡ {display_name}: restored from checkpoint ({issues_count} issues)",
-                    )
-
-                    return (reviewer_name, "checkpoint", checkpoint)
-
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STARTED,
-                        reviewer_name=reviewer_name,
-                        reviewer_display_name=display_name,
-                        message=f"Starting {display_name}...",
-                    )
-                )
-
-                started_at = datetime.utcnow()
-
-                try:
-                    result = await self._run_challenger_loop_with_progress(
-                        context,
-                        reviewer_name,
-                        emit,
-                    )
-
-                    await emit(
-                        ProgressEvent(
-                            type=ProgressEventType.REVIEWER_COMPLETED,
-                            reviewer_name=reviewer_name,
-                            reviewer_display_name=display_name,
-                            iteration=result.iterations,
-                            satisfaction_score=result.final_satisfaction,
-                            issues_found=len(result.final_review.issues),
-                            message=(
-                                f"{display_name} completed with "
-                                f"{len(result.final_review.issues)} issues"
-                            ),
-                            model_usage=[m.model_dump() for m in result.final_review.model_usage],
-                        )
-                    )
-
-                    await emit_log(
-                        "INFO",
-                        (
-                            f"✓ {display_name}: {result.final_satisfaction:.0f}% "
-                            f"({result.iterations} iter, "
-                            f"{len(result.final_review.issues)} issues)"
-                        ),
-                    )
-
-                    if checkpoint_callback:
-                        await checkpoint_callback(
-                            reviewer_name,
-                            "completed",
-                            result.final_review.issues,
-                            result.final_satisfaction,
-                            result.iterations,
-                            [m.model_dump() for m in result.final_review.model_usage],
-                            started_at,
-                        )
-
-                    return (reviewer_name, "success", result)
-
-                except Exception as e:
-                    logger.error(f"Reviewer {reviewer_name} failed: {e}")
-
-                    await emit(
-                        ProgressEvent(
-                            type=ProgressEventType.REVIEWER_ERROR,
-                            reviewer_name=reviewer_name,
-                            reviewer_display_name=display_name,
-                            error=str(e),
-                            message=f"{display_name} failed: {str(e)[:50]}",
-                        )
-                    )
-
-                    await emit_log("ERROR", f"✗ {display_name}: {str(e)[:60]}")
-
-                    if checkpoint_callback:
-                        await checkpoint_callback(
-                            reviewer_name,
-                            "failed",
-                            [],
-                            0.0,
-                            0,
-                            [],
-                            started_at,
-                        )
-
-                    return (reviewer_name, "error", str(e))
-
-            tasks = [run_reviewer_with_progress(name) for name in reviewers]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for result in results:
-                if isinstance(result, Exception):
-                    continue
-
-                assert isinstance(result, tuple)
-                reviewer_name, status, data = result
-
-                if status == "checkpoint":
-                    assert isinstance(data, dict)
-                    checkpoint = data
-                    issues_data = checkpoint.get("issues_data", [])
-                    restored_issues = [
-                        Issue.model_validate(issue_dict) for issue_dict in issues_data
-                    ]
-                    all_issues.extend(restored_issues)
-
-                    # Calculate total cost from checkpoint model_usage
-                    model_usage_data = checkpoint.get("model_usage", [])
-                    total_cost = sum(m.get("cost_usd", 0.0) for m in model_usage_data)
-
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="completed",
-                            issues_found=len(restored_issues),
-                            iterations=checkpoint.get("iterations", 1),
-                            final_satisfaction=checkpoint.get("final_satisfaction", 0.0),
-                            cost_usd=total_cost,
-                        )
-                    )
-
-                elif status == "success":
-                    assert isinstance(data, ChallengerLoopResult)
-                    loop_result = data
-                    loop_results.append(loop_result)
-
-                    # Calculate total cost from model usage
-                    total_cost = sum(m.cost_usd for m in loop_result.final_review.model_usage)
-
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="completed",
-                            issues_found=len(loop_result.final_review.issues),
-                            duration_seconds=loop_result.final_review.duration_seconds,
-                            iterations=loop_result.iterations,
-                            final_satisfaction=loop_result.final_satisfaction,
-                            cost_usd=total_cost,
-                        )
-                    )
-
-                    all_issues.extend(loop_result.final_review.issues)
-                else:
-                    assert isinstance(data, str)
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="error",
-                            error=data,
-                        )
-                    )
-
-        else:
-            # Parallel Triple-LLM mode: 3 CLI processes instead of 15
-            # Each LLM (Claude, Gemini, Grok) runs IN PARALLEL
-            # This shares cache within each LLM session, reducing costs by ~80%
-
-            started_at = datetime.utcnow()
-
-            # Emit start events for the 3 LLM streams
+        # Streaming callbacks for each LLM
+        async def on_claude_chunk(chunk: str) -> None:
             await emit(
                 ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STARTED,
+                    type=ProgressEventType.REVIEWER_STREAMING,
                     reviewer_name="parallel_claude",
                     reviewer_display_name="Claude (All Specialists)",
-                    message="Starting Claude parallel review...",
+                    content=chunk,
                 )
             )
+
+        async def on_gemini_chunk(chunk: str) -> None:
             await emit(
                 ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STARTED,
+                    type=ProgressEventType.REVIEWER_STREAMING,
                     reviewer_name="parallel_gemini",
                     reviewer_display_name="Gemini (All Specialists)",
-                    message="Starting Gemini parallel review...",
+                    content=chunk,
+                )
+            )
+
+        async def on_grok_chunk(chunk: str) -> None:
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_STREAMING,
+                    reviewer_name="parallel_grok",
+                    reviewer_display_name="Grok (All Specialists)",
+                    content=chunk,
+                )
+            )
+
+        try:
+            # Run the parallel triple-LLM review (3 CLIs in parallel)
+            runner = ParallelTripleLLMRunner(specialists=reviewers)
+            par_result = await runner.run(
+                context=context,
+                file_list=context.files,
+                on_claude_chunk=on_claude_chunk,
+                on_gemini_chunk=on_gemini_chunk,
+                on_grok_chunk=on_grok_chunk,
+            )
+
+            # Emit completion events for each LLM
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_COMPLETED,
+                    reviewer_name="parallel_claude",
+                    reviewer_display_name="Claude (All Specialists)",
+                    issues_found=par_result.claude_issues_count,
+                    message=f"Claude: {par_result.claude_issues_count} issues",
                 )
             )
             await emit(
                 ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STARTED,
+                    type=ProgressEventType.REVIEWER_COMPLETED,
+                    reviewer_name="parallel_gemini",
+                    reviewer_display_name="Gemini (All Specialists)",
+                    issues_found=par_result.gemini_issues_count,
+                    message=f"Gemini: {par_result.gemini_issues_count} issues",
+                )
+            )
+            await emit(
+                ProgressEvent(
+                    type=ProgressEventType.REVIEWER_COMPLETED,
                     reviewer_name="parallel_grok",
                     reviewer_display_name="Grok (All Specialists)",
-                    message="Starting Grok parallel review...",
+                    issues_found=par_result.grok_issues_count,
+                    message=f"Grok: {par_result.grok_issues_count} issues",
                 )
             )
 
-            # Streaming callbacks for each LLM
-            async def on_claude_chunk(chunk: str) -> None:
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="parallel_claude",
-                        reviewer_display_name="Claude (All Specialists)",
-                        content=chunk,
+            # Log summary
+            await emit_log(
+                "INFO",
+                f"✓ Parallel review: {par_result.merged_issues_count} issues "
+                f"(C:{par_result.claude_issues_count} G:{par_result.gemini_issues_count} "
+                f"X:{par_result.grok_issues_count}, overlap={par_result.overlap_count})",
+            )
+
+            # Build reviewer_results for each specialist from merged data
+            for reviewer_name in reviewers:
+                # Count issues for this specialist across all LLMs
+                specialist_issues = 0
+                if reviewer_name in par_result.claude_reviews:
+                    specialist_issues += len(par_result.claude_reviews[reviewer_name].issues)
+                if reviewer_name in par_result.gemini_reviews:
+                    specialist_issues += len(par_result.gemini_reviews[reviewer_name].issues)
+                if reviewer_name in par_result.grok_reviews:
+                    specialist_issues += len(par_result.grok_reviews[reviewer_name].issues)
+
+                # Count how many LLMs successfully reviewed this specialist
+                llms_ok = sum(
+                    [
+                        reviewer_name in par_result.claude_reviews,
+                        reviewer_name in par_result.gemini_reviews,
+                        reviewer_name in par_result.grok_reviews,
+                    ]
+                )
+
+                # Calculate total cost for this specialist across all LLMs
+                specialist_cost = 0.0
+                if reviewer_name in par_result.claude_reviews:
+                    specialist_cost += sum(
+                        m.cost_usd for m in par_result.claude_reviews[reviewer_name].model_usage
+                    )
+                if reviewer_name in par_result.gemini_reviews:
+                    specialist_cost += sum(
+                        m.cost_usd for m in par_result.gemini_reviews[reviewer_name].model_usage
+                    )
+                if reviewer_name in par_result.grok_reviews:
+                    specialist_cost += sum(
+                        m.cost_usd for m in par_result.grok_reviews[reviewer_name].model_usage
+                    )
+
+                reviewer_results.append(
+                    ReviewerResult(
+                        name=reviewer_name,
+                        status="completed" if llms_ok > 0 else "error",
+                        issues_found=specialist_issues,
+                        duration_seconds=par_result.total_duration_seconds / len(reviewers),
+                        iterations=1,
+                        final_satisfaction=llms_ok * 33.33,
+                        cost_usd=specialist_cost,
                     )
                 )
 
-            async def on_gemini_chunk(chunk: str) -> None:
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="parallel_gemini",
-                        reviewer_display_name="Gemini (All Specialists)",
-                        content=chunk,
-                    )
-                )
+            # Add all merged issues
+            all_issues.extend(par_result.final_review.issues)
 
-            async def on_grok_chunk(chunk: str) -> None:
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_STREAMING,
-                        reviewer_name="parallel_grok",
-                        reviewer_display_name="Grok (All Specialists)",
-                        content=chunk,
-                    )
-                )
-
-            try:
-                # Run the parallel triple-LLM review (3 CLIs in parallel)
-                runner = ParallelTripleLLMRunner(specialists=reviewers)
-                par_result = await runner.run(
-                    context=context,
-                    file_list=context.files,
-                    on_claude_chunk=on_claude_chunk,
-                    on_gemini_chunk=on_gemini_chunk,
-                    on_grok_chunk=on_grok_chunk,
-                )
-
-                # Emit completion events for each LLM
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name="parallel_claude",
-                        reviewer_display_name="Claude (All Specialists)",
-                        issues_found=par_result.claude_issues_count,
-                        message=f"Claude: {par_result.claude_issues_count} issues",
-                    )
-                )
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name="parallel_gemini",
-                        reviewer_display_name="Gemini (All Specialists)",
-                        issues_found=par_result.gemini_issues_count,
-                        message=f"Gemini: {par_result.gemini_issues_count} issues",
-                    )
-                )
-                await emit(
-                    ProgressEvent(
-                        type=ProgressEventType.REVIEWER_COMPLETED,
-                        reviewer_name="parallel_grok",
-                        reviewer_display_name="Grok (All Specialists)",
-                        issues_found=par_result.grok_issues_count,
-                        message=f"Grok: {par_result.grok_issues_count} issues",
-                    )
-                )
-
-                # Log summary
-                await emit_log(
-                    "INFO",
-                    f"✓ Parallel review: {par_result.merged_issues_count} issues "
-                    f"(C:{par_result.claude_issues_count} G:{par_result.gemini_issues_count} "
-                    f"X:{par_result.grok_issues_count}, overlap={par_result.overlap_count})",
-                )
-
-                # Build reviewer_results for each specialist from merged data
+            # Checkpoint callback for recovery
+            if checkpoint_callback:
                 for reviewer_name in reviewers:
-                    # Count issues for this specialist across all LLMs
-                    specialist_issues = 0
+                    # Get issues for this specialist
+                    spec_issues: list[Issue] = []
                     if reviewer_name in par_result.claude_reviews:
-                        specialist_issues += len(par_result.claude_reviews[reviewer_name].issues)
+                        spec_issues.extend(par_result.claude_reviews[reviewer_name].issues)
                     if reviewer_name in par_result.gemini_reviews:
-                        specialist_issues += len(par_result.gemini_reviews[reviewer_name].issues)
+                        spec_issues.extend(par_result.gemini_reviews[reviewer_name].issues)
                     if reviewer_name in par_result.grok_reviews:
-                        specialist_issues += len(par_result.grok_reviews[reviewer_name].issues)
+                        spec_issues.extend(par_result.grok_reviews[reviewer_name].issues)
 
-                    # Count how many LLMs successfully reviewed this specialist
-                    llms_ok = sum(
-                        [
-                            reviewer_name in par_result.claude_reviews,
-                            reviewer_name in par_result.gemini_reviews,
-                            reviewer_name in par_result.grok_reviews,
-                        ]
+                    await checkpoint_callback(
+                        reviewer_name,
+                        "completed",
+                        spec_issues,
+                        100.0,
+                        1,
+                        [],
+                        started_at,
                     )
 
-                    # Calculate total cost for this specialist across all LLMs
-                    specialist_cost = 0.0
-                    if reviewer_name in par_result.claude_reviews:
-                        specialist_cost += sum(
-                            m.cost_usd for m in par_result.claude_reviews[reviewer_name].model_usage
-                        )
-                    if reviewer_name in par_result.gemini_reviews:
-                        specialist_cost += sum(
-                            m.cost_usd for m in par_result.gemini_reviews[reviewer_name].model_usage
-                        )
-                    if reviewer_name in par_result.grok_reviews:
-                        specialist_cost += sum(
-                            m.cost_usd for m in par_result.grok_reviews[reviewer_name].model_usage
-                        )
+        except Exception as e:
+            logger.exception(f"Parallel triple-LLM review failed: {e}")
 
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="completed" if llms_ok > 0 else "error",
-                            issues_found=specialist_issues,
-                            duration_seconds=par_result.total_duration_seconds / len(reviewers),
-                            iterations=1,
-                            final_satisfaction=llms_ok * 33.33,
-                            cost_usd=specialist_cost,  # Read directly from model_usage
-                        )
+            # Emit error for all LLM streams
+            llm_names = ["parallel_claude", "parallel_gemini", "parallel_grok"]
+            for llm_name in llm_names:
+                display = f"{llm_name.split('_')[1].title()} (All Specialists)"
+                await emit(
+                    ProgressEvent(
+                        type=ProgressEventType.REVIEWER_ERROR,
+                        reviewer_name=llm_name,
+                        reviewer_display_name=display,
+                        error=str(e),
+                        message=f"{llm_name} failed: {str(e)[:50]}",
                     )
+                )
 
-                # Add all merged issues
-                all_issues.extend(par_result.final_review.issues)
+            await emit_log("ERROR", f"✗ Parallel review failed: {str(e)[:60]}")
 
-                # Checkpoint callback for recovery
+            # Mark all reviewers as failed
+            for reviewer_name in reviewers:
+                reviewer_results.append(
+                    ReviewerResult(
+                        name=reviewer_name,
+                        status="error",
+                        error=str(e),
+                    )
+                )
+
                 if checkpoint_callback:
-                    for reviewer_name in reviewers:
-                        # Get issues for this specialist
-                        spec_issues: list[Issue] = []
-                        if reviewer_name in par_result.claude_reviews:
-                            spec_issues.extend(par_result.claude_reviews[reviewer_name].issues)
-                        if reviewer_name in par_result.gemini_reviews:
-                            spec_issues.extend(par_result.gemini_reviews[reviewer_name].issues)
-                        if reviewer_name in par_result.grok_reviews:
-                            spec_issues.extend(par_result.grok_reviews[reviewer_name].issues)
-
-                        await checkpoint_callback(
-                            reviewer_name,
-                            "completed",
-                            spec_issues,
-                            100.0,
-                            1,
-                            [],
-                            started_at,
-                        )
-
-            except Exception as e:
-                logger.exception(f"Parallel triple-LLM review failed: {e}")
-
-                # Emit error for all LLM streams
-                llm_names = ["parallel_claude", "parallel_gemini", "parallel_grok"]
-                for llm_name in llm_names:
-                    display = f"{llm_name.split('_')[1].title()} (All Specialists)"
-                    await emit(
-                        ProgressEvent(
-                            type=ProgressEventType.REVIEWER_ERROR,
-                            reviewer_name=llm_name,
-                            reviewer_display_name=display,
-                            error=str(e),
-                            message=f"{llm_name} failed: {str(e)[:50]}",
-                        )
+                    await checkpoint_callback(
+                        reviewer_name,
+                        "failed",
+                        [],
+                        0.0,
+                        0,
+                        [],
+                        started_at,
                     )
-
-                await emit_log("ERROR", f"✗ Parallel review failed: {str(e)[:60]}")
-
-                # Mark all reviewers as failed
-                for reviewer_name in reviewers:
-                    reviewer_results.append(
-                        ReviewerResult(
-                            name=reviewer_name,
-                            status="error",
-                            error=str(e),
-                        )
-                    )
-
-                    if checkpoint_callback:
-                        await checkpoint_callback(
-                            reviewer_name,
-                            "failed",
-                            [],
-                            0.0,
-                            0,
-                            [],
-                            started_at,
-                        )
 
         # Step 5: Deduplicate and prioritize issues
         deduplicated_issues = deduplicate_issues(all_issues)
@@ -613,7 +421,6 @@ class Orchestrator:
             repo_type=repo_type,
             reviewer_results=reviewer_results,
             issues=prioritized_issues,
-            loop_results=loop_results,
             evaluation=evaluation,
         )
 
@@ -680,6 +487,16 @@ class Orchestrator:
         if source.workspace_path:
             context.workspace_path = source.workspace_path
             logger.info(f"Monorepo mode: limiting review to workspace '{source.workspace_path}'")
+
+        # Delete existing structure.xml if regenerate_structure is True
+        if request.options.regenerate_structure:
+            if context.workspace_path:
+                xml_path = context.repo_path / context.workspace_path / ".llms" / "structure.xml"
+            else:
+                xml_path = context.repo_path / ".llms" / "structure.xml"
+            if xml_path.exists():
+                xml_path.unlink()
+                logger.info(f"Deleted existing {xml_path} (regenerate_structure=True)")
 
         self._load_structure_docs(context)
 
@@ -917,7 +734,7 @@ class Orchestrator:
                     )
                 )
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             start_time = time.time()
             generated_files = await loop.run_in_executor(
                 None, lambda: generator.generate(verbose=True, formats=["xml"])
@@ -937,9 +754,12 @@ class Orchestrator:
                     )
                 )
 
+            # Convert Path objects to strings for JSON serialization
+            generated_files_str = [str(f) for f in generated_files]
+
             logger.info(
                 f"[ORCHESTRATOR] SUCCESS: Generated {len(generated_files)} "
-                f"structure files: {generated_files}"
+                f"structure files: {generated_files_str}"
             )
 
             # Complete operation tracking
@@ -947,7 +767,7 @@ class Orchestrator:
                 operation_id,
                 result={
                     "files_generated": len(generated_files),
-                    "files": generated_files,
+                    "files": generated_files_str,
                     "duration_seconds": duration,
                 },
             )
@@ -1078,56 +898,6 @@ class Orchestrator:
             reviewers.append("analyst_func")
 
         return reviewers
-
-    async def _run_challenger_loop(
-        self,
-        context: ReviewContext,
-        reviewer_name: str,
-    ) -> ChallengerLoopResult:
-        """Run the challenger loop for a reviewer."""
-        loop = ChallengerLoop()
-        return await loop.run(context, reviewer_name)
-
-    async def _run_challenger_loop_with_progress(
-        self,
-        context: ReviewContext,
-        reviewer_name: str,
-        emit: Callable[[ProgressEvent], Awaitable[None]],
-    ) -> ChallengerLoopResult:
-        """Run the challenger loop with progress updates."""
-        display_name = get_reviewer_display_name(reviewer_name)
-
-        async def on_iteration(iteration: int, satisfaction: float, issues_count: int) -> None:
-            await emit(
-                ProgressEvent(
-                    type=ProgressEventType.REVIEWER_ITERATION,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                    iteration=iteration,
-                    max_iterations=5,
-                    satisfaction_score=satisfaction,
-                    issues_found=issues_count,
-                    message=f"Iteration {iteration}: {satisfaction:.1f}% satisfaction",
-                )
-            )
-
-        async def on_content(content: str) -> None:
-            await emit(
-                ProgressEvent(
-                    type=ProgressEventType.REVIEWER_STREAMING,
-                    reviewer_name=reviewer_name,
-                    reviewer_display_name=display_name,
-                    content=content,
-                )
-            )
-
-        loop = ChallengerLoop()
-        return await loop.run(
-            context,
-            reviewer_name,
-            on_iteration_callback=on_iteration,
-            on_content_callback=on_content,
-        )
 
     async def _run_triple_llm_review(
         self,
@@ -1280,7 +1050,6 @@ class Orchestrator:
         repo_type: RepoType,
         reviewer_results: list[ReviewerResult],
         issues: list[Issue],
-        loop_results: list[ChallengerLoopResult],
         evaluation: RepositoryEvaluation | None = None,
     ) -> FinalReport:
         """Build the final report."""
@@ -1290,7 +1059,8 @@ class Orchestrator:
 
         recommendation = calculate_recommendation(severity_counts)
 
-        challenger_metadata = self._build_challenger_metadata(loop_results)
+        # ChallengerLoop deprecated - always disabled
+        challenger_metadata = ChallengerMetadata(enabled=False)
 
         # Build next steps (using shared utility)
         next_steps = build_next_steps(issues)
@@ -1322,40 +1092,6 @@ class Orchestrator:
             issues=issues,
             next_steps=next_steps,
             evaluation=evaluation,
-        )
-
-    # NOTE: _calculate_score, _calculate_recommendation moved to
-
-    def _build_challenger_metadata(
-        self,
-        loop_results: list[ChallengerLoopResult],
-    ) -> ChallengerMetadata:
-        """Build challenger metadata from loop results."""
-        if not loop_results:
-            return ChallengerMetadata(enabled=False)
-
-        total_iterations = sum(r.iterations for r in loop_results)
-        avg_satisfaction = sum(r.final_satisfaction for r in loop_results) / len(loop_results)
-
-        all_history = []
-        all_insights = []
-        for result in loop_results:
-            all_history.extend(result.iteration_history)
-            all_insights.extend(result.insights)
-
-        convergence = loop_results[0].convergence
-        for result in loop_results[1:]:
-            if result.convergence.value != "THRESHOLD_MET":
-                convergence = result.convergence
-
-        return ChallengerMetadata(
-            enabled=True,
-            total_iterations=total_iterations,
-            final_satisfaction_score=avg_satisfaction,
-            threshold=50.0,
-            convergence=convergence,
-            iteration_history=all_history,
-            insights=all_insights,
         )
 
     # NOTE: _build_next_steps moved to turbowrap.orchestration.report_utils
