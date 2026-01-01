@@ -16,8 +16,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from turbowrap_llm import GeminiCLI
+
 from ...db.models import Issue, IssueStatus, Repository, Task
-from ...orchestration.cli_runner import GeminiCLI
 from ...review.reviewers.utils.json_extraction import parse_llm_json
 from ...utils.aws_secrets import get_anthropic_api_key
 from ...utils.git_utils import get_current_branch
@@ -494,19 +495,27 @@ async def run_lint_fix(
 
                 logger.info(f"[LINT-FIX] Starting Gemini Flash for {lint_type}")
 
+                # Import here to avoid circular imports
+                from turbowrap.config import get_settings
+                from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
+
+                settings = get_settings()
+                artifact_saver = S3ArtifactSaver(
+                    bucket=settings.thinking.s3_bucket,
+                    region=settings.thinking.s3_region,
+                    prefix=f"lint-fix/{lint_type}",
+                )
+
                 gemini_cli = GeminiCLI(
                     working_dir=repo_path,
                     model="flash",
                     timeout=300,  # 5 minutes per lint type
-                    s3_prefix=f"lint-fix/{lint_type}",
+                    artifact_saver=artifact_saver,
                 )
 
                 gemini_result = await gemini_cli.run(
-                    prompt,
-                    operation_type="fix",
-                    repo_name=str(repo.name),
-                    context_id=f"{task_id}/{lint_type}",
-                    operation_details={"lint_type": lint_type, "task_id": task_id},
+                    prompt=prompt,
+                    save_artifacts=True,
                 )
 
                 if not gemini_result.success:

@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from turbowrap.orchestration.cli_runner import GeminiCLI
+from turbowrap_llm import GeminiCLI
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
@@ -261,6 +261,9 @@ def _analyze_with_gemini_cli(
     """
     import asyncio
 
+    from turbowrap.config import get_settings
+    from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
+
     prompt = f"""You are a senior backend architect. Your task is to thoroughly and completely document ALL REST API endpoints in this {framework} repository.
 
 First, read .llms/structure.xml to get an overview of the project structure. Then explore each route/API file, analyze the source code, and document every single endpoint.
@@ -297,11 +300,18 @@ Respond ONLY with a valid JSON array (no markdown, no explanations):
 
     response_text = ""
     try:
+        settings = get_settings()
+        artifact_saver = S3ArtifactSaver(
+            bucket=settings.thinking.s3_bucket,
+            region=settings.thinking.s3_region,
+            prefix="endpoint-detection",
+        )
+
         cli = GeminiCLI(
             working_dir=Path(repo_path),
             model="flash",  # Use Flash for fast analysis
             timeout=120,
-            s3_prefix="endpoint-detection",
+            artifact_saver=artifact_saver,
         )
 
         logger.info(f"Running Gemini CLI (flash) for endpoint detection in {repo_path}")
@@ -310,11 +320,7 @@ Respond ONLY with a valid JSON array (no markdown, no explanations):
         async def run_cli() -> tuple[bool, str, str | None]:
             result = await cli.run(
                 prompt,
-                operation_type="endpoint_detection",
-                repo_name=Path(repo_path).name,
-                context_id=f"endpoints_{Path(repo_path).name}",
-                save_prompt=True,
-                save_output=True,
+                save_artifacts=True,
             )
             return result.success, result.output, result.error
 

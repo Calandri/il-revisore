@@ -1,6 +1,9 @@
 """Linear issue analyzer using Claude CLI for 2-phase workflow.
 
-Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
+Uses turbowrap_llm.ClaudeCLI with TurboWrapTrackerAdapter for:
+- Streaming output via SSE (visible in UI)
+- Automatic operation tracking
+- S3 artifact saving
 """
 
 import logging
@@ -9,8 +12,9 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, cast
 
+from turbowrap_llm import ClaudeCLI
+
 from turbowrap.db.models import LinearIssue
-from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.integrations.linear import LinearClient
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
@@ -23,7 +27,10 @@ class LinearIssueAnalyzer:
     Phase 1: Generate clarifying questions
     Phase 2: Deep analysis with user answers
 
-    Uses the centralized ClaudeCLI utility for Claude CLI execution.
+    Uses turbowrap_llm.ClaudeCLI with TurboWrapTrackerAdapter for:
+    - Streaming output visible in UI
+    - Operation tracking
+    - S3 artifact saving
     """
 
     def __init__(self, linear_client: LinearClient):
@@ -41,13 +48,43 @@ class LinearIssueAnalyzer:
         project_root = Path(__file__).parent.parent.parent.parent
         self.agent_md_path = project_root / "agents" / "linear_issue_analyzer.md"
 
-    def _get_claude_cli(self) -> ClaudeCLI:
-        """Create ClaudeCLI instance for Linear analysis."""
+    def _get_claude_cli(self, issue_identifier: str, phase: str) -> ClaudeCLI:
+        """Create ClaudeCLI instance with tracker and artifact saver.
+
+        Args:
+            issue_identifier: Linear issue identifier (e.g., "PROJ-123")
+            phase: Current analysis phase ("phase1" or "phase2")
+        """
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+        from turbowrap.config import get_settings
+        from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
+
+        settings = get_settings()
+
+        artifact_saver = S3ArtifactSaver(
+            bucket=settings.thinking.s3_bucket,
+            region=settings.thinking.s3_region,
+            prefix="linear-analysis",
+        )
+
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,  # Closest match for Linear analysis
+            initial_details={
+                "analyzer": "linear_issue_analyzer",
+                "issue_identifier": issue_identifier,
+                "phase": phase,
+            },
+        )
+
         return ClaudeCLI(
-            agent_md_path=self.agent_md_path if self.agent_md_path.exists() else None,
+            working_dir=None,
             model="opus",  # Use Opus for complex analysis
-            timeout=180,
-            s3_prefix="linear-analysis",
+            agent_md_path=self.agent_md_path if self.agent_md_path.exists() else None,
+            artifact_saver=artifact_saver,
+            tracker=tracker,
         )
 
     async def analyze_phase1_questions(self, issue: LinearIssue) -> list[dict[str, Any]]:
@@ -64,14 +101,13 @@ class LinearIssueAnalyzer:
         prompt = self._build_questions_prompt(issue)
 
         try:
-            cli = self._get_claude_cli()
+            cli = self._get_claude_cli(
+                issue_identifier=str(issue.linear_identifier),
+                phase="phase1",
+            )
             result = await cli.run(
-                prompt,
-                operation_type="linear_clarify",
-                repo_name=str(issue.linear_identifier),
-                context_id=f"{issue.linear_identifier}_phase1",
-                save_prompt=True,
-                save_output=True,
+                prompt=prompt,
+                save_artifacts=True,
             )
 
             if not result.success:
@@ -109,15 +145,13 @@ class LinearIssueAnalyzer:
         try:
             yield "Running Claude analysis..."
 
-            cli = self._get_claude_cli()
+            cli = self._get_claude_cli(
+                issue_identifier=str(issue.linear_identifier),
+                phase="phase2",
+            )
             result = await cli.run(
-                prompt,
-                operation_type="linear_analysis",
-                repo_name=str(issue.linear_identifier),
-                context_id=f"{issue.linear_identifier}_phase2",
-                save_prompt=True,
-                save_output=True,
-                save_thinking=True,
+                prompt=prompt,
+                save_artifacts=True,
             )
 
             if not result.success:

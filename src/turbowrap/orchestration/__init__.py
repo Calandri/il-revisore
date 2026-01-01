@@ -7,26 +7,17 @@ the review, fix, and auto-update orchestrators:
 - report_utils: Issue deduplication, prioritization, scoring
 - checkpoint: Generic checkpoint management (S3 + local)
 - progress: Unified progress callback types
-- cli_runner: Claude and Gemini CLI wrappers
 - base: BaseOrchestrator abstract class
+
+NOTE: CLI wrappers moved to turbowrap_llm package. Use:
+    from turbowrap_llm import ClaudeCLI, GeminiCLI
 """
 
-# Report utilities
 # Base orchestrator
 from turbowrap.orchestration.base import BaseOrchestrator
 
 # Checkpoint management
 from turbowrap.orchestration.checkpoint import CheckpointManager
-
-# CLI runners
-from turbowrap.orchestration.cli_runner import (
-    ClaudeCLI,
-    ClaudeCLIResult,
-    CLIRunner,
-    GeminiCLI,
-    GeminiCLIResult,
-    ModelUsage,
-)
 
 # Progress types
 from turbowrap.orchestration.progress import BaseProgressEvent, ProgressCallback, ProgressEmitter
@@ -65,13 +56,6 @@ __all__ = [
     "BaseProgressEvent",
     "ProgressCallback",
     "ProgressEmitter",
-    # cli_runner
-    "CLIRunner",
-    "ClaudeCLI",
-    "ClaudeCLIResult",
-    "GeminiCLI",
-    "GeminiCLIResult",
-    "ModelUsage",
     # base
     "BaseOrchestrator",
 ]
