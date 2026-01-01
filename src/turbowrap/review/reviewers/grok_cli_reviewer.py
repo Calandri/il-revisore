@@ -56,7 +56,6 @@ class GrokCLIReviewer(BaseCLIReviewer):
         return GrokCLI(
             working_dir=context.repo_path,
             model=self.grok_model,
-            timeout=self.timeout,
             s3_prefix=f"reviews/{self.name}",
         )
 

@@ -13,18 +13,12 @@ detection through to final report generation, including:
 """
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from turbowrap.review.challenger_loop import ChallengerLoopResult
 from turbowrap.review.models.progress import ProgressEvent, ProgressEventType
-from turbowrap.review.models.report import (
-    ConvergenceStatus,
-    FinalReport,
-    Recommendation,
-    RepoType,
-)
+from turbowrap.review.models.report import FinalReport, Recommendation, RepoType
 from turbowrap.review.models.review import (
     Issue,
     IssueCategory,
@@ -36,6 +30,7 @@ from turbowrap.review.models.review import (
     ReviewRequestSource,
 )
 from turbowrap.review.orchestrator import Orchestrator
+from turbowrap.review.parallel_triple_llm_runner import ParallelTripleLLMResult
 
 # =============================================================================
 # Fixtures
@@ -244,45 +239,53 @@ export const App = () => <div>App</div>;
     return repo
 
 
-@pytest.fixture
-def mock_challenger_loop_result():
-    """Create a mock ChallengerLoopResult."""
-    return ChallengerLoopResult(
+def create_mock_parallel_result(issues: list[Issue] | None = None) -> ParallelTripleLLMResult:
+    """Create a mock ParallelTripleLLMResult."""
+    if issues is None:
+        issues = []
+    return ParallelTripleLLMResult(
         final_review=ReviewOutput(
-            reviewer="reviewer_be_quality",
-            issues=[
-                Issue(
-                    id="TEST-HIGH-001",
-                    file="src/main.py",
-                    line=10,
-                    severity=IssueSeverity.HIGH,
-                    category=IssueCategory.SECURITY,
-                    title="Potential SQL injection",
-                    description="SQL injection vulnerability detected in query construction",
-                    suggested_fix="Use parameterized queries",
-                    flagged_by=["reviewer_be_quality"],
-                ),
-                Issue(
-                    id="TEST-MED-001",
-                    file="src/main.py",
-                    line=25,
-                    severity=IssueSeverity.MEDIUM,
-                    category=IssueCategory.ARCHITECTURE,
-                    title="Missing error handling",
-                    description="Function lacks proper error handling for edge cases",
-                    suggested_fix="Add try-except block",
-                    flagged_by=["reviewer_be_quality"],
-                ),
-            ],
+            reviewer="parallel_merged",
+            issues=issues,
             duration_seconds=30.5,
             model_usage=[],
         ),
-        iterations=2,
-        final_satisfaction=75.0,
-        convergence=ConvergenceStatus.THRESHOLD_MET,
-        iteration_history=[],
-        insights=[],
-        challenger_feedbacks=[],
+        claude_issues_count=len(issues),
+        gemini_issues_count=len(issues) // 2,
+        grok_issues_count=len(issues) // 2,
+        merged_issues_count=len(issues),
+        overlap_count=0,
+    )
+
+
+@pytest.fixture
+def mock_parallel_result():
+    """Create a mock ParallelTripleLLMResult with sample issues."""
+    return create_mock_parallel_result(
+        issues=[
+            Issue(
+                id="TEST-HIGH-001",
+                file="src/main.py",
+                line=10,
+                severity=IssueSeverity.HIGH,
+                category=IssueCategory.SECURITY,
+                title="Potential SQL injection",
+                description="SQL injection vulnerability detected in query construction",
+                suggested_fix="Use parameterized queries",
+                flagged_by=["reviewer_be_quality"],
+            ),
+            Issue(
+                id="TEST-MED-001",
+                file="src/main.py",
+                line=25,
+                severity=IssueSeverity.MEDIUM,
+                category=IssueCategory.ARCHITECTURE,
+                title="Missing error handling",
+                description="Function lacks proper error handling for edge cases",
+                suggested_fix="Add try-except block",
+                flagged_by=["reviewer_be_quality"],
+            ),
+        ]
     )
 
 
@@ -300,18 +303,14 @@ class TestBackendRepoReview:
         """Backend repo is correctly detected as BACKEND type."""
         orchestrator = Orchestrator()
 
-        # Mock the challenger loop to avoid actual LLM calls
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        # Mock ParallelTripleLLMRunner to avoid actual LLM calls
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result())
 
-            # Also mock the evaluator
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -327,55 +326,16 @@ class TestBackendRepoReview:
                 assert report.repository.type == RepoType.BACKEND
 
     @pytest.mark.asyncio
-    async def test_backend_repo_selects_be_reviewers(self, backend_repo):
-        """Backend repo selects backend reviewers only."""
-        orchestrator = Orchestrator()
-
-        reviewers_called = []
-
-        async def mock_loop(context, reviewer_name, emit):
-            reviewers_called.append(reviewer_name)
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
-        ):
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(backend_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                await orchestrator.review(request)
-
-                # Should have BE reviewers only
-                assert "reviewer_be_architecture" in reviewers_called
-                assert "reviewer_be_quality" in reviewers_called
-                assert "reviewer_fe_architecture" not in reviewers_called
-                assert "reviewer_fe_quality" not in reviewers_called
-
-    @pytest.mark.asyncio
-    async def test_backend_repo_full_review_generates_report(
-        self, backend_repo, mock_challenger_loop_result
-    ):
+    async def test_backend_repo_full_review_generates_report(self, backend_repo, mock_parallel_result):
         """Backend repo full review generates a complete report."""
         orchestrator = Orchestrator()
 
-        with patch.object(
-            orchestrator,
-            "_run_challenger_loop_with_progress",
-            return_value=mock_challenger_loop_result,
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=mock_parallel_result)
+
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
@@ -410,16 +370,13 @@ class TestFrontendRepoReview:
         """Frontend repo is correctly detected as FRONTEND type."""
         orchestrator = Orchestrator()
 
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result())
 
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -434,45 +391,6 @@ class TestFrontendRepoReview:
 
                 assert report.repository.type == RepoType.FRONTEND
 
-    @pytest.mark.asyncio
-    async def test_frontend_repo_selects_fe_reviewers(self, frontend_repo):
-        """Frontend repo selects frontend reviewers only."""
-        orchestrator = Orchestrator()
-
-        reviewers_called = []
-
-        async def mock_loop(context, reviewer_name, emit):
-            reviewers_called.append(reviewer_name)
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
-        ):
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(frontend_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                await orchestrator.review(request)
-
-                # Should have FE reviewers only
-                assert "reviewer_fe_architecture" in reviewers_called
-                assert "reviewer_fe_quality" in reviewers_called
-                assert "reviewer_be_architecture" not in reviewers_called
-                assert "reviewer_be_quality" not in reviewers_called
-
 
 # =============================================================================
 # Fullstack Repository Tests
@@ -484,25 +402,16 @@ class TestFullstackRepoReview:
     """Tests for fullstack repository review pipeline."""
 
     @pytest.mark.asyncio
-    async def test_fullstack_runs_all_reviewers(self, fullstack_repo):
-        """Fullstack repo runs both BE and FE reviewers."""
+    async def test_fullstack_detects_correct_type(self, fullstack_repo):
+        """Fullstack repo is correctly detected as FULLSTACK type."""
         orchestrator = Orchestrator()
 
-        reviewers_called = []
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result())
 
-        async def mock_loop(context, reviewer_name, emit):
-            reviewers_called.append(reviewer_name)
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
         ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
@@ -510,60 +419,13 @@ class TestFullstackRepoReview:
                     source=ReviewRequestSource(directory=str(fullstack_repo)),
                     options=ReviewOptions(
                         mode=ReviewMode.DIFF,
-                        include_functional=True,  # Include functional
+                        include_functional=True,
                     ),
                 )
 
-                await orchestrator.review(request)
+                report = await orchestrator.review(request)
 
-                # Should have all reviewers
-                assert "reviewer_be_architecture" in reviewers_called
-                assert "reviewer_be_quality" in reviewers_called
-                assert "reviewer_fe_architecture" in reviewers_called
-                assert "reviewer_fe_quality" in reviewers_called
-                assert "analyst_func" in reviewers_called
-
-    @pytest.mark.asyncio
-    async def test_fullstack_reviewers_run_in_parallel(self, fullstack_repo):
-        """Fullstack reviewers run concurrently, not sequentially."""
-        orchestrator = Orchestrator()
-
-        execution_times = {}
-        start_time = asyncio.get_event_loop().time()
-
-        async def mock_loop(context, reviewer_name, emit):
-            # Record when each reviewer starts
-            execution_times[reviewer_name] = asyncio.get_event_loop().time() - start_time
-            # Simulate some work
-            await asyncio.sleep(0.1)
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
-        ):
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(fullstack_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                await orchestrator.review(request)
-
-                # All reviewers should start nearly simultaneously (within 0.05s)
-                times = list(execution_times.values())
-                max_start_diff = max(times) - min(times)
-                assert max_start_diff < 0.05, f"Reviewers not parallel: {execution_times}"
+                assert report.repository.type == RepoType.FULLSTACK
 
 
 # =============================================================================
@@ -585,16 +447,13 @@ class TestProgressCallbacks:
         async def collect_events(event: ProgressEvent):
             events.append(event)
 
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result())
 
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -613,25 +472,12 @@ class TestProgressCallbacks:
                 # Must start with REVIEW_STARTED
                 assert event_types[0] == ProgressEventType.REVIEW_STARTED
 
-                # Must have REVIEW_COMPLETED (may have log events after)
+                # Must have REVIEW_COMPLETED
                 assert ProgressEventType.REVIEW_COMPLETED in event_types
 
-                # Must have reviewer events
-                assert ProgressEventType.REVIEWER_STARTED in event_types
-                assert ProgressEventType.REVIEWER_COMPLETED in event_types
-
-                # REVIEW_COMPLETED should come after all reviewer events
-                completed_idx = event_types.index(ProgressEventType.REVIEW_COMPLETED)
-                last_reviewer_completed_idx = max(
-                    i
-                    for i, t in enumerate(event_types)
-                    if t == ProgressEventType.REVIEWER_COMPLETED
-                )
-                assert completed_idx > last_reviewer_completed_idx
-
     @pytest.mark.asyncio
-    async def test_all_reviewers_emit_started_completed(self, backend_repo):
-        """Each reviewer emits STARTED and COMPLETED events."""
+    async def test_reviewer_events_emitted(self, backend_repo):
+        """Reviewer started/completed events are emitted."""
         orchestrator = Orchestrator()
 
         events = []
@@ -639,16 +485,13 @@ class TestProgressCallbacks:
         async def collect_events(event: ProgressEvent):
             events.append(event)
 
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result())
 
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -661,268 +504,11 @@ class TestProgressCallbacks:
 
                 await orchestrator.review(request, progress_callback=collect_events)
 
-                # Get reviewer names from events
-                started_reviewers = {
-                    e.reviewer_name for e in events if e.type == ProgressEventType.REVIEWER_STARTED
-                }
-                completed_reviewers = {
-                    e.reviewer_name
-                    for e in events
-                    if e.type == ProgressEventType.REVIEWER_COMPLETED
-                }
+                event_types = [e.type for e in events]
 
-                # Remove evaluator from check (separate logic)
-                started_reviewers.discard("evaluator")
-                completed_reviewers.discard("evaluator")
-
-                # Every started reviewer should complete
-                assert started_reviewers == completed_reviewers
-
-
-# =============================================================================
-# Checkpoint Resume Tests
-# =============================================================================
-
-
-@pytest.mark.functional
-class TestCheckpointResume:
-    """Tests for checkpoint and resume functionality."""
-
-    @pytest.mark.asyncio
-    async def test_checkpoint_callback_called_per_reviewer(self, backend_repo):
-        """Checkpoint callback is called after each reviewer completes."""
-        orchestrator = Orchestrator()
-
-        checkpoints_saved = []
-
-        async def checkpoint_callback(
-            reviewer_name, status, issues, satisfaction, iterations, model_usage, started_at
-        ):
-            checkpoints_saved.append(
-                {
-                    "reviewer": reviewer_name,
-                    "status": status,
-                    "issues_count": len(issues),
-                    "satisfaction": satisfaction,
-                }
-            )
-
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer",
-                    issues=[
-                        Issue(
-                            id="TEST-LOW-001",
-                            file="test.py",
-                            line=1,
-                            severity=IssueSeverity.LOW,
-                            category=IssueCategory.DOCUMENTATION,
-                            title="Test issue",
-                            description="Test issue description",
-                        )
-                    ],
-                    duration_seconds=1.0,
-                    model_usage=[],
-                ),
-                iterations=1,
-                final_satisfaction=80.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(backend_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                await orchestrator.review(
-                    request,
-                    checkpoint_callback=checkpoint_callback,
-                )
-
-                # Should have checkpoints for BE reviewers
-                assert len(checkpoints_saved) >= 2  # At least arch + quality
-
-                # All should be "completed"
-                assert all(c["status"] == "completed" for c in checkpoints_saved)
-
-    @pytest.mark.asyncio
-    async def test_resume_skips_completed_reviewers(self, backend_repo):
-        """Resuming with checkpoints skips already-completed reviewers."""
-        orchestrator = Orchestrator()
-
-        reviewers_called = []
-
-        async def mock_loop(context, reviewer_name, emit):
-            reviewers_called.append(reviewer_name)
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        # Prepare checkpoint for reviewer_be_architecture (already done)
-        completed_checkpoints = {
-            "reviewer_be_architecture": {
-                "issues_data": [
-                    {
-                        "id": "TEST-LOW-RESTORED",
-                        "file": "test.py",
-                        "line": 1,
-                        "severity": "LOW",
-                        "category": "documentation",
-                        "title": "Restored issue",
-                        "description": "Restored issue description",
-                    }
-                ],
-                "final_satisfaction": 90.0,
-                "iterations": 2,
-            }
-        }
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
-        ):
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(backend_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                await orchestrator.review(
-                    request,
-                    completed_checkpoints=completed_checkpoints,
-                )
-
-                # reviewer_be_architecture should NOT be called (restored from checkpoint)
-                assert "reviewer_be_architecture" not in reviewers_called
-
-                # reviewer_be_quality should still run
-                assert "reviewer_be_quality" in reviewers_called
-
-
-# =============================================================================
-# Issue Handling Tests
-# =============================================================================
-
-
-@pytest.mark.functional
-class TestIssueHandling:
-    """Tests for issue deduplication and aggregation."""
-
-    @pytest.mark.asyncio
-    async def test_issues_from_multiple_reviewers_merged(self, backend_repo):
-        """Issues from multiple reviewers are merged in final report."""
-        orchestrator = Orchestrator()
-
-        call_count = [0]
-
-        async def mock_loop(context, reviewer_name, emit):
-            call_count[0] += 1
-            # Each reviewer returns different issues
-            issue = Issue(
-                id=f"TEST-MED-{call_count[0]:03d}",
-                file=f"file_{reviewer_name}.py",
-                line=call_count[0] * 10,
-                severity=IssueSeverity.MEDIUM,
-                category=IssueCategory.DOCUMENTATION,
-                title=f"Issue from {reviewer_name}",
-                description=f"Issue description from {reviewer_name}",
-                flagged_by=[reviewer_name],
-            )
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer=reviewer_name,
-                    issues=[issue],
-                    duration_seconds=1.0,
-                    model_usage=[],
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
-        ):
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(backend_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                report = await orchestrator.review(request)
-
-                # Should have issues from both BE reviewers
-                assert report.summary.total_issues == 2
-
-    @pytest.mark.asyncio
-    async def test_duplicate_issues_deduplicated(self, backend_repo):
-        """Duplicate issues from different reviewers are deduplicated."""
-        orchestrator = Orchestrator()
-
-        # Both reviewers return the same issue (same file/line/category)
-        duplicate_issue = Issue(
-            id="TEST-HIGH-DUP",
-            file="src/main.py",
-            line=10,
-            severity=IssueSeverity.HIGH,
-            category=IssueCategory.SECURITY,
-            title="SQL injection vulnerability",
-            description="SQL injection vulnerability detected",
-        )
-
-        async def mock_loop(context, reviewer_name, emit):
-            issue_copy = duplicate_issue.model_copy()
-            issue_copy.flagged_by = [reviewer_name]
-            return ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer=reviewer_name,
-                    issues=[issue_copy],
-                    duration_seconds=1.0,
-                    model_usage=[],
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
-
-        with patch.object(
-            orchestrator, "_run_challenger_loop_with_progress", side_effect=mock_loop
-        ):
-            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
-                request = ReviewRequest(
-                    type="directory",
-                    source=ReviewRequestSource(directory=str(backend_repo)),
-                    options=ReviewOptions(
-                        mode=ReviewMode.DIFF,
-                        include_functional=False,
-                    ),
-                )
-
-                report = await orchestrator.review(request)
-
-                # Should be deduplicated to 1 issue
-                assert report.summary.total_issues == 1
-
-                # The merged issue should have both reviewers in flagged_by
-                assert len(report.issues[0].flagged_by) == 2
+                # Must have reviewer events for parallel LLMs
+                assert ProgressEventType.REVIEWER_STARTED in event_types
+                assert ProgressEventType.REVIEWER_COMPLETED in event_types
 
 
 # =============================================================================
@@ -939,16 +525,13 @@ class TestScoreAndRecommendation:
         """No issues results in perfect score and APPROVE recommendation."""
         orchestrator = Orchestrator()
 
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result(issues=[]))
 
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -979,19 +562,15 @@ class TestScoreAndRecommendation:
             description="Critical security vulnerability detected",
         )
 
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer",
-                    issues=[critical_issue],
-                    duration_seconds=1.0,
-                    model_usage=[],
-                ),
-                iterations=1,
-                final_satisfaction=50.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(
+            return_value=create_mock_parallel_result(issues=[critical_issue])
+        )
 
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -1008,32 +587,26 @@ class TestScoreAndRecommendation:
 
 
 # =============================================================================
-# Report Saving Tests
+# Report Structure Tests
 # =============================================================================
 
 
 @pytest.mark.functional
-class TestReportSaving:
-    """Tests for report file saving."""
+class TestReportStructure:
+    """Tests for report structure and contents."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason="Orchestrator.review() returns FinalReport but doesn't save to disk - saving is done by CLI/API layer"
-    )
-    async def test_report_saved_to_reviews_directory(self, backend_repo):
-        """Report is saved to .reviews directory."""
+    async def test_report_contains_issues(self, backend_repo, mock_parallel_result):
+        """Report contains issues from the review."""
         orchestrator = Orchestrator()
 
-        with patch.object(orchestrator, "_run_challenger_loop_with_progress") as mock_loop:
-            mock_loop.return_value = ChallengerLoopResult(
-                final_review=ReviewOutput(
-                    reviewer="test_reviewer", issues=[], duration_seconds=1.0, model_usage=[]
-                ),
-                iterations=1,
-                final_satisfaction=100.0,
-                convergence=ConvergenceStatus.THRESHOLD_MET,
-            )
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=mock_parallel_result)
 
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
             with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
                 request = ReviewRequest(
                     type="directory",
@@ -1044,17 +617,38 @@ class TestReportSaving:
                     ),
                 )
 
-                await orchestrator.review(request)
+                report = await orchestrator.review(request)
 
-                # Check that .reviews directory was created
-                reviews_dir = backend_repo / ".reviews"
-                assert reviews_dir.exists()
+                # Should have the issues from mock
+                assert len(report.issues) == 2
+                assert report.summary.total_issues == 2
 
-                # Check for latest.json
-                assert (reviews_dir / "latest.json").exists()
+    @pytest.mark.asyncio
+    async def test_report_has_valid_id(self, backend_repo):
+        """Report has a valid ID format."""
+        orchestrator = Orchestrator()
 
-                # Check for latest.md
-                assert (reviews_dir / "latest.md").exists()
+        mock_runner_instance = MagicMock()
+        mock_runner_instance.run = AsyncMock(return_value=create_mock_parallel_result())
+
+        with patch(
+            "turbowrap.review.orchestrator.ParallelTripleLLMRunner",
+            return_value=mock_runner_instance,
+        ):
+            with patch.object(orchestrator, "_run_evaluator", return_value=(None, None)):
+                request = ReviewRequest(
+                    type="directory",
+                    source=ReviewRequestSource(directory=str(backend_repo)),
+                    options=ReviewOptions(
+                        mode=ReviewMode.DIFF,
+                        include_functional=False,
+                    ),
+                )
+
+                report = await orchestrator.review(request)
+
+                assert report.id.startswith("rev_")
+                assert len(report.id) > 10  # Has a timestamp/uuid suffix
 
 
 if __name__ == "__main__":

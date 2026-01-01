@@ -61,7 +61,6 @@ class ClaudeEvaluator:
             agent_md_path=EVALUATOR_AGENT if EVALUATOR_AGENT.exists() else None,
             working_dir=repo_path,
             model="opus",  # Use Opus for comprehensive evaluation
-            timeout=self.timeout,
             s3_prefix="evaluations",
         )
 

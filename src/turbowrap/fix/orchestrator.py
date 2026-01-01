@@ -313,7 +313,6 @@ class FixOrchestrator:
             agent_md_path=FIXER_AGENT if FIXER_AGENT.exists() else None,
             artifact_saver=artifact_saver,
             tracker=tracker,
-            timeout=CLAUDE_CLI_TIMEOUT,
         )
 
         self._cli = cli

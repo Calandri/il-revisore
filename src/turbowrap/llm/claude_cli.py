@@ -254,8 +254,9 @@ class ClaudeCLI(OperationTrackingMixin):
         # - TAIL (resume): Use resume_session_id for Claude CLI, NEW UUID for operation
         is_resume = bool(resume_session_id)
 
-        # For Claude CLI: session_id is the resume ID (if resuming) or a new UUID
-        session_id = resume_session_id or context_id or str(uuid.uuid4())
+        # For Claude CLI: session_id MUST be a valid UUID (Claude CLI requirement)
+        # context_id is only used for logging/artifacts, NOT as session_id
+        session_id = resume_session_id or str(uuid.uuid4())
 
         # For operation tracking:
         # - HEAD: same as session_id (unified - single source of truth)

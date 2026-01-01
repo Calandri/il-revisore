@@ -555,7 +555,7 @@ class ClaudeCLI:
             if self.api_key:
                 env["ANTHROPIC_API_KEY"] = self.api_key
             else:
-                return None, [], None, None, "ANTHROPIC_API_KEY not found", set(), 0
+                return None, [], None, None, "ANTHROPIC_API_KEY not found", set(), 0, 0, 0
 
             env["TMPDIR"] = "/tmp"
 
@@ -690,7 +690,7 @@ class ClaudeCLI:
                 logger.error(f"TIMEOUT after {self.timeout}s!")
                 stderr_task.cancel()
                 process.kill()
-                return None, [], None, None, f"Timeout after {self.timeout}s", set(), 0
+                return None, [], None, None, f"Timeout after {self.timeout}s", set(), 0, 0, 0
 
             await stderr_task
 
@@ -699,7 +699,7 @@ class ClaudeCLI:
             except asyncio.TimeoutError:
                 logger.error("Process wait timeout after 30s, killing")
                 process.kill()
-                return None, [], None, None, "Process wait timeout", set(), 0
+                return None, [], None, None, "Process wait timeout", set(), 0, 0, 0
 
             logger.debug(f"Process exited with code {process.returncode}")
 

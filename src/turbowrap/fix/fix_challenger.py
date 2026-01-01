@@ -106,7 +106,6 @@ class GeminiFixChallenger:
         return GeminiCLI(
             working_dir=self.repo_path,
             model=self.model,
-            timeout=self.timeout,
             auto_accept=True,
             artifact_saver=artifact_saver,
             tracker=tracker,
