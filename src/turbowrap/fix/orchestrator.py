@@ -311,7 +311,6 @@ class FixOrchestrator:
             thinking_enabled=True,
             thinking_budget=16000,  # Extended thinking for complex fixes
             agent_md_path=FIXER_AGENT if FIXER_AGENT.exists() else None,
-            allowed_tools=["Bash", "Read", "Edit", "Write", "Glob", "Grep", "TodoWrite", "Task"],
             artifact_saver=artifact_saver,
             tracker=tracker,
             timeout=CLAUDE_CLI_TIMEOUT,

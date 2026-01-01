@@ -124,8 +124,9 @@ class TurboWrapTrackerAdapter:
                 self._tracker.update(operation_id, details=merged_details)
 
         elif status == "streaming":
-            # Update with streaming details
-            self._tracker.update(operation_id, details=merged_details)
+            # For streaming, we DON'T update DB (too many writes)
+            # Just publish the chunk via SSE below
+            pass
 
         elif status == "completed":
             self._tracker.complete(operation_id, result=merged_details)
@@ -138,13 +139,37 @@ class TurboWrapTrackerAdapter:
         else:
             logger.warning(f"[LLM-ADAPTER] Unknown status: {status}")
 
-        # Publish SSE event if requested
-        # Note: Always try to publish - publish_event handles no-subscribers gracefully
-        # The has_subscribers check was causing race conditions where early events
-        # were lost before the frontend had time to subscribe
+        # Publish SSE events
+        # The frontend worker expects specific event types:
+        # - "chunk" with {"content": "..."} for streaming
+        # - "status" with {"status": "..."} for status updates
+        # - "complete" with result for completion
         if publish_delay_ms >= 0:
-            await self._tracker.publish_event(
-                operation_id,
-                event_type="progress",
-                data={"status": status, "details": merged_details, "error": error},
-            )
+            if status == "streaming":
+                # Extract chunk content from details (sent by turbowrap_llm)
+                chunk = merged_details.get("chunk", "")
+                if chunk:
+                    await self._tracker.publish_event(
+                        operation_id,
+                        event_type="chunk",  # Worker expects "chunk" event
+                        data={"content": chunk},  # Worker expects "content" field
+                    )
+            elif status == "completed":
+                await self._tracker.publish_event(
+                    operation_id,
+                    event_type="complete",
+                    data=merged_details,
+                )
+            elif status == "failed":
+                await self._tracker.publish_event(
+                    operation_id,
+                    event_type="error",
+                    data={"error": error or "Unknown error"},
+                )
+            else:
+                # For running/other statuses, send status event
+                await self._tracker.publish_event(
+                    operation_id,
+                    event_type="status",
+                    data={"status": status},
+                )
