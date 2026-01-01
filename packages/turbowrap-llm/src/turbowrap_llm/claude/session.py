@@ -39,17 +39,21 @@ class ClaudeSession:
         self,
         cli: "ClaudeCLI",
         session_id: str | None = None,
+        resume: bool = False,
     ):
         """Initialize a conversation session.
 
         Args:
             cli: The ClaudeCLI instance to use.
             session_id: Optional session ID. If not provided, generates a new one.
+            resume: If True and session_id is provided, resume existing session
+                (use --resume instead of --session-id on first message).
         """
         self._cli = cli
         self._session_id = session_id or str(uuid.uuid4())
         self._messages: list[ConversationMessage] = []
-        self._first_message = True
+        # If resuming an existing session, skip the first message flag
+        self._first_message = not (resume and session_id)
         self._operation_count = 0
 
     @property

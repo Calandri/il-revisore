@@ -2,6 +2,8 @@
 Fix clarify service - handles pre-fix clarification phase.
 
 Extracted from the fat controller in fix.py to follow Single Responsibility Principle.
+
+Uses turbowrap_llm.ClaudeSession for multi-turn conversations with native --resume.
 """
 
 from __future__ import annotations
@@ -13,10 +15,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
+from turbowrap_llm import ClaudeCLI
+from turbowrap_llm.claude.session import ClaudeSession
 
+from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+from turbowrap.api.services.operation_tracker import (
+    OperationType,
+    get_tracker,
+)
+from turbowrap.config import get_settings
 from turbowrap.db.models import Issue, IssueStatus
-from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 if TYPE_CHECKING:
     from turbowrap.db.models import Repository
@@ -61,23 +71,28 @@ class FixClarifyService:
     """Service for handling pre-fix clarification phase.
 
     Manages the conversation with Claude to clarify issues before fixing.
-    Supports multi-turn Q&A until ready_to_fix=True.
+    Uses ClaudeSession for native multi-turn support with --resume.
     """
 
     def __init__(
         self,
         repo: Repository,
         db: Session,
+        fix_flow_id: str | None = None,
     ) -> None:
         """Initialize the service.
 
         Args:
             repo: Repository to work with.
             db: Database session.
+            fix_flow_id: Fix flow ID for hierarchical tracking.
         """
         self.repo = repo
         self.db = db
-        self.cli: ClaudeCLI | None = None
+        self.fix_flow_id = fix_flow_id
+        self._cli: ClaudeCLI | None = None
+        self._session: ClaudeSession | None = None
+        self._session_cache: dict[str, ClaudeSession] = {}  # session_id -> session
 
     async def clarify(
         self,
@@ -104,11 +119,14 @@ class FixClarifyService:
         # Build prompt
         prompt = self._build_prompt(issues, answers, previous_questions)
 
-        # Run CLI
+        # Run via session (handles resume automatically)
         result = await self._run_clarifier(prompt, issues, session_id)
 
+        # Get session_id from the session object (not the result)
+        actual_session_id = self._session.session_id if self._session else session_id or ""
+
         # Parse response
-        clarify_result = self._parse_response(result.output, result.session_id)
+        clarify_result = self._parse_response(result.output, actual_session_id)
 
         # Save clarifications to issues if ready to fix
         if clarify_result.ready_to_fix and answers and previous_questions:
@@ -182,13 +200,82 @@ If you have questions, feel free to ask them. Otherwise, confirm that you're rea
 Respond ONLY with valid JSON:
 {{"has_questions": bool, "questions": [...], "message": "...", "ready_to_fix": bool}}"""
 
+    def _get_or_create_session(self, session_id: str | None, issues: list[Issue]) -> ClaudeSession:
+        """Get existing session or create a new one.
+
+        Args:
+            session_id: Existing session ID to resume, or None for new session.
+            issues: Issues being clarified (for frontend display).
+
+        Returns:
+            ClaudeSession instance.
+        """
+        # Resume existing session
+        if session_id and session_id in self._session_cache:
+            logger.info(f"[CLARIFY] Resuming session: {session_id[:8]}...")
+            return self._session_cache[session_id]
+
+        # Create new CLI and session
+        if self._cli is None:
+            # Get settings for S3 artifact saving
+            settings = get_settings()
+
+            # Create S3 artifact saver
+            artifact_saver = S3ArtifactSaver(
+                bucket=settings.thinking.s3_bucket,
+                region=settings.thinking.s3_region,
+                prefix="clarify-logs",
+            )
+
+            # Extract issue info for frontend display
+            issue_codes = [str(i.issue_code) for i in issues if i.issue_code]
+            issue_ids = [str(i.id) for i in issues]
+            working_dir = Path(self.repo.local_path) if self.repo.local_path else None
+
+            # Create tracker adapter with issue details
+            tracker = TurboWrapTrackerAdapter(
+                tracker=get_tracker(),
+                operation_type=OperationType.FIX_CLARIFICATION,
+                repo_id=str(self.repo.id),
+                repo_name=str(self.repo.name),
+                parent_session_id=self.fix_flow_id,
+                initial_details={
+                    "issue_codes": issue_codes,
+                    "issue_ids": issue_ids,
+                    "issue_count": len(issues),
+                    "working_dir": str(working_dir) if working_dir else None,
+                },
+            )
+
+            self._cli = ClaudeCLI(
+                working_dir=working_dir,
+                model="haiku",
+                thinking_enabled=True,
+                agent_md_path=FIX_CLARIFIER_AGENT if FIX_CLARIFIER_AGENT.exists() else None,
+                artifact_saver=artifact_saver,
+                tracker=tracker,
+            )
+            logger.info(
+                f"[CLARIFY] Created CLI with S3 saver "
+                f"(bucket={settings.thinking.s3_bucket}) and tracker "
+                f"(issues: {issue_codes})"
+            )
+
+        # When session_id is provided, we're resuming an existing conversation
+        is_resume = bool(session_id)
+        session = self._cli.session(session_id=session_id, resume=is_resume)
+        self._session_cache[session.session_id] = session
+        action = "Resuming" if is_resume else "New"
+        logger.info(f"[CLARIFY] {action} session: {session.session_id[:8]}...")
+        return session
+
     async def _run_clarifier(
         self,
         prompt: str,
         issues: list[Issue],
         session_id: str | None,
     ) -> Any:
-        """Run Claude CLI for clarification.
+        """Run Claude CLI for clarification using ClaudeSession.
 
         Args:
             prompt: The prompt to send.
@@ -201,30 +288,18 @@ Respond ONLY with valid JSON:
         Raises:
             Exception: If CLI fails.
         """
-        cli = ClaudeCLI(
-            working_dir=Path(self.repo.local_path) if self.repo.local_path else None,
-            model="haiku",
-            agent_md_path=FIX_CLARIFIER_AGENT if FIX_CLARIFIER_AGENT.exists() else None,
-        )
-        self.cli = cli
+        session = self._get_or_create_session(session_id, issues)
+        self._session = session
 
-        result = await cli.run(
-            prompt=prompt,
-            operation_type="fix_clarification",
-            repo_name=str(self.repo.name) if self.repo.name else "unknown",
-            resume_session_id=session_id,
-            operation_details={
-                "issue_codes": [i.issue_code for i in issues if i.issue_code],
-                "issue_ids": [str(i.id) for i in issues],
-                "issue_count": len(issues),
-                "parent_session_id": session_id if session_id else None,
-            },
+        logger.info(
+            f"[CLARIFY] Sending message to session {session.session_id[:8]}... "
+            f"(turn {session.turn_count + 1}, issues: {len(issues)})"
         )
+
+        result = await session.send(prompt)
 
         if not result.output:
             raise Exception("No response from Claude")
-        if not result.session_id:
-            raise Exception("Claude CLI did not return a session ID")
 
         return result
 

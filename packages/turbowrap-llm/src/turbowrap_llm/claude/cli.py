@@ -200,18 +200,42 @@ class ClaudeCLI:
         op_id = operation_id or str(uuid.uuid4())
         sess_id = session_id or str(uuid.uuid4())
 
-        # Track operation start
+        # Build full prompt early for artifact saving
+        full_prompt = self._build_full_prompt(prompt)
+
+        # Generate context_id for artifacts
+        context_id = (
+            datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + f"_{sess_id[:8]}"
+        )
+
+        # Save prompt artifact BEFORE reporting "running" status
+        # so it's available for live viewing
+        s3_prompt_url = None
+        if save_artifacts:
+            s3_prompt_url = await self._artifact_saver.save_markdown(
+                content=full_prompt,
+                artifact_type="prompt",
+                context_id=context_id,
+                metadata={"model": self.model, "operation_id": op_id},
+            )
+
+        # Track operation start with prompt URL
         await self._tracker.progress(
             operation_id=op_id,
             status="running",
             session_id=sess_id,
-            details={"model": self.model, "resume": bool(resume_id)},
+            details={
+                "model": self.model,
+                "resume": bool(resume_id),
+                "s3_prompt_url": s3_prompt_url,
+                "working_dir": str(self.working_dir) if self.working_dir else None,
+            },
             publish_delay_ms=publish_delay_ms,
         )
 
         try:
             return await self._run_internal(
-                prompt=prompt,
+                full_prompt=full_prompt,
                 operation_id=op_id,
                 session_id=sess_id,
                 resume_id=resume_id,
@@ -222,6 +246,8 @@ class ClaudeCLI:
                 on_stderr=on_stderr,
                 start_time=start_time,
                 publish_delay_ms=publish_delay_ms,
+                context_id=context_id,
+                s3_prompt_url=s3_prompt_url,
             )
         except Exception as e:
             await self._tracker.progress(
@@ -235,7 +261,7 @@ class ClaudeCLI:
 
     async def _run_internal(
         self,
-        prompt: str,
+        full_prompt: str,
         operation_id: str,
         session_id: str,
         resume_id: str | None,
@@ -246,26 +272,45 @@ class ClaudeCLI:
         on_stderr: Callable[[str], Awaitable[None]] | None,
         start_time: float,
         publish_delay_ms: int,
+        context_id: str,
+        s3_prompt_url: str | None,
     ) -> ClaudeCLIResult:
         """Internal run method."""
-        full_prompt = self._build_full_prompt(prompt)
 
-        # Generate context_id for artifacts
-        context_id = (
-            datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + f"_{session_id[:8]}"
-        )
+        # Create wrapper callbacks that forward to tracker for live streaming
+        async def wrapped_on_chunk(chunk: str) -> None:
+            # Forward to user callback if provided
+            if on_chunk:
+                await on_chunk(chunk)
+            # Update tracker with streaming content (don't block on errors)
+            try:
+                await self._tracker.progress(
+                    operation_id=operation_id,
+                    status="streaming",
+                    session_id=session_id,
+                    details={"chunk": chunk, "type": "output"},
+                    publish_delay_ms=publish_delay_ms,
+                )
+            except Exception as e:
+                logger.debug(f"Tracker streaming error (ignored): {e}")
 
-        # Save prompt artifact
-        s3_prompt_url = None
-        if save_artifacts:
-            s3_prompt_url = await self._artifact_saver.save_markdown(
-                content=full_prompt,
-                artifact_type="prompt",
-                context_id=context_id,
-                metadata={"model": self.model, "operation_id": operation_id},
-            )
+        async def wrapped_on_thinking(thinking_chunk: str) -> None:
+            # Forward to user callback if provided
+            if on_thinking:
+                await on_thinking(thinking_chunk)
+            # Update tracker with thinking content (don't block on errors)
+            try:
+                await self._tracker.progress(
+                    operation_id=operation_id,
+                    status="streaming",
+                    session_id=session_id,
+                    details={"chunk": thinking_chunk, "type": "thinking"},
+                    publish_delay_ms=publish_delay_ms,
+                )
+            except Exception as e:
+                logger.debug(f"Tracker thinking streaming error (ignored): {e}")
 
-        # Execute CLI
+        # Execute CLI with wrapped callbacks
         (
             output,
             model_usage,
@@ -279,8 +324,8 @@ class ClaudeCLI:
         ) = await self._execute_cli(
             full_prompt,
             thinking_budget,
-            on_chunk,
-            on_thinking,
+            wrapped_on_chunk,  # Always use wrapper for tracker
+            wrapped_on_thinking if self.thinking_enabled else None,
             on_stderr,
             session_id,
             resume_id,
@@ -309,19 +354,33 @@ class ClaudeCLI:
                     metadata={"model": self.model},
                 )
 
-        # Build result details
-        total_tokens = sum(u.input_tokens + u.output_tokens for u in model_usage)
+        # Build result details with token breakdown
+        total_input_tokens = sum(u.input_tokens for u in model_usage)
+        total_output_tokens = sum(u.output_tokens for u in model_usage)
+        total_cache_read_tokens = sum(u.cache_read_tokens for u in model_usage)
+        total_cache_creation_tokens = sum(u.cache_creation_tokens for u in model_usage)
         total_cost = sum(u.cost_usd for u in model_usage)
+        models_used = [u.model for u in model_usage]
 
         result_details: dict[str, Any] = {
             "duration_ms": duration_ms,
             "model": self.model,
-            "total_tokens": total_tokens,
+            # Token breakdown for TurboWrap tracker
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "total_cache_read_tokens": total_cache_read_tokens,
+            "total_cache_creation_tokens": total_cache_creation_tokens,
+            "cost_usd": total_cost,
+            "models_used": models_used,
+            # Legacy fields for backwards compatibility
+            "total_tokens": total_input_tokens + total_output_tokens,
             "total_cost_usd": total_cost,
+            # Other details
             "tools_used": sorted(tools_used),
             "agents_launched": agents_launched,
             "s3_prompt_url": s3_prompt_url,
             "s3_output_url": s3_output_url,
+            "working_dir": str(self.working_dir) if self.working_dir else None,
         }
 
         # Track completion/failure
@@ -429,26 +488,30 @@ class ClaudeCLI:
                 )
             )
 
-    def session(self, session_id: str | None = None) -> ClaudeSession:
+    def session(
+        self, session_id: str | None = None, resume: bool = False
+    ) -> ClaudeSession:
         """Create a new conversation session for multi-turn interactions.
 
         Args:
             session_id: Optional session ID. If not provided, generates a new one.
+            resume: If True and session_id is provided, resume existing session
+                (use --resume instead of --session-id on first message).
 
         Returns:
             ClaudeSession that can be used as an async context manager.
 
         Usage:
+            # New session
             async with cli.session() as session:
                 r1 = await session.send("What is Python?")
                 r2 = await session.send("Show me an example")  # Remembers context
 
-            # Or without context manager
-            session = cli.session()
-            await session.send("Hello")
-            await session.send("Follow up")
+            # Resume existing session
+            session = cli.session(session_id="abc-123", resume=True)
+            await session.send("Continue from where we left off")
         """
-        return ClaudeSession(cli=self, session_id=session_id)
+        return ClaudeSession(cli=self, session_id=session_id, resume=resume)
 
     def _build_full_prompt(self, prompt: str) -> str:
         """Build full prompt with agent instructions."""
