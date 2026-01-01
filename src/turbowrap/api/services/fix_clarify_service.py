@@ -45,6 +45,7 @@ class ClarifyQuestion:
     id: str
     question: str
     context: str | None = None
+    issue_code: str | None = None  # Issue code for multi-issue clarification matching
 
 
 @dataclass
@@ -330,19 +331,21 @@ Respond ONLY with valid JSON:
         # Try grouped format first (from fix_clarify_planner.md style)
         for group in data.get("questions_by_issue", []):
             if isinstance(group, dict) and "issue_code" in group:
+                group_issue_code = group["issue_code"]
                 group_questions: list[ClarifyQuestion] = []
                 for q in group.get("questions", []):
                     if isinstance(q, dict) and "question" in q:
                         group_questions.append(
                             ClarifyQuestion(
-                                id=q.get("id", f"{group['issue_code']}-q{len(group_questions)+1}"),
+                                id=q.get("id", f"{group_issue_code}-q{len(group_questions)+1}"),
                                 question=q["question"],
                                 context=q.get("context"),
+                                issue_code=group_issue_code,  # Preserve issue association
                             )
                         )
                 questions_by_issue.append(
                     ClarifyQuestionGroup(
-                        issue_code=group["issue_code"],
+                        issue_code=group_issue_code,
                         questions=group_questions,
                     )
                 )
@@ -352,11 +355,17 @@ Respond ONLY with valid JSON:
         if not questions_by_issue:
             for q in data.get("questions", []):
                 if isinstance(q, dict) and "question" in q:
+                    q_id = q.get("id", f"q{len(questions)+1}")
+                    # Try to extract issue_code from ID format "{issue_code}-q{n}"
+                    issue_code = None
+                    if "-q" in q_id:
+                        issue_code = q_id.rsplit("-q", 1)[0]
                     questions.append(
                         ClarifyQuestion(
-                            id=q.get("id", f"q{len(questions)+1}"),
+                            id=q_id,
                             question=q["question"],
                             context=q.get("context"),
+                            issue_code=issue_code,
                         )
                     )
 
@@ -375,27 +384,47 @@ Respond ONLY with valid JSON:
         questions: list[ClarifyQuestion],
         answers: dict[str, str],
     ) -> None:
-        """Save clarification Q&A to issues for future reference."""
-        clarification_records = []
-        for q in questions:
-            if q.id in answers:
-                clarification_records.append(
-                    {
-                        "question_id": q.id,
-                        "question": q.question,
-                        "context": q.context,
-                        "answer": answers[q.id],
-                        "asked_at": datetime.now(timezone.utc).isoformat(),
-                        "answered_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                )
+        """Save clarification Q&A to issues for future reference.
 
-        if clarification_records:
-            for issue in issues:
-                existing: list[Any] = list(issue.clarifications or [])
-                issue.clarifications = existing + clarification_records  # type: ignore[assignment]
+        Each Q&A is matched to the correct issue based on issue_code.
+        If issue_code is not available, falls back to saving to all issues.
+        """
+        # Build issue_code -> Issue mapping
+        issue_map: dict[str, Issue] = {
+            str(issue.issue_code): issue for issue in issues if issue.issue_code
+        }
+
+        saved_count = 0
+        for q in questions:
+            if q.id not in answers:
+                continue
+
+            record = {
+                "question_id": q.id,
+                "question": q.question,
+                "context": q.context,
+                "answer": answers[q.id],
+                "asked_at": datetime.now(timezone.utc).isoformat(),
+                "answered_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Match to specific issue if issue_code is available
+            target_issue = issue_map.get(q.issue_code) if q.issue_code else None
+
+            if target_issue:
+                # Save only to the matching issue
+                existing: list[Any] = list(target_issue.clarifications or [])
+                target_issue.clarifications = existing + [record]  # type: ignore[assignment]
+                saved_count += 1
+                logger.debug(f"[CLARIFY] Saved Q&A {q.id} to issue {q.issue_code}")
+            else:
+                # Fallback: save to all issues (legacy behavior for unmatched questions)
+                for issue in issues:
+                    existing = list(issue.clarifications or [])
+                    issue.clarifications = existing + [record]  # type: ignore[assignment]
+                saved_count += len(issues)
+                logger.debug(f"[CLARIFY] Saved Q&A {q.id} to all issues (no issue_code)")
+
+        if saved_count > 0:
             self.db.commit()
-            logger.info(
-                f"[CLARIFY] Saved {len(clarification_records)} clarifications "
-                f"to {len(issues)} issues"
-            )
+            logger.info(f"[CLARIFY] Saved {saved_count} clarification records")
