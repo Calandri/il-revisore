@@ -45,12 +45,14 @@ Suggested Fix: {suggested_fix}
 
 You MUST respond with a valid JSON object only. No other text before or after.
 
+**IMPORTANT**: When asking questions about specific issues, use the issue code in the question ID format: `{ISSUE_CODE}-q{n}`. This allows the system to save answers to the correct issue.
+
 ```json
 {
   "has_questions": true/false,
   "questions": [
     {
-      "id": "q1",
+      "id": "ISSUE-CODE-q1",
       "question": "Your specific question here",
       "context": "Why you need this information"
     }
@@ -59,6 +61,10 @@ You MUST respond with a valid JSON object only. No other text before or after.
   "ready_to_fix": true/false
 }
 ```
+
+**Question ID Format**:
+- For issue-specific questions: `{ISSUE_CODE}-q{n}` (e.g., `FE-MEDIUM-017-q1`, `BE-HIGH-003-q2`)
+- For general questions affecting all issues: `general-q{n}` (e.g., `general-q1`)
 
 ## Rules
 
@@ -85,12 +91,12 @@ You MUST respond with a valid JSON object only. No other text before or after.
   "has_questions": true,
   "questions": [
     {
-      "id": "q1",
+      "id": "FE-42-q1",
       "question": "Issue FE-42 requires adding validation. Which validation library do you prefer? (e.g., Zod, Yup, native)",
       "context": "I see the project doesn't have a validation library installed"
     },
     {
-      "id": "q2",
+      "id": "BE-15-q1",
       "question": "For issue BE-15, the suggested fix says 'optimize the query'. Do you have a specific performance target?",
       "context": "Without a target, I might over-optimize or under-optimize"
     }
@@ -99,6 +105,8 @@ You MUST respond with a valid JSON object only. No other text before or after.
   "ready_to_fix": false
 }
 ```
+
+Note: Each question ID includes the issue code (`FE-42-q1`, `BE-15-q1`) so answers are saved to the correct issue.
 
 ## After Receiving Answers
 
