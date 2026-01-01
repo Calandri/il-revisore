@@ -4,7 +4,10 @@ Claude CLI-based repository evaluator.
 Produces comprehensive quality scores (0-100) for 6 dimensions.
 Runs after all reviewers complete, with full context.
 
-Uses the centralized ClaudeCLI utility for Claude CLI subprocess execution.
+Uses turbowrap_llm.ClaudeCLI with TurboWrapTrackerAdapter for:
+- Streaming output via SSE (visible in UI)
+- Automatic operation tracking
+- S3 artifact saving
 """
 
 import logging
@@ -12,12 +15,14 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
+from turbowrap_llm import ClaudeCLI
+
 from turbowrap.config import get_settings
-from turbowrap.llm.claude_cli import ClaudeCLI
 from turbowrap.review.models.evaluation import RepositoryEvaluation
 from turbowrap.review.models.report import RepositoryInfo, ReviewerResult
 from turbowrap.review.models.review import Issue
 from turbowrap.review.reviewers.utils import parse_json_safe
+from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +44,10 @@ class ClaudeEvaluator:
     - File contents
     - Repository metadata
 
-    Uses the centralized ClaudeCLI utility for Claude CLI execution.
+    Uses turbowrap_llm.ClaudeCLI with TurboWrapTrackerAdapter for:
+    - Streaming output visible in UI
+    - Operation tracking
+    - S3 artifact saving
     """
 
     def __init__(
@@ -54,14 +62,42 @@ class ClaudeEvaluator:
         """
         self.settings = get_settings()
         self.timeout = timeout
+        self._cli: ClaudeCLI | None = None
 
-    def _get_claude_cli(self, repo_path: Path | None = None) -> ClaudeCLI:
-        """Create ClaudeCLI instance for evaluation."""
+    def _get_claude_cli(
+        self,
+        repo_path: Path | None = None,
+        repo_name: str | None = None,
+        review_id: str | None = None,
+    ) -> ClaudeCLI:
+        """Create ClaudeCLI instance with tracker and artifact saver."""
+        # Lazy import to avoid circular dependency
+        from turbowrap.api.services.llm_adapters import TurboWrapTrackerAdapter
+        from turbowrap.api.services.operation_tracker import OperationType, get_tracker
+
+        artifact_saver = S3ArtifactSaver(
+            bucket=self.settings.thinking.s3_bucket,
+            region=self.settings.thinking.s3_region,
+            prefix="evaluations",
+        )
+
+        tracker = TurboWrapTrackerAdapter(
+            tracker=get_tracker(),
+            operation_type=OperationType.REVIEW,
+            repo_name=repo_name or (repo_path.name if repo_path else "unknown"),
+            initial_details={
+                "evaluator": "claude_evaluator",
+                "review_id": review_id,
+                "working_dir": str(repo_path) if repo_path else None,
+            },
+        )
+
         return ClaudeCLI(
-            agent_md_path=EVALUATOR_AGENT if EVALUATOR_AGENT.exists() else None,
             working_dir=repo_path,
             model="opus",  # Use Opus for comprehensive evaluation
-            s3_prefix="evaluations",
+            agent_md_path=EVALUATOR_AGENT if EVALUATOR_AGENT.exists() else None,
+            artifact_saver=artifact_saver,
+            tracker=tracker,
         )
 
     @staticmethod
@@ -112,18 +148,17 @@ class ClaudeEvaluator:
         """
         prompt = self._build_prompt(structure_docs, issues, reviewer_results, repo_info)
 
-        # Use centralized ClaudeCLI utility
-        cli = self._get_claude_cli(repo_path)
-        context_id = review_id or f"eval_{repo_info.name}"
+        # Create CLI with tracker and artifact saver
+        cli = self._get_claude_cli(
+            repo_path=repo_path,
+            repo_name=repo_info.name or "unknown",
+            review_id=review_id,
+        )
 
         result = await cli.run(
-            prompt,
-            operation_type="evaluate",
-            repo_name=repo_info.name or "unknown",
-            context_id=context_id,
-            save_prompt=True,
-            save_output=True,
+            prompt=prompt,
             on_chunk=on_chunk,
+            save_artifacts=True,
         )
 
         if not result.success:
