@@ -322,8 +322,13 @@ class FixOrchestrator:
             f"(issues: {issue_codes}, fix_flow_id: {self.fix_flow_id})"
         )
 
-        # Initialize Gemini Challenger
-        challenger = GeminiFixChallenger(satisfaction_threshold=self.satisfaction_threshold)
+        # Initialize Gemini Challenger with repo_path and fix_flow_id for
+        # hierarchical operation tracking and streaming
+        challenger = GeminiFixChallenger(
+            repo_path=self.repo_path,
+            fix_flow_id=self.fix_flow_id,
+            satisfaction_threshold=self.satisfaction_threshold,
+        )
 
         return cli, challenger, master_todo_path
 
@@ -983,11 +988,8 @@ The following issues failed Gemini validation. Please fix them based on the feed
 
             feedback_map = await challenger.evaluate_batch(
                 issues=contexts,
-                repo_path=self.repo_path,
                 branch_name=branch_name,
                 fixer_output=fix_results,
-                repo_name=self.repo_path.name,
-                parent_session_id=parent_session_id,  # Use clarify_session_id as root
             )
 
             # Process results

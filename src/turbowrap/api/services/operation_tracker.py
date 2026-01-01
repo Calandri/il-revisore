@@ -61,6 +61,7 @@ class OperationType(str, Enum):
     # Fix clarification and planning
     FIX_CLARIFICATION = "fix_clarification"  # Pre-fix clarification phase
     FIX_PLANNING = "fix_planning"  # Fix planning phase
+    FIX_CHALLENGER = "fix_challenger"  # Gemini challenger validation phase
 
     # Testing operations
     TEST_DISCOVERY = "test_discovery"  # Discovering tests in repo
@@ -102,6 +103,7 @@ OPERATION_LABELS: dict[OperationType, str] = {
     OperationType.LINEAR_ANALYSIS: "analyzing issue",
     OperationType.FIX_CLARIFICATION: "clarifying fix for",
     OperationType.FIX_PLANNING: "planning fix for",
+    OperationType.FIX_CHALLENGER: "validating fix for",
     # Testing operations
     OperationType.TEST_DISCOVERY: "discovering tests in",
     OperationType.TEST_EXECUTION: "running tests on",
@@ -138,6 +140,7 @@ OPERATION_COLORS: dict[OperationType, str] = {
     OperationType.LINEAR_ANALYSIS: "indigo",
     OperationType.FIX_CLARIFICATION: "teal",
     OperationType.FIX_PLANNING: "sky",
+    OperationType.FIX_CHALLENGER: "amber",
     # Testing operations
     OperationType.TEST_DISCOVERY: "lime",
     OperationType.TEST_EXECUTION: "green",
