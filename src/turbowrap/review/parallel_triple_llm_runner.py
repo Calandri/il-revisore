@@ -409,8 +409,9 @@ This is a monorepo review. Only analyze files within: `{context.workspace_path}/
 """
             )
 
-        # Output format
-        output_file = ".turbowrap_review_parallel.json"
+        # Output format - use LLM-specific file names to avoid conflicts
+        # Note: llm_name will be substituted by each CLI's prompt builder
+        output_file = ".turbowrap_review_parallel_{llm}.json"
         if context.repo_path:
             if context.workspace_path:
                 output_path = str(context.repo_path / context.workspace_path / output_file)
@@ -513,10 +514,12 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
     ) -> tuple[dict[str, ReviewOutput], float]:
         """Run Claude CLI with parallel specialists."""
         start_time = time.time()
+        # Substitute LLM name in output filename
+        llm_prompt = prompt.replace("{llm}", "claude")
         try:
             cli = self._create_claude_cli(context)
             result = await cli.run(
-                prompt=prompt,
+                prompt=llm_prompt,
                 on_chunk=on_chunk,
             )
 
@@ -583,10 +586,12 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
     ) -> tuple[dict[str, ReviewOutput], float]:
         """Run Gemini CLI with parallel specialists."""
         start_time = time.time()
+        # Substitute LLM name in output filename
+        llm_prompt = prompt.replace("{llm}", "gemini")
         try:
             cli = self._create_gemini_cli(context)
             result = await cli.run(
-                prompt=prompt,
+                prompt=llm_prompt,
                 on_chunk=on_chunk,
             )
 
@@ -653,10 +658,12 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
     ) -> tuple[dict[str, ReviewOutput], float]:
         """Run Grok CLI with parallel specialists."""
         start_time = time.time()
+        # Substitute LLM name in output filename
+        llm_prompt = prompt.replace("{llm}", "grok")
         try:
             cli = self._create_grok_cli(context)
             result = await cli.run(
-                prompt=prompt,
+                prompt=llm_prompt,
                 on_chunk=on_chunk,
             )
 
@@ -784,12 +791,13 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
         files_count: int,
     ) -> dict[str, ReviewOutput]:
         """
-        Read reviews from saved .turbowrap_review_parallel.json file.
+        Read reviews from saved .turbowrap_review_parallel_{llm}.json file.
 
         This is the most reliable source since LLMs save directly to file.
+        Each LLM has its own output file to avoid conflicts.
         """
         results: dict[str, ReviewOutput] = {}
-        output_file = ".turbowrap_review_parallel.json"
+        output_file = f".turbowrap_review_parallel_{llm}.json"
 
         # Determine file path (monorepo vs single repo)
         if workspace_path:
@@ -798,8 +806,16 @@ Output {len(self.specialists)} JSON blocks total, one per specialist.
             file_path = Path(repo_path) / output_file
 
         if not file_path.exists():
-            logger.debug(f"[PARALLEL-{llm.upper()}] Saved file not found: {file_path}")
-            return results
+            # Fallback to legacy filename (without LLM suffix)
+            legacy_file = ".turbowrap_review_parallel.json"
+            if workspace_path:
+                file_path = Path(repo_path) / workspace_path / legacy_file
+            else:
+                file_path = Path(repo_path) / legacy_file
+            if not file_path.exists():
+                logger.debug(f"[PARALLEL-{llm.upper()}] Saved file not found: {file_path}")
+                return results
+            logger.info(f"[PARALLEL-{llm.upper()}] Using legacy file: {file_path}")
 
         try:
             content = file_path.read_text()
