@@ -33,6 +33,7 @@ from .models import (
     GeminiSessionStats,
     calculate_gemini_cost,
 )
+from .session import GeminiSession
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,40 @@ class GeminiCLI:
 
         self._artifact_saver = artifact_saver or NoOpArtifactSaver()
         self._tracker = tracker or NoOpOperationTracker()
+
+    def session(
+        self,
+        session_id: str | None = None,
+        context_format: str = "xml",
+    ) -> GeminiSession:
+        """Create a new conversation session for multi-turn interactions.
+
+        Args:
+            session_id: Optional session ID. If not provided, generates a new one.
+            context_format: Format for context prepending ("xml" or "markdown").
+
+        Returns:
+            GeminiSession that can be used as an async context manager.
+
+        Usage:
+            async with cli.session() as session:
+                r1 = await session.send("What is Python?")
+                r2 = await session.send("Show me an example")  # Remembers context
+
+            # Or without context manager
+            session = cli.session()
+            await session.send("Hello")
+            await session.send("Follow up")
+
+        Note:
+            Unlike ClaudeSession, GeminiSession uses context prepending since
+            the Gemini CLI doesn't support native session resume.
+        """
+        return GeminiSession(
+            cli=self,
+            session_id=session_id,
+            context_format=context_format,
+        )
 
     async def run(
         self,

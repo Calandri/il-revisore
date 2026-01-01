@@ -35,6 +35,7 @@ from .models import (
     ModelUsage,
     ToolPreset,
 )
+from .session import ClaudeSession
 
 if sys.version_info >= (3, 11):
     asyncio_timeout = asyncio.timeout
@@ -427,6 +428,27 @@ class ClaudeCLI:
                     save_artifacts=save_artifacts,
                 )
             )
+
+    def session(self, session_id: str | None = None) -> ClaudeSession:
+        """Create a new conversation session for multi-turn interactions.
+
+        Args:
+            session_id: Optional session ID. If not provided, generates a new one.
+
+        Returns:
+            ClaudeSession that can be used as an async context manager.
+
+        Usage:
+            async with cli.session() as session:
+                r1 = await session.send("What is Python?")
+                r2 = await session.send("Show me an example")  # Remembers context
+
+            # Or without context manager
+            session = cli.session()
+            await session.send("Hello")
+            await session.send("Follow up")
+        """
+        return ClaudeSession(cli=self, session_id=session_id)
 
     def _build_full_prompt(self, prompt: str) -> str:
         """Build full prompt with agent instructions."""

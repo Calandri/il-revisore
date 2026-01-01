@@ -3,11 +3,16 @@
 Usage:
     from turbowrap_llm import ClaudeCLI, GeminiCLI, GrokCLI
 
-    # Claude
+    # Claude - One-shot mode
     cli = ClaudeCLI(model="opus")
     result = await cli.run("Analyze this code...")
     print(result.output)
     print(result.session_id)  # For resume
+
+    # Claude - Conversational mode (multi-turn)
+    async with cli.session() as session:
+        r1 = await session.send("What is Python?")
+        r2 = await session.send("Show me an example")  # Remembers context
 
     # Gemini
     cli = GeminiCLI(model="flash")
@@ -37,10 +42,11 @@ With operation tracking:
 
 __version__ = "0.1.0"
 
-# Claude
 # Base
-from .base import AgentResponse, BaseAgent
-from .claude import ClaudeCLI, ClaudeCLIResult, ModelUsage
+from .base import AgentResponse, BaseAgent, ConversationMessage, ConversationSession
+
+# Claude
+from .claude import ClaudeCLI, ClaudeCLIResult, ClaudeSession, ModelUsage
 
 # Exceptions
 from .exceptions import (
@@ -57,11 +63,12 @@ from .gemini import (
     GeminiClient,
     GeminiCLIResult,
     GeminiProClient,
+    GeminiSession,
     GeminiSessionStats,
 )
 
 # Grok
-from .grok import GrokCLI, GrokCLIResult, GrokSessionStats
+from .grok import GrokCLI, GrokCLIResult, GrokSession, GrokSessionStats
 
 __all__ = [
     # Version
@@ -69,20 +76,25 @@ __all__ = [
     # Claude
     "ClaudeCLI",
     "ClaudeCLIResult",
+    "ClaudeSession",
     "ModelUsage",
     # Gemini
     "GeminiCLI",
     "GeminiCLIResult",
     "GeminiClient",
     "GeminiProClient",
+    "GeminiSession",
     "GeminiSessionStats",
     # Grok
     "GrokCLI",
     "GrokCLIResult",
+    "GrokSession",
     "GrokSessionStats",
     # Base
     "AgentResponse",
     "BaseAgent",
+    "ConversationMessage",
+    "ConversationSession",
     # Exceptions
     "LLMCLIError",
     "ClaudeError",

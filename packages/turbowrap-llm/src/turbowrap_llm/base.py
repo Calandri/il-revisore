@@ -1,9 +1,68 @@
 """Base LLM client interface."""
 
 from abc import ABC, abstractmethod
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+
+@dataclass
+class ConversationMessage:
+    """A message in a conversation."""
+
+    role: str  # "user" or "assistant"
+    content: str
+
+
+@runtime_checkable
+class ConversationSession(Protocol):
+    """Protocol for multi-turn conversation sessions.
+
+    Implementations:
+    - ClaudeSession: Uses native --resume flag
+    - GeminiSession: Prepends conversation history to prompt
+    - GrokSession: Prepends conversation history to prompt
+    """
+
+    @property
+    def session_id(self) -> str:
+        """Unique identifier for this session."""
+        ...
+
+    @property
+    def messages(self) -> list[ConversationMessage]:
+        """All messages in this conversation."""
+        ...
+
+    async def send(self, message: str, **kwargs: Any) -> Any:
+        """Send a message and get a response.
+
+        Args:
+            message: The user message to send.
+            **kwargs: Additional arguments passed to the underlying CLI.
+
+        Returns:
+            CLI-specific result (ClaudeCLIResult, GeminiCLIResult, etc.)
+        """
+        ...
+
+    async def reset(self) -> None:
+        """Reset the conversation, clearing all history."""
+        ...
+
+    async def __aenter__(self) -> "ConversationSession":
+        """Enter async context manager."""
+        ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        """Exit async context manager."""
+        ...
 
 
 class AgentResponse(BaseModel):

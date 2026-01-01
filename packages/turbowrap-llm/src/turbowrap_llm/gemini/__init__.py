@@ -12,12 +12,14 @@ from .models import (
     GeminiSessionStats,
     calculate_gemini_cost,
 )
+from .session import GeminiSession
 
 __all__ = [
     "GeminiCLI",
     "GeminiClient",
     "GeminiProClient",
     "GeminiCLIResult",
+    "GeminiSession",
     "GeminiSessionStats",
     "GeminiModelUsage",
     "GeminiModelType",

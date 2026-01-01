@@ -8,11 +8,13 @@ from .models import (
     GrokCLIResult,
     GrokSessionStats,
 )
+from .session import GrokSession
 
 __all__ = [
     "GrokCLI",
     "GrokCLIResult",
     "GrokCLIMessage",
+    "GrokSession",
     "GrokSessionStats",
     "DEFAULT_GROK_MODEL",
     "DEFAULT_GROK_TIMEOUT",

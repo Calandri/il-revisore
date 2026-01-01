@@ -32,6 +32,7 @@ from .models import (
     GrokCLIResult,
     GrokSessionStats,
 )
+from .session import GrokSession
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,40 @@ class GrokCLI:
 
         self._artifact_saver = artifact_saver or NoOpArtifactSaver()
         self._tracker = tracker or NoOpOperationTracker()
+
+    def session(
+        self,
+        session_id: str | None = None,
+        context_format: str = "xml",
+    ) -> GrokSession:
+        """Create a new conversation session for multi-turn interactions.
+
+        Args:
+            session_id: Optional session ID. If not provided, generates a new one.
+            context_format: Format for context prepending ("xml" or "markdown").
+
+        Returns:
+            GrokSession that can be used as an async context manager.
+
+        Usage:
+            async with cli.session() as session:
+                r1 = await session.send("What is Python?")
+                r2 = await session.send("Show me an example")  # Remembers context
+
+            # Or without context manager
+            session = cli.session()
+            await session.send("Hello")
+            await session.send("Follow up")
+
+        Note:
+            Grok CLI doesn't support native session resume, so context is
+            prepended to each message in the conversation.
+        """
+        return GrokSession(
+            cli=self,
+            session_id=session_id,
+            context_format=context_format,
+        )
 
     async def run(
         self,
