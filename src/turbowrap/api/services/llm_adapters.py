@@ -139,7 +139,10 @@ class TurboWrapTrackerAdapter:
             logger.warning(f"[LLM-ADAPTER] Unknown status: {status}")
 
         # Publish SSE event if requested
-        if publish_delay_ms >= 0 and self._tracker.has_subscribers(operation_id):
+        # Note: Always try to publish - publish_event handles no-subscribers gracefully
+        # The has_subscribers check was causing race conditions where early events
+        # were lost before the frontend had time to subscribe
+        if publish_delay_ms >= 0:
             await self._tracker.publish_event(
                 operation_id,
                 event_type="progress",
