@@ -50,7 +50,8 @@ function formatRelativeTime(timestamp) {
     const diffWeeks = Math.floor(diffDays / 7);
     const diffMonths = Math.floor(diffDays / 30);
 
-    if (diffSecs < 60) return 'now';
+    if (diffSecs < 10) return 'now';
+    if (diffSecs < 60) return `${diffSecs}s`;
     if (diffMins < 60) return `${diffMins}m`;
     if (diffHours < 24) return `${diffHours}h`;
     if (diffDays < 7) return `${diffDays}d`;
