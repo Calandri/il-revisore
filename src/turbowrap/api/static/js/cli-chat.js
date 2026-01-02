@@ -84,6 +84,8 @@ function chatSidebar() {
         streamContentBySession: {}, // Keep separate content per sessionId
         streamingBySession: {},     // Track streaming state per sessionId
         pendingMessageBySession: {}, // Queued messages per sessionId
+        contentSegmentsBySession: {}, // Segments per session: [{type: 'text', content: ''}, {type: 'tool', ...}, ...]
+        lastKnownLengthBySession: {}, // Track position in fullContent for delta calculation
         inputMessage: '',
         showSettings: false,
         showModelDropdown: false,
@@ -416,6 +418,9 @@ Contesto: ${contextStr}`;
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
                         this.streamingBySession[sessionId] = true;  // Track per-session streaming
+                        // Initialize segments: start with one empty text segment
+                        this.contentSegmentsBySession[sessionId] = [{ type: 'text', content: '' }];
+                        this.lastKnownLengthBySession[sessionId] = 0;
                     }
                     // Only update UI flags if it's the active session
                     if (isActiveSession) {
@@ -432,7 +437,28 @@ Contesto: ${contextStr}`;
                 case 'CHUNK':
                     // Accumulate content for this specific session
                     if (sessionId) {
+                        // Keep legacy streamContentBySession for backwards compatibility
                         this.streamContentBySession[sessionId] = fullContent || (this.streamContentBySession[sessionId] + content);
+
+                        // Update segments: append delta to last text segment
+                        const segments = this.contentSegmentsBySession[sessionId];
+                        if (segments && segments.length > 0) {
+                            let lastSegment = segments[segments.length - 1];
+                            // If last segment is not text, create a new text segment
+                            if (lastSegment.type !== 'text') {
+                                segments.push({ type: 'text', content: '' });
+                                lastSegment = segments[segments.length - 1];
+                            }
+                            // Calculate delta from fullContent
+                            if (fullContent) {
+                                const lastKnown = this.lastKnownLengthBySession[sessionId] || 0;
+                                const delta = fullContent.substring(lastKnown);
+                                lastSegment.content += delta;
+                                this.lastKnownLengthBySession[sessionId] = fullContent.length;
+                            } else if (content) {
+                                lastSegment.content += content;
+                            }
+                        }
                     }
                     // Update UI for active session
                     if (isActiveSession) {
@@ -469,24 +495,24 @@ Contesto: ${contextStr}`;
 
                 case 'TOOL_END':
                     console.log('[chatSidebar] Worker: tool completed:', data.toolName, data.toolInput);
-                    // Inject tool inline into stream content
-                    if (sessionId) {
-                        const toolInline = this.formatToolInline(data.toolName, data.toolInput);
-                        this.streamContentBySession[sessionId] = (this.streamContentBySession[sessionId] || '') + toolInline;
 
-                        // Update UI for active session
-                        if (isActiveSession) {
-                            this.streamContent = this.streamContentBySession[sessionId];
-                            this.$nextTick(() => this.scrollToBottom());
-                        }
-                        // Update UI for secondary session (dual-chat)
-                        if (isSecondarySession) {
-                            this.streamContentSecondary = this.streamContentBySession[sessionId];
-                            this.$nextTick(() => this.scrollToBottomSecondary());
+                    // Add tool as segment (works for all sessions)
+                    if (sessionId) {
+                        const toolSegments = this.contentSegmentsBySession[sessionId];
+                        if (toolSegments) {
+                            // Add tool segment
+                            toolSegments.push({
+                                type: 'tool',
+                                name: data.toolName,
+                                input: data.toolInput,
+                                completedAt: Date.now()
+                            });
+                            // Start new empty text segment for subsequent content
+                            toolSegments.push({ type: 'text', content: '' });
                         }
                     }
 
-                    // Only update arrays if it's the active session
+                    // Only update arrays if it's the active session (legacy)
                     if (isActiveSession) {
                         // Move from active to completed
                         const toolIndex = this.activeTools.findIndex(t => t.name === data.toolName);
@@ -497,31 +523,39 @@ Contesto: ${contextStr}`;
                                 input: data.toolInput,
                                 completedAt: Date.now()
                             });
+                        } else {
+                            // Tool wasn't in activeTools, add directly to completed
+                            this.completedTools.push({
+                                name: data.toolName,
+                                input: data.toolInput,
+                                completedAt: Date.now()
+                            });
                         }
+                        this.$nextTick(() => this.scrollToBottom());
                     }
                     break;
 
                 case 'AGENT_START':
                     console.log('[chatSidebar] Worker: agent launched:', data.agentType, '(model:', data.agentModel, ')');
-                    // Inject agent inline into stream content
-                    if (sessionId) {
-                        const agentDesc = data.description || data.agentType;
-                        const agentInline = `\n\n🤖 Task: ${agentDesc}\n\n`;
-                        this.streamContentBySession[sessionId] = (this.streamContentBySession[sessionId] || '') + agentInline;
 
-                        // Update UI for active session
-                        if (isActiveSession) {
-                            this.streamContent = this.streamContentBySession[sessionId];
-                            this.$nextTick(() => this.scrollToBottom());
-                        }
-                        // Update UI for secondary session (dual-chat)
-                        if (isSecondarySession) {
-                            this.streamContentSecondary = this.streamContentBySession[sessionId];
-                            this.$nextTick(() => this.scrollToBottomSecondary());
+                    // Add agent as segment (works for all sessions)
+                    if (sessionId) {
+                        const agentSegments = this.contentSegmentsBySession[sessionId];
+                        if (agentSegments) {
+                            // Add agent segment
+                            agentSegments.push({
+                                type: 'agent',
+                                agentType: data.agentType,
+                                model: data.agentModel,
+                                description: data.description,
+                                launchedAt: Date.now()
+                            });
+                            // Start new empty text segment for subsequent content
+                            agentSegments.push({ type: 'text', content: '' });
                         }
                     }
 
-                    // Only update arrays if it's the active session
+                    // Only update arrays if it's the active session (legacy)
                     if (isActiveSession) {
                         this.activeAgents.push({
                             type: data.agentType,
@@ -536,6 +570,7 @@ Contesto: ${contextStr}`;
                             description: data.description,
                             launchedAt: Date.now()
                         });
+                        this.$nextTick(() => this.scrollToBottom());
                     }
                     break;
 
@@ -1495,6 +1530,48 @@ Contesto: ${contextStr}`;
                 this.streaming = false;
             } finally {
                 this.abortController = null;
+            }
+        },
+
+        /**
+         * Get content segments for the active session
+         * @returns {Array} Array of segments [{type: 'text', content: ''}, {type: 'tool', name: '', input: {}}, ...]
+         */
+        getContentSegments() {
+            if (!this.activeSession?.id) return [];
+            return this.contentSegmentsBySession[this.activeSession.id] || [];
+        },
+
+        /**
+         * Get tool description for display
+         * @param {Object} tool - Tool object with name and input
+         * @returns {string} Description to display
+         */
+        getToolDescription(tool) {
+            if (!tool || !tool.input) return '';
+            const input = tool.input;
+            switch (tool.name) {
+                case 'Read':
+                    return input.file_path || '';
+                case 'Edit':
+                    return input.file_path || '';
+                case 'Write':
+                    return input.file_path || '';
+                case 'Bash':
+                    const cmd = input.command || input.description || '';
+                    return cmd.length > 60 ? cmd.substring(0, 57) + '...' : cmd;
+                case 'Grep':
+                    return input.pattern || '';
+                case 'Glob':
+                    return input.pattern || '';
+                case 'Task':
+                    return input.description || input.subagent_type || '';
+                case 'WebSearch':
+                    return input.query || '';
+                case 'WebFetch':
+                    return input.url || '';
+                default:
+                    return input.file_path || input.pattern || input.command?.substring(0, 50) || input.description || '';
             }
         },
 
