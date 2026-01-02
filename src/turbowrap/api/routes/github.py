@@ -57,6 +57,35 @@ def _time_ago(dt: datetime | None) -> str:
 # --- Models ---
 
 
+class OrganizationInfo(BaseModel):
+    """GitHub organization information."""
+
+    login: str
+    name: str | None
+    avatar_url: str
+    description: str | None
+
+
+class CreateRepoRequest(BaseModel):
+    """Request to create a new repository."""
+
+    name: str
+    description: str | None = None
+    private: bool = True
+    auto_init: bool = True  # Creates README for immediate clone
+
+
+class CreateRepoResponse(BaseModel):
+    """Response after creating a repository."""
+
+    id: int
+    full_name: str
+    html_url: str
+    clone_url: str
+    default_branch: str
+    private: bool
+
+
 class PullRequestInfo(BaseModel):
     """Pull request information."""
 
@@ -580,6 +609,120 @@ def list_user_repos(
         logger.error(f"GitHub API error: {e}")
         if e.status == 401:
             raise HTTPException(status_code=401, detail="Invalid GitHub token")
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        g.close()
+
+
+# --- User Organizations ---
+
+
+@router.get("/user/orgs")
+def list_user_orgs(
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[OrganizationInfo]:
+    """List organizations the authenticated user belongs to."""
+    try:
+        g = _get_github_client()
+        user = g.get_user()
+        orgs = user.get_orgs()
+
+        result = []
+        for org in list(orgs)[:limit]:
+            result.append(
+                OrganizationInfo(
+                    login=org.login,
+                    name=org.name,
+                    avatar_url=org.avatar_url,
+                    description=org.description,
+                )
+            )
+        return result
+
+    except GithubException as e:
+        logger.error(f"GitHub API error: {e}")
+        if e.status == 401:
+            raise HTTPException(status_code=401, detail="Invalid GitHub token")
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        g.close()
+
+
+# --- Create Repository ---
+
+
+@router.post("/user/repos")
+def create_user_repo(request: CreateRepoRequest) -> CreateRepoResponse:
+    """Create a new repository under the authenticated user's account."""
+    try:
+        g = _get_github_client()
+        user = g.get_user()
+
+        repo = user.create_repo(
+            name=request.name,
+            description=request.description or "",
+            private=request.private,
+            auto_init=request.auto_init,
+        )
+
+        return CreateRepoResponse(
+            id=repo.id,
+            full_name=repo.full_name,
+            html_url=repo.html_url,
+            clone_url=repo.clone_url,
+            default_branch=repo.default_branch or "main",
+            private=repo.private,
+        )
+
+    except GithubException as e:
+        logger.error(f"GitHub API error: {e}")
+        if e.status == 422:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Cannot create repository: {e.data.get('errors', [{}])[0].get('message', str(e))}",
+            )
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        g.close()
+
+
+@router.post("/orgs/{org}/repos")
+def create_org_repo(org: str, request: CreateRepoRequest) -> CreateRepoResponse:
+    """Create a new repository in an organization."""
+    try:
+        g = _get_github_client()
+        organization = g.get_organization(org)
+
+        repo = organization.create_repo(
+            name=request.name,
+            description=request.description or "",
+            private=request.private,
+            auto_init=request.auto_init,
+        )
+
+        return CreateRepoResponse(
+            id=repo.id,
+            full_name=repo.full_name,
+            html_url=repo.html_url,
+            clone_url=repo.clone_url,
+            default_branch=repo.default_branch or "main",
+            private=repo.private,
+        )
+
+    except GithubException as e:
+        logger.error(f"GitHub API error: {e}")
+        if e.status == 404:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        if e.status == 422:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Cannot create repository: {e.data.get('errors', [{}])[0].get('message', str(e))}",
+            )
+        if e.status == 403:
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient permissions to create repository in this organization",
+            )
         raise HTTPException(status_code=e.status, detail=str(e))
     finally:
         g.close()

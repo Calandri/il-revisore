@@ -80,6 +80,105 @@
     evaluationError: null,
     evaluationRepoName: '',
 
+    // Create project mode
+    addMode: 'clone',  // 'clone' | 'create'
+    createProject: {
+        loading: false,
+        error: null,
+        orgs: [],
+        orgsLoaded: false,
+        selectedOrg: null,
+        projectName: '',
+    },
+
+    async loadOrganizations() {
+        if (this.createProject.orgsLoaded) return;
+        this.createProject.loading = true;
+        try {
+            const response = await fetch('/api/github/user/orgs');
+            if (response.ok) {
+                this.createProject.orgs = await response.json();
+            }
+            this.createProject.orgsLoaded = true;
+        } catch (e) {
+            console.error('Failed to load orgs:', e);
+        } finally {
+            this.createProject.loading = false;
+        }
+    },
+
+    async createNewProject() {
+        if (!this.createProject.projectName.trim()) {
+            this.createProject.error = 'Inserisci il nome del progetto';
+            return;
+        }
+
+        // Validate project name
+        const namePattern = /^[a-zA-Z0-9._-]+$/;
+        if (!namePattern.test(this.createProject.projectName)) {
+            this.createProject.error = 'Nome non valido. Usa solo lettere, numeri, punti, trattini e underscore';
+            return;
+        }
+
+        this.createProject.loading = true;
+        this.createProject.error = null;
+
+        try {
+            // 1. Create repo on GitHub
+            const endpoint = this.createProject.selectedOrg
+                ? `/api/github/orgs/${this.createProject.selectedOrg}/repos`
+                : '/api/github/user/repos';
+
+            const createResponse = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: this.createProject.projectName,
+                    private: true,
+                    auto_init: true,
+                }),
+            });
+
+            if (!createResponse.ok) {
+                const err = await createResponse.json();
+                throw new Error(err.detail || 'Errore nella creazione della repository');
+            }
+
+            const newRepo = await createResponse.json();
+
+            // 2. Clone the new repo
+            const cloneResponse = await fetch('/api/repos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: newRepo.html_url,
+                    branch: newRepo.default_branch,
+                }),
+            });
+
+            if (!cloneResponse.ok) {
+                throw new Error('Repository creata ma clone fallito. URL: ' + newRepo.html_url);
+            }
+
+            const clonedRepo = await cloneResponse.json();
+
+            // 3. Navigate to file editor
+            window.location.href = `/files?repo=${clonedRepo.id}`;
+
+        } catch (e) {
+            this.createProject.error = e.message;
+        } finally {
+            this.createProject.loading = false;
+        }
+    },
+
+    resetCreateProject() {
+        this.createProject.loading = false;
+        this.createProject.error = null;
+        this.createProject.selectedOrg = null;
+        this.createProject.projectName = '';
+    },
+
     // Repo search state
     repoSearch: {
         loading: false,
@@ -393,7 +492,7 @@
          x-transition:leave-start="opacity-100"
          x-transition:leave-end="opacity-0"
          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-         @click.self="showAddModal = false; resetFolderSelector(); resetBranchSelector(); resetRepoSearch()">
+         @click.self="showAddModal = false; resetFolderSelector(); resetBranchSelector(); resetRepoSearch(); resetCreateProject(); addMode = 'clone'"
 
         <div x-show="showAddModal"
              x-cloak
@@ -406,10 +505,34 @@
              class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col">
 
             <div class="p-4 md:p-6 border-b dark:border-gray-700 shrink-0">
-                <h3 class="text-lg md:text-xl font-bold">Aggiungi Repository</h3>
+                <h3 class="text-lg md:text-xl font-bold mb-4">Aggiungi Repository</h3>
+                <!-- Tabs -->
+                <div class="flex border-b dark:border-gray-600 -mb-px">
+                    <button type="button"
+                            @click="addMode = 'clone'"
+                            :class="addMode === 'clone' ? 'border-primary text-primary border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-4 py-2 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                        Clone Esistente
+                    </button>
+                    <button type="button"
+                            @click="addMode = 'create'; loadOrganizations()"
+                            :class="addMode === 'create' ? 'border-primary text-primary border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'"
+                            class="px-4 py-2 font-medium transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Crea Nuovo
+                    </button>
+                </div>
             </div>
 
-            <form hx-post="/htmx/repos"
+            <!-- Clone Existing Tab -->
+            <form x-show="addMode === 'clone'" hx-post="/htmx/repos"
                   hx-target="#repo-list"
                   hx-swap="innerHTML"
                   @htmx:before-request="cloneLoading = true; cloneError = null"
@@ -769,6 +892,106 @@
                     </button>
                 </div>
             </form>
+
+            <!-- Create New Tab -->
+            <div x-show="addMode === 'create'" x-cloak class="p-4 md:p-6 space-y-4 overflow-y-auto flex-1">
+                <!-- Organization Selector -->
+                <div>
+                    <label class="block text-sm font-medium mb-2">Account / Organizzazione</label>
+                    <div class="relative">
+                        <select x-model="createProject.selectedOrg"
+                                :disabled="createProject.loading"
+                                class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
+                                       bg-white dark:bg-gray-700
+                                       focus:ring-2 focus:ring-primary focus:border-transparent
+                                       disabled:opacity-50 disabled:cursor-not-allowed
+                                       appearance-none cursor-pointer">
+                            <option :value="null">Account Personale</option>
+                            <template x-for="org in createProject.orgs" :key="org.login">
+                                <option :value="org.login" x-text="org.name || org.login"></option>
+                            </template>
+                        </select>
+                        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg x-show="!createProject.loading || createProject.orgsLoaded" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                            <svg x-show="createProject.loading && !createProject.orgsLoaded" class="animate-spin w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Dove creare la nuova repository
+                    </p>
+                </div>
+
+                <!-- Project Name -->
+                <div>
+                    <label class="block text-sm font-medium mb-2">Nome Progetto</label>
+                    <input type="text"
+                           x-model="createProject.projectName"
+                           :disabled="createProject.loading"
+                           placeholder="my-new-project"
+                           @keydown.enter.prevent="createNewProject()"
+                           class="w-full px-4 py-2 border dark:border-gray-600 rounded-lg
+                                  bg-white dark:bg-gray-700
+                                  focus:ring-2 focus:ring-primary focus:border-transparent
+                                  placeholder-gray-400
+                                  disabled:opacity-50 disabled:cursor-not-allowed">
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Solo lettere, numeri, punti, trattini e underscore
+                    </p>
+                </div>
+
+                <!-- Info box -->
+                <div class="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-start gap-2">
+                    <svg class="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div>
+                        <p class="font-medium">La repository verrà creata come privata</p>
+                        <p class="text-xs mt-1 opacity-80">Con un README.md iniziale, pronta per iniziare a lavorare</p>
+                    </div>
+                </div>
+
+                <!-- Error message -->
+                <div x-show="createProject.error" x-cloak
+                     class="p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm">
+                    <span x-text="createProject.error"></span>
+                </div>
+
+                <!-- Loading info -->
+                <div x-show="createProject.loading" x-cloak
+                     class="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-sm flex items-center gap-2">
+                    <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Creazione in corso...</span>
+                </div>
+
+                <!-- Buttons -->
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button"
+                            @click="showAddModal = false; resetCreateProject(); addMode = 'clone'"
+                            :disabled="createProject.loading"
+                            class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        Annulla
+                    </button>
+                    <button type="button"
+                            @click="createNewProject()"
+                            :disabled="createProject.loading || !createProject.projectName.trim()"
+                            class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                        <svg x-show="createProject.loading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span x-text="createProject.loading ? 'Creazione...' : 'Crea e Apri Editor'"></span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
