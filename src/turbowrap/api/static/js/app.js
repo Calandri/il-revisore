@@ -154,12 +154,13 @@ function systemMonitor() {
                 this.currentDeploy = data.current;
                 this.inProgressDeploy = data.in_progress;
                 this.previousInProgress = data.in_progress;  // Save for next comparison
-                this.deployments = data.recent || [];
+                this.deployments = (data.recent || []).filter(d => d && d.id);
                 // Track if latest deploy failed (for red indicator)
                 this.lastDeployFailed = data.recent?.[0]?.conclusion === 'failure';
                 this.deployLoading = false;
             } catch (e) {
                 console.error('Deployments error:', e);
+                this.deployments = [];
                 this.deployLoading = false;
             }
         },

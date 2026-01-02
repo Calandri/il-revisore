@@ -981,7 +981,7 @@
                                 Nessun deploy trovato
                             </div>
                         </template>
-                        <template x-for="deploy in deployments" :key="deploy.id">
+                        <template x-for="(deploy, index) in deployments" :key="deploy.id || `deploy-${index}`">
                             <div class="px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-b dark:border-gray-700 last:border-0 group"
                                  :class="deploy.commit_short === productionVersion?.version ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''">
                                 <div class="flex items-center justify-between">
