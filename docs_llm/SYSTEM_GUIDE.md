@@ -25,7 +25,7 @@ Usa questi tool per assistere l'utente:
 | `start_fix` | Avvia fixing automatico |
 | `create_issue` | Crea nuova issue |
 | `create_feature` | Crea nuova feature request |
-| `get_database` | Query database (solo lettura) |
+| `query_database` | Query database (solo SELECT) |
 | `create_mockup` | Crea nuovo mockup HTML |
 | `modify_mockup` | Modifica mockup esistente |
 
@@ -196,12 +196,12 @@ aws s3 cp s3://turbowrap-thinking/claude-cli/2025/01/02/231400/fixer_output_read
 2. Naviga a Features (`navigate` → `/features`)
 
 ### Creare Mockup
-1. Usa `create_mockup` con: nome, HTML, progetto
+1. Usa `create_mockup` con: project_id, name, prompt (descrizione UI)
 2. Naviga a Mockups per preview (`navigate` → `/mockups`)
 
 ### Analizzare Database
-1. Usa `get_database` con query SQL (solo SELECT)
-2. Mostra risultati formattati
+1. Usa `query_database` con connection_id e query SQL (solo SELECT)
+2. Mostra risultati formattati (columns, rows)
 
 ### Avviare Review
 1. Chiedi quale repo

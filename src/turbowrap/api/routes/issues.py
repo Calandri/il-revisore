@@ -1060,6 +1060,92 @@ def reset_stuck_issues_endpoint(
 
 
 # =============================================================================
+# Create Issue (Generic)
+# =============================================================================
+
+
+class CreateIssueRequest(BaseModel):
+    """Request to create a new issue."""
+
+    title: str = Field(..., min_length=1, max_length=500, description="Issue title")
+    description: str = Field(..., min_length=1, description="Issue description")
+    severity: str = Field(default="medium", description="critical|high|medium|low|info")
+    category: str = Field(default="bug", description="bug|security|performance|style|etc")
+    file_path: str | None = Field(None, description="File where issue is located")
+    line_number: int | None = Field(None, description="Line number")
+    suggested_fix: str | None = Field(None, description="Suggested fix")
+    repository_id: str | None = Field(None, description="Associated repository UUID")
+
+
+class CreateIssueResponse(BaseModel):
+    """Response after creating an issue."""
+
+    id: str
+    issue_code: str
+    title: str
+    severity: str
+    status: str
+    file_path: str | None
+    line_number: int | None
+
+
+@router.post("", response_model=CreateIssueResponse, status_code=201)
+def create_issue(
+    data: CreateIssueRequest,
+    db: Session = Depends(get_db),
+) -> CreateIssueResponse:
+    """Create a new issue.
+
+    This endpoint is used by MCP tools and AI to create issues programmatically.
+    No authentication required for internal use.
+    """
+    import uuid
+
+    # Validate severity
+    valid_severities = ["critical", "high", "medium", "low", "info"]
+    severity = data.severity.lower()
+    if severity not in valid_severities:
+        severity = "medium"
+
+    # Generate issue code
+    issue_code = f"AI-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+
+    # Create the issue
+    issue = Issue(
+        id=str(uuid.uuid4()),
+        issue_code=issue_code,
+        repository_id=data.repository_id or "00000000-0000-0000-0000-000000000000",
+        severity=severity.upper(),
+        category=data.category,
+        rule="ai_created",
+        file=data.file_path or "unknown",
+        line=data.line_number,
+        title=data.title,
+        description=data.description,
+        suggested_fix=data.suggested_fix,
+        status=IssueStatus.OPEN.value,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
+    db.add(issue)
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(f"Created issue {issue_code}: {data.title}")
+
+    return CreateIssueResponse(
+        id=str(issue.id),
+        issue_code=issue_code,
+        title=data.title,
+        severity=severity.upper(),
+        status=IssueStatus.OPEN.value,
+        file_path=data.file_path,
+        line_number=data.line_number,
+    )
+
+
+# =============================================================================
 # AI Error Handler - Create Issue from Error
 # =============================================================================
 

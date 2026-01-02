@@ -452,6 +452,182 @@ async def list_tools() -> list[Tool]:
                 "properties": {},
             },
         ),
+        # ============================================================
+        # Create Tools (Issues, Features, Mockups)
+        # ============================================================
+        Tool(
+            name="create_issue",
+            description=(
+                "Create a new code review issue. "
+                "Use this to report bugs, problems, or improvements found in code."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Issue title (max 500 chars)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed issue description",
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": ["critical", "high", "medium", "low", "info"],
+                        "description": "Issue severity (default: medium)",
+                        "default": "medium",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Category: bug, security, performance, style, etc.",
+                        "default": "bug",
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "File path where issue is located",
+                    },
+                    "line_number": {
+                        "type": "integer",
+                        "description": "Line number in file",
+                    },
+                    "suggested_fix": {
+                        "type": "string",
+                        "description": "Suggested fix for the issue",
+                    },
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of associated repository",
+                    },
+                },
+                "required": ["title", "description"],
+            },
+        ),
+        Tool(
+            name="create_feature",
+            description=(
+                "Create a new feature request. "
+                "Use this to track new functionality or enhancements requested by users."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Feature title (max 500 chars)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed feature description",
+                    },
+                    "priority": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4,
+                        "description": "Priority 1-4 (1=urgent, 4=low)",
+                    },
+                    "repository_id": {
+                        "type": "string",
+                        "description": "UUID of primary repository",
+                    },
+                },
+                "required": ["title"],
+            },
+        ),
+        # ============================================================
+        # Database Query Tool
+        # ============================================================
+        Tool(
+            name="query_database",
+            description=(
+                "Execute a read-only SQL query on a configured database connection. "
+                "Only SELECT queries are allowed. Returns columns and rows."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "connection_id": {
+                        "type": "string",
+                        "description": "UUID of the database connection",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "SQL SELECT query to execute",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "description": "Max rows to return (default: 100)",
+                        "default": 100,
+                    },
+                },
+                "required": ["connection_id", "query"],
+            },
+        ),
+        # ============================================================
+        # Mockup Tools
+        # ============================================================
+        Tool(
+            name="create_mockup",
+            description=(
+                "Create a new HTML mockup using AI generation. "
+                "Provide a prompt describing the UI component to generate."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "UUID of the mockup project",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name for the mockup",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "Description of the UI component to generate",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description of the mockup",
+                    },
+                    "llm_type": {
+                        "type": "string",
+                        "enum": ["claude", "gemini"],
+                        "description": "LLM to use for generation (default: claude)",
+                        "default": "claude",
+                    },
+                },
+                "required": ["project_id", "name", "prompt"],
+            },
+        ),
+        Tool(
+            name="modify_mockup",
+            description=(
+                "Modify an existing mockup by applying changes. "
+                "Creates a new version with the modifications applied."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "mockup_id": {
+                        "type": "string",
+                        "description": "UUID of the mockup to modify",
+                    },
+                    "modification_prompt": {
+                        "type": "string",
+                        "description": "Description of changes to apply",
+                    },
+                    "element_selector": {
+                        "type": "string",
+                        "description": "Optional CSS selector to target specific element",
+                    },
+                },
+                "required": ["mockup_id", "modification_prompt"],
+            },
+        ),
     ]
 
 
@@ -667,6 +843,135 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             ]
             return [TextContent(type="text", text=json.dumps(summary, indent=2))]
         return [TextContent(type="text", text=f"Failed to list repos: {result.get('error')}")]
+
+    # ================================================================
+    # Create Handlers (Issues, Features)
+    # ================================================================
+
+    if name == "create_issue":
+        data = {
+            "title": arguments.get("title", ""),
+            "description": arguments.get("description", ""),
+            "severity": arguments.get("severity", "medium"),
+            "category": arguments.get("category", "bug"),
+        }
+        if arguments.get("file_path"):
+            data["file_path"] = arguments["file_path"]
+        if arguments.get("line_number"):
+            data["line_number"] = arguments["line_number"]
+        if arguments.get("suggested_fix"):
+            data["suggested_fix"] = arguments["suggested_fix"]
+        if arguments.get("repository_id"):
+            data["repository_id"] = arguments["repository_id"]
+
+        result = await api_post("/api/issues", data)
+        if result.get("success"):
+            issue = result["data"]
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Issue created: {issue.get('issue_code')} - {issue.get('title')}",
+                )
+            ]
+        return [TextContent(type="text", text=f"Failed to create issue: {result.get('error')}")]
+
+    if name == "create_feature":
+        data = {
+            "title": arguments.get("title", ""),
+        }
+        if arguments.get("description"):
+            data["description"] = arguments["description"]
+        if arguments.get("priority"):
+            data["priority"] = arguments["priority"]
+        if arguments.get("repository_id"):
+            data["repository_id"] = arguments["repository_id"]
+
+        result = await api_post("/api/features", data)
+        if result.get("success"):
+            feature = result["data"]
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Feature created: {feature.get('id')} - {feature.get('title')}",
+                )
+            ]
+        return [TextContent(type="text", text=f"Failed to create feature: {result.get('error')}")]
+
+    # ================================================================
+    # Database Query Handler
+    # ================================================================
+
+    if name == "query_database":
+        conn_id = arguments.get("connection_id", "")
+        query = arguments.get("query", "")
+        limit = arguments.get("limit", 100)
+
+        result = await api_post(
+            f"/api/databases/{conn_id}/query",
+            data={"query": query, "limit": limit},
+        )
+        if result.get("success"):
+            data = result["data"]
+            if data.get("success"):
+                output = {
+                    "columns": data.get("columns", []),
+                    "rows": data.get("rows", []),
+                    "row_count": data.get("row_count", 0),
+                    "execution_time_ms": data.get("execution_time_ms"),
+                }
+                return [TextContent(type="text", text=json.dumps(output, indent=2))]
+            return [TextContent(type="text", text=f"Query failed: {data.get('error')}")]
+        return [TextContent(type="text", text=f"Failed to query: {result.get('error')}")]
+
+    # ================================================================
+    # Mockup Handlers
+    # ================================================================
+
+    if name == "create_mockup":
+        data = {
+            "project_id": arguments.get("project_id", ""),
+            "name": arguments.get("name", ""),
+            "prompt": arguments.get("prompt", ""),
+            "llm_type": arguments.get("llm_type", "claude"),
+        }
+        if arguments.get("description"):
+            data["description"] = arguments["description"]
+
+        result = await api_post("/api/mockups", data)
+        if result.get("success"):
+            response = result["data"]
+            if response.get("success"):
+                mockup = response.get("mockup", {})
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Mockup created: {mockup.get('id')} - {mockup.get('name')}",
+                    )
+                ]
+            return [TextContent(type="text", text=f"Generation failed: {response.get('error')}")]
+        return [TextContent(type="text", text=f"Failed to create mockup: {result.get('error')}")]
+
+    if name == "modify_mockup":
+        mockup_id = arguments.get("mockup_id", "")
+        data = {
+            "modification_prompt": arguments.get("modification_prompt", ""),
+        }
+        if arguments.get("element_selector"):
+            data["element_selector"] = arguments["element_selector"]
+
+        result = await api_post(f"/api/mockups/{mockup_id}/modify", data)
+        if result.get("success"):
+            response = result["data"]
+            if response.get("success"):
+                mockup = response.get("mockup", {})
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Mockup modified: {mockup.get('id')} - {mockup.get('name')}",
+                    )
+                ]
+            return [TextContent(type="text", text=f"Modification failed: {response.get('error')}")]
+        return [TextContent(type="text", text=f"Failed to modify mockup: {result.get('error')}")]
 
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

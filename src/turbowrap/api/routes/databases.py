@@ -963,3 +963,169 @@ def unlink_repository(
     db.commit()
 
     return {"status": "unlinked", "connection_id": connection_id, "repository_id": repository_id}
+
+
+# ============================================================================
+# Query Execution (Read-Only)
+# ============================================================================
+
+
+class QueryRequest(BaseModel):
+    """Request to execute a read-only SQL query."""
+
+    query: str = Field(..., min_length=1, description="SQL SELECT query")
+    limit: int = Field(default=100, ge=1, le=1000, description="Max rows to return")
+
+
+class QueryResponse(BaseModel):
+    """Response from query execution."""
+
+    success: bool
+    columns: list[str] = []
+    rows: list[list[Any]] = []
+    row_count: int = 0
+    error: str | None = None
+    execution_time_ms: int | None = None
+
+
+@router.post("/{connection_id}/query", response_model=QueryResponse)
+async def execute_query(
+    connection_id: str,
+    req: QueryRequest,
+    db: Session = Depends(get_db),
+) -> QueryResponse:
+    """Execute a read-only SQL query on a database connection.
+
+    Only SELECT queries are allowed. The query is executed with a timeout
+    and results are limited to prevent abuse.
+    """
+    import re
+    import time
+
+    # Verify connection exists
+    conn = (
+        db.query(DatabaseConnection)
+        .filter(
+            DatabaseConnection.id == connection_id,
+            DatabaseConnection.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not conn:
+        raise HTTPException(status_code=404, detail="Database connection not found")
+
+    # Security: Only allow SELECT queries
+    query_stripped = req.query.strip().upper()
+    if not query_stripped.startswith("SELECT"):
+        return QueryResponse(
+            success=False,
+            error="Only SELECT queries are allowed",
+        )
+
+    # Security: Block dangerous keywords
+    dangerous_patterns = [
+        r"\bINSERT\b",
+        r"\bUPDATE\b",
+        r"\bDELETE\b",
+        r"\bDROP\b",
+        r"\bTRUNCATE\b",
+        r"\bALTER\b",
+        r"\bCREATE\b",
+        r"\bEXEC\b",
+        r"\bEXECUTE\b",
+        r"--",
+        r";.*\b(INSERT|UPDATE|DELETE|DROP)\b",
+    ]
+    for pattern in dangerous_patterns:
+        if re.search(pattern, req.query.upper()):
+            return QueryResponse(
+                success=False,
+                error="Query contains forbidden keywords",
+            )
+
+    db_type_str = cast(str, conn.db_type)
+    host_str = cast("str | None", conn.host)
+    port_int = cast("int | None", conn.port)
+    database_str = cast(str, conn.database)
+    username_str = cast("str | None", conn.username)
+    password_str = _decrypt_password(cast("str | None", conn.encrypted_password))
+
+    start_time = time.time()
+
+    try:
+        if db_type_str == "sqlite":
+            import sqlite3
+
+            conn_db = sqlite3.connect(database_str, timeout=10)
+            cursor = conn_db.cursor()
+            cursor.execute(req.query)
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            rows = cursor.fetchmany(req.limit)
+            conn_db.close()
+
+        elif db_type_str in ("mysql", "mariadb"):
+            import pymysql  # type: ignore[import-untyped]
+
+            conn_db = pymysql.connect(
+                host=host_str,
+                port=port_int or 3306,
+                user=username_str,
+                password=password_str or "",
+                database=database_str,
+                connect_timeout=10,
+                read_timeout=30,
+            )
+            cursor = conn_db.cursor()
+            cursor.execute(req.query)
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            rows = cursor.fetchmany(req.limit)
+            conn_db.close()
+
+        elif db_type_str == "postgresql":
+            import psycopg2
+
+            conn_db = psycopg2.connect(
+                host=host_str,
+                port=port_int or 5432,
+                user=username_str,
+                password=password_str or "",
+                dbname=database_str,
+                connect_timeout=10,
+            )
+            cursor = conn_db.cursor()
+            cursor.execute(req.query)
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
+            rows = cursor.fetchmany(req.limit)
+            conn_db.close()
+
+        else:
+            return QueryResponse(
+                success=False,
+                error=f"Query not supported for database type: {db_type_str}",
+            )
+
+        execution_time = int((time.time() - start_time) * 1000)
+
+        # Update last_connected_at
+        conn.last_connected_at = datetime.utcnow()  # type: ignore[assignment]
+        conn.last_error = None  # type: ignore[assignment]
+        db.commit()
+
+        return QueryResponse(
+            success=True,
+            columns=columns,
+            rows=[list(row) for row in rows],
+            row_count=len(rows),
+            execution_time_ms=execution_time,
+        )
+
+    except Exception as e:
+        # Update last_error
+        conn.last_error = str(e)  # type: ignore[assignment]
+        conn.updated_at = datetime.utcnow()  # type: ignore[assignment]
+        db.commit()
+
+        return QueryResponse(
+            success=False,
+            error=f"Query failed: {str(e)}",
+        )
