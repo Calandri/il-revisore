@@ -5,6 +5,10 @@ import type {
   Question,
   ElementInfo,
   IssueType,
+  WidgetMode,
+  ChatMessage,
+  ChatContext,
+  ChatActionData,
 } from './api/types';
 import { IssueAPIClient } from './api/client';
 import { captureScreen, compressImage, blobToDataUrl } from './capture/screen-capture';
@@ -31,6 +35,13 @@ interface WidgetState {
   createdIssue: IssueCreatedResult | null;
   error: string | null;
   isLoading: boolean;
+  // Chat mode
+  mode: WidgetMode;
+  chatSessionId: string | null;
+  chatMessages: ChatMessage[];
+  chatInput: string;
+  chatIsStreaming: boolean;
+  chatStreamingContent: string;
 }
 
 export class IssueWidget {
@@ -68,6 +79,13 @@ export class IssueWidget {
       createdIssue: null,
       error: null,
       isLoading: false,
+      // Chat mode
+      mode: 'form',
+      chatSessionId: null,
+      chatMessages: [],
+      chatInput: '',
+      chatIsStreaming: false,
+      chatStreamingContent: '',
     };
 
     this.container = document.createElement('div');
@@ -111,7 +129,7 @@ export class IssueWidget {
 
   private getHTML(): string {
     const position = this.config.position || 'bottom-right';
-    const { step, isOpen } = this.state;
+    const { step, isOpen, mode } = this.state;
 
     return `
       <button class="iw-trigger ${position}" id="iw-trigger">
@@ -123,21 +141,39 @@ export class IssueWidget {
 
       <div class="iw-modal ${position} ${isOpen ? 'open' : ''}" id="iw-modal">
         <div class="iw-header">
-          <h2>Report an Issue</h2>
+          <h2>${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
           <button class="iw-close" id="iw-close">&times;</button>
         </div>
 
-        <div class="iw-progress-bar">
-          ${this.renderProgressBar()}
+        <!-- Mode Selector -->
+        <div class="iw-mode-selector">
+          <button class="iw-mode-btn ${mode === 'form' ? 'active' : ''}" data-mode="form">
+            ${ICONS.form}
+            <span>Report Issue</span>
+          </button>
+          <button class="iw-mode-btn ${mode === 'chat' ? 'active' : ''}" data-mode="chat">
+            ${ICONS.chat}
+            <span>Chat</span>
+          </button>
         </div>
 
-        <div class="iw-content" id="iw-content">
-          ${this.renderStep(step)}
-        </div>
+        ${mode === 'form' ? `
+          <div class="iw-progress-bar">
+            ${this.renderProgressBar()}
+          </div>
 
-        <div class="iw-footer" id="iw-footer">
-          ${this.renderFooter(step)}
-        </div>
+          <div class="iw-content" id="iw-content">
+            ${this.renderStep(step)}
+          </div>
+
+          <div class="iw-footer" id="iw-footer">
+            ${this.renderFooter(step)}
+          </div>
+        ` : `
+          <div class="iw-content iw-chat-container" id="iw-content">
+            ${this.renderChatMode()}
+          </div>
+        `}
       </div>
     `;
   }
@@ -337,6 +373,73 @@ export class IssueWidget {
     `;
   }
 
+  private renderChatMode(): string {
+    const { chatMessages, chatInput, chatIsStreaming, chatStreamingContent, createdIssue } = this.state;
+
+    const messagesHtml = chatMessages.length === 0
+      ? `
+        <div class="iw-chat-welcome">
+          <h3>Ciao! Come posso aiutarti?</h3>
+          <p>Descrivi il problema o il suggerimento che vuoi segnalare.</p>
+        </div>
+      `
+      : chatMessages
+          .map((msg) => `
+            <div class="iw-chat-message iw-chat-${msg.role} ${msg.isStreaming ? 'iw-chat-streaming' : ''}">
+              <div class="iw-chat-avatar">${msg.role === 'user' ? 'Tu' : 'AI'}</div>
+              <div class="iw-chat-content">${this.escapeHtml(msg.content)}</div>
+            </div>
+          `)
+          .join('');
+
+    // Show streaming message if active
+    const streamingHtml = chatIsStreaming && chatStreamingContent
+      ? `
+        <div class="iw-chat-message iw-chat-assistant iw-chat-streaming">
+          <div class="iw-chat-avatar">AI</div>
+          <div class="iw-chat-content">${this.escapeHtml(chatStreamingContent)}</div>
+        </div>
+      `
+      : '';
+
+    // Show issue created success
+    const successHtml = createdIssue
+      ? `
+        <div class="iw-chat-issue-created">
+          <div class="iw-check-icon">${ICONS.check}</div>
+          <span>Issue creato!</span>
+          <a href="${createdIssue.url}" target="_blank" rel="noopener">${createdIssue.identifier}</a>
+        </div>
+      `
+      : '';
+
+    return `
+      <div class="iw-chat-messages" id="iw-chat-messages">
+        ${messagesHtml}
+        ${streamingHtml}
+        ${successHtml}
+      </div>
+
+      <div class="iw-chat-input-area">
+        <textarea
+          class="iw-chat-input"
+          id="iw-chat-input"
+          placeholder="Descrivi il problema..."
+          ${chatIsStreaming ? 'disabled' : ''}
+        >${this.escapeHtml(chatInput)}</textarea>
+        <button
+          class="iw-chat-send"
+          id="iw-chat-send"
+          ${chatIsStreaming || !chatInput.trim() ? 'disabled' : ''}
+        >
+          ${ICONS.send}
+        </button>
+      </div>
+
+      ${this.state.error ? `<div class="iw-error">${this.state.error}</div>` : ''}
+    `;
+  }
+
   private renderFooter(step: Step): string {
     switch (step) {
       case 'details':
@@ -404,6 +507,17 @@ export class IssueWidget {
         this.state.issueType = typeBtn.dataset.type as IssueType;
         this.update();
       }
+
+      // Handle mode selector
+      const modeBtn = target.closest('.iw-mode-btn') as HTMLElement;
+      if (modeBtn && modeBtn.dataset.mode) {
+        this.handleModeSwitch(modeBtn.dataset.mode as WidgetMode);
+      }
+
+      // Handle chat send button
+      if (target.id === 'iw-chat-send' || target.closest('#iw-chat-send')) {
+        this.handleChatSend();
+      }
     });
 
     this.shadow.addEventListener('change', (e) => {
@@ -423,6 +537,25 @@ export class IssueWidget {
       } else if (target.dataset.questionId) {
         const qId = parseInt(target.dataset.questionId, 10);
         this.state.answers[qId] = target.value;
+      } else if (target.id === 'iw-chat-input') {
+        this.state.chatInput = target.value;
+        // Update send button state
+        const sendBtn = this.shadow.getElementById('iw-chat-send') as HTMLButtonElement;
+        if (sendBtn) {
+          sendBtn.disabled = this.state.chatIsStreaming || !target.value.trim();
+        }
+      }
+    });
+
+    // Handle Enter key in chat input
+    this.shadow.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLTextAreaElement;
+      const keyEvent = e as KeyboardEvent;
+      if (target.id === 'iw-chat-input' && keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
+        e.preventDefault();
+        if (!this.state.chatIsStreaming && this.state.chatInput.trim()) {
+          this.handleChatSend();
+        }
       }
     });
   }
@@ -440,6 +573,11 @@ export class IssueWidget {
   }
 
   private reset(): void {
+    // Cleanup chat session if active
+    if (this.state.chatSessionId) {
+      this.client.deleteChatSession(this.state.chatSessionId).catch(() => {});
+    }
+
     this.state = {
       isOpen: false,
       step: 'details',
@@ -457,15 +595,19 @@ export class IssueWidget {
       createdIssue: null,
       error: null,
       isLoading: false,
+      // Chat mode - reset
+      mode: 'form',
+      chatSessionId: null,
+      chatMessages: [],
+      chatInput: '',
+      chatIsStreaming: false,
+      chatStreamingContent: '',
     };
   }
 
   private update(): void {
     const modal = this.shadow.getElementById('iw-modal');
     const overlay = this.shadow.getElementById('iw-overlay');
-    const content = this.shadow.getElementById('iw-content');
-    const footer = this.shadow.getElementById('iw-footer');
-    const progressBar = this.shadow.querySelector('.iw-progress-bar');
 
     if (this.state.isOpen) {
       modal?.classList.add('open');
@@ -475,9 +617,50 @@ export class IssueWidget {
       overlay?.classList.remove('open');
     }
 
-    if (content) content.innerHTML = this.renderStep(this.state.step);
-    if (footer) footer.innerHTML = this.renderFooter(this.state.step);
-    if (progressBar) progressBar.innerHTML = this.renderProgressBar();
+    // Re-render the entire modal content for mode switching
+    if (modal) {
+      const { mode, step } = this.state;
+
+      modal.innerHTML = `
+        <div class="iw-header">
+          <h2>${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
+          <button class="iw-close" id="iw-close">&times;</button>
+        </div>
+
+        <div class="iw-mode-selector">
+          <button class="iw-mode-btn ${mode === 'form' ? 'active' : ''}" data-mode="form">
+            ${ICONS.form}
+            <span>Report Issue</span>
+          </button>
+          <button class="iw-mode-btn ${mode === 'chat' ? 'active' : ''}" data-mode="chat">
+            ${ICONS.chat}
+            <span>Chat</span>
+          </button>
+        </div>
+
+        ${mode === 'form' ? `
+          <div class="iw-progress-bar">
+            ${this.renderProgressBar()}
+          </div>
+
+          <div class="iw-content" id="iw-content">
+            ${this.renderStep(step)}
+          </div>
+
+          <div class="iw-footer" id="iw-footer">
+            ${this.renderFooter(step)}
+          </div>
+        ` : `
+          <div class="iw-content iw-chat-container" id="iw-content">
+            ${this.renderChatMode()}
+          </div>
+        `}
+      `;
+
+      // Reattach close button listener
+      const closeBtn = modal.querySelector('#iw-close');
+      closeBtn?.addEventListener('click', () => this.close());
+    }
   }
 
   private async handleScreenshotCapture(): Promise<void> {
@@ -558,6 +741,161 @@ export class IssueWidget {
     if (this.state.step === 'questions') {
       this.state.step = 'details';
       this.update();
+    }
+  }
+
+  private handleModeSwitch(mode: WidgetMode): void {
+    if (mode === this.state.mode) return;
+
+    this.state.mode = mode;
+
+    // Reset chat state when switching to chat mode
+    if (mode === 'chat') {
+      this.state.chatMessages = [];
+      this.state.chatInput = '';
+      this.state.chatIsStreaming = false;
+      this.state.chatStreamingContent = '';
+      this.state.chatSessionId = null;
+      this.state.createdIssue = null;
+      this.state.error = null;
+    }
+
+    this.update();
+  }
+
+  private async handleChatSend(): Promise<void> {
+    const message = this.state.chatInput.trim();
+    if (!message || this.state.chatIsStreaming) return;
+
+    // Add user message to chat
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    };
+    this.state.chatMessages.push(userMessage);
+    this.state.chatInput = '';
+    this.state.chatIsStreaming = true;
+    this.state.chatStreamingContent = '';
+    this.state.error = null;
+    this.update();
+    this.scrollChatToBottom();
+
+    try {
+      // Create session if not exists
+      if (!this.state.chatSessionId) {
+        const context: ChatContext = {
+          pageUrl: window.location.href,
+          pageTitle: document.title,
+          selectedElement: this.state.selectedElement || undefined,
+        };
+        const session = await this.client.createChatSession(context);
+        this.state.chatSessionId = session.session_id;
+      }
+
+      // Send message and handle streaming response
+      await this.client.sendChatMessage(
+        this.state.chatSessionId,
+        message,
+        {
+          pageUrl: window.location.href,
+          pageTitle: document.title,
+          selectedElement: this.state.selectedElement || undefined,
+        },
+        // onChunk
+        (content: string) => {
+          this.state.chatStreamingContent += content;
+          this.updateChatContent();
+          this.scrollChatToBottom();
+        },
+        // onAction
+        (action: ChatActionData) => {
+          if (action.type === 'create_issue') {
+            this.handleChatCreateIssue(action.data);
+          }
+        },
+        // onComplete
+        () => {
+          // Move streaming content to actual message
+          if (this.state.chatStreamingContent) {
+            const assistantMessage: ChatMessage = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: this.state.chatStreamingContent,
+              timestamp: new Date(),
+            };
+            this.state.chatMessages.push(assistantMessage);
+          }
+          this.state.chatIsStreaming = false;
+          this.state.chatStreamingContent = '';
+          this.update();
+        },
+        // onError
+        (error: string) => {
+          this.state.error = error;
+          this.state.chatIsStreaming = false;
+          this.state.chatStreamingContent = '';
+          this.update();
+        }
+      );
+    } catch (error) {
+      this.state.error = error instanceof Error ? error.message : 'Unknown error';
+      this.state.chatIsStreaming = false;
+      this.update();
+    }
+  }
+
+  private async handleChatCreateIssue(data: { title: string; description: string; type: string }): Promise<void> {
+    // Use the finalize endpoint to create the issue
+    try {
+      await this.client.finalizeIssue(
+        {
+          title: data.title,
+          description: data.description,
+          issueType: data.type as IssueType,
+          userAnswers: {},
+          geminiInsights: '',
+          teamId: this.config.teamId,
+          tempSessionId: this.state.chatSessionId || '',
+          websiteLink: window.location.href,
+          selectedElement: this.state.selectedElement || undefined,
+        },
+        () => {}, // onProgress - not needed for chat
+        (result: IssueCreatedResult) => {
+          this.state.createdIssue = result;
+          this.update();
+          this.scrollChatToBottom();
+          this.config.onIssueCreated?.(result);
+        },
+        (error: string) => {
+          // Add error as system message
+          const errorMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: 'system',
+            content: `Errore nella creazione: ${error}`,
+            timestamp: new Date(),
+          };
+          this.state.chatMessages.push(errorMessage);
+          this.update();
+        }
+      );
+    } catch (error) {
+      console.error('Failed to create issue from chat:', error);
+    }
+  }
+
+  private updateChatContent(): void {
+    const content = this.shadow.getElementById('iw-content');
+    if (content && this.state.mode === 'chat') {
+      content.innerHTML = this.renderChatMode();
+    }
+  }
+
+  private scrollChatToBottom(): void {
+    const messagesEl = this.shadow.getElementById('iw-chat-messages');
+    if (messagesEl) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
   }
 

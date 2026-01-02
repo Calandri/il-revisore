@@ -49,6 +49,7 @@ from .routes import (
     ui_actions_router,
     users_router,
     web_router,
+    widget_chat_router,
 )
 from .websocket import ChatWebSocketHandler
 
@@ -318,6 +319,7 @@ def create_app() -> FastAPI:
     app.include_router(tests_router, prefix="/api")
     app.include_router(live_view_router, prefix="/api")
     app.include_router(ui_actions_router, prefix="/api")
+    app.include_router(widget_chat_router, prefix="/api")
 
     # Web routes (no prefix - these are the HTML pages)
     app.include_router(web_router)

@@ -71,3 +71,36 @@ export interface SSEEvent {
   event: SSEEventType;
   data: unknown;
 }
+
+// --- Chat Mode Types ---
+
+export type WidgetMode = 'form' | 'chat';
+
+export interface ChatContext {
+  repositoryId?: string;
+  pageUrl?: string;
+  pageTitle?: string;
+  selectedElement?: ElementInfo;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+  isStreaming?: boolean;
+}
+
+export interface ChatSessionResponse {
+  session_id: string;
+  message?: string;
+}
+
+export interface ChatActionData {
+  type: 'create_issue';
+  data: {
+    title: string;
+    description: string;
+    type: 'bug' | 'suggestion';
+  };
+}

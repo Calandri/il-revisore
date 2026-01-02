@@ -5,6 +5,9 @@ import type {
   FinalizeRequest,
   IssueCreatedResult,
   Question,
+  ChatContext,
+  ChatSessionResponse,
+  ChatActionData,
 } from './types';
 
 export class IssueAPIClient {
@@ -156,6 +159,132 @@ export class IssueAPIClient {
 
               if (currentEvent === 'complete' || data.questions || data.identifier) {
                 onData(data);
+              }
+            } catch {
+              // Incomplete JSON chunk, continue
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  // --- Chat Mode Methods ---
+
+  async createChatSession(context?: ChatContext): Promise<ChatSessionResponse> {
+    const response = await fetch(`${this.baseUrl}/api/widget-chat/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Widget-Key': this.apiKey,
+      },
+      body: JSON.stringify({ context }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  async sendChatMessage(
+    sessionId: string,
+    message: string,
+    context: ChatContext | undefined,
+    onChunk: (content: string) => void,
+    onAction: (action: ChatActionData) => void,
+    onComplete: () => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/api/widget-chat/sessions/${sessionId}/message`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Widget-Key': this.apiKey,
+          },
+          body: JSON.stringify({
+            message,
+            session_id: sessionId,
+            context,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      await this.parseChatSSEStream(response, onChunk, onAction, onComplete, onError);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  async deleteChatSession(sessionId: string): Promise<void> {
+    await fetch(`${this.baseUrl}/api/widget-chat/sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: {
+        'X-Widget-Key': this.apiKey,
+      },
+    });
+  }
+
+  private async parseChatSSEStream(
+    response: Response,
+    onChunk: (content: string) => void,
+    onAction: (action: ChatActionData) => void,
+    onComplete: () => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      onError('Response body is not readable');
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            try {
+              const data = JSON.parse(dataStr) as Record<string, unknown>;
+
+              if (currentEvent === 'error' || data.error) {
+                onError(String(data.error || 'Unknown error'));
+                return;
+              }
+
+              if (currentEvent === 'chunk' && data.content) {
+                onChunk(String(data.content));
+              }
+
+              if (currentEvent === 'action' && data.type && data.data) {
+                onAction(data as unknown as ChatActionData);
+              }
+
+              if (currentEvent === 'done') {
+                onComplete();
               }
             } catch {
               // Incomplete JSON chunk, continue

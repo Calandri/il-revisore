@@ -28,6 +28,7 @@ from .thinking import router as thinking_router
 from .ui_actions import router as ui_actions_router
 from .users import router as users_router
 from .web import router as web_router
+from .widget_chat import router as widget_chat_router
 
 __all__ = [
     "repos_router",
@@ -58,4 +59,5 @@ __all__ = [
     "tests_router",
     "live_view_router",
     "ui_actions_router",
+    "widget_chat_router",
 ]
