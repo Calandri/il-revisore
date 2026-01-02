@@ -8,6 +8,17 @@
  * - Quick settings (model, agent, thinking)
  * - 3 display modes (full/third/icons)
  */
+// Import extracted modules
+import { CONTEXT_LIMITS, CHAT_MODES } from './chat/constants.js';
+import {
+    formatRelativeTime,
+    formatContextUsage,
+    getModelShortName,
+    getToolDescription,
+    getTokenCategoryColor,
+} from './chat/formatting-utils.js';
+import { ChatApiService, ApiError } from './chat/chat-api-service.js';
+
 
 // SharedWorker singleton (shared across all chatSidebar instances)
 let chatWorker = null;
@@ -32,37 +43,6 @@ function getChatWorker() {
     return chatWorkerPort;
 }
 
-/**
- * Format a timestamp as relative time (5m, 2h, 1d, etc.)
- * @param {string|Date|null} timestamp - ISO timestamp or Date object
- * @returns {string} Relative time string or empty string if no timestamp
- */
-function formatRelativeTime(timestamp) {
-    if (!timestamp) return '';
-
-    // Ensure UTC interpretation: add 'Z' if timestamp has no timezone info
-    let ts = timestamp;
-    if (typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+') && !ts.includes('-', 10)) {
-        ts = ts + 'Z';
-    }
-    const date = typeof ts === 'string' ? new Date(ts) : ts;
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSecs = Math.floor(diffMs / 1000);
-    const diffMins = Math.floor(diffSecs / 60);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-    const diffWeeks = Math.floor(diffDays / 7);
-    const diffMonths = Math.floor(diffDays / 30);
-
-    if (diffSecs < 10) return 'now';
-    if (diffSecs < 60) return `${diffSecs}s`;
-    if (diffMins < 60) return `${diffMins}m`;
-    if (diffHours < 24) return `${diffHours}h`;
-    if (diffDays < 7) return `${diffDays}d`;
-    if (diffWeeks < 4) return `${diffWeeks}w`;
-    return `${diffMonths}mo`;
-}
 
 // Expose to Alpine/window for template use
 window.formatRelativeTime = formatRelativeTime;
@@ -804,19 +784,9 @@ Contesto: ${contextStr}`;
                     ? filterRepoId
                     : (typeof Alpine !== 'undefined' && Alpine.store('globalContext')?.selectedRepoId) || null;
 
-                let url = '/api/cli-chat/sessions';
-                if (repoId) {
-                    url += `?repository_id=${repoId}`;
-                }
-
                 console.log('[chatSidebar] Fetching sessions...', repoId ? `(filtered by repo: ${repoId})` : '(all)');
-                const res = await fetch(url);
-                console.log('[chatSidebar] Sessions response:', res.status);
-                if (res.ok) {
-                    this.sessions = await res.json();
-                } else {
-                    console.error('[chatSidebar] Sessions API error:', res.status, await res.text());
-                }
+                this.sessions = await ChatApiService.getSessions({ repositoryId: repoId });
+                console.log('[chatSidebar] Sessions loaded:', this.sessions.length);
             } catch (error) {
                 console.error('[chatSidebar] Error loading sessions:', error);
             }
@@ -827,11 +797,8 @@ Contesto: ${contextStr}`;
          */
         async loadAgents() {
             try {
-                const res = await fetch('/api/cli-chat/agents');
-                if (res.ok) {
-                    const data = await res.json();
-                    this.agents = data.agents || [];
-                }
+                const data = await ChatApiService.getAgents();
+                this.agents = data.agents || [];
             } catch (error) {
                 console.error('Error loading agents:', error);
             }
@@ -951,11 +918,8 @@ Contesto: ${contextStr}`;
          */
         async loadRepositories() {
             try {
-                const res = await fetch('/api/git/repositories');
-                if (res.ok) {
-                    this.repositories = await res.json();
-                    console.log('[chatSidebar] Loaded repositories:', this.repositories.length);
-                }
+                this.repositories = await ChatApiService.getRepositories();
+                console.log('[chatSidebar] Loaded repositories:', this.repositories.length);
             } catch (error) {
                 console.error('Error loading repositories:', error);
             }
@@ -1769,76 +1733,24 @@ Contesto: ${contextStr}`;
         },
 
         /**
-         * Get tool description for display
-         * @param {Object} tool - Tool object with name and input
-         * @returns {string} Description to display
+         * Get tool description for display (delegates to imported utility)
          */
         getToolDescription(tool) {
-            if (!tool || !tool.input) return '';
-            const input = tool.input;
-            switch (tool.name) {
-                case 'Read':
-                    return input.file_path || '';
-                case 'Edit':
-                    return input.file_path || '';
-                case 'Write':
-                    return input.file_path || '';
-                case 'Bash':
-                    const cmd = input.command || input.description || '';
-                    return cmd.length > 60 ? cmd.substring(0, 57) + '...' : cmd;
-                case 'Grep':
-                    return input.pattern || '';
-                case 'Glob':
-                    return input.pattern || '';
-                case 'Task':
-                    return input.description || input.subagent_type || '';
-                case 'WebSearch':
-                    return input.query || '';
-                case 'WebFetch':
-                    return input.url || '';
-                default:
-                    return input.file_path || input.pattern || input.command?.substring(0, 50) || input.description || '';
-            }
+            return getToolDescription(tool);
         },
 
         /**
-         * Get short model name for display
-         * @param {string} model - Full model name
-         * @returns {string} Short name
+         * Get short model name for display (delegates to imported utility)
          */
         getModelShortName(model) {
-            if (!model) return 'default';
-            // Claude models
-            if (model.includes('opus')) return 'Opus';
-            if (model.includes('sonnet')) return 'Sonnet';
-            if (model.includes('haiku')) return 'Haiku';
-            // Gemini models
-            if (model.includes('pro')) return 'Pro';
-            if (model.includes('flash')) return 'Flash';
-            // Grok models
-            if (model.includes('grok')) return 'Grok';
-            // Fallback: extract meaningful part
-            return model.split('-').slice(1, 2).join(' ') || model;
+            return getModelShortName(model);
         },
 
         /**
-         * Format context usage as "XK / 200K" or percentage
-         * @param {number} tokensIn - Total input tokens used
-         * @param {string} cliType - 'claude' or 'gemini'
-         * @returns {string} Formatted context usage
+         * Format context usage (delegates to imported utility)
          */
         formatContextUsage(tokensIn, cliType) {
-            // Context limits by CLI type
-            const contextLimit = cliType === 'gemini' ? 1000000 : 200000;  // Gemini 1M, Claude 200K
-            const usedK = Math.round(tokensIn / 1000);
-            const limitK = Math.round(contextLimit / 1000);
-            const percentage = Math.round((tokensIn / contextLimit) * 100);
-
-            // Show different format based on usage
-            if (usedK < 1) {
-                return `<1K / ${limitK}K`;
-            }
-            return `${usedK}K / ${limitK}K (${percentage}%)`;
+            return formatContextUsage(tokensIn, cliType);
         },
 
         /**
@@ -2006,20 +1918,10 @@ Contesto: ${contextStr}`;
         },
 
         /**
-         * Get color for token category
+         * Get color for token category (delegates to imported utility)
          */
         getTokenCategoryColor(name) {
-            const colors = {
-                'System prompt': '#f472b6',
-                'System tools': '#a78bfa',
-                'MCP tools': '#60a5fa',
-                'Custom agents': '#34d399',
-                'Memory files': '#fbbf24',
-                'Messages': '#f97316',
-                'Free space': '#374151',
-                'Autocompact buffer': '#6b7280',
-            };
-            return colors[name] || '#6b7280';
+            return getTokenCategoryColor(name);
         },
 
         /**
@@ -2415,7 +2317,7 @@ Contesto: ${contextStr}`;
          * Cycle through chat display modes: third → full → page → third
          */
         expandChat() {
-            const modes = ['third', 'full', 'page'];
+            const modes = CHAT_MODES;
             const idx = modes.indexOf(this.chatMode);
             const newMode = modes[(idx + 1) % modes.length];
             this.chatMode = newMode;
