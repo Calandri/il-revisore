@@ -92,6 +92,8 @@ function chatSidebar() {
         systemInfo: [],
         activeTools: [],        // Currently running tools (for UI display)
         completedTools: [],     // Tools completed in current response
+        activeAgents: [],       // Currently running agents (Task tool)
+        completedAgents: [],    // Agents completed in current response
         eventSource: null,
         abortController: null,
         // Queue and Fork functionality
@@ -422,6 +424,8 @@ Contesto: ${contextStr}`;
                         this.systemInfo = [];
                         this.activeTools = [];      // Reset active tools
                         this.completedTools = [];   // Reset completed tools
+                        this.activeAgents = [];     // Reset active agents
+                        this.completedAgents = [];  // Reset completed agents
                     }
                     break;
 
@@ -480,6 +484,26 @@ Contesto: ${contextStr}`;
                     }
                     break;
 
+                case 'AGENT_START':
+                    console.log('[chatSidebar] Worker: agent launched:', data.agentType, '(model:', data.agentModel, ')');
+                    // Only update UI if it's the active session
+                    if (isActiveSession) {
+                        this.activeAgents.push({
+                            type: data.agentType,
+                            model: data.agentModel,
+                            description: data.description,
+                            startedAt: Date.now()
+                        });
+                        // Also move to completed immediately (agents run async, no explicit end event)
+                        this.completedAgents.push({
+                            type: data.agentType,
+                            model: data.agentModel,
+                            description: data.description,
+                            launchedAt: Date.now()
+                        });
+                    }
+                    break;
+
                 case 'DONE':
                     console.log('[chatSidebar] Worker: stream done for session:', sessionId, 'messageId:', messageId);
                     // Save message with final content for this session
@@ -497,6 +521,8 @@ Contesto: ${contextStr}`;
                         this.streaming = false;
                         this.activeTools = [];      // Clear active tools
                         this.completedTools = [];   // Clear completed tools
+                        this.activeAgents = [];     // Clear active agents
+                        // Keep completedAgents visible after stream ends
                     }
 
                     // Add to messages UI for secondary session (dual-chat)

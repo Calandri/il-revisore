@@ -104,6 +104,7 @@ function getSessionState(sessionId) {
             streamContent: '',
             systemInfo: [],
             activeTools: [],  // Currently running tools
+            activeAgents: [],  // Currently running agents (Task tool)
             lastMessageId: null,
             title: null
         });
@@ -274,6 +275,25 @@ function processEvent(sessionId, data, eventType = 'chunk') {
             sessionId,
             toolName: data.tool_name,
             toolInput: data.tool_input
+        });
+        return;
+    }
+
+    // Agent start events (Task tool = sub-agent)
+    if (eventType === 'agent_start') {
+        log('Agent launched:', data.agent_type, '(model:', data.agent_model, ')');
+        state.activeAgents.push({
+            type: data.agent_type,
+            model: data.agent_model,
+            description: data.description,
+            startedAt: Date.now()
+        });
+        broadcast({
+            type: 'AGENT_START',
+            sessionId,
+            agentType: data.agent_type,
+            agentModel: data.agent_model,
+            description: data.description
         });
         return;
     }
