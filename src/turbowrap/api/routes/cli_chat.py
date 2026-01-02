@@ -1372,13 +1372,20 @@ async def get_session_context(
 
     # Check if process is running
     if session_id not in manager._processes:
+        # Return basic info from DB when process not running
+        used = session.total_tokens_in or 0
+        limit = 200000
         return {
-            "error": "Session process not running",
+            "model": session.model,
             "tokens": {
-                "used": session.total_tokens_in or 0,
-                "limit": 200000,
-                "percentage": round((session.total_tokens_in or 0) / 200000 * 100),
+                "used": used,
+                "limit": limit,
+                "percentage": round(used / limit * 100) if limit > 0 else 0,
             },
+            "categories": [],
+            "mcpTools": [],
+            "agents": [],
+            "process_running": False,
         }
 
     try:
@@ -1548,9 +1555,22 @@ async def get_session_usage(
 
     # Check if process is running
     if session_id not in manager._processes:
+        # Return basic info from DB when process not running
+        repo = session.repository
         return {
-            "error": "Session process not running",
-            "session_id": session_id,
+            "version": None,
+            "session_id": str(session.claude_session_id) if session.claude_session_id else None,
+            "cwd": repo.local_path if repo else None,
+            "login_method": None,
+            "organization": None,
+            "email": None,
+            "model": session.model,
+            "model_id": session.model,
+            "ide": None,
+            "ide_version": None,
+            "mcp_servers": [],
+            "memory": "CLAUDE.md",
+            "process_running": False,
         }
 
     try:
