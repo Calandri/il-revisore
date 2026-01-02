@@ -85,6 +85,8 @@ class Repository(Base, SoftDeleteMixin):
         cascade="all, delete-orphan",
     )
 
+    __table_args__ = ({"extend_existing": True},)
+
     def __repr__(self) -> str:
         return f"<Repository {self.name}>"
 
@@ -118,6 +120,7 @@ class RepositoryLink(Base):
         Index("idx_repository_links_source", "source_repo_id"),
         Index("idx_repository_links_target", "target_repo_id"),
         Index("idx_repository_links_type", "link_type"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -147,6 +150,7 @@ class RepositoryExternalLink(Base):
     __table_args__ = (
         Index("idx_external_links_repo", "repository_id"),
         Index("idx_external_links_type", "link_type"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

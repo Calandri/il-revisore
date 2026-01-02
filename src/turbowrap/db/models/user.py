@@ -58,6 +58,7 @@ class User(Base):
     __table_args__ = (
         Index("idx_users_email", "email"),
         Index("idx_users_role", "role"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -103,6 +104,7 @@ class UserRepository(Base):
         Index("idx_user_repos_user", "user_id"),
         Index("idx_user_repos_repo", "repository_id"),
         UniqueConstraint("user_id", "repository_id", name="uq_user_repository"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

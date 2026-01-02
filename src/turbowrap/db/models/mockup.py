@@ -40,6 +40,7 @@ class MockupProject(Base, SoftDeleteMixin):
     __table_args__ = (
         Index("idx_mockup_projects_repository", "repository_id"),
         Index("idx_mockup_projects_deleted", "deleted_at"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -100,6 +101,7 @@ class Mockup(Base, SoftDeleteMixin):
         Index("idx_mockups_llm_type", "llm_type"),
         Index("idx_mockups_status", "status"),
         Index("idx_mockups_deleted", "deleted_at"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
