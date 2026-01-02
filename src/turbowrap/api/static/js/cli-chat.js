@@ -70,6 +70,9 @@ function chatSidebar() {
         pendingCliType: null,   // CLI type waiting for repo selection
         // SharedWorker support
         useWorker: true,        // Will be set to false if worker not supported
+        // Stream limit tracking
+        activeStreamCount: 0,    // Number of streams currently running
+        maxStreamsReached: false, // True when activeStreamCount >= 10
         // UI state
         showHistory: false,     // Show history panel (hamburger)
         activeTooltip: null,    // Active tooltip in toolbar
@@ -475,14 +478,29 @@ Contesto: ${contextStr}`;
                     if (isActiveSession) {
                         this.streaming = false;
                     }
+                    // Request updated stream count from worker
+                    if (this.useWorker && chatWorkerPort) {
+                        setTimeout(() => {
+                            chatWorkerPort.postMessage({
+                                type: 'GET_STATE',
+                                sessionId: this.activeSession?.id
+                            });
+                        }, 100);
+                    }
                     break;
 
                 case 'STATE_SYNC':
                     console.log('[chatSidebar] Worker: state sync received', { activeStreams, state });
-                    // Restore state for all active streams
-                    // This helps when a new tab connects and there are ongoing streams in other sessions
+                    // Track active stream count for UI limit
                     if (activeStreams && Array.isArray(activeStreams)) {
-                        console.log('[chatSidebar] Active streams in worker:', activeStreams);
+                        this.activeStreamCount = activeStreams.length;
+                        this.maxStreamsReached = activeStreams.length >= 10;
+                        console.log(`[chatSidebar] Active streams: ${this.activeStreamCount}/10${this.maxStreamsReached ? ' (LIMIT REACHED)' : ''}`);
+
+                        // Show warning if limit is reached
+                        if (this.maxStreamsReached) {
+                            console.warn('[chatSidebar] Maximum concurrent streams reached (10)');
+                        }
                     }
                     // Restore state if there was an active stream for current session
                     if (state && sessionId === this.activeSession?.id) {
