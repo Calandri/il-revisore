@@ -1139,6 +1139,11 @@ Contesto: ${contextStr}`;
                 this.$nextTick(() => this.scrollToBottom());
 
                 if (session.repository_id) await this.loadBranches();
+
+                // Fetch context info immediately to show resume status
+                if (session.cli_type === 'claude') {
+                    this.requestContextInfo();
+                }
             } catch (error) {
                 if (error.name === 'AbortError') {
                     console.log('[selectSession] Fetch aborted due to session change');

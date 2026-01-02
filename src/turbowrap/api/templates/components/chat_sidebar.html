@@ -650,6 +650,11 @@
                         <span class="font-mono">#<span x-text="sessions.findIndex(s => s.id === activeSession?.id) + 1"></span></span>
                         <!-- Model -->
                         <span class="font-medium" x-text="getModelShortName(activeSession?.model)"></span>
+                        <!-- Resume indicator -->
+                        <span x-show="activeSession?.contextInfo?.tokens?.used > 0 && messages.length === 0"
+                              class="px-1 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+                            resume
+                        </span>
                     </div>
                     <!-- Context usage -->
                     <div class="flex items-center gap-1">
