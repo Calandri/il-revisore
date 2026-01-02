@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Info Modal - Claude CLI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'mono': ['JetBrains Mono', 'monospace'],
+                        'sans': ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        'surface': {
+                            '50': '#f8fafc',
+                            '100': '#f1f5f9',
+                            '200': '#e2e8f0',
+                            '700': '#1e293b',
+                            '800': '#0f172a',
+                            '900': '#020617',
+                        },
+                        'token': {
+                            'system': '#f472b6',
+                            'tools': '#a78bfa',
+                            'mcp': '#60a5fa',
+                            'agents': '#34d399',
+                            'memory': '#fbbf24',
+                            'messages': '#f97316',
+                            'free': '#374151',
+                            'buffer': '#6b7280',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .token-bar {
+            animation: grow 0.8s ease-out forwards;
+            transform-origin: left;
+        }
+        @keyframes grow {
+            from { transform: scaleX(0); }
+            to { transform: scaleX(1); }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .stagger-1 { animation-delay: 0.05s; }
+        .stagger-2 { animation-delay: 0.1s; }
+        .stagger-3 { animation-delay: 0.15s; }
+        .stagger-4 { animation-delay: 0.2s; }
+        .stagger-5 { animation-delay: 0.25s; }
+        .stagger-6 { animation-delay: 0.3s; }
+        .stagger-7 { animation-delay: 0.35s; }
+        .stagger-8 { animation-delay: 0.4s; }
+
+        .copy-btn:active {
+            transform: scale(0.95);
+        }
+
+        .glow-ring {
+            box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2),
+                        0 4px 32px rgba(0, 0, 0, 0.4),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .status-dot {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-surface-900 min-h-screen flex items-center justify-center p-4 font-sans">
+    <!-- Backdrop -->
+    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm"></div>
+
+    <!-- Modal -->
+    <div class="relative w-full max-w-lg bg-surface-800 rounded-2xl glow-ring overflow-hidden fade-in">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-5 py-4 border-b border-white/5">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-white font-semibold text-sm">Session Info</h2>
+                    <p class="text-surface-200/50 text-xs">Claude CLI v2.0.76</p>
+                </div>
+            </div>
+            <button class="p-2 rounded-lg hover:bg-white/5 transition-colors group">
+                <svg class="w-4 h-4 text-surface-200/50 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Content -->
+        <div class="p-5 space-y-5">
+            <!-- Session Status Section -->
+            <div class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot"></div>
+                    <span class="text-xs font-medium text-surface-200/70 uppercase tracking-wider">Status</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                    <!-- Session ID -->
+                    <div class="col-span-2 flex items-center justify-between bg-surface-900/50 rounded-lg px-3 py-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-surface-200/50 text-xs shrink-0">Session</span>
+                            <code class="font-mono text-xs text-surface-200/80 truncate">eafe4509-a350-4bc2-88ce-42853b7851f0</code>
+                        </div>
+                        <button class="copy-btn p-1.5 rounded hover:bg-white/10 transition-all shrink-0" title="Copy">
+                            <svg class="w-3.5 h-3.5 text-surface-200/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Model -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-surface-200/50 text-xs">Model</span>
+                        <span class="px-2 py-0.5 rounded-md bg-gradient-to-r from-orange-500/20 to-amber-500/20 text-orange-300 text-xs font-medium border border-orange-500/20">Opus 4.5</span>
+                    </div>
+
+                    <!-- Login -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-surface-200/50 text-xs">Login</span>
+                        <span class="text-surface-200/90 text-xs">Claude Max</span>
+                    </div>
+
+                    <!-- Working Dir -->
+                    <div class="col-span-2 flex items-center gap-2">
+                        <span class="text-surface-200/50 text-xs shrink-0">cwd</span>
+                        <code class="font-mono text-xs text-cyan-400/80 truncate">/Users/niccolocalandri/code/ultraWrap</code>
+                    </div>
+
+                    <!-- Organization -->
+                    <div class="col-span-2 flex items-center gap-2">
+                        <span class="text-surface-200/50 text-xs shrink-0">Org</span>
+                        <span class="text-surface-200/80 text-xs truncate">niccolo.calandri@3bee.com</span>
+                    </div>
+
+                    <!-- IDE -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-surface-200/50 text-xs">IDE</span>
+                        <div class="flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/>
+                            </svg>
+                            <span class="text-surface-200/80 text-xs">VS Code 2.0.76</span>
+                        </div>
+                    </div>
+
+                    <!-- Memory -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-surface-200/50 text-xs">Memory</span>
+                        <code class="font-mono text-xs text-amber-400/80">CLAUDE.md</code>
+                    </div>
+                </div>
+
+                <!-- MCP Servers -->
+                <div class="flex items-center gap-3 pt-1">
+                    <span class="text-surface-200/50 text-xs">MCP</span>
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                            <span class="text-red-300/80 text-xs">slack</span>
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/20">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                            <span class="text-red-300/80 text-xs">github</span>
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            <span class="text-emerald-300/80 text-xs">turbowrap-ui</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+
+            <!-- Context Usage Section -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                        </svg>
+                        <span class="text-xs font-medium text-surface-200/70 uppercase tracking-wider">Context Usage</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-lg font-semibold text-white">81k</span>
+                        <span class="text-surface-200/50 text-xs">/</span>
+                        <span class="text-surface-200/50 text-sm">200k</span>
+                        <span class="text-emerald-400 text-xs font-medium ml-1">40%</span>
+                    </div>
+                </div>
+
+                <!-- Stacked Progress Bar -->
+                <div class="h-3 rounded-full bg-surface-900 overflow-hidden flex">
+                    <div class="token-bar h-full bg-token-system" style="width: 1.6%" title="System prompt: 1.6%"></div>
+                    <div class="token-bar h-full bg-token-tools stagger-1" style="width: 8.6%" title="System tools: 8.6%"></div>
+                    <div class="token-bar h-full bg-token-mcp stagger-2" style="width: 5.8%" title="MCP tools: 5.8%"></div>
+                    <div class="token-bar h-full bg-token-agents stagger-3" style="width: 0.8%" title="Custom agents: 0.8%"></div>
+                    <div class="token-bar h-full bg-token-memory stagger-4" style="width: 1.1%" title="Memory files: 1.1%"></div>
+                    <div class="token-bar h-full bg-token-messages stagger-5" style="width: 0.1%" title="Messages: 0.0%"></div>
+                    <div class="token-bar h-full bg-token-buffer stagger-6" style="width: 22.5%" title="Autocompact buffer: 22.5%"></div>
+                    <!-- Free space is implicit (remaining) -->
+                </div>
+
+                <!-- Token Breakdown Grid -->
+                <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                    <div class="flex items-center justify-between fade-in stagger-1 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-system"></div>
+                            <span class="text-surface-200/60">System prompt</span>
+                        </div>
+                        <span class="font-mono text-token-system">3.2k <span class="text-surface-200/40">(1.6%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-2 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-tools"></div>
+                            <span class="text-surface-200/60">System tools</span>
+                        </div>
+                        <span class="font-mono text-token-tools">17.2k <span class="text-surface-200/40">(8.6%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-3 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-mcp"></div>
+                            <span class="text-surface-200/60">MCP tools</span>
+                        </div>
+                        <span class="font-mono text-token-mcp">11.7k <span class="text-surface-200/40">(5.8%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-4 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-agents"></div>
+                            <span class="text-surface-200/60">Custom agents</span>
+                        </div>
+                        <span class="font-mono text-token-agents">1.7k <span class="text-surface-200/40">(0.8%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-5 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-memory"></div>
+                            <span class="text-surface-200/60">Memory files</span>
+                        </div>
+                        <span class="font-mono text-token-memory">2.2k <span class="text-surface-200/40">(1.1%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-6 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-messages"></div>
+                            <span class="text-surface-200/60">Messages</span>
+                        </div>
+                        <span class="font-mono text-token-messages">8 <span class="text-surface-200/40">(0.0%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-7 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-free"></div>
+                            <span class="text-surface-200/60">Free space</span>
+                        </div>
+                        <span class="font-mono text-emerald-400">119k <span class="text-surface-200/40">(59.5%)</span></span>
+                    </div>
+
+                    <div class="flex items-center justify-between fade-in stagger-8 opacity-0">
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-sm bg-token-buffer"></div>
+                            <span class="text-surface-200/60">Autocompact</span>
+                        </div>
+                        <span class="font-mono text-token-buffer">45k <span class="text-surface-200/40">(22.5%)</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-5 py-3 bg-surface-900/50 border-t border-white/5 flex items-center justify-between">
+            <span class="text-xs text-surface-200/40">Press <kbd class="px-1.5 py-0.5 rounded bg-surface-700 text-surface-200/60 font-mono text-[10px]">Esc</kbd> to close</span>
+            <button class="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 text-xs font-medium transition-colors border border-indigo-500/20">
+                Refresh
+            </button>
+        </div>
+    </div>
+</body>
+</html>
