@@ -40,7 +40,12 @@ function getChatWorker() {
 function formatRelativeTime(timestamp) {
     if (!timestamp) return '';
 
-    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+    // Ensure UTC interpretation: add 'Z' if timestamp has no timezone info
+    let ts = timestamp;
+    if (typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+') && !ts.includes('-', 10)) {
+        ts = ts + 'Z';
+    }
+    const date = typeof ts === 'string' ? new Date(ts) : ts;
     const now = new Date();
     const diffMs = now - date;
     const diffSecs = Math.floor(diffMs / 1000);
