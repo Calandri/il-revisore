@@ -323,6 +323,133 @@
             </svg>
         </button>
     </div>
+
+    <!-- Detection Result Modal -->
+    <div x-show="detectionModal.show"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+         @click.self="detectionModal.show = false">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100">
+            <!-- Modal Header -->
+            <div class="p-6 border-b dark:border-gray-700"
+                 :class="detectionModal.success ? 'bg-green-50 dark:bg-green-900/20' : 'bg-amber-50 dark:bg-amber-900/20'">
+                <div class="flex items-center gap-4">
+                    <!-- Success Icon -->
+                    <div x-show="detectionModal.success"
+                         class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                        <svg class="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                    <!-- Warning Icon -->
+                    <div x-show="!detectionModal.success"
+                         class="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+                        <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold"
+                            :class="detectionModal.success ? 'text-green-800 dark:text-green-200' : 'text-amber-800 dark:text-amber-200'"
+                            x-text="detectionModal.success ? 'Rilevamento completato' : 'Nessun endpoint rilevato'"></h3>
+                        <p class="text-sm text-gray-600 dark:text-gray-400" x-text="detectionModal.message"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 space-y-4" x-show="!detectionModal.success">
+                <!-- Framework Detected -->
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="text-gray-500 dark:text-gray-400">Framework rilevato:</span>
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+                          :class="detectionModal.framework === 'unknown' ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'"
+                          x-text="detectionModal.framework || 'unknown'"></span>
+                </div>
+
+                <!-- Possible reasons -->
+                <div>
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Possibili cause:</h4>
+                    <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1.5">
+                        <li class="flex items-start gap-2">
+                            <span class="text-amber-500 mt-0.5">•</span>
+                            <span>Il repository non contiene API endpoint (es. libreria, CLI tool, o frontend)</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-amber-500 mt-0.5">•</span>
+                            <span>Framework non supportato o pattern di routing non standard</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <span class="text-amber-500 mt-0.5">•</span>
+                            <span>Gli endpoint sono definiti in un formato non riconoscibile</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Supported frameworks -->
+                <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Framework supportati:</h4>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="space-y-1">
+                            <div class="font-medium text-gray-600 dark:text-gray-400">Python</div>
+                            <div class="text-gray-500 dark:text-gray-500">• FastAPI</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Flask</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Django REST</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Chalice (AWS)</div>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="font-medium text-gray-600 dark:text-gray-400">JavaScript/TypeScript</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Express.js</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Next.js API Routes</div>
+                            <div class="text-gray-500 dark:text-gray-500">• NestJS</div>
+                        </div>
+                        <div class="space-y-1 mt-2">
+                            <div class="font-medium text-gray-600 dark:text-gray-400">Serverless</div>
+                            <div class="text-gray-500 dark:text-gray-500">• AWS Lambda</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Serverless Framework</div>
+                            <div class="text-gray-500 dark:text-gray-500">• AWS SAM</div>
+                        </div>
+                        <div class="space-y-1 mt-2">
+                            <div class="font-medium text-gray-600 dark:text-gray-400">Altri</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Spring Boot</div>
+                            <div class="text-gray-500 dark:text-gray-500">• Go (Gin, Echo)</div>
+                            <div class="text-gray-500 dark:text-gray-500">• OpenAPI/Swagger</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Success Body -->
+            <div class="p-6" x-show="detectionModal.success">
+                <div class="flex items-center gap-2 text-sm mb-2">
+                    <span class="text-gray-500 dark:text-gray-400">Framework:</span>
+                    <span class="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-xs font-medium"
+                          x-text="detectionModal.framework"></span>
+                </div>
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="text-gray-500 dark:text-gray-400">Endpoint rilevati:</span>
+                    <span class="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-xs font-medium"
+                          x-text="detectionModal.endpointCount"></span>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-700 flex justify-end">
+                <button @click="detectionModal.show = false"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                    Chiudi
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -349,6 +476,7 @@ function endpointsApp() {
         activeEndpoint: null,
         aiInstructions: null,
         toast: { show: false, message: '', type: 'success' },
+        detectionModal: { show: false, success: false, message: '', framework: '', endpointCount: 0 },
 
         async init() {
             // Sync with global context store
@@ -424,15 +552,30 @@ function endpointsApp() {
                 });
                 const result = await response.json();
 
-                if (result.status === 'success') {
-                    this.showToast(result.message, 'success');
+                // Extract framework from message (e.g., "Detected 5 endpoints (3 saved) using fastapi framework")
+                let framework = 'unknown';
+                const frameworkMatch = result.message?.match(/using (\w+) framework/);
+                if (frameworkMatch) {
+                    framework = frameworkMatch[1];
+                }
+
+                const success = result.status === 'success' && result.endpoint_count > 0;
+
+                // Show modal with detailed results
+                this.detectionModal = {
+                    show: true,
+                    success: success,
+                    message: result.message || 'Rilevamento completato',
+                    framework: framework,
+                    endpointCount: result.endpoint_count || 0
+                };
+
+                if (success) {
                     await this.loadEndpoints();
-                    await this.loadRepos(); // Refresh repo list
-                } else {
-                    this.showToast(result.message || 'Rilevamento fallito', 'error');
+                    await this.loadRepos();
                 }
             } catch (error) {
-                this.showToast('Errore nel rilevamento', 'error');
+                this.showToast('Errore nel rilevamento: ' + error.message, 'error');
             } finally {
                 this.detecting = false;
             }

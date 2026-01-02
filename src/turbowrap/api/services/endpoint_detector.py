@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from turbowrap_llm import GeminiCLI
+
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,16 @@ ROUTE_FILE_PATTERNS: dict[str, list[str]] = {
     "spring": ["**/*Controller.java", "**/*Resource.java"],
     "gin": ["**/routes.go", "**/handlers.go", "**/api/*.go"],
     "rails": ["**/routes.rb", "**/controllers/*.rb"],
+    "lambda": [
+        "**/handler.py",
+        "**/handlers/*.py",
+        "**/lambda_function.py",
+        "**/*_handler.py",
+        "**/functions/*.py",
+        "**/lambdas/*.py",
+    ],
+    "chalice": ["**/app.py", "**/chalicelib/*.py"],
+    "serverless": ["**/serverless.yml", "**/serverless.yaml", "**/handler.js", "**/handler.ts"],
 }
 
 # OpenAPI/Swagger file patterns
@@ -106,6 +117,23 @@ def _find_openapi_files(repo_path: str) -> list[str]:
 
 def _detect_framework(repo_path: str) -> str:
     """Detect the web framework used in the repository."""
+    # Check for Serverless/Lambda frameworks first (more specific)
+    serverless_yml = os.path.join(repo_path, "serverless.yml")
+    serverless_yaml = os.path.join(repo_path, "serverless.yaml")
+    if os.path.exists(serverless_yml) or os.path.exists(serverless_yaml):
+        return "serverless"
+
+    # Check for AWS SAM (template.yaml)
+    sam_template = os.path.join(repo_path, "template.yaml")
+    sam_template_yml = os.path.join(repo_path, "template.yml")
+    if os.path.exists(sam_template) or os.path.exists(sam_template_yml):
+        return "lambda"
+
+    # Check for Chalice
+    chalice_dir = os.path.join(repo_path, ".chalice")
+    if os.path.exists(chalice_dir):
+        return "chalice"
+
     # Check for Python frameworks
     requirements_files = ["requirements.txt", "pyproject.toml", "setup.py", "Pipfile"]
     for req_file in requirements_files:
@@ -113,6 +141,8 @@ def _detect_framework(repo_path: str) -> str:
         if os.path.exists(req_path):
             with open(req_path) as f:
                 content = f.read().lower()
+                if "chalice" in content:
+                    return "chalice"
                 if "fastapi" in content:
                     return "fastapi"
                 if "flask" in content:
@@ -178,6 +208,14 @@ def _find_route_files(repo_path: str, framework: str) -> list[str]:
             "**/controllers/**/*.py",
             "**/controllers/**/*.js",
             "**/controllers/**/*.ts",
+            # Lambda/Serverless patterns
+            "**/handler.py",
+            "**/handlers/*.py",
+            "**/lambda_function.py",
+            "**/*_handler.py",
+            "**/functions/*.py",
+            "**/handler.js",
+            "**/handler.ts",
         ]
 
     found_files = []
