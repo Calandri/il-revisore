@@ -118,6 +118,9 @@ class CLISessionResponse(BaseModel):
     thinking_budget: int = Field(default=8000, description="Thinking token budget")
     reasoning_enabled: bool = Field(default=False, description="Deep reasoning enabled")
     mcp_servers: list[str] | None = Field(default=None, description="Active MCP servers")
+    claude_session_id: str | None = Field(
+        default=None, description="Claude CLI session ID for resume"
+    )
 
     # UI
     icon: str = Field(default="chat", description="Icon identifier")

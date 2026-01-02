@@ -138,9 +138,10 @@ function chatSidebar() {
         agentSearchQuery: '',
         selectedAgentIndex: 0,
         agentTriggerPosition: 0,  // Position of @ in input
-        // Usage info popover
-        showUsageInfo: false,
-        contextInfoLoading: false,
+        // Session Info Modal
+        showSessionInfoModal: false,
+        sessionInfoLoading: false,
+        usageInfo: null,
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -1950,8 +1951,75 @@ Contesto: ${contextStr}`;
             } catch (e) {
                 console.error('[chatSidebar] Error fetching context info:', e);
             } finally {
-                this.contextInfoLoading = false;
+                this.sessionInfoLoading = false;
             }
+        },
+
+        /**
+         * Request both context and usage info for session info modal
+         */
+        async requestSessionInfo() {
+            if (!this.activeSession?.id) return;
+
+            this.sessionInfoLoading = true;
+
+            try {
+                // Fetch both context and usage in parallel
+                const [contextRes, usageRes] = await Promise.all([
+                    fetch(`/api/cli-chat/sessions/${this.activeSession.id}/context`),
+                    fetch(`/api/cli-chat/sessions/${this.activeSession.id}/usage`)
+                ]);
+
+                if (contextRes.ok) {
+                    const contextData = await contextRes.json();
+                    this.activeSession.contextInfo = contextData;
+                    if (contextData.model) {
+                        this.activeSession.model = contextData.model;
+                    }
+                }
+
+                if (usageRes.ok) {
+                    this.usageInfo = await usageRes.json();
+                }
+
+                console.log('[chatSidebar] Session info loaded:', {
+                    context: this.activeSession.contextInfo,
+                    usage: this.usageInfo
+                });
+            } catch (e) {
+                console.error('[chatSidebar] Error fetching session info:', e);
+            } finally {
+                this.sessionInfoLoading = false;
+            }
+        },
+
+        /**
+         * Copy text to clipboard
+         */
+        async copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                // Brief visual feedback could be added here
+            } catch (e) {
+                console.error('[chatSidebar] Failed to copy:', e);
+            }
+        },
+
+        /**
+         * Get color for token category
+         */
+        getTokenCategoryColor(name) {
+            const colors = {
+                'System prompt': '#f472b6',
+                'System tools': '#a78bfa',
+                'MCP tools': '#60a5fa',
+                'Custom agents': '#34d399',
+                'Memory files': '#fbbf24',
+                'Messages': '#f97316',
+                'Free space': '#374151',
+                'Autocompact buffer': '#6b7280',
+            };
+            return colors[name] || '#6b7280';
         },
 
         /**

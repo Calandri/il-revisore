@@ -1515,6 +1515,157 @@ def _parse_context_output(output: str) -> dict[str, Any]:
     return info
 
 
+@router.get("/sessions/{session_id}/usage")
+async def get_session_usage(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Get session status info (version, login, MCP servers, etc).
+
+    Sends /usage command to Claude CLI and parses the output.
+    Returns structured data about session configuration.
+    """
+    session = (
+        db.query(CLIChatSession)
+        .filter(
+            CLIChatSession.id == session_id,
+            CLIChatSession.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Only Claude CLI supports /usage command
+    if session.cli_type != "claude":
+        return {
+            "error": "Usage command only supported for Claude CLI",
+            "cli_type": session.cli_type,
+        }
+
+    manager = get_process_manager()
+
+    # Check if process is running
+    if session_id not in manager._processes:
+        return {
+            "error": "Session process not running",
+            "session_id": session_id,
+        }
+
+    try:
+        # Send /usage command and collect output
+        output_lines: list[str] = []
+        async for chunk in manager.send_message(session_id, "/usage"):
+            try:
+                event = json.loads(chunk.strip())
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        output_lines.append(delta.get("text", ""))
+                elif event.get("type") == "content_block_start":
+                    block = event.get("content_block", {})
+                    if block.get("type") == "text":
+                        output_lines.append(block.get("text", ""))
+                elif event.get("result"):
+                    output_lines.append(event["result"])
+            except json.JSONDecodeError:
+                output_lines.append(chunk)
+
+        raw_output = "".join(output_lines)
+        logger.info(f"[USAGE] Raw output ({len(raw_output)} chars): {raw_output[:500]}...")
+
+        # Parse the /usage output
+        return _parse_usage_output(raw_output)
+
+    except Exception as e:
+        logger.error(f"[USAGE] Error getting usage info: {e}")
+        return {"error": str(e)}
+
+
+def _parse_usage_output(output: str) -> dict[str, Any]:
+    """Parse /usage command output from Claude CLI.
+
+    Returns structured data about session configuration.
+    """
+    info: dict[str, Any] = {
+        "version": None,
+        "session_id": None,
+        "cwd": None,
+        "login_method": None,
+        "organization": None,
+        "email": None,
+        "model": None,
+        "model_id": None,
+        "ide": None,
+        "ide_version": None,
+        "mcp_servers": [],
+        "memory": None,
+        "setting_sources": None,
+    }
+
+    try:
+        lines = output.split("\n")
+
+        for line in lines:
+            trimmed = line.strip()
+            if not trimmed:
+                continue
+
+            # Parse key: value pairs
+            if ": " in trimmed:
+                key, value = trimmed.split(": ", 1)
+                key = key.strip().lower()
+
+                if key == "version":
+                    info["version"] = value.strip()
+                elif key == "session id":
+                    info["session_id"] = value.strip()
+                elif key == "cwd":
+                    info["cwd"] = value.strip()
+                elif key == "login method":
+                    info["login_method"] = value.strip()
+                elif key == "organization":
+                    info["organization"] = value.strip()
+                elif key == "email":
+                    info["email"] = value.strip()
+                elif key == "model":
+                    # Parse "Default Opus 4.5 · Most capable for complex work"
+                    info["model"] = value.strip()
+                    # Extract model name (before ·)
+                    if " · " in value:
+                        info["model_id"] = value.split(" · ")[0].strip()
+                elif key == "ide":
+                    # Parse "Connected to VS Code extension version 2.0.76 (server version: 2.0.75)"
+                    info["ide"] = value.strip()
+                    import re
+
+                    version_match = re.search(r"version (\d+\.\d+\.\d+)", value)
+                    if version_match:
+                        info["ide_version"] = version_match.group(1)
+                elif key == "mcp servers":
+                    # Parse "slack ✘, github ✘, turbowrap-ui ✔"
+                    servers = []
+                    for server_str in value.split(", "):
+                        server_str = server_str.strip()
+                        if "✔" in server_str:
+                            name = server_str.replace("✔", "").strip()
+                            servers.append({"name": name, "connected": True})
+                        elif "✘" in server_str:
+                            name = server_str.replace("✘", "").strip()
+                            servers.append({"name": name, "connected": False})
+                    info["mcp_servers"] = servers
+                elif key == "memory":
+                    info["memory"] = value.strip()
+                elif key == "setting sources":
+                    info["setting_sources"] = value.strip()
+
+    except Exception as e:
+        logger.error(f"[USAGE] Error parsing output: {e}")
+
+    return info
+
+
 @router.get("/agents", response_model=AgentListResponse)
 def list_agents() -> AgentListResponse:
     """List available Claude agents."""

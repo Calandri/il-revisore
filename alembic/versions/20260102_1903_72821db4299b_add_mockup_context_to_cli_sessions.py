@@ -21,6 +21,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add mockup_project_id and mockup_id to cli_chat_sessions."""
+    # Get dialect to handle SQLite vs MySQL differently
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+
     op.add_column(
         "cli_chat_sessions",
         sa.Column("mockup_project_id", sa.String(36), nullable=True),
@@ -29,28 +33,34 @@ def upgrade() -> None:
         "cli_chat_sessions",
         sa.Column("mockup_id", sa.String(36), nullable=True),
     )
-    # Add foreign keys
-    op.create_foreign_key(
-        "fk_cli_chat_sessions_mockup_project",
-        "cli_chat_sessions",
-        "mockup_projects",
-        ["mockup_project_id"],
-        ["id"],
-    )
-    op.create_foreign_key(
-        "fk_cli_chat_sessions_mockup",
-        "cli_chat_sessions",
-        "mockups",
-        ["mockup_id"],
-        ["id"],
-    )
+
+    # Add foreign keys only for MySQL (SQLite doesn't support ALTER for FK)
+    if dialect != "sqlite":
+        op.create_foreign_key(
+            "fk_cli_chat_sessions_mockup_project",
+            "cli_chat_sessions",
+            "mockup_projects",
+            ["mockup_project_id"],
+            ["id"],
+        )
+        op.create_foreign_key(
+            "fk_cli_chat_sessions_mockup",
+            "cli_chat_sessions",
+            "mockups",
+            ["mockup_id"],
+            ["id"],
+        )
 
 
 def downgrade() -> None:
     """Remove mockup context columns from cli_chat_sessions."""
-    op.drop_constraint("fk_cli_chat_sessions_mockup", "cli_chat_sessions", type_="foreignkey")
-    op.drop_constraint(
-        "fk_cli_chat_sessions_mockup_project", "cli_chat_sessions", type_="foreignkey"
-    )
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+
+    if dialect != "sqlite":
+        op.drop_constraint("fk_cli_chat_sessions_mockup", "cli_chat_sessions", type_="foreignkey")
+        op.drop_constraint(
+            "fk_cli_chat_sessions_mockup_project", "cli_chat_sessions", type_="foreignkey"
+        )
     op.drop_column("cli_chat_sessions", "mockup_id")
     op.drop_column("cli_chat_sessions", "mockup_project_id")
