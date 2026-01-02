@@ -348,7 +348,7 @@ Respond ONLY with a valid JSON array (no markdown, no explanations):
         cli = GeminiCLI(
             working_dir=Path(repo_path),
             model="flash",  # Use Flash for fast analysis
-            timeout=120,
+            timeout=None,  # No timeout - let it complete
             artifact_saver=artifact_saver,
         )
 
