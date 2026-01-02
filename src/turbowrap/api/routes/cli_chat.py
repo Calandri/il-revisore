@@ -775,7 +775,7 @@ async def send_message(
                                 else:
                                     # Subsequent saves: Update existing message
                                     assistant_message.content = "".join(full_content)
-                                    logger.debug(f"[INCREMENTAL] Updated message {assistant_message.id}: {len(full_content)} chars")
+                                    logger.debug(f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars")
 
                                 db.commit()  # Persist incremental progress
                                 last_save_time = current_time
@@ -792,6 +792,32 @@ async def send_message(
                 except json.JSONDecodeError:
                     if line:
                         full_content.append(line + "\n")
+
+                        # Incremental save for raw text (same logic as JSON content)
+                        current_time = time.time()
+                        if current_time - last_save_time >= SAVE_INTERVAL_SECONDS:
+                            try:
+                                if assistant_message is None:
+                                    assistant_message = CLIChatMessage(
+                                        session_id=session_id,
+                                        role="assistant",
+                                        content="".join(full_content),
+                                        model_used=session_model,
+                                        agent_used=session_agent_name,
+                                    )
+                                    db.add(assistant_message)
+                                    db.flush()
+                                    logger.info(f"[INCREMENTAL] Created assistant message for session {session_id}")
+                                else:
+                                    assistant_message.content = "".join(full_content)
+                                    logger.debug(f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars")
+
+                                db.commit()
+                                last_save_time = current_time
+                            except Exception as e:
+                                logger.error(f"[INCREMENTAL] Save failed: {e}")
+                                db.rollback()
+
                         yield {
                             "event": "chunk",
                             "data": json.dumps({"content": line + "\n"}),
