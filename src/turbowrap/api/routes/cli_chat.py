@@ -347,6 +347,157 @@ def delete_session(
     return {"status": "deleted", "session_id": session_id}
 
 
+@router.post("/sessions/{session_id}/start")
+async def start_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Start Claude/Gemini CLI process for a session.
+
+    Spawns the process immediately if not already running.
+    Returns immediately with process status.
+    """
+    session = (
+        db.query(CLIChatSession)
+        .filter(
+            CLIChatSession.id == session_id,
+            CLIChatSession.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    manager = get_process_manager()
+    loader = get_agent_loader()
+
+    # Check if process already running
+    existing_proc = manager.get_process(session_id)
+    if existing_proc:
+        return {
+            "status": "already_running",
+            "session_id": session_id,
+            "process_running": True,
+        }
+
+    # Extract session attributes for use in async context
+    session_cli_type = cast(str, session.cli_type)
+    session_repository_id = cast(str | None, session.repository_id)
+    session_current_branch = cast(str | None, session.current_branch)
+    session_agent_name = cast(str | None, session.agent_name)
+    session_model = cast(str | None, session.model)
+    session_thinking_enabled = cast(bool, session.thinking_enabled or False)
+    session_thinking_budget = cast(int | None, session.thinking_budget)
+    session_reasoning_enabled = cast(bool, session.reasoning_enabled or False)
+    session_mockup_project_id = cast(str | None, session.mockup_project_id)
+    session_mockup_id = cast(str | None, session.mockup_id)
+    session_repository = session.repository
+    session_claude_session_id = cast(str | None, session.claude_session_id)
+
+    try:
+        # Generate context
+        context = get_context_for_session(
+            db,
+            repo_id=session_repository_id,
+            linear_issue_id=None,
+            branch=session_current_branch,
+            mockup_project_id=session_mockup_project_id,
+            mockup_id=session_mockup_id,
+        )
+        logger.info(f"[START] Generated context for session {session_id}: {len(context)} chars")
+
+        cli_type = CLIType(session_cli_type)
+
+        if cli_type == CLIType.CLAUDE:
+            agent_path = None
+            if session_agent_name:
+                agent_path = loader.get_agent_path(session_agent_name)
+
+            # Create callback to load message history on-demand (only if --resume fails)
+            def load_message_history() -> str:
+                """Load message history from DB - called only if --resume fails."""
+                from ...db.session import get_session_local
+
+                history_db = get_session_local()()
+                try:
+                    messages = (
+                        history_db.query(CLIChatMessage)
+                        .filter(CLIChatMessage.session_id == session_id)
+                        .filter(CLIChatMessage.is_thinking == False)  # noqa: E712
+                        .order_by(CLIChatMessage.created_at.asc())
+                        .all()
+                    )
+                    if not messages:
+                        return ""
+
+                    history_parts = []
+                    for msg in messages:
+                        role_label = "User" if msg.role == "user" else "Assistant"
+                        history_parts.append(f"[{role_label}]: {msg.content}")
+
+                    logger.info(
+                        f"[RECOVERY] Loaded {len(messages)} messages from DB for session {session_id}"
+                    )
+                    return "\n\n".join(history_parts)
+                finally:
+                    history_db.close()
+
+            settings = get_settings()
+            proc = await manager.spawn_claude(
+                session_id=session_id,
+                working_dir=Path(
+                    session_repository.local_path if session_repository else settings.repos_dir
+                ),
+                model=session_model or "claude-opus-4-5-20251101",
+                agent_path=agent_path,
+                thinking_budget=(session_thinking_budget if session_thinking_enabled else None),
+                context=context,
+                mcp_config=settings.mcp_config if settings.mcp_config.exists() else None,
+                existing_session_id=session_claude_session_id,
+                message_history_callback=(
+                    load_message_history if session_claude_session_id else None
+                ),
+            )
+
+            # Save claude_session_id to DB
+            if proc.claude_session_id and proc.claude_session_id != session_claude_session_id:
+                session.claude_session_id = proc.claude_session_id  # type: ignore[assignment]
+                session.status = "running"
+                db.commit()
+                logger.info(f"[START] Saved claude_session_id to DB: {proc.claude_session_id}")
+        else:  # Gemini
+            proc = await manager.spawn_gemini(
+                session_id=session_id,
+                working_dir=Path(
+                    session_repository.local_path
+                    if session_repository
+                    else get_settings().repos_dir
+                ),
+                model=session_model or "gemini-3-pro-preview",
+                reasoning=session_reasoning_enabled,
+                context=context,
+            )
+            session.status = "running"
+            db.commit()
+
+        logger.info(f"[START] Spawned {session_cli_type} process for session {session_id}")
+
+        return {
+            "status": "started",
+            "session_id": session_id,
+            "process_running": True,
+            "claude_session_id": (proc.claude_session_id if cli_type == CLIType.CLAUDE else None),
+        }
+
+    except Exception as e:
+        logger.error(f"[START] Failed to start process for session {session_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start CLI process: {str(e)}",
+        )
+
+
 @router.post("/sessions/{session_id}/fork", response_model=CLISessionResponse)
 def fork_session(
     session_id: str,
@@ -616,19 +767,10 @@ async def send_message(
 
     # Extract session attributes as proper Python types for use in async generator
     session_cli_type = cast(str, session.cli_type)
-    session_repository_id = cast(str | None, session.repository_id)
-    session_current_branch = cast(str | None, session.current_branch)
     session_agent_name = cast(str | None, session.agent_name)
     session_model = data.model_override or cast(str | None, session.model)
-    session_thinking_enabled = cast(bool, session.thinking_enabled)
-    session_thinking_budget = cast(int | None, session.thinking_budget)
-    session_reasoning_enabled = cast(bool, session.reasoning_enabled)
     session_display_name = cast(str | None, session.display_name)
-    session_repository = session.repository
     session_claude_session_id = cast(str | None, session.claude_session_id)
-    # Mockup context
-    session_mockup_project_id = cast(str | None, getattr(session, "mockup_project_id", None))
-    session_mockup_id = cast(str | None, getattr(session, "mockup_id", None))
 
     if data.model_override:
         logger.info(f"[MESSAGE] Using model override: {data.model_override}")
@@ -637,7 +779,6 @@ async def send_message(
         """Generate SSE events for streaming response."""
         nonlocal session_claude_session_id  # Allow modification of outer scope variable
         manager = get_process_manager()
-        loader = get_agent_loader()
 
         try:
             yield {
@@ -649,99 +790,26 @@ async def send_message(
             proc = manager.get_process(session_id)
 
             if not proc:
-                cli_type = CLIType(session_cli_type)
+                # Start process via internal call to start_session
+                logger.info(f"[MESSAGE] No process found for session {session_id}, starting it...")
+                try:
+                    # Call start_session directly (it's async)
+                    start_result = await start_session(session_id, db)
+                    logger.info(f"[MESSAGE] Process started: {start_result}")
+                    # Get the newly spawned process
+                    proc = manager.get_process(session_id)
+                    if proc:
+                        logger.info(f"[MESSAGE] Got process after start: {proc}")
+                except Exception as e:
+                    logger.error(f"[MESSAGE] Failed to auto-start process: {e}")
+                    raise
 
-                context = get_context_for_session(
-                    db,
-                    repo_id=session_repository_id,
-                    linear_issue_id=None,  # TODO: support linear issue context
-                    branch=session_current_branch,
-                    mockup_project_id=session_mockup_project_id,
-                    mockup_id=session_mockup_id,
+            # Process should now exist after auto-start
+            if not proc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to initialize CLI process - process is still None after start attempt",
                 )
-                logger.info(f"Generated context: {len(context)} chars")
-
-                if cli_type == CLIType.CLAUDE:
-                    agent_path = None
-                    if session_agent_name:
-                        agent_path = loader.get_agent_path(session_agent_name)
-
-                    # Create callback to load message history on-demand (only if --resume fails)
-                    def load_message_history() -> str:
-                        """Load message history from DB - called only if --resume fails."""
-                        from ...db.session import get_session_local
-
-                        history_db = get_session_local()()
-                        try:
-                            messages = (
-                                history_db.query(CLIChatMessage)
-                                .filter(CLIChatMessage.session_id == session_id)
-                                .filter(CLIChatMessage.is_thinking == False)  # noqa: E712
-                                .order_by(CLIChatMessage.created_at.asc())
-                                .all()
-                            )
-                            if not messages:
-                                return ""
-
-                            history_parts = []
-                            for msg in messages:
-                                role_label = "User" if msg.role == "user" else "Assistant"
-                                history_parts.append(f"[{role_label}]: {msg.content}")
-
-                            logger.info(
-                                f"[RECOVERY] Loaded {len(messages)} messages from DB for session {session_id}"
-                            )
-                            return "\n\n".join(history_parts)
-                        finally:
-                            history_db.close()
-
-                    settings = get_settings()
-                    proc = await manager.spawn_claude(
-                        session_id=session_id,
-                        working_dir=Path(
-                            session_repository.local_path
-                            if session_repository
-                            else settings.repos_dir
-                        ),
-                        model=session_model or "claude-opus-4-5-20251101",
-                        agent_path=agent_path,
-                        thinking_budget=(
-                            session_thinking_budget if session_thinking_enabled else None
-                        ),
-                        context=context,
-                        mcp_config=settings.mcp_config if settings.mcp_config.exists() else None,
-                        existing_session_id=session_claude_session_id,
-                        message_history_callback=(
-                            load_message_history if session_claude_session_id else None
-                        ),
-                    )
-
-                    # Save claude_session_id to DB for persistence across process restarts
-                    # Use existing db session instead of creating a new one to avoid
-                    # transaction isolation issues
-                    if (
-                        proc.claude_session_id
-                        and proc.claude_session_id != session_claude_session_id
-                    ):
-                        session.claude_session_id = proc.claude_session_id  # type: ignore[assignment]
-                        db.commit()
-                        # Update local variable so later comparisons work correctly
-                        session_claude_session_id = proc.claude_session_id
-                        logger.info(
-                            f"[SESSION] Saved claude_session_id to DB: {proc.claude_session_id}"
-                        )
-                else:
-                    proc = await manager.spawn_gemini(
-                        session_id=session_id,
-                        working_dir=Path(
-                            session_repository.local_path
-                            if session_repository
-                            else get_settings().repos_dir
-                        ),
-                        model=session_model or "gemini-3-pro-preview",
-                        reasoning=session_reasoning_enabled,
-                        context=context,
-                    )
 
             # Check if we should request a title refresh
             should_request_title = (
@@ -1372,21 +1440,10 @@ async def get_session_context(
 
     # Check if process is running
     if session_id not in manager._processes:
-        # Return basic info from DB when process not running
-        used = session.total_tokens_in or 0
-        limit = 200000
-        return {
-            "model": session.model,
-            "tokens": {
-                "used": used,
-                "limit": limit,
-                "percentage": round(used / limit * 100) if limit > 0 else 0,
-            },
-            "categories": [],
-            "mcpTools": [],
-            "agents": [],
-            "process_running": False,
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Claude CLI process not running for this session. Start the CLI to get real context data.",
+        )
 
     try:
         # Send /context command and collect output
@@ -1555,23 +1612,10 @@ async def get_session_usage(
 
     # Check if process is running
     if session_id not in manager._processes:
-        # Return basic info from DB when process not running
-        repo = session.repository
-        return {
-            "version": None,
-            "session_id": str(session.claude_session_id) if session.claude_session_id else None,
-            "cwd": repo.local_path if repo else None,
-            "login_method": None,
-            "organization": None,
-            "email": None,
-            "model": session.model,
-            "model_id": session.model,
-            "ide": None,
-            "ide_version": None,
-            "mcp_servers": [],
-            "memory": "CLAUDE.md",
-            "process_running": False,
-        }
+        raise HTTPException(
+            status_code=503,
+            detail="Claude CLI process not running for this session. Start the CLI to get real usage data.",
+        )
 
     try:
         # Send /usage command and collect output

@@ -1076,9 +1076,31 @@ Contesto: ${contextStr}`;
                 }
 
                 const session = await res.json();
+
+                // Start the process immediately
+                console.log('[createSession] Starting process for session:', session.id);
+                try {
+                    const startRes = await fetch(`/api/cli-chat/sessions/${session.id}/start`, {
+                        method: 'POST'
+                    });
+                    if (startRes.ok) {
+                        const startData = await startRes.json();
+                        console.log('[createSession] Process started:', startData);
+                        if (startData.claude_session_id) {
+                            session.claude_session_id = startData.claude_session_id;
+                        }
+                        session.status = 'running';
+                    } else {
+                        console.warn('[createSession] Start response not ok:', startRes.status);
+                    }
+                } catch (error) {
+                    console.error('[createSession] Failed to start process:', error);
+                    // Don't throw, continue anyway
+                }
+
                 this.sessions.unshift(session);
                 this.selectSession(session);
-                this.showToast('Chat creata', 'success');
+                this.showToast('Chat creata e avviata', 'success');
             } catch (error) {
                 TurboWrapError.handle('Create Chat Session', error, { agent: cliType, repoId: repositoryId });
             } finally {
@@ -1139,9 +1161,32 @@ Contesto: ${contextStr}`;
                 }
                 this.$nextTick(() => this.scrollToBottom());
 
+                // Start process if not already running (for Claude sessions)
+                if (session.cli_type === 'claude' && session.status !== 'running') {
+                    console.log('[selectSession] Starting process for session:', session.id);
+                    try {
+                        const startRes = await fetch(`/api/cli-chat/sessions/${session.id}/start`, {
+                            method: 'POST'
+                        });
+                        if (startRes.ok) {
+                            const startData = await startRes.json();
+                            console.log('[selectSession] Process started:', startData);
+                            if (startData.claude_session_id) {
+                                session.claude_session_id = startData.claude_session_id;
+                            }
+                            session.status = 'running';
+                        } else {
+                            console.warn('[selectSession] Start response not ok:', startRes.status);
+                        }
+                    } catch (error) {
+                        console.error('[selectSession] Failed to start process:', error);
+                        // Don't throw, continue anyway
+                    }
+                }
+
                 if (session.repository_id) await this.loadBranches();
 
-                // Fetch context info immediately to show resume status
+                // Fetch context info immediately to show resume status (now process should be running)
                 if (session.cli_type === 'claude') {
                     this.requestContextInfo();
                 }
