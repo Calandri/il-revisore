@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -12,7 +13,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ...db.models import Mockup, MockupProject, MockupStatus, Repository
-from ..deps import get_db
+from ..deps import (
+    check_repo_access,
+    get_accessible_repo_ids,
+    get_db,
+    require_admin,
+    require_auth,
+    require_mockupper,
+)
 from ..schemas.mockups import (
     MockupContentResponse,
     MockupCreate,
@@ -61,7 +69,10 @@ async def _broadcast_event(event_type: str, data: dict[str, str | None]) -> None
 
 
 @router.get("/events")
-async def mockup_events(request: Request) -> StreamingResponse:
+async def mockup_events(
+    request: Request,
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> StreamingResponse:
     """SSE endpoint for real-time mockup updates."""
 
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -122,9 +133,20 @@ async def notify_mockup_change(
 async def list_projects(
     repository_id: str | None = None,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> MockupProjectListResponse:
     """List all mockup projects, optionally filtered by repository."""
+    # Check repo access if repository_id is specified
+    if repository_id and not check_repo_access(repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     query = db.query(MockupProject).filter(MockupProject.deleted_at.is_(None))
+
+    # Filter by accessible repos for non-admin users when no repo specified
+    if not repository_id:
+        accessible_ids = get_accessible_repo_ids(current_user, db)
+        if accessible_ids is not None:  # None means admin (all access)
+            query = query.filter(MockupProject.repository_id.in_(accessible_ids))
 
     if repository_id:
         query = query.filter(MockupProject.repository_id == repository_id)
@@ -168,6 +190,7 @@ async def list_projects(
 async def create_project(
     request: MockupProjectCreate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupProjectResponse:
     """Create a new mockup project."""
     # Verify repository exists
@@ -182,6 +205,10 @@ async def create_project(
 
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Check repo access
+    if not check_repo_access(request.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     project = MockupProject(
         repository_id=request.repository_id,
@@ -216,6 +243,7 @@ async def create_project(
 async def get_project(
     project_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> MockupProjectResponse:
     """Get a mockup project by ID."""
     project = (
@@ -229,6 +257,10 @@ async def get_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check repo access
+    if not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     mockup_count = (
         db.query(func.count(Mockup.id))
@@ -258,6 +290,7 @@ async def update_project(
     project_id: str,
     request: MockupProjectUpdate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupProjectResponse:
     """Update a mockup project."""
     project = (
@@ -271,6 +304,10 @@ async def update_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check repo access
+    if not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     if request.name is not None:
         project.name = request.name
@@ -314,6 +351,7 @@ async def update_project(
 async def delete_project(
     project_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_admin),
 ) -> None:
     """Soft delete a mockup project and all its mockups."""
     project = (
@@ -353,9 +391,22 @@ async def list_mockups(
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> MockupListResponse:
     """List mockups with optional filters."""
+    # Check repo access if repository_id is specified
+    if repository_id and not check_repo_access(repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     query = db.query(Mockup).filter(Mockup.deleted_at.is_(None))
+
+    # Filter by accessible repos for non-admin users when no filters specified
+    if not project_id and not repository_id:
+        accessible_ids = get_accessible_repo_ids(current_user, db)
+        if accessible_ids is not None:  # None means admin (all access)
+            query = query.join(MockupProject).filter(
+                MockupProject.repository_id.in_(accessible_ids)
+            )
 
     if project_id:
         query = query.filter(Mockup.project_id == project_id)
@@ -385,6 +436,7 @@ async def create_mockup(
     request: MockupCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupGenerateResponse:
     """Create and generate a new mockup."""
     # Verify project exists
@@ -399,6 +451,10 @@ async def create_mockup(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check repo access
+    if not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Create mockup record
     mockup = Mockup(
@@ -457,6 +513,7 @@ async def create_mockup(
 async def get_mockup(
     mockup_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> MockupResponse:
     """Get a mockup by ID."""
     mockup = (
@@ -471,6 +528,11 @@ async def get_mockup(
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
 
+    # Check repo access through project
+    project = db.query(MockupProject).filter(MockupProject.id == mockup.project_id).first()
+    if project and not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     return MockupResponse.model_validate(mockup)
 
 
@@ -478,6 +540,7 @@ async def get_mockup(
 async def get_mockup_content(
     mockup_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> MockupContentResponse:
     """Get the HTML/CSS/JS content of a mockup from S3."""
     mockup = (
@@ -491,6 +554,11 @@ async def get_mockup_content(
 
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
+
+    # Check repo access through project
+    project = db.query(MockupProject).filter(MockupProject.id == mockup.project_id).first()
+    if project and not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     service = get_mockup_service(db)
 
@@ -514,6 +582,7 @@ async def modify_mockup(
     mockup_id: str,
     request: MockupModifyRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupGenerateResponse:
     """Create a modified version of an existing mockup."""
     parent_mockup = (
@@ -527,6 +596,11 @@ async def modify_mockup(
 
     if not parent_mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
+
+    # Get project for repo access check
+    project = db.query(MockupProject).filter(MockupProject.id == parent_mockup.project_id).first()
+    if project and not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Create new version
     new_mockup = Mockup(
@@ -602,6 +676,7 @@ async def update_mockup(
     mockup_id: str,
     request: MockupUpdate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupResponse:
     """Update mockup metadata (not content)."""
     mockup = (
@@ -615,6 +690,11 @@ async def update_mockup(
 
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
+
+    # Get project for repo access check
+    project = db.query(MockupProject).filter(MockupProject.id == mockup.project_id).first()
+    if project and not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     if request.name is not None:
         mockup.name = request.name
@@ -634,6 +714,7 @@ async def update_mockup(
 async def delete_mockup(
     mockup_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_admin),
 ) -> None:
     """Soft delete a mockup."""
     mockup = (
@@ -663,6 +744,7 @@ async def delete_mockup(
 async def init_mockup(
     request: MockupInitRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupInitResponse:
     """Initialize a mockup placeholder with 'generating' status.
 
@@ -683,6 +765,10 @@ async def init_mockup(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check repo access
+    if not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Create mockup with 'generating' status
     mockup = Mockup(
@@ -713,6 +799,7 @@ async def save_mockup(
     mockup_id: str,
     request: MockupSaveRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupSaveResponse:
     """Save HTML content to a mockup and mark as completed.
 
@@ -730,6 +817,11 @@ async def save_mockup(
 
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
+
+    # Check repo access through project
+    project = db.query(MockupProject).filter(MockupProject.id == mockup.project_id).first()
+    if project and not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Get mockup service for S3 upload
     service = get_mockup_service(db)
@@ -784,6 +876,7 @@ async def fail_mockup(
     mockup_id: str,
     request: MockupFailRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_mockupper),
 ) -> MockupSaveResponse:
     """Mark a mockup as failed.
 
@@ -800,6 +893,11 @@ async def fail_mockup(
 
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")
+
+    # Check repo access through project
+    project = db.query(MockupProject).filter(MockupProject.id == mockup.project_id).first()
+    if project and not check_repo_access(project.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     mockup.status = MockupStatus.FAILED.value
     mockup.error_message = request.error_message

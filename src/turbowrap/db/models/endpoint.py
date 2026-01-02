@@ -60,7 +60,9 @@ class Endpoint(Base):
     detected_at = Column(TZDateTime(), nullable=True)  # When this endpoint was detected
     detection_confidence = Column(Float, nullable=True)  # 0-100 confidence score
     framework = Column(String(50), nullable=True)  # fastapi, flask, express, etc.
-    source = Column(String(20), default="backend")  # backend, frontend - where detected
+    source = Column(
+        String(20), default="served"
+    )  # served (backend exposes), consumed (frontend calls)
 
     # Timestamps
     created_at = Column(TZDateTime(), default=now_utc)

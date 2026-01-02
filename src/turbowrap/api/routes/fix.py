@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from turbowrap.api.deps import get_current_user, get_db
+from turbowrap.api.deps import (
+    get_db,
+    require_coder,
+)
 from turbowrap.api.services.operation_tracker import get_tracker
 from turbowrap.api.services.pending_question_store import (
     ScopeViolationResponse,
@@ -444,6 +447,7 @@ def update_issue(
 async def clarify_before_fix(
     request: PreFixClarifyRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> PreFixClarifyResponse:
     """
     Pre-fix clarification phase with OPUS.
@@ -526,6 +530,7 @@ async def clarify_before_fix(
 async def create_fix_plan(
     request: FixPlanRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> FixPlanResponse:
     """
     Create execution plan for fixing issues.
@@ -588,7 +593,7 @@ async def create_fix_plan(
 async def start_fix(
     request: FixStartRequest,
     db: Session = Depends(get_db),
-    current_user: dict[str, Any] | None = Depends(get_current_user),
+    current_user: dict[str, Any] = Depends(require_coder),
     x_idempotency_key: str | None = Header(
         default=None,
         description="Optional client-provided idempotency key. "
@@ -950,6 +955,7 @@ class MergeRequest(BaseModel):
 async def merge_and_push(
     request: MergeRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> dict[str, Any]:
     """
     Merge fix branch to main and push to GitHub.
@@ -1044,6 +1050,7 @@ class OpenPRRequest(BaseModel):
 async def open_pull_request(
     request: OpenPRRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> dict[str, Any]:
     """
     Open a PR on GitHub for the fix branch.

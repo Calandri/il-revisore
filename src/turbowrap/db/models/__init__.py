@@ -90,6 +90,9 @@ from .task import AgentRun, Task
 # Test models
 from .test import TestCase, TestRun, TestSuite
 
+# User models (RBAC)
+from .user import User, UserRepository, UserRole
+
 __all__ = [
     # Base
     "SoftDeleteMixin",
@@ -159,4 +162,8 @@ __all__ = [
     "TestCase",
     # Diagram
     "MermaidDiagram",
+    # User (RBAC)
+    "User",
+    "UserRepository",
+    "UserRole",
 ]

@@ -44,7 +44,7 @@ class EndpointInfo:
     visibility: str = "private"  # public, private, internal
     auth_type: str = ""  # Bearer, Basic, API-Key, OAuth2, etc.
     tags: list[str] = field(default_factory=list)
-    source: str = "backend"  # backend, frontend
+    source: str = "served"  # served (backend exposes), consumed (frontend calls)
 
 
 @dataclass
@@ -65,14 +65,14 @@ PROMPT = """You are a senior full-stack architect. Analyze this repository and f
 1. First, read .llms/structure.xml to understand the project structure
 2. Find ALL endpoints in two categories:
 
-### BACKEND ENDPOINTS (source: "backend")
-API routes EXPOSED by this repository. Look for:
+### SERVED ENDPOINTS (source: "served")
+API routes EXPOSED/SERVED by this repository's backend. Look for:
 - FastAPI/Flask/Express/Django route decorators
 - Lambda handlers, serverless functions
 - Any HTTP endpoint definitions
 
-### FRONTEND ENDPOINTS (source: "frontend")
-API calls CONSUMED by frontend code. Look for:
+### CONSUMED ENDPOINTS (source: "consumed")
+API calls CONSUMED/USED by frontend code. Look for:
 - fetch() calls
 - axios requests
 - useSWR, useQuery, React Query hooks
@@ -93,7 +93,7 @@ Return ONLY a valid JSON object (no markdown, no explanations):
       "file": "src/routes/users.py",
       "line": 45,
       "description": "List all users",
-      "source": "backend",
+      "source": "served",
       "parameters": [
         {"name": "page", "param_type": "query", "data_type": "int", "required": false, "description": "Page number"}
       ],
@@ -109,7 +109,7 @@ Return ONLY a valid JSON object (no markdown, no explanations):
       "file": "src/components/Login.tsx",
       "line": 23,
       "description": "Login API call from frontend",
-      "source": "frontend",
+      "source": "consumed",
       "parameters": [],
       "response_type": "",
       "auth_required": false,
@@ -198,7 +198,7 @@ def detect_endpoints(repo_path: str, **_kwargs: Any) -> DetectionResult:
         # Parse endpoints
         seen: set[tuple[str, str, str]] = set()  # (method, path, source)
         for ep in data.get("endpoints", []):
-            key = (ep.get("method", "GET").upper(), ep.get("path", ""), ep.get("source", "backend"))
+            key = (ep.get("method", "GET").upper(), ep.get("path", ""), ep.get("source", "served"))
             if key in seen:
                 continue
             seen.add(key)
@@ -227,14 +227,14 @@ def detect_endpoints(repo_path: str, **_kwargs: Any) -> DetectionResult:
                     visibility=ep.get("visibility", "private"),
                     auth_type=ep.get("auth_type", ""),
                     tags=ep.get("tags", []),
-                    source=ep.get("source", "backend"),
+                    source=ep.get("source", "served"),
                 )
             )
 
         logger.info(
             f"Detected {len(result.routes)} endpoints "
-            f"(backend: {sum(1 for e in result.routes if e.source == 'backend')}, "
-            f"frontend: {sum(1 for e in result.routes if e.source == 'frontend')})"
+            f"(served: {sum(1 for e in result.routes if e.source == 'served')}, "
+            f"consumed: {sum(1 for e in result.routes if e.source == 'consumed')})"
         )
         return result
 
@@ -278,7 +278,7 @@ def save_endpoints_to_db(
             for p in ep.parameters
         ]
 
-        framework = result.framework if ep.source == "backend" else result.frontend_framework
+        framework = result.framework if ep.source == "served" else result.frontend_framework
 
         if existing:
             existing.file = ep.file

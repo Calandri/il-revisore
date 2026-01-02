@@ -19,7 +19,7 @@ from ...core.task_queue import QueuedTask, get_task_queue
 from ...db.models import Issue, Repository, ReviewCheckpoint, Task
 from ...review.models.progress import ProgressEvent, ProgressEventType
 from ...tasks import TaskContext, get_task_registry
-from ..deps import get_db, get_or_404
+from ..deps import get_db, get_or_404, require_coder, require_repo_access
 from ..schemas.tasks import TaskCreate, TaskQueueStatus, TaskResponse
 
 logger = logging.getLogger(__name__)
@@ -334,6 +334,7 @@ async def stream_review(
     repository_id: str,
     request_body: ReviewStreamRequest = ReviewStreamRequest(),
     db: Session = Depends(get_db),
+    repo: Repository = Depends(require_repo_access),
 ) -> EventSourceResponse:
     """
     Start a review task and stream progress via SSE.
@@ -349,8 +350,7 @@ async def stream_review(
     """
     from ..services.review_stream_service import get_review_stream_service
 
-    repo = get_or_404(db, Repository, repository_id)
-
+    # repo is already fetched and access-checked by require_repo_access
     service = get_review_stream_service(db)
     session_info = await service.start_or_reconnect(
         repository_id=repository_id,
@@ -376,6 +376,7 @@ async def restart_reviewer(
     reviewer_name: str,
     request_body: RestartReviewerRequest = RestartReviewerRequest(),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> EventSourceResponse:
     """
     Restart a single reviewer for an existing review task.

@@ -19,7 +19,16 @@ from ...core.repo_manager import RepoManager
 from ...exceptions import RepositoryError
 from ...utils.git_utils import get_repo_status as get_git_status
 from ...utils.github_browse import FolderListResponse, list_repo_folders
-from ..deps import get_db, get_or_404
+from ..deps import (
+    check_repo_access,
+    get_accessible_repo_ids,
+    get_db,
+    get_or_404,
+    require_admin,
+    require_auth,
+    require_coder,
+    require_coder_or_mockupper,
+)
 from ..schemas.repos import (
     ExternalLinkCreate,
     ExternalLinkResponse,
@@ -118,10 +127,20 @@ def list_repos(
     status: str | None = None,
     project: str | None = Query(default=None, description="Filter by project name"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> list[RepoResponse]:
-    """List all repositories, optionally filtered by status or project."""
+    """List all repositories, optionally filtered by status or project.
+
+    Non-admin users only see repositories they have been assigned to.
+    """
     manager = RepoManager(db)
     repos = manager.list_all(status=status, project_name=project)
+
+    # Filter by accessible repos for non-admin users
+    accessible_ids = get_accessible_repo_ids(current_user, db)
+    if accessible_ids is not None:  # None means admin (all access)
+        repos = [r for r in repos if r.id in accessible_ids]
+
     return [RepoResponse.model_validate(repo) for repo in repos]
 
 
@@ -131,6 +150,7 @@ def list_github_folders(
     path: str = Query(default="", description="Subdirectory path to browse"),
     branch: str = Query(default="main", description="Branch to browse"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_admin),
 ) -> FolderListResponse:
     """List folders in a GitHub repository for workspace path selection.
 
@@ -182,7 +202,10 @@ def list_github_folders(
 
 
 @router.get("/projects")
-def list_projects(db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_projects(
+    db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> dict[str, Any]:
     """List all unique project names with their repository counts."""
     from sqlalchemy import func
 
@@ -272,6 +295,7 @@ def clone_repo(
     data: RepoCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_admin),
 ) -> RepoResponse:
     """Clone a new repository (async - returns immediately).
 
@@ -323,11 +347,17 @@ class RepoUpdate(BaseModel):
 def get_repo(
     repo_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> RepoResponse:
     """Get repository details."""
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     return RepoResponse.model_validate(repo)
 
 
@@ -336,11 +366,16 @@ def update_repo(
     repo_id: str,
     data: RepoUpdate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> RepoResponse:
     """Update repository metadata (project_name, repo_type)."""
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     if data.project_name is not None:
         repo.project_name = data.project_name if data.project_name else None  # type: ignore[assignment]
@@ -356,6 +391,7 @@ def update_repo(
 def sync_repo(
     repo_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> RepoResponse:
     """Sync (pull) repository."""
     from ...db.models import Repository
@@ -364,6 +400,10 @@ def sync_repo(
 
     # Get repo info for tracking
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Extract repo name - cast to str to satisfy mypy
     repo_url = cast(str, repo.url) if repo.url else ""
@@ -395,8 +435,13 @@ def sync_repo(
 def get_repo_status(
     repo_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> RepoStatus:
     """Get detailed repository status."""
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     manager = RepoManager(db)
     try:
         status_dict = manager.get_status(repo_id)
@@ -433,8 +478,9 @@ def delete_repo(
     repo_id: str,
     delete_local: bool = True,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, str]:
-    """Delete a repository."""
+    """Delete a repository (admin only)."""
     manager = RepoManager(db)
     try:
         manager.delete(repo_id, delete_local=delete_local)
@@ -448,6 +494,7 @@ def create_link(
     repo_id: str,
     data: LinkCreate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> LinkResponse:
     """Create a link from this repository to another.
 
@@ -459,6 +506,10 @@ def create_link(
     - `monorepo_module`: Target is another module in same monorepo
     - `related`: Generic relationship
     """
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     manager = RepoManager(db)
     try:
         link = manager.link_repositories(
@@ -478,6 +529,7 @@ def list_linked_repos(
     link_type: str | None = None,
     direction: str | None = None,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> list[LinkedRepoSummary]:
     """List all repositories linked to this repository.
 
@@ -486,6 +538,10 @@ def list_linked_repos(
         link_type: Optional filter by link type (frontend_for, backend_for, etc.)
         direction: Optional filter: 'outgoing', 'incoming', or omit for both
     """
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     manager = RepoManager(db)
     try:
         linked_dicts = manager.get_linked_repos(
@@ -514,11 +570,16 @@ def delete_link(
     repo_id: str,
     link_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> dict[str, str]:
     """Remove a repository link.
 
     The link must belong to this repository (as source).
     """
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     manager = RepoManager(db)
 
     link = manager.get_link(link_id)
@@ -540,6 +601,7 @@ def create_external_link(
     repo_id: str,
     data: ExternalLinkCreate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> ExternalLinkResponse:
     """Add an external link to a repository.
 
@@ -559,6 +621,10 @@ def create_external_link(
     from ...db.models import Repository, RepositoryExternalLink, generate_uuid
 
     get_or_404(db, Repository, repo_id)  # Validate repo exists
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Create external link
     external_link = RepositoryExternalLink(
@@ -582,6 +648,7 @@ def list_external_links(
     repo_id: str,
     link_type: str | None = Query(default=None, description="Filter by link type"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> list[ExternalLinkResponse]:
     """List all external links for a repository.
 
@@ -592,6 +659,10 @@ def list_external_links(
     from ...db.models import Repository, RepositoryExternalLink
 
     get_or_404(db, Repository, repo_id)  # Validate repo exists
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     query = db.query(RepositoryExternalLink).filter(RepositoryExternalLink.repository_id == repo_id)
     if link_type:
@@ -607,11 +678,16 @@ def update_external_link(
     link_id: str,
     data: ExternalLinkUpdate,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> ExternalLinkResponse:
     """Update an external link."""
     from ...db.models import Repository, RepositoryExternalLink
 
     get_or_404(db, Repository, repo_id)  # Validate repo exists
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     link = (
         db.query(RepositoryExternalLink)
@@ -648,11 +724,16 @@ def delete_external_link(
     repo_id: str,
     link_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder_or_mockupper),
 ) -> dict[str, str]:
     """Delete an external link."""
     from ...db.models import Repository, RepositoryExternalLink
 
     get_or_404(db, Repository, repo_id)  # Validate repo exists
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     link = (
         db.query(RepositoryExternalLink)
@@ -898,6 +979,7 @@ def get_repository_overview_stats(
     repo_id: str,
     resync_widget: bool = Query(default=False, description="Force resync widget detection"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> RepositoryOverviewStats:
     """Get comprehensive overview stats for a repository.
 
@@ -919,6 +1001,10 @@ def get_repository_overview_stats(
     )
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
     repo_path = Path(cast(str, repo.local_path))
 
     # 1. Widget status (check or use cached)
@@ -1051,6 +1137,7 @@ def list_files(
     path: str = Query(default="", description="Subdirectory path"),
     pattern: str = Query(default="*", description="Glob pattern to filter files"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> list[FileInfo]:
     """List files in a repository directory.
 
@@ -1060,6 +1147,10 @@ def list_files(
         pattern: Glob pattern to filter files (e.g., '*.md', 'STRUCTURE*')
     """
     from ...db.models import Repository
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo = get_or_404(db, Repository, repo_id)
 
@@ -1122,6 +1213,7 @@ def get_file_tree(
     repo_id: str,
     extensions: str = Query(default=".md", description="Comma-separated extensions to include"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> list[FileInfo]:
     """Get a tree of files matching specified extensions.
 
@@ -1130,6 +1222,10 @@ def get_file_tree(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
     ext_list = [ext.strip() for ext in extensions.split(",")]
@@ -1217,6 +1313,7 @@ def get_file_tree_hierarchy(
     extensions: str = Query(default=".md", description="Comma-separated extensions to include"),
     include_git_status: bool = Query(default=True, description="Include git modification status"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> TreeNode:
     """Get hierarchical file tree with git status.
 
@@ -1226,6 +1323,10 @@ def get_file_tree_hierarchy(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
     ext_list = [ext.strip() for ext in extensions.split(",")]
@@ -1295,6 +1396,7 @@ def get_file_diff(
     path: str = Query(..., description="File path relative to repo root"),
     staged: bool = Query(default=False, description="Get staged diff instead of working tree diff"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> FileDiff:
     """Get git diff for a specific file.
 
@@ -1306,6 +1408,10 @@ def get_file_diff(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
@@ -1549,6 +1655,7 @@ def find_definition(
     symbol: str = Query(..., description="Symbol name to find (function, class, variable)"),
     current_file: str | None = Query(default=None, description="Current file path for context"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> SymbolSearchResult:
     """Find symbol definition (Go to Definition).
 
@@ -1560,6 +1667,10 @@ def find_definition(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
     definitions: list[SymbolDefinition] = []
@@ -1639,6 +1750,7 @@ def find_definition(
 def get_structure_files(
     repo_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> dict[str, Any]:
     """Get all STRUCTURE.md files with their content.
 
@@ -1648,6 +1760,10 @@ def get_structure_files(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
 
@@ -1689,6 +1805,7 @@ def read_file(
     repo_id: str,
     path: str = Query(..., description="File path relative to repo root"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> FileContent:
     """Read file content.
 
@@ -1697,6 +1814,10 @@ def read_file(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
@@ -1741,6 +1862,7 @@ def write_file(
     path: str = Query(..., description="File path relative to repo root"),
     data: FileWriteRequest = Body(...),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> dict[str, Any]:
     """Write file content.
 
@@ -1750,6 +1872,10 @@ def write_file(
     from ...db.models import Repository
 
     repo = get_or_404(db, Repository, repo_id)
+
+    # Check repo access
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     repo_path = Path(cast(str, repo.local_path))
     file_path = repo_path / path
@@ -1827,6 +1953,7 @@ class SwitchWatcherRequest(BaseModel):
 def switch_file_watcher(
     request: SwitchWatcherRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> dict[str, Any]:
     """Switch the file watcher to a different repository.
 
@@ -1843,6 +1970,10 @@ def switch_file_watcher(
 
     # Get repository
     repo = get_or_404(db, Repository, request.repo_id)
+
+    # Check repo access
+    if not check_repo_access(request.repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
     if not repo.local_path:
         raise HTTPException(status_code=400, detail="Repository has no local path")
 
@@ -1856,7 +1987,10 @@ def switch_file_watcher(
 
 
 @router.get("/files/watch")
-async def watch_file_changes(request: Request) -> StreamingResponse:
+async def watch_file_changes(
+    request: Request,
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> StreamingResponse:
     """SSE endpoint for real-time file change notifications.
 
     Clients connect to receive notifications when files are modified
@@ -1900,7 +2034,9 @@ async def watch_file_changes(request: Request) -> StreamingResponse:
 
 
 @router.get("/files/watcher-status")
-def get_watcher_status() -> dict[str, Any]:
+def get_watcher_status(
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> dict[str, Any]:
     """Get the current status of the file watcher."""
     watcher = FileWatcherService.get_instance()
     return watcher.get_status()

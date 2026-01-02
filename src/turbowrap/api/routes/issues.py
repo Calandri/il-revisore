@@ -15,7 +15,15 @@ from sqlalchemy.orm import Session
 from ...db.models import Issue, IssueStatus, Operation, Repository, is_valid_issue_transition
 from ...utils.aws_clients import get_s3_client
 from ...utils.git_utils import is_commit_in_branch
-from ..deps import get_db, get_or_404
+from ..deps import (
+    check_repo_access,
+    get_accessible_repo_ids,
+    get_db,
+    get_or_404,
+    require_admin,
+    require_auth,
+    require_coder,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -168,9 +176,12 @@ def list_issues(
     limit: int = Query(default=100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> list[Issue]:
     """
     List issues with optional filters.
+
+    Non-admin users only see issues from repositories they have access to.
 
     Filters:
     - repository_id: Filter by repository
@@ -191,6 +202,11 @@ def list_issues(
     auto_merge_resolved_issues(db, repository_id=repository_id, max_check=10)
 
     query = db.query(Issue)
+
+    # Filter by accessible repos for non-admin users
+    accessible_ids = get_accessible_repo_ids(current_user, db)
+    if accessible_ids is not None:  # None means admin (all access)
+        query = query.filter(Issue.repository_id.in_(accessible_ids))
 
     if repository_id:
         query = query.filter(Issue.repository_id == repository_id)
@@ -244,9 +260,20 @@ def get_issues_summary(
         default="open", description="Filter by status (default: open, use 'all' for all statuses)"
     ),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> IssueSummary:
     """Get summary statistics for issues."""
+    # Check repo access if repository_id is specified
+    if repository_id and not check_repo_access(repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
     query = db.query(Issue).filter(Issue.deleted_at.is_(None))
+
+    # Filter by accessible repos for non-admin users when no repo specified
+    if not repository_id:
+        accessible_ids = get_accessible_repo_ids(current_user, db)
+        if accessible_ids is not None:  # None means admin (all access)
+            query = query.filter(Issue.repository_id.in_(accessible_ids))
 
     if repository_id:
         query = query.filter(Issue.repository_id == repository_id)
@@ -303,9 +330,16 @@ def get_issues_summary(
 def get_issue(
     issue_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> Issue:
     """Get issue details."""
-    return get_or_404(db, Issue, issue_id)
+    issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
+
+    return issue
 
 
 @router.patch("/{issue_id}", response_model=IssueResponse)
@@ -314,9 +348,10 @@ def update_issue(
     data: IssueUpdateRequest,
     force: bool = Query(default=False, description="Force status change, bypass validation"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """
-    Update issue status or resolution note.
+    Update issue status or resolution note (coder only).
 
     Valid status transitions:
     - open -> in_progress, resolved, ignored, duplicate
@@ -327,6 +362,10 @@ def update_issue(
     Use force=true to bypass transition validation (dangerous).
     """
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     if data.status:
         valid_statuses = [s.value for s in IssueStatus]
@@ -370,9 +409,14 @@ def resolve_issue(
     issue_id: str,
     note: str = Query(default="", description="Resolution note"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """Quick action to mark an issue as merged (closed)."""
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     issue.status = IssueStatus.MERGED.value  # type: ignore[assignment]
     issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
@@ -389,9 +433,14 @@ def ignore_issue(
     issue_id: str,
     note: str = Query(default="", description="Reason for ignoring"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """Quick action to mark an issue as ignored (false positive or won't fix)."""
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     issue.status = IssueStatus.IGNORED.value  # type: ignore[assignment]
     issue.resolved_at = datetime.utcnow()  # type: ignore[assignment]
@@ -407,6 +456,7 @@ def ignore_issue(
 def reopen_issue(
     issue_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """Reopen a resolved or ignored issue.
 
@@ -414,6 +464,10 @@ def reopen_issue(
     can be fixed again from scratch.
     """
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     issue.status = IssueStatus.OPEN.value  # type: ignore[assignment]
     issue.resolved_at = None  # type: ignore[assignment]
@@ -431,9 +485,14 @@ def toggle_issue_viewed(
     issue_id: str,
     viewed: bool = Query(default=True, description="Set viewed status"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> Issue:
     """Toggle the is_viewed flag on an issue (manual triage marker)."""
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     issue.is_viewed = viewed  # type: ignore[assignment]
 
@@ -454,6 +513,7 @@ class AutoDetectMergeResponse(BaseModel):
 def auto_detect_merge_status(
     issue_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> AutoDetectMergeResponse:
     """Auto-detect if an issue's fix commit is in main/master.
 
@@ -463,6 +523,10 @@ def auto_detect_merge_status(
     Returns whether the issue was auto-merged.
     """
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     # Skip if no commit SHA
     if not issue.fix_commit_sha:
@@ -541,6 +605,7 @@ class FixLogResponse(BaseModel):
 def get_issue_fix_log(
     issue_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> FixLogResponse:
     """
     Get the fix log for an issue from S3.
@@ -549,6 +614,10 @@ def get_issue_fix_log(
     Only available for issues that have been fixed (have fix_session_id).
     """
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     if not issue.fix_session_id:
         raise HTTPException(
@@ -627,6 +696,7 @@ def link_issue_to_linear(
     issue_id: str,
     data: LinkLinearRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """
     Link an issue to a Linear issue.
@@ -639,6 +709,10 @@ def link_issue_to_linear(
     import uuid
 
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     linear_input = data.linear_identifier.strip()
 
@@ -676,9 +750,14 @@ def link_issue_to_linear(
 def unlink_issue_from_linear(
     issue_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """Remove Linear link from an issue."""
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     if not issue.linear_id:
         raise HTTPException(status_code=400, detail="Issue is not linked to Linear")
@@ -704,11 +783,16 @@ def add_comment_to_issue(
     issue_id: str,
     data: AddCommentRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> Issue:
     """Add a comment to an issue."""
     import uuid
 
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     # Initialize comments list if None
     comments = issue.comments or []
@@ -736,9 +820,14 @@ def delete_comment_from_issue(
     issue_id: str,
     comment_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_coder),
 ) -> Issue:
     """Delete a comment from an issue."""
     issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     comments = issue.comments or []
 
@@ -787,6 +876,7 @@ class IssueOperationsResponse(BaseModel):
 def get_issue_operations(
     issue_id: str,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> IssueOperationsResponse:
     """
     Get all operations related to a specific issue.
@@ -795,7 +885,11 @@ def get_issue_operations(
     Returns operations ordered by started_at descending (most recent first).
     """
     # Verify issue exists (raises 404 if not found)
-    get_or_404(db, Issue, issue_id)
+    issue = get_or_404(db, Issue, issue_id)
+
+    # Check repo access
+    if not check_repo_access(str(issue.repository_id), current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa issue")
 
     # Query operations where details->issue_ids contains this issue_id
     # Note: SQLite doesn't support JSON array contains, so we fetch all with details
@@ -953,6 +1047,7 @@ def reset_stuck_issues_endpoint(
     max_age_hours: int = Query(default=1, ge=1, le=24, description="Max hours in_progress"),
     repository_id: str | None = Query(default=None, description="Filter by repository"),
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_admin),
 ) -> StuckIssuesResetResponse:
     """
     Reset issues stuck in 'in_progress' for longer than max_age_hours.
@@ -999,6 +1094,7 @@ class CreateIssueFromErrorResponse(BaseModel):
 def create_issue_from_error(
     data: CreateIssueFromErrorRequest,
     db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
 ) -> CreateIssueFromErrorResponse:
     """
     Create an issue from an error caught by TurboWrapAI.
@@ -1007,6 +1103,10 @@ def create_issue_from_error(
     and determines a bug needs to be tracked.
     """
     import uuid
+
+    # Check repo access if repository_id is specified
+    if data.repository_id and not check_repo_access(data.repository_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
 
     # Validate severity
     valid_severities = ["critical", "high", "medium", "low"]

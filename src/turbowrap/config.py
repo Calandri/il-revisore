@@ -119,6 +119,11 @@ class AuthSettings(BaseSettings):
     secure_cookies: bool = Field(
         default=True, description="Use secure cookies (HTTPS only). Set to False for localhost dev."
     )
+    admin_email_patterns: list[str] = Field(
+        default=["niccolo.calandri"],
+        description="Email patterns that are auto-promoted to admin on first login. "
+        "Matches if pattern is contained in email (case-insensitive).",
+    )
 
 
 class LogsSettings(BaseSettings):
