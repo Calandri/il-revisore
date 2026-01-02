@@ -48,6 +48,7 @@ class EndpointInfo:
     visibility: str = "private"  # public, private, internal
     auth_type: str = ""  # Bearer, Basic, API-Key, OAuth2, etc.
     tags: list[str] = field(default_factory=list)
+    source: str = "backend"  # backend, frontend - where this endpoint was detected
 
 
 @dataclass
@@ -57,7 +58,8 @@ class DetectionResult:
     swagger_url: str | None = None
     openapi_file: str | None = None
     detected_at: str = ""
-    framework: str = ""
+    framework: str = ""  # Backend framework (fastapi, flask, etc.)
+    frontend_framework: str | None = None  # Frontend framework (react, vue, etc.)
     routes: list[EndpointInfo] = field(default_factory=list)
     error: str | None = None
 
@@ -88,6 +90,57 @@ ROUTE_FILE_PATTERNS: dict[str, list[str]] = {
     ],
     "chalice": ["**/app.py", "**/chalicelib/*.py"],
     "serverless": ["**/serverless.yml", "**/serverless.yaml", "**/handler.js", "**/handler.ts"],
+}
+
+# Frontend file patterns - where API calls are typically made
+FRONTEND_FILE_PATTERNS: dict[str, list[str]] = {
+    "react": [
+        "**/src/**/*.tsx",
+        "**/src/**/*.ts",
+        "**/src/**/*.jsx",
+        "**/src/**/*.js",
+        "**/app/**/*.tsx",
+        "**/app/**/*.ts",
+        "**/pages/**/*.tsx",
+        "**/pages/**/*.ts",
+        "**/components/**/*.tsx",
+        "**/components/**/*.ts",
+        "**/hooks/**/*.ts",
+        "**/hooks/**/*.tsx",
+        "**/services/**/*.ts",
+        "**/api/**/*.ts",
+        "**/lib/**/*.ts",
+    ],
+    "vue": [
+        "**/src/**/*.vue",
+        "**/src/**/*.ts",
+        "**/src/**/*.js",
+        "**/composables/**/*.ts",
+        "**/stores/**/*.ts",
+    ],
+    "angular": [
+        "**/src/**/*.ts",
+        "**/src/**/*.service.ts",
+        "**/services/**/*.ts",
+    ],
+    "svelte": [
+        "**/src/**/*.svelte",
+        "**/src/**/*.ts",
+        "**/lib/**/*.ts",
+    ],
+    "nextjs": [
+        "**/app/**/*.tsx",
+        "**/app/**/*.ts",
+        "**/pages/**/*.tsx",
+        "**/pages/**/*.ts",
+        "**/lib/**/*.ts",
+        "**/utils/**/*.ts",
+    ],
+    "nuxt": [
+        "**/pages/**/*.vue",
+        "**/composables/**/*.ts",
+        "**/utils/**/*.ts",
+    ],
 }
 
 # OpenAPI/Swagger file patterns
@@ -189,6 +242,185 @@ def _detect_framework(repo_path: str) -> str:
                 return "spring"
 
     return "unknown"
+
+
+def _detect_frontend_framework(repo_path: str) -> str | None:
+    """Detect frontend framework used in the repository."""
+    package_json = os.path.join(repo_path, "package.json")
+    if not os.path.exists(package_json):
+        return None
+
+    try:
+        with open(package_json) as f:
+            pkg = json.load(f)
+            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+
+            # Next.js (check before React)
+            if "next" in deps:
+                return "nextjs"
+            # Nuxt.js (check before Vue)
+            if "nuxt" in deps or "nuxt3" in deps:
+                return "nuxt"
+            # React
+            if "react" in deps:
+                return "react"
+            # Vue
+            if "vue" in deps:
+                return "vue"
+            # Angular
+            if "@angular/core" in deps:
+                return "angular"
+            # Svelte
+            if "svelte" in deps:
+                return "svelte"
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    return None
+
+
+def _find_frontend_files(repo_path: str, framework: str) -> list[str]:
+    """Find frontend files that may contain API calls."""
+    import glob
+
+    patterns = FRONTEND_FILE_PATTERNS.get(framework, [])
+
+    # If framework not recognized, use generic patterns
+    if not patterns:
+        patterns = [
+            "**/src/**/*.ts",
+            "**/src/**/*.tsx",
+            "**/src/**/*.js",
+            "**/src/**/*.jsx",
+            "**/src/**/*.vue",
+            "**/src/**/*.svelte",
+            "**/app/**/*.ts",
+            "**/app/**/*.tsx",
+            "**/pages/**/*.ts",
+            "**/pages/**/*.tsx",
+            "**/components/**/*.ts",
+            "**/components/**/*.tsx",
+            "**/hooks/**/*.ts",
+            "**/services/**/*.ts",
+            "**/api/**/*.ts",
+        ]
+
+    found_files = []
+    for pattern in patterns:
+        matches = glob.glob(os.path.join(repo_path, pattern), recursive=True)
+        found_files.extend(matches)
+
+    # Filter out test files, node_modules, etc.
+    filtered = [
+        f
+        for f in found_files
+        if not any(
+            exclude in f
+            for exclude in [
+                "node_modules",
+                "__pycache__",
+                ".git",
+                ".test.",
+                ".spec.",
+                "test_",
+                "_test.",
+                "__tests__",
+                ".d.ts",  # Exclude type definitions
+            ]
+        )
+    ]
+
+    return list(set(filtered))
+
+
+def _extract_frontend_api_calls(file_path: str) -> list[dict[str, Any]]:
+    """Extract API calls from frontend files using regex patterns."""
+    routes: list[dict[str, Any]] = []
+
+    try:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            lines = content.split("\n")
+    except Exception:
+        return routes
+
+    # Patterns to detect frontend API calls
+    patterns = [
+        # fetch() calls
+        (r'fetch\s*\(\s*[`"\']([^`"\']+)[`"\']', "GET"),
+        (r'fetch\s*\(\s*[`"\']([^`"\']+)[`"\']\s*,\s*\{\s*method\s*:\s*["\'](\w+)["\']', None),
+        # axios calls
+        (r'axios\s*\.\s*(get|post|put|delete|patch)\s*\(\s*[`"\']([^`"\']+)[`"\']', None),
+        (r'axios\s*\(\s*\{\s*[^}]*url\s*:\s*[`"\']([^`"\']+)[`"\']', "GET"),
+        # useSWR / useQuery (React Query / SWR)
+        (r'useSWR\s*\(\s*[`"\']([^`"\']+)[`"\']', "GET"),
+        (
+            r'useQuery\s*\(\s*\[[^\]]*\]\s*,\s*\(\)\s*=>\s*fetch\s*\(\s*[`"\']([^`"\']+)[`"\']',
+            "GET",
+        ),
+        (r'useQuery\s*\(\s*[`"\']([^`"\']+)[`"\']', "GET"),
+        # $fetch (Nuxt)
+        (r'\$fetch\s*\(\s*[`"\']([^`"\']+)[`"\']', "GET"),
+        (r'\$fetch\s*\(\s*[`"\']([^`"\']+)[`"\']\s*,\s*\{\s*method\s*:\s*["\'](\w+)["\']', None),
+        # Generic API client patterns
+        (r'api\s*\.\s*(get|post|put|delete|patch)\s*\(\s*[`"\']([^`"\']+)[`"\']', None),
+        (r'client\s*\.\s*(get|post|put|delete|patch)\s*\(\s*[`"\']([^`"\']+)[`"\']', None),
+        (r'http\s*\.\s*(get|post|put|delete|patch)\s*\(\s*[`"\']([^`"\']+)[`"\']', None),
+        # ky (HTTP client)
+        (r'ky\s*\.\s*(get|post|put|delete|patch)\s*\(\s*[`"\']([^`"\']+)[`"\']', None),
+        # ofetch / $fetch
+        (r'ofetch\s*\(\s*[`"\']([^`"\']+)[`"\']', "GET"),
+    ]
+
+    for i, line in enumerate(lines):
+        for pattern, default_method in patterns:
+            matches = re.findall(pattern, line, re.IGNORECASE)
+            for match in matches:
+                if isinstance(match, tuple):
+                    if default_method is None:
+                        # Method is in the match
+                        if len(match) == 2:
+                            method_or_path, path_or_method = match
+                            # Determine which is method and which is path
+                            if method_or_path.upper() in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
+                                method = method_or_path.upper()
+                                path = path_or_method
+                            else:
+                                method = (
+                                    path_or_method.upper()
+                                    if path_or_method.upper()
+                                    in ["GET", "POST", "PUT", "DELETE", "PATCH"]
+                                    else "GET"
+                                )
+                                path = method_or_path
+                        else:
+                            continue
+                    else:
+                        method = default_method
+                        path = match[0] if len(match) == 1 else match[0]
+                else:
+                    method = default_method or "GET"
+                    path = match
+
+                # Skip if path contains template variables that look broken
+                if not path or path.startswith("$") or path.startswith("{"):
+                    continue
+
+                # Normalize path
+                if not path.startswith("/") and not path.startswith("http"):
+                    path = "/" + path
+
+                routes.append(
+                    {
+                        "method": method,
+                        "path": path,
+                        "file": file_path,
+                        "line": i + 1,
+                        "source": "frontend",
+                    }
+                )
+
+    return routes
 
 
 def _find_route_files(repo_path: str, framework: str) -> list[str]:
@@ -560,6 +792,7 @@ def detect_endpoints(
     repo_path: str,
     use_ai: bool = True,
     use_claude: bool = True,
+    include_frontend: bool = True,
 ) -> DetectionResult:
     """Detect API endpoints in a repository.
 
@@ -567,6 +800,7 @@ def detect_endpoints(
         repo_path: Path to the repository root.
         use_ai: Whether to use AI for enhanced analysis.
         use_claude: Whether to use Claude CLI (True) or Gemini Flash (False) for AI analysis.
+        include_frontend: Whether to also detect frontend API calls (fetch, axios, etc.).
 
     Returns:
         DetectionResult with detected endpoints and metadata.
@@ -583,61 +817,100 @@ def detect_endpoints(
         result.openapi_file = openapi_files[0].replace(repo_path, "").lstrip("/")
         logger.info(f"Found OpenAPI file: {result.openapi_file}")
 
+    # 2. Detect backend framework
     framework = _detect_framework(repo_path)
     result.framework = framework
-    logger.info(f"Detected framework: {framework}")
+    logger.info(f"Detected backend framework: {framework}")
+
+    # 3. Detect frontend framework
+    frontend_framework = _detect_frontend_framework(repo_path)
+    result.frontend_framework = frontend_framework
+    if frontend_framework:
+        logger.info(f"Detected frontend framework: {frontend_framework}")
 
     route_files = _find_route_files(repo_path, framework)
-    logger.info(f"Found {len(route_files)} route files")
+    logger.info(f"Found {len(route_files)} backend route files")
 
-    if not route_files:
-        return result
+    all_endpoints: list[EndpointInfo] = []
 
-    # 4. Extract routes using AI
-    if use_ai:
-        if use_claude:
-            logger.info("Using Gemini CLI (flash) for endpoint detection (autonomous exploration)")
-            endpoints = _analyze_with_gemini_cli(repo_path, framework)
-            result.routes = endpoints
+    # 4. Extract backend routes using AI
+    if route_files:
+        if use_ai:
+            if use_claude:
+                logger.info("Using Gemini CLI (flash) for backend endpoint detection")
+                endpoints = _analyze_with_gemini_cli(repo_path, framework)
+                all_endpoints.extend(endpoints)
+            else:
+                # Fallback: Use Gemini Flash (requires passing file contents)
+                logger.info("Using Gemini Flash for backend endpoint detection")
+                route_files_content: dict[str, str] = {}
+                total_chars = 0
+                max_chars = 50000  # Limit total content to avoid token limits
+
+                for filepath in route_files[:10]:  # Limit to 10 files
+                    try:
+                        with open(filepath, encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                            if total_chars + len(content) < max_chars:
+                                route_files_content[filepath.replace(repo_path, "").lstrip("/")] = (
+                                    content
+                                )
+                                total_chars += len(content)
+                    except Exception as e:
+                        logger.warning(f"Could not read {filepath}: {e}")
+
+                if route_files_content:
+                    endpoints = _analyze_with_gemini(route_files_content, framework)
+                    all_endpoints.extend(endpoints)
         else:
-            # Fallback: Use Gemini Flash (requires passing file contents)
-            logger.info("Using Gemini Flash for endpoint detection")
-            route_files_content: dict[str, str] = {}
-            total_chars = 0
-            max_chars = 50000  # Limit total content to avoid token limits
+            # Fallback to regex-based extraction for backend
+            for filepath in route_files:
+                routes = _extract_routes_with_regex(filepath, framework)
+                for r in routes:
+                    r["file"] = r["file"].replace(repo_path, "").lstrip("/")
+                    all_endpoints.append(
+                        EndpointInfo(
+                            method=r["method"],
+                            path=r["path"],
+                            file=r["file"],
+                            line=r.get("line"),
+                            source="backend",
+                        )
+                    )
 
-            for filepath in route_files[:10]:  # Limit to 10 files
-                try:
-                    with open(filepath, encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
-                        if total_chars + len(content) < max_chars:
-                            route_files_content[filepath.replace(repo_path, "").lstrip("/")] = (
-                                content
-                            )
-                            total_chars += len(content)
-                except Exception as e:
-                    logger.warning(f"Could not read {filepath}: {e}")
+    # 5. Extract frontend API calls if requested
+    if include_frontend and frontend_framework:
+        logger.info(f"Scanning frontend files for API calls ({frontend_framework})")
+        frontend_files = _find_frontend_files(repo_path, frontend_framework)
+        logger.info(f"Found {len(frontend_files)} frontend files to scan")
 
-            if route_files_content:
-                endpoints = _analyze_with_gemini(route_files_content, framework)
-                result.routes = endpoints
-    else:
-        # Fallback to regex-based extraction
-        all_routes: list[EndpointInfo] = []
-        for filepath in route_files:
-            routes = _extract_routes_with_regex(filepath, framework)
-            for r in routes:
-                r["file"] = r["file"].replace(repo_path, "").lstrip("/")
-                all_routes.append(
+        frontend_routes: list[EndpointInfo] = []
+        seen_frontend: set[tuple[str, str, str]] = set()  # (method, path, file) to avoid duplicates
+
+        for filepath in frontend_files[:50]:  # Limit to 50 files
+            api_calls = _extract_frontend_api_calls(filepath)
+            for call in api_calls:
+                # Deduplicate by method+path+file
+                key = (call["method"], call["path"], call["file"])
+                if key in seen_frontend:
+                    continue
+                seen_frontend.add(key)
+
+                frontend_routes.append(
                     EndpointInfo(
-                        method=r["method"],
-                        path=r["path"],
-                        file=r["file"],
-                        line=r.get("line"),
+                        method=call["method"],
+                        path=call["path"],
+                        file=call["file"].replace(repo_path, "").lstrip("/"),
+                        line=call.get("line"),
+                        source="frontend",
+                        description=f"API call from {frontend_framework} frontend",
                     )
                 )
-        result.routes = all_routes
 
+        logger.info(f"Found {len(frontend_routes)} frontend API calls")
+        all_endpoints.extend(frontend_routes)
+
+    result.routes = all_endpoints
     return result
 
 
@@ -702,7 +975,10 @@ def save_endpoints_to_db(
             existing.auth_type = ep.auth_type
             existing.tags = ep.tags
             existing.detected_at = datetime.utcnow()
-            existing.framework = result.framework
+            existing.framework = (
+                result.framework if ep.source == "backend" else result.frontend_framework
+            )
+            existing.source = ep.source
             existing.updated_at = datetime.utcnow()
         else:
             # Create new endpoint
@@ -720,7 +996,8 @@ def save_endpoints_to_db(
                 auth_type=ep.auth_type,
                 tags=ep.tags,
                 detected_at=datetime.utcnow(),
-                framework=result.framework,
+                framework=result.framework if ep.source == "backend" else result.frontend_framework,
+                source=ep.source,
             )
             db_session.add(new_endpoint)
 
@@ -738,6 +1015,7 @@ def result_to_dict(result: DetectionResult) -> dict[str, Any]:
         "openapi_file": result.openapi_file,
         "detected_at": result.detected_at,
         "framework": result.framework,
+        "frontend_framework": result.frontend_framework,
         "error": result.error,
         "routes": [
             {
@@ -761,6 +1039,7 @@ def result_to_dict(result: DetectionResult) -> dict[str, Any]:
                 "visibility": ep.visibility,
                 "auth_type": ep.auth_type,
                 "tags": ep.tags,
+                "source": ep.source,
             }
             for ep in result.routes
         ],
