@@ -140,6 +140,7 @@ function chatSidebar() {
         agentTriggerPosition: 0,  // Position of @ in input
         // Usage info popover
         showUsageInfo: false,
+        contextInfoLoading: false,
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -1832,6 +1833,116 @@ Contesto: ${contextStr}`;
                 return `<1K / ${limitK}K`;
             }
             return `${usedK}K / ${limitK}K (${percentage}%)`;
+        },
+
+        /**
+         * Parse /context command output from Claude CLI
+         * @param {string} output - Raw output from /context command
+         * @returns {Object} Parsed context info
+         */
+        parseContextOutput(output) {
+            const info = {
+                model: null,
+                tokens: { used: 0, limit: 0, percentage: 0 },
+                categories: [],
+                mcpTools: [],
+                agents: []
+            };
+
+            try {
+                const lines = output.split('\n');
+                let section = null;
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+
+                    // Detect sections
+                    if (trimmed === 'Context Usage' || trimmed === 'Categories' ||
+                        trimmed === 'MCP Tools' || trimmed === 'Custom Agents') {
+                        section = trimmed;
+                        continue;
+                    }
+
+                    // Parse model
+                    if (trimmed.startsWith('Model:')) {
+                        info.model = trimmed.replace('Model:', '').trim();
+                        continue;
+                    }
+
+                    // Parse total tokens
+                    if (trimmed.startsWith('Tokens:')) {
+                        const match = trimmed.match(/Tokens:\s*([\d.]+)k\s*\/\s*([\d.]+)k\s*\((\d+)%\)/i);
+                        if (match) {
+                            info.tokens.used = parseFloat(match[1]) * 1000;
+                            info.tokens.limit = parseFloat(match[2]) * 1000;
+                            info.tokens.percentage = parseInt(match[3]);
+                        }
+                        continue;
+                    }
+
+                    // Skip header rows
+                    if (trimmed.startsWith('Category\t') || trimmed.startsWith('Tool\t') ||
+                        trimmed.startsWith('Agent Type\t')) {
+                        continue;
+                    }
+
+                    // Parse tab-separated data based on section
+                    const parts = trimmed.split('\t').map(p => p.trim());
+
+                    if (section === 'Categories' && parts.length >= 2) {
+                        const tokensMatch = parts[1].match(/([\d.]+)k/i);
+                        if (tokensMatch) {
+                            info.categories.push({
+                                name: parts[0],
+                                tokens: parseFloat(tokensMatch[1]) * 1000,
+                                percentage: parts[2] ? parseFloat(parts[2]) : null
+                            });
+                        }
+                    } else if (section === 'MCP Tools' && parts.length >= 2) {
+                        info.mcpTools.push({
+                            name: parts[0],
+                            server: parts[1] || null,
+                            tokens: parts[2] ? parseInt(parts[2]) : null
+                        });
+                    } else if (section === 'Custom Agents' && parts.length >= 2) {
+                        info.agents.push({
+                            name: parts[0],
+                            source: parts[1] || null,
+                            tokens: parts[2] ? parseInt(parts[2]) : null
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('[chatSidebar] Error parsing /context output:', e);
+            }
+
+            return info;
+        },
+
+        /**
+         * Request detailed context info by sending /context command
+         */
+        async requestContextInfo() {
+            if (!this.activeSession?.id) return;
+
+            // Show loading state
+            this.contextInfoLoading = true;
+
+            try {
+                // Send /context as a special command that returns structured output
+                const response = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/context`);
+                if (response.ok) {
+                    const data = await response.json();
+                    // Store parsed context info
+                    this.activeSession.contextInfo = data;
+                    console.log('[chatSidebar] Context info loaded:', data);
+                }
+            } catch (e) {
+                console.error('[chatSidebar] Error fetching context info:', e);
+            } finally {
+                this.contextInfoLoading = false;
+            }
         },
 
         /**

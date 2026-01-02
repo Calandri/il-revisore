@@ -1342,6 +1342,186 @@ async def stop_cli(
     }
 
 
+@router.get("/sessions/{session_id}/context")
+async def get_session_context(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Get detailed context usage info for a session.
+
+    Sends /context command to Claude CLI and parses the output.
+    Returns structured data about token usage breakdown.
+    """
+    session = (
+        db.query(CLIChatSession)
+        .filter(
+            CLIChatSession.id == session_id,
+            CLIChatSession.deleted_at.is_(None),
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Only Claude CLI supports /context command
+    if session.cli_type != "claude":
+        return {
+            "error": "Context command only supported for Claude CLI",
+            "tokens": {
+                "used": session.total_tokens_in or 0,
+                "limit": 200000,
+                "percentage": round((session.total_tokens_in or 0) / 200000 * 100),
+            },
+        }
+
+    manager = get_process_manager()
+
+    # Check if process is running
+    if session_id not in manager._processes:
+        return {
+            "error": "Session process not running",
+            "tokens": {
+                "used": session.total_tokens_in or 0,
+                "limit": 200000,
+                "percentage": round((session.total_tokens_in or 0) / 200000 * 100),
+            },
+        }
+
+    try:
+        # Send /context command and collect output
+        output_lines: list[str] = []
+        async for chunk in manager.send_message(session_id, "/context"):
+            # Parse JSON lines
+            try:
+                event = json.loads(chunk.strip())
+                # Extract text content from various event types
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        output_lines.append(delta.get("text", ""))
+                elif event.get("type") == "content_block_start":
+                    block = event.get("content_block", {})
+                    if block.get("type") == "text":
+                        output_lines.append(block.get("text", ""))
+                elif event.get("result"):
+                    output_lines.append(event["result"])
+            except json.JSONDecodeError:
+                # Plain text output
+                output_lines.append(chunk)
+
+        raw_output = "".join(output_lines)
+        logger.info(f"[CONTEXT] Raw output ({len(raw_output)} chars): {raw_output[:500]}...")
+
+        # Parse the /context output
+        context_info = _parse_context_output(raw_output)
+
+        # Update session token counts from parsed data
+        if context_info.get("tokens", {}).get("used"):
+            session.total_tokens_in = int(context_info["tokens"]["used"])  # type: ignore[assignment]
+            db.commit()
+
+        return context_info
+
+    except Exception as e:
+        logger.error(f"[CONTEXT] Error getting context info: {e}")
+        return {
+            "error": str(e),
+            "tokens": {
+                "used": session.total_tokens_in or 0,
+                "limit": 200000,
+                "percentage": round((session.total_tokens_in or 0) / 200000 * 100),
+            },
+        }
+
+
+def _parse_context_output(output: str) -> dict[str, Any]:
+    """Parse /context command output from Claude CLI.
+
+    Returns structured data about token usage breakdown.
+    """
+    info: dict[str, Any] = {
+        "model": None,
+        "tokens": {"used": 0, "limit": 200000, "percentage": 0},
+        "categories": [],
+        "mcpTools": [],
+        "agents": [],
+    }
+
+    try:
+        lines = output.split("\n")
+        section = None
+
+        for line in lines:
+            trimmed = line.strip()
+            if not trimmed:
+                continue
+
+            # Detect sections
+            if trimmed in ("Context Usage", "Categories", "MCP Tools", "Custom Agents"):
+                section = trimmed
+                continue
+
+            # Parse model
+            if trimmed.startswith("Model:"):
+                info["model"] = trimmed.replace("Model:", "").strip()
+                continue
+
+            # Parse total tokens (e.g., "Tokens: 93.1k / 200.0k (47%)")
+            if trimmed.startswith("Tokens:"):
+                import re
+
+                match = re.match(
+                    r"Tokens:\s*([\d.]+)k\s*/\s*([\d.]+)k\s*\((\d+)%\)", trimmed, re.IGNORECASE
+                )
+                if match:
+                    info["tokens"]["used"] = float(match.group(1)) * 1000
+                    info["tokens"]["limit"] = float(match.group(2)) * 1000
+                    info["tokens"]["percentage"] = int(match.group(3))
+                continue
+
+            # Skip header rows
+            if trimmed.startswith(("Category\t", "Tool\t", "Agent Type\t")):
+                continue
+
+            # Parse tab-separated data based on section
+            parts = [p.strip() for p in trimmed.split("\t")]
+
+            if section == "Categories" and len(parts) >= 2:
+                import re
+
+                tokens_match = re.match(r"([\d.]+)k", parts[1], re.IGNORECASE)
+                if tokens_match:
+                    info["categories"].append(
+                        {
+                            "name": parts[0],
+                            "tokens": float(tokens_match.group(1)) * 1000,
+                            "percentage": float(parts[2].rstrip("%")) if len(parts) > 2 else None,
+                        }
+                    )
+            elif section == "MCP Tools" and len(parts) >= 2:
+                info["mcpTools"].append(
+                    {
+                        "name": parts[0],
+                        "server": parts[1] if len(parts) > 1 else None,
+                        "tokens": int(parts[2]) if len(parts) > 2 else None,
+                    }
+                )
+            elif section == "Custom Agents" and len(parts) >= 2:
+                info["agents"].append(
+                    {
+                        "name": parts[0],
+                        "source": parts[1] if len(parts) > 1 else None,
+                        "tokens": int(parts[2]) if len(parts) > 2 else None,
+                    }
+                )
+
+    except Exception as e:
+        logger.error(f"[CONTEXT] Error parsing output: {e}")
+
+    return info
+
+
 @router.get("/agents", response_model=AgentListResponse)
 def list_agents() -> AgentListResponse:
     """List available Claude agents."""
