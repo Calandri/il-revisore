@@ -138,6 +138,8 @@ function chatSidebar() {
         agentSearchQuery: '',
         selectedAgentIndex: 0,
         agentTriggerPosition: 0,  // Position of @ in input
+        // Usage info popover
+        showUsageInfo: false,
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -1638,6 +1640,29 @@ Contesto: ${contextStr}`;
                                 if (currentEventType === 'action') {
                                     console.log('[chatSidebar] Action event:', data);
                                     this.executeAction(data);
+                                    currentEventType = 'chunk';  // Reset after handling
+                                    continue;
+                                }
+
+                                // Handle usage events from Claude CLI
+                                if (currentEventType === 'usage') {
+                                    console.log('[chatSidebar] Usage event:', data);
+                                    // Update session token counts
+                                    if (this.activeSession) {
+                                        // Claude CLI returns: {input_tokens, output_tokens, cache_read_input_tokens, ...}
+                                        const inputTokens = data.input_tokens || 0;
+                                        const outputTokens = data.output_tokens || 0;
+                                        const cacheTokens = data.cache_read_input_tokens || 0;
+
+                                        // Update session stats (cumulative context = input + cache)
+                                        this.activeSession.total_tokens_in = inputTokens + cacheTokens;
+                                        this.activeSession.total_tokens_out = (this.activeSession.total_tokens_out || 0) + outputTokens;
+
+                                        // Store detailed usage for (i) info button
+                                        this.activeSession.last_usage = data;
+
+                                        console.log('[chatSidebar] Updated tokens - in:', this.activeSession.total_tokens_in, 'out:', this.activeSession.total_tokens_out);
+                                    }
                                     currentEventType = 'chunk';  // Reset after handling
                                     continue;
                                 }
