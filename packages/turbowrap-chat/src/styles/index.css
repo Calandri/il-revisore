@@ -1,0 +1,285 @@
+/**
+ * @turbowrap/chat base styles
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   CSS Custom Properties (Tokens)
+   ============================================================================ */
+
+:root {
+  --tw-chat-primary: theme('colors.indigo.500');
+  --tw-chat-primary-hover: theme('colors.indigo.600');
+  --tw-chat-accent: theme('colors.purple.500');
+  --tw-chat-bg: theme('colors.white');
+  --tw-chat-bg-secondary: theme('colors.gray.50');
+  --tw-chat-text: theme('colors.gray.900');
+  --tw-chat-text-secondary: theme('colors.gray.600');
+  --tw-chat-border: theme('colors.gray.200');
+  --tw-chat-claude: theme('colors.orange.500');
+  --tw-chat-gemini: theme('colors.blue.500');
+}
+
+.dark {
+  --tw-chat-bg: theme('colors.gray.900');
+  --tw-chat-bg-secondary: theme('colors.gray.800');
+  --tw-chat-text: theme('colors.gray.100');
+  --tw-chat-text-secondary: theme('colors.gray.400');
+  --tw-chat-border: theme('colors.gray.700');
+}
+
+/* ============================================================================
+   Base Component Styles
+   ============================================================================ */
+
+.turbowrap-chat {
+  @apply font-sans antialiased;
+  color: var(--tw-chat-text);
+  background: var(--tw-chat-bg);
+}
+
+/* ============================================================================
+   Animation Keyframes
+   ============================================================================ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes bounceDot {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ============================================================================
+   Animation Utilities
+   ============================================================================ */
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideInRight 0.3s ease-out;
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Streaming dots animation */
+.animate-bounce-dot {
+  animation: bounceDot 1.4s infinite ease-in-out both;
+}
+
+.animate-bounce-dot-1 {
+  animation-delay: -0.32s;
+}
+
+.animate-bounce-dot-2 {
+  animation-delay: -0.16s;
+}
+
+.animate-bounce-dot-3 {
+  animation-delay: 0s;
+}
+
+/* ============================================================================
+   Message Styles
+   ============================================================================ */
+
+.chat-message-user {
+  @apply bg-gradient-to-br from-indigo-500 to-purple-600 text-white;
+  @apply rounded-2xl rounded-tr-md;
+  @apply px-4 py-3;
+  @apply max-w-[90%];
+}
+
+.chat-message-assistant {
+  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700;
+  @apply rounded-2xl rounded-tl-md;
+  @apply px-4 py-3;
+  @apply max-w-[90%];
+}
+
+/* ============================================================================
+   Tool/Agent Indicator Styles
+   ============================================================================ */
+
+.chat-tool-indicator {
+  @apply flex items-center justify-center gap-2 py-2;
+  @apply text-sm text-gray-500 dark:text-gray-400;
+}
+
+.chat-agent-indicator {
+  @apply flex items-center justify-center gap-2 py-2;
+  @apply text-sm text-purple-500 dark:text-purple-400;
+}
+
+/* ============================================================================
+   Input Styles
+   ============================================================================ */
+
+.chat-input {
+  @apply w-full resize-none;
+  @apply bg-transparent;
+  @apply text-gray-900 dark:text-gray-100;
+  @apply placeholder-gray-400 dark:placeholder-gray-500;
+  @apply focus:outline-none;
+  min-height: 38px;
+  max-height: 120px;
+}
+
+.chat-send-button {
+  @apply flex items-center justify-center;
+  @apply w-9 h-9 md:w-11 md:h-11;
+  @apply rounded-lg;
+  @apply transition-all duration-150;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.chat-send-button-primary {
+  @apply bg-gradient-to-r from-indigo-500 to-purple-600;
+  @apply text-white;
+  @apply hover:from-indigo-600 hover:to-purple-700;
+}
+
+.chat-send-button-queue {
+  @apply bg-gradient-to-r from-amber-500 to-orange-500;
+  @apply text-white;
+}
+
+.chat-send-button-stop {
+  @apply bg-gradient-to-r from-red-500 to-red-600;
+  @apply text-white;
+}
+
+/* ============================================================================
+   Scrollbar Styles
+   ============================================================================ */
+
+.chat-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.gray.300') transparent;
+}
+
+.dark .chat-scrollbar {
+  scrollbar-color: theme('colors.gray.600') transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-500;
+}
+
+/* ============================================================================
+   Code Block Styles
+   ============================================================================ */
+
+.chat-code-block {
+  @apply relative;
+  @apply bg-gray-900 dark:bg-gray-950;
+  @apply rounded-lg overflow-hidden;
+  @apply my-2;
+}
+
+.chat-code-header {
+  @apply flex items-center justify-between;
+  @apply px-4 py-2;
+  @apply bg-gray-800 dark:bg-gray-900;
+  @apply text-xs text-gray-400;
+  @apply border-b border-gray-700;
+}
+
+.chat-code-content {
+  @apply p-4;
+  @apply overflow-x-auto;
+  @apply text-sm;
+  @apply text-gray-100;
+  @apply font-mono;
+}
+
+/* ============================================================================
+   Callout Styles
+   ============================================================================ */
+
+.chat-callout {
+  @apply rounded-lg p-4 my-2;
+  @apply border-l-4;
+}
+
+.chat-callout-info {
+  @apply bg-blue-50 dark:bg-blue-900/20;
+  @apply border-blue-500;
+  @apply text-blue-800 dark:text-blue-200;
+}
+
+.chat-callout-warning {
+  @apply bg-amber-50 dark:bg-amber-900/20;
+  @apply border-amber-500;
+  @apply text-amber-800 dark:text-amber-200;
+}
+
+.chat-callout-error {
+  @apply bg-red-50 dark:bg-red-900/20;
+  @apply border-red-500;
+  @apply text-red-800 dark:text-red-200;
+}
+
+.chat-callout-success {
+  @apply bg-green-50 dark:bg-green-900/20;
+  @apply border-green-500;
+  @apply text-green-800 dark:text-green-200;
+}
+
+.chat-callout-tip {
+  @apply bg-purple-50 dark:bg-purple-900/20;
+  @apply border-purple-500;
+  @apply text-purple-800 dark:text-purple-200;
+}

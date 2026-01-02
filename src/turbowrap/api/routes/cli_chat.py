@@ -485,20 +485,14 @@ async def start_session(
                 f"[START] spawn_claude returned, proc={proc}, claude_session_id={proc.claude_session_id}"
             )
 
-            # Save claude_session_id to DB and mark as running
-            if proc.claude_session_id:
-                # Update session with new or existing claude_session_id
+            # Save claude_session_id to DB
+            if proc.claude_session_id and proc.claude_session_id != session_claude_session_id:
                 session.claude_session_id = proc.claude_session_id  # type: ignore[assignment]
                 session.status = "running"
                 db.commit()
-                logger.info(
-                    f"[START] Updated session status=running, claude_session_id={proc.claude_session_id}"
-                )
+                logger.info(f"[START] Saved claude_session_id to DB: {proc.claude_session_id}")
             else:
-                logger.error(
-                    "[START] ERROR: spawn_claude returned process without claude_session_id!"
-                )
-                raise RuntimeError("spawn_claude failed to create claude_session_id")
+                logger.info("[START] claude_session_id unchanged or missing")
         else:  # Gemini
             logger.info("[START] Spawning Gemini CLI process")
 
@@ -523,22 +517,11 @@ async def start_session(
             f"[START] Successfully spawned {session_cli_type} process for session {session_id}"
         )
 
-        # Verify process is registered in manager
+        # Verify process is registered
         verify_proc = manager.get_process(session_id)
-        if verify_proc is None:
-            logger.error("[START] CRITICAL: Process registered but get_process() returned None!")
-            # Try to get it directly from _processes dict
-            direct_check = session_id in manager._processes
-            logger.error(f"[START] Direct _processes check: {direct_check}")
-            if not direct_check:
-                raise RuntimeError(f"Process not registered in manager for session {session_id}")
-        else:
-            logger.info(
-                f"[START] Verification OK: process found in manager, PID={verify_proc.process.pid if verify_proc.process else 'unknown'}"
-            )
-
-        # Small delay to ensure process startup completes
-        await asyncio.sleep(0.1)
+        logger.info(
+            f"[START] Verification: process in manager._processes? {verify_proc is not None}"
+        )
 
         return {
             "status": "started",

@@ -12,6 +12,7 @@ class ChatSession(Base, SoftDeleteMixin):
     """Chat session for interactive communication."""
 
     __tablename__ = "chat_sessions"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     repository_id = Column(String(36), ForeignKey("repositories.id"), nullable=True)
@@ -33,6 +34,7 @@ class ChatMessage(Base):
     """Chat message in a session."""
 
     __tablename__ = "chat_messages"
+    __table_args__ = (Index("idx_chat_messages_session", "session_id"), {"extend_existing": True})
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     session_id = Column(String(36), ForeignKey("chat_sessions.id"), nullable=False)
@@ -43,8 +45,6 @@ class ChatMessage(Base):
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
-
-    __table_args__ = (Index("idx_chat_messages_session", "session_id"),)
 
     def __repr__(self) -> str:
         return f"<ChatMessage {self.role}>"

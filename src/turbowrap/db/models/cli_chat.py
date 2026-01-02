@@ -83,6 +83,7 @@ class CLIChatSession(Base, SoftDeleteMixin):
         Index("idx_cli_chat_sessions_repo", "repository_id"),
         Index("idx_cli_chat_sessions_type", "cli_type"),
         Index("idx_cli_chat_sessions_status", "status"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -129,6 +130,7 @@ class CLIChatMessage(Base):
         Index("idx_cli_chat_messages_session", "session_id"),
         Index("idx_cli_chat_messages_role", "role"),
         Index("idx_cli_chat_messages_created", "created_at"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

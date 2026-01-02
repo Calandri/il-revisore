@@ -1,6 +1,7 @@
 {
   "name": "@turbowrap/chat",
   "version": "0.1.0",
+  "type": "module",
   "description": "React chat widget for Claude/Gemini CLI with SSE streaming",
   "main": "dist/turbowrap-chat.umd.js",
   "module": "dist/turbowrap-chat.es.js",
