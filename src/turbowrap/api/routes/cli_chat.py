@@ -741,7 +741,7 @@ async def send_message(
                 if not line:
                     continue
 
-                logger.debug(f"[STREAM] Line: {line[:100]}...")
+                logger.info(f"[STREAM] Line: {line[:200]}...")
 
                 try:
                     event = json.loads(line)
@@ -751,6 +751,7 @@ async def send_message(
                         inner_event = event.get("event", {})
                         event = inner_event
                         event_type = event.get("type", "unknown")
+                        logger.info(f"[STREAM] Unwrapped stream_event -> {event_type}")
 
                     if event_type == "system":
                         if event.get("subtype") == "init" and not is_first_message:
