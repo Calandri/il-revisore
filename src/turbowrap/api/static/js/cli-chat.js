@@ -1091,11 +1091,27 @@ Contesto: ${contextStr}`;
                         }
                         session.status = 'running';
                     } else {
-                        console.warn('[createSession] Start response not ok:', startRes.status);
+                        const errorText = await startRes.text();
+                        console.error('[createSession] Start endpoint failed:', {
+                            status: startRes.status,
+                            statusText: startRes.statusText,
+                            error: errorText
+                        });
+                        // Try to parse JSON error response
+                        try {
+                            const errorData = JSON.parse(errorText);
+                            console.error('[createSession] Error detail:', errorData.detail);
+                        } catch (e) {
+                            // Not JSON, log raw text
+                        }
                     }
                 } catch (error) {
-                    console.error('[createSession] Failed to start process:', error);
-                    // Don't throw, continue anyway
+                    console.error('[createSession] Failed to start process (network error):', error);
+                    console.error('[createSession] Error details:', {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    });
                 }
 
                 this.sessions.unshift(session);
@@ -1176,11 +1192,27 @@ Contesto: ${contextStr}`;
                             }
                             session.status = 'running';
                         } else {
-                            console.warn('[selectSession] Start response not ok:', startRes.status);
+                            const errorText = await startRes.text();
+                            console.error('[selectSession] Start endpoint failed:', {
+                                status: startRes.status,
+                                statusText: startRes.statusText,
+                                error: errorText
+                            });
+                            // Try to parse JSON error response
+                            try {
+                                const errorData = JSON.parse(errorText);
+                                console.error('[selectSession] Error detail:', errorData.detail);
+                            } catch (e) {
+                                // Not JSON, log raw text
+                            }
                         }
                     } catch (error) {
-                        console.error('[selectSession] Failed to start process:', error);
-                        // Don't throw, continue anyway
+                        console.error('[selectSession] Failed to start process (network error):', error);
+                        console.error('[selectSession] Error details:', {
+                            name: error.name,
+                            message: error.message,
+                            stack: error.stack
+                        });
                     }
                 }
 

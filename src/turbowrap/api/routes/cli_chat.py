@@ -357,46 +357,55 @@ async def start_session(
     Spawns the process immediately if not already running.
     Returns immediately with process status.
     """
-    session = (
-        db.query(CLIChatSession)
-        .filter(
-            CLIChatSession.id == session_id,
-            CLIChatSession.deleted_at.is_(None),
-        )
-        .first()
-    )
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    manager = get_process_manager()
-    loader = get_agent_loader()
-
-    # Check if process already running
-    existing_proc = manager.get_process(session_id)
-    if existing_proc:
-        return {
-            "status": "already_running",
-            "session_id": session_id,
-            "process_running": True,
-        }
-
-    # Extract session attributes for use in async context
-    session_cli_type = cast(str, session.cli_type)
-    session_repository_id = cast(str | None, session.repository_id)
-    session_current_branch = cast(str | None, session.current_branch)
-    session_agent_name = cast(str | None, session.agent_name)
-    session_model = cast(str | None, session.model)
-    session_thinking_enabled = cast(bool, session.thinking_enabled or False)
-    session_thinking_budget = cast(int | None, session.thinking_budget)
-    session_reasoning_enabled = cast(bool, session.reasoning_enabled or False)
-    session_mockup_project_id = cast(str | None, session.mockup_project_id)
-    session_mockup_id = cast(str | None, session.mockup_id)
-    session_repository = session.repository
-    session_claude_session_id = cast(str | None, session.claude_session_id)
+    logger.info(f"[START] Received request to start session {session_id}")
 
     try:
+        session = (
+            db.query(CLIChatSession)
+            .filter(
+                CLIChatSession.id == session_id,
+                CLIChatSession.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+        if not session:
+            logger.error(f"[START] Session {session_id} not found in database")
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        logger.info(f"[START] Found session: cli_type={session.cli_type}, status={session.status}")
+
+        manager = get_process_manager()
+        logger.info("[START] Got process manager, checking for existing process")
+
+        # Check if process already running
+        existing_proc = manager.get_process(session_id)
+        if existing_proc:
+            logger.info(f"[START] Process already running for session {session_id}")
+            return {
+                "status": "already_running",
+                "session_id": session_id,
+                "process_running": True,
+            }
+
+        logger.info("[START] No existing process, will spawn new one")
+
+        # Extract session attributes for use in async context
+        session_cli_type = cast(str, session.cli_type)
+        session_repository_id = cast(str | None, session.repository_id)
+        session_current_branch = cast(str | None, session.current_branch)
+        session_agent_name = cast(str | None, session.agent_name)
+        session_model = cast(str | None, session.model)
+        session_thinking_enabled = cast(bool, session.thinking_enabled or False)
+        session_thinking_budget = cast(int | None, session.thinking_budget)
+        session_reasoning_enabled = cast(bool, session.reasoning_enabled or False)
+        session_mockup_project_id = cast(str | None, session.mockup_project_id)
+        session_mockup_id = cast(str | None, session.mockup_id)
+        session_repository = session.repository
+        session_claude_session_id = cast(str | None, session.claude_session_id)
+
         # Generate context
+        logger.info(f"[START] Generating context for session {session_id}")
         context = get_context_for_session(
             db,
             repo_id=session_repository_id,
@@ -408,11 +417,16 @@ async def start_session(
         logger.info(f"[START] Generated context for session {session_id}: {len(context)} chars")
 
         cli_type = CLIType(session_cli_type)
+        logger.info(f"[START] CLI type: {cli_type}")
 
         if cli_type == CLIType.CLAUDE:
+            logger.info("[START] Spawning Claude CLI process")
+
             agent_path = None
             if session_agent_name:
+                loader = get_agent_loader()
                 agent_path = loader.get_agent_path(session_agent_name)
+                logger.info(f"[START] Agent path: {agent_path}")
 
             # Create callback to load message history on-demand (only if --resume fails)
             def load_message_history() -> str:
@@ -429,6 +443,7 @@ async def start_session(
                         .all()
                     )
                     if not messages:
+                        logger.info(f"[RECOVERY] No messages to load for session {session_id}")
                         return ""
 
                     history_parts = []
@@ -444,11 +459,17 @@ async def start_session(
                     history_db.close()
 
             settings = get_settings()
+            working_dir = Path(
+                session_repository.local_path if session_repository else settings.repos_dir
+            )
+            logger.info(f"[START] Working directory: {working_dir}")
+            logger.info(f"[START] Model: {session_model or 'claude-opus-4-5-20251101'}")
+            logger.info(f"[START] Existing session ID: {session_claude_session_id}")
+            logger.info("[START] Calling spawn_claude...")
+
             proc = await manager.spawn_claude(
                 session_id=session_id,
-                working_dir=Path(
-                    session_repository.local_path if session_repository else settings.repos_dir
-                ),
+                working_dir=working_dir,
                 model=session_model or "claude-opus-4-5-20251101",
                 agent_path=agent_path,
                 thinking_budget=(session_thinking_budget if session_thinking_enabled else None),
@@ -460,13 +481,21 @@ async def start_session(
                 ),
             )
 
+            logger.info(
+                f"[START] spawn_claude returned, proc={proc}, claude_session_id={proc.claude_session_id}"
+            )
+
             # Save claude_session_id to DB
             if proc.claude_session_id and proc.claude_session_id != session_claude_session_id:
                 session.claude_session_id = proc.claude_session_id  # type: ignore[assignment]
                 session.status = "running"
                 db.commit()
                 logger.info(f"[START] Saved claude_session_id to DB: {proc.claude_session_id}")
+            else:
+                logger.info("[START] claude_session_id unchanged or missing")
         else:  # Gemini
+            logger.info("[START] Spawning Gemini CLI process")
+
             proc = await manager.spawn_gemini(
                 session_id=session_id,
                 working_dir=Path(
@@ -478,10 +507,21 @@ async def start_session(
                 reasoning=session_reasoning_enabled,
                 context=context,
             )
+            logger.info(f"[START] spawn_gemini returned, proc={proc}")
+
             session.status = "running"
             db.commit()
+            logger.info("[START] Updated session status to running")
 
-        logger.info(f"[START] Spawned {session_cli_type} process for session {session_id}")
+        logger.info(
+            f"[START] Successfully spawned {session_cli_type} process for session {session_id}"
+        )
+
+        # Verify process is registered
+        verify_proc = manager.get_process(session_id)
+        logger.info(
+            f"[START] Verification: process in manager._processes? {verify_proc is not None}"
+        )
 
         return {
             "status": "started",
@@ -490,8 +530,14 @@ async def start_session(
             "claude_session_id": (proc.claude_session_id if cli_type == CLIType.CLAUDE else None),
         }
 
+    except HTTPException:
+        logger.error(f"[START] HTTPException for session {session_id}")
+        raise
     except Exception as e:
-        logger.error(f"[START] Failed to start process for session {session_id}: {e}")
+        logger.error(
+            f"[START] Failed to start process for session {session_id}: {type(e).__name__}: {e}",
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to start CLI process: {str(e)}",
