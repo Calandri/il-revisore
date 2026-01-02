@@ -23,17 +23,80 @@ src/turbowrap/
 │   └── models.py           # Pydantic models
 ├── review/                 # Review system
 │   └── orchestration/      # Multi-agent coordination
+├── linear/                 # Linear integration
+│   └── analyzer.py         # Issue analysis with Claude
 └── scripts/                # CLI tools
 
 agents/                     # Agent prompt files (36 agents)
 ├── fixer.md                # Fix orchestrator
 ├── fix_challenger.md       # Validates fixes
 ├── reviewer_*.md           # Code reviewers
+├── linear_question_generator.md  # Widget question generation
+├── linear_finalizer.md     # Widget description finalization
 └── engineering_principles.md
+
+packages/
+├── turbowrap-issue-widget/ # Embeddable issue reporting widget
+└── turbowrap-llm/          # LLM integration library
 
 terraform/                  # AWS infrastructure
 deploy/                     # Deployment scripts
 ```
+
+## Issue Widget System
+
+TurboWrap includes an embeddable JavaScript widget (`@turbowrap/issue-widget`) that allows users to report bugs and request features directly from any website.
+
+### Widget Features
+
+1. **Element Picker ("Seleziona Componente")**: Users can click on any DOM element to report issues about it. The widget extracts:
+   - Element tag name, ID, classes
+   - CSS selector
+   - `data-test-id` attributes
+   - Visual context via screenshot
+
+2. **AI Analysis Pipeline**:
+   - **Gemini Vision**: Analyzes screenshots to extract visual context
+   - **Claude**: Generates 3-4 clarifying questions
+   - **Claude**: Creates comprehensive issue description from user answers
+
+3. **Issue Routing**: Based on user selection, creates:
+   - **Bug** → `Issue` table → appears in `/issues`
+   - **Suggestion** → `Feature` table → appears in `/features`
+   - **Question** → `Feature` table → appears in `/features`
+
+### Installation
+
+```html
+<script>
+  window.IssueWidgetConfig = {
+    apiUrl: 'https://your-api.turbowrap.io',
+    apiKey: 'your_api_key',
+    teamId: 'your-linear-team-uuid'
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@turbowrap/issue-widget@latest/dist/issue-widget.min.js"></script>
+```
+
+### Widget vs LinearIssue
+
+| Source | Saves To | Purpose |
+|--------|----------|---------|
+| Widget | `Issue` or `Feature` | New user-reported bugs/features |
+| `/linear/sync` | `LinearIssue` | Import existing issues from Linear |
+| Code Review | `Issue` | Automated code analysis findings |
+
+### Widget API Flow
+
+1. `POST /linear/create/analyze` - Gemini analyzes screenshot, Claude generates questions
+2. User answers questions in widget
+3. `POST /linear/create/finalize` - Claude generates final description, creates on Linear, saves to DB
+
+### Related Files
+- Widget source: `packages/turbowrap-issue-widget/`
+- Widget README: `packages/turbowrap-issue-widget/README.md`
+- Backend routes: `src/turbowrap/api/routes/linear.py`
+- Agents: `agents/linear_question_generator.md`, `agents/linear_finalizer.md`
 
 ## Tech Stack
 

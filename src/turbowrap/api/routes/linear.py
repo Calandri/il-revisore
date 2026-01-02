@@ -16,7 +16,18 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from ...db.models import LinearIssue, LinearIssueRepositoryLink, Repository, Setting
+from ...db.models import (
+    Feature,
+    FeatureRepository,
+    FeatureRepositoryRole,
+    Issue,
+    IssueStatus,
+    LinearIssue,
+    LinearIssueRepositoryLink,
+    Repository,
+    Setting,
+    FeatureStatus,
+)
 from ...linear.analyzer import LinearIssueAnalyzer
 from ...review.integrations.linear import LinearClient
 from ..deps import get_db, get_or_404
@@ -1078,26 +1089,45 @@ Non aggiungere spiegazioni, solo il nome del repository."""
             yield {"event": "progress", "data": json.dumps({"message": "Salvando in database..."})}
 
             try:
-                db_issue = LinearIssue(
-                    linear_id=issue["id"],
-                    linear_identifier=issue["identifier"],
-                    linear_url=issue["url"],
-                    linear_team_id=issue["team"]["id"],
-                    linear_team_name=issue["team"]["name"],
-                    title=request.title,
-                    description=request.description,
-                    improved_description=final_desc,
-                    turbowrap_state="repo_link",  # Skip analysis step
-                    analyzed_by="gemini_claude",
-                    analyzed_at=datetime.utcnow(),
-                    user_answers=request.user_answers,  # Store user answers
-                    priority=request.priority,
-                )
-                db.add(db_issue)
-                db.commit()
-                db.refresh(db_issue)  # Refresh to get ID
+                # Route to correct table based on issue_type
+                if request.issue_type == "bug":
+                    # Save to Issue table
+                    db_record = Issue(
+                        linear_id=issue["id"],
+                        linear_identifier=issue["identifier"],
+                        linear_url=issue["url"],
+                        repository_id=None,  # Will be linked later
+                        issue_code="WIDGET-" + issue["identifier"],  # Generate code
+                        severity="MEDIUM",  # Default, can be enhanced
+                        category="user_reported",
+                        title=request.title,
+                        description=request.description,
+                        suggested_fix=final_desc,  # Use improved description as suggested fix
+                        status=IssueStatus.OPEN.value,
+                        file="user_reported",  # Special value for widget issues
+                        line=None,
+                    )
+                    logger.info(f"[create/finalize] Creating Issue: {issue['identifier']}")
+                else:  # suggestion or question → Feature
+                    db_record = Feature(
+                        linear_id=issue["id"],
+                        linear_identifier=issue["identifier"],
+                        linear_url=issue["url"],
+                        title=request.title,
+                        description=request.description,
+                        improved_description=final_desc,
+                        status=FeatureStatus.ANALYSIS.value,
+                        priority=request.priority,
+                        figma_link=request.figma_link,
+                        user_qa=request.user_answers,  # Store Q&A
+                    )
+                    logger.info(f"[create/finalize] Creating Feature: {issue['identifier']}")
 
-                logger.info(f"[create/finalize] Saved to database: {db_issue.id}")
+                db.add(db_record)
+                db.commit()
+                db.refresh(db_record)  # Refresh to get ID
+
+                logger.info(f"[create/finalize] Saved to database: {db_record.id} (type: {request.issue_type})")
 
                 # Link detected repository
                 if detected_repo_name:
@@ -1112,21 +1142,23 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                         )
 
                         if repo:
-                            link = LinearIssueRepositoryLink(
-                                linear_issue_id=db_issue.id,
-                                repository_id=repo.id,
-                                link_source="claude_analysis",
-                                confidence_score=95.0,  # High confidence from Claude
-                            )
-                            db.add(link)
-                            db.commit()
+                            if isinstance(db_record, Issue):
+                                # Direct foreign key for Issue
+                                db_record.repository_id = repo.id
+                                db.commit()
+                            else:  # Feature
+                                # Many-to-many link for Feature
+                                link = FeatureRepository(
+                                    feature_id=db_record.id,
+                                    repository_id=repo.id,
+                                    role=FeatureRepositoryRole.PRIMARY.value,
+                                )
+                                db.add(link)
+                                db.commit()
+
                             logger.info(
                                 f"[create/finalize] Linked repository: {detected_repo_name}"
                             )
-
-                            # Update state to in_progress since repo is linked
-                            db_issue.turbowrap_state = "repo_link"  # type: ignore[assignment]
-                            db.commit()
 
                             yield {
                                 "event": "progress",
@@ -1165,7 +1197,12 @@ Non aggiungere spiegazioni, solo il nome del repository."""
             yield {
                 "event": "complete",
                 "data": json.dumps(
-                    {"identifier": issue["identifier"], "url": issue["url"], "id": db_issue.id}
+                    {
+                        "identifier": issue["identifier"],
+                        "url": issue["url"],
+                        "id": db_record.id,
+                        "type": "issue" if request.issue_type == "bug" else "feature",
+                    }
                 ),
             }
 
