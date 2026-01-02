@@ -395,8 +395,9 @@ Contesto: ${contextStr}`;
                 this.streamContentBySession[sessionId] = '';
             }
 
-            // Only update UI if message is for the ACTIVE session
+            // Only update UI if message is for the ACTIVE session or SECONDARY session (dual-chat)
             const isActiveSession = sessionId && this.activeSession?.id === sessionId;
+            const isSecondarySession = this.dualChatEnabled && sessionId && this.secondarySession?.id === sessionId;
 
             switch (type) {
                 case 'STREAM_START':
@@ -419,10 +420,15 @@ Contesto: ${contextStr}`;
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = fullContent || (this.streamContentBySession[sessionId] + content);
                     }
-                    // Only update UI if it's the active session
+                    // Update UI for active session
                     if (isActiveSession) {
                         this.streamContent = this.streamContentBySession[sessionId];
                         this.$nextTick(() => this.scrollToBottom());
+                    }
+                    // Update UI for secondary session (dual-chat)
+                    if (isSecondarySession) {
+                        this.streamContentSecondary = this.streamContentBySession[sessionId];
+                        this.$nextTick(() => this.scrollToBottomSecondary());
                     }
                     break;
 
@@ -440,7 +446,7 @@ Contesto: ${contextStr}`;
                     // Save message with final content for this session
                     const finalContent = content || this.streamContentBySession[sessionId];
 
-                    // Only add to messages UI if it's the active session
+                    // Add to messages UI for active session
                     if (isActiveSession) {
                         this.messages.push({
                             id: messageId,
@@ -450,6 +456,18 @@ Contesto: ${contextStr}`;
                         });
                         this.streamContent = '';
                         this.streaming = false;
+                    }
+
+                    // Add to messages UI for secondary session (dual-chat)
+                    if (isSecondarySession) {
+                        this.secondaryMessages.push({
+                            id: messageId,
+                            role: 'assistant',
+                            content: finalContent,
+                            created_at: new Date().toISOString()
+                        });
+                        this.streamContentSecondary = '';
+                        this.$nextTick(() => this.scrollToBottomSecondary());
                     }
 
                     // Clear accumulated content and streaming state for this session
@@ -1722,6 +1740,15 @@ Contesto: ${contextStr}`;
             const idx = modes.indexOf(this.chatMode);
             const newMode = modes[(idx + 1) % modes.length];
             this.chatMode = newMode;
+
+            // Disable dual-chat when switching to 'third' mode (too narrow)
+            if (newMode === 'third' && this.dualChatEnabled) {
+                this.dualChatEnabled = false;
+                this.secondarySession = null;
+                this.secondaryMessages = [];
+                this.streamContentSecondary = '';
+                localStorage.setItem('dualChatEnabled', 'false');
+            }
 
             // When entering 'page' mode, collapse left sidebar
             // sidebarOpen is in parent scope (html x-data)
