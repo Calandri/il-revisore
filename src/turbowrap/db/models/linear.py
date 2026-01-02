@@ -94,6 +94,7 @@ class LinearIssue(Base, SoftDeleteMixin):
         Index("idx_linear_issues_team", "linear_team_id"),
         Index("idx_linear_issues_state", "turbowrap_state"),
         Index("idx_linear_issues_active", "is_active"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -124,6 +125,7 @@ class LinearIssueRepositoryLink(Base):
         Index("idx_linear_repo_links_issue", "linear_issue_id"),
         Index("idx_linear_repo_links_repo", "repository_id"),
         UniqueConstraint("linear_issue_id", "repository_id", name="uq_linear_issue_repo"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

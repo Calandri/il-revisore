@@ -112,6 +112,7 @@ class Issue(Base, SoftDeleteMixin):
         Index("idx_issues_file", "file"),
         Index("idx_issues_linear_id", "linear_id"),
         Index("idx_issues_linear_identifier", "linear_identifier"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -152,6 +153,7 @@ class ReviewCheckpoint(Base):
         Index("idx_review_checkpoints_task", "task_id"),
         Index("idx_review_checkpoints_status", "status"),
         UniqueConstraint("task_id", "reviewer_name", name="uq_task_reviewer"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

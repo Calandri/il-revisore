@@ -49,8 +49,12 @@ export const selectSessionsByCliType = (cliType: 'claude' | 'gemini') => (state:
 /**
  * Get messages for the active session
  */
-export const selectActiveMessages = (state: ChatStore) =>
-  state.activeSessionId ? state.messages.get(state.activeSessionId) ?? [] : [];
+export const selectActiveMessages = (state: ChatStore) => {
+  if (!state.activeSessionId) return [];
+  // Verify session still exists before returning messages
+  if (!state.sessions.has(state.activeSessionId)) return [];
+  return state.messages.get(state.activeSessionId) ?? [];
+};
 
 /**
  * Get messages for the secondary session

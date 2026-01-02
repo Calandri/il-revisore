@@ -17,3 +17,6 @@ export type { UseAgentsReturn } from './use-agents';
 
 export { useDualChat } from './use-dual-chat';
 export type { UseDualChatReturn } from './use-dual-chat';
+
+export { useSharedWorker } from './use-shared-worker';
+export type { WorkerMessageType, WorkerEventType } from './use-shared-worker';

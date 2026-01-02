@@ -31,6 +31,7 @@ class LiveViewScreenshot(Base):
     __table_args__ = (
         Index("idx_live_view_repo", "repository_id"),
         Index("idx_live_view_link", "external_link_id", unique=True),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

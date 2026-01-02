@@ -60,6 +60,7 @@ export function transformMessage(data: MessageAPIResponse): Message {
     sessionId: data.session_id,
     role: data.role,
     content: data.content,
+    segments: data.segments ?? undefined,
     isThinking: data.is_thinking,
     tokensIn: data.tokens_in ?? undefined,
     tokensOut: data.tokens_out ?? undefined,
@@ -78,6 +79,7 @@ export interface MessageAPIResponse {
   session_id: string;
   role: MessageRole;
   content: string;
+  segments?: ContentSegment[];
   is_thinking: boolean;
   tokens_in: number | null;
   tokens_out: number | null;

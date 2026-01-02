@@ -2,11 +2,35 @@
  * ChatProvider - Main context provider for @turbowrap/chat
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { ChatAPIClient } from '../api/client';
 import type { ChatClientConfig } from '../api/types';
 import { ChatClientContext } from '../hooks/use-chat-client';
 import { useChatStore } from '../store';
+import type { ChatStore } from '../store/types';
+
+/**
+ * Extended chat context with store access
+ */
+interface ChatContextValue {
+  apiClient: ChatAPIClient;
+  store: ChatStore;
+  isInitialized: boolean;
+  initialize: () => void;
+}
+
+const ChatContext = createContext<ChatContextValue | null>(null);
+
+/**
+ * Hook to access the chat context
+ */
+export function useChatContext(): ChatContextValue {
+  const context = useContext(ChatContext);
+  if (!context) {
+    throw new Error('useChatContext must be used within a ChatProvider');
+  }
+  return context;
+}
 
 export interface ChatProviderProps {
   /** API client configuration */
@@ -25,17 +49,22 @@ export interface ChatProviderProps {
 export function ChatProvider({
   config,
   children,
-  autoLoadSessions = true,
-  autoLoadAgents = true,
+  autoLoadSessions = false, // Changed to false - ChatWidget handles initialization
+  autoLoadAgents = false,   // Changed to false - ChatWidget handles initialization
 }: ChatProviderProps) {
   // Create client instance (memoized)
   const client = useMemo(() => new ChatAPIClient(config), [config]);
 
-  // Get store actions
-  const { initialize } = useChatStore((s) => s.actions);
-  const isInitialized = useChatStore((s) => s.isInitialized);
+  // Get full store
+  const store = useChatStore();
+  const [initialized, setInitialized] = useState(store.isInitialized);
 
-  // Initialize on mount
+  // Manual initialize function for ChatWidget to call
+  const initializeFn = useCallback(() => {
+    setInitialized(true);
+  }, []);
+
+  // Auto-initialize if enabled (legacy behavior)
   useEffect(() => {
     async function init() {
       try {
@@ -44,27 +73,32 @@ export function ChatProvider({
           autoLoadAgents ? client.getAgents() : Promise.resolve([]),
         ]);
 
-        initialize(sessions, agents);
+        store.actions.initialize(sessions, agents);
+        setInitialized(true);
       } catch (error) {
         console.error('[ChatProvider] Failed to initialize:', error);
         config.onError?.(error instanceof Error ? error : new Error(String(error)));
       }
     }
 
-    if (!isInitialized) {
+    if ((autoLoadSessions || autoLoadAgents) && !store.isInitialized) {
       init();
     }
+  }, [client, store, autoLoadSessions, autoLoadAgents, config]);
 
-    // Cleanup on unmount
-    return () => {
-      // Optionally reset state when provider unmounts
-      // reset();
-    };
-  }, [client, initialize, isInitialized, autoLoadSessions, autoLoadAgents, config]);
+  // Create context value
+  const contextValue = useMemo<ChatContextValue>(() => ({
+    apiClient: client,
+    store,
+    isInitialized: initialized,
+    initialize: initializeFn,
+  }), [client, store, initialized, initializeFn]);
 
   return (
-    <ChatClientContext.Provider value={client}>
-      {children}
-    </ChatClientContext.Provider>
+    <ChatContext.Provider value={contextValue}>
+      <ChatClientContext.Provider value={client}>
+        {children}
+      </ChatClientContext.Provider>
+    </ChatContext.Provider>
   );
 }

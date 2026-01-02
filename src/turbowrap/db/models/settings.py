@@ -11,6 +11,7 @@ class Setting(Base):
     """Application settings stored in database."""
 
     __tablename__ = "settings"
+    __table_args__ = {"extend_existing": True}
 
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=True)

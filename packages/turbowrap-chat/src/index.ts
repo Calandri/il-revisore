@@ -113,6 +113,44 @@ export type {
 export { transformSession, transformMessage, createInitialStreamState } from './types';
 
 // ============================================================================
+// UI Components
+// ============================================================================
+
+// Layout
+export { ChatPane, DualPaneLayout, ChatHeader } from './components/layout';
+export type { ChatPaneProps, DualPaneLayoutProps, ChatHeaderProps } from './components/layout';
+
+// Chat
+export { MessageList, MessageItem, MessageInput, StreamingMessage, ToolIndicator } from './components/chat';
+export type {
+  MessageListProps,
+  MessageItemProps,
+  MessageInputProps,
+  StreamingMessageProps,
+  ToolIndicatorProps,
+} from './components/chat';
+
+// Session
+export { SessionTabs, HistoryPanel } from './components/session';
+export type { SessionTabsProps, HistoryPanelProps } from './components/session';
+
+// Formatting
+export { MessageFormatter, CodeBlock, Callout } from './components/formatting';
+export type { MessageFormatterProps, CodeBlockProps, CalloutProps } from './components/formatting';
+
+// Autocomplete
+export { AgentAutocomplete } from './components/autocomplete';
+export type { AgentAutocompleteProps } from './components/autocomplete';
+
+// Modals
+export { RepoSelectorModal, SessionInfoModal } from './components/modals';
+export type { RepoSelectorModalProps, SessionInfoModalProps } from './components/modals';
+
+// Settings
+export { QuickSettings } from './components/settings';
+export type { QuickSettingsProps } from './components/settings';
+
+// ============================================================================
 // Styles
 // ============================================================================
 

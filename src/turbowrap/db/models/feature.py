@@ -100,6 +100,7 @@ class Feature(Base, SoftDeleteMixin):
         Index("idx_features_linear_id", "linear_id"),
         Index("idx_features_linear_identifier", "linear_identifier"),
         Index("idx_features_priority", "priority"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -143,6 +144,7 @@ class FeatureRepository(Base):
         Index("idx_feature_repos_feature", "feature_id"),
         Index("idx_feature_repos_repo", "repository_id"),
         UniqueConstraint("feature_id", "repository_id", name="uq_feature_repository"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

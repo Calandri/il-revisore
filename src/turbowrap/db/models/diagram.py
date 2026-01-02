@@ -11,6 +11,7 @@ class MermaidDiagram(Base):
     """Stores generated Mermaid diagrams for agents and documents."""
 
     __tablename__ = "mermaid_diagrams"
+    __table_args__ = {"extend_existing": True}
 
     # Use document_key as primary key (agent name or doc path)
     document_key = Column(String(255), primary_key=True)

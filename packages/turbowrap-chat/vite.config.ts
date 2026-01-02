@@ -5,7 +5,10 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      // Use classic JSX transform for UMD compatibility
+      jsxRuntime: 'classic',
+    }),
     dts({
       insertTypesEntry: true,
       rollupTypes: true,
@@ -19,12 +22,11 @@ export default defineConfig({
       fileName: (format) => `turbowrap-chat.${format}.js`,
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime'],
+      external: ['react', 'react-dom'],
       output: {
         globals: {
           react: 'React',
           'react-dom': 'ReactDOM',
-          'react/jsx-runtime': 'jsxRuntime',
         },
       },
     },

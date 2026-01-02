@@ -69,6 +69,12 @@ export interface UsageInfo {
   mcpServers: MCPServerStatus[];
   memory?: string;
   settingSources?: string;
+  // Token usage
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  cost?: number;
 }
 
 /**
@@ -92,6 +98,7 @@ export interface ActionEvent {
  * Agent from /agents endpoint
  */
 export interface Agent {
+  id: string;
   name: string;
   version: string;
   tokens: number;
@@ -99,6 +106,7 @@ export interface Agent {
   model: string;
   color: string;
   path: string;
+  type: 'reviewer' | 'fixer' | 'analyzer' | 'creator' | 'general';
 }
 
 /**
@@ -107,6 +115,7 @@ export interface Agent {
 export interface Repository {
   id: string;
   name: string;
+  fullName?: string;
   path: string;
   defaultBranch: string;
   url?: string;

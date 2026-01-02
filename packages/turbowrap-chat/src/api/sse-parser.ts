@@ -20,6 +20,7 @@ export async function parseSSEStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let dataBuffer = ''; // Accumulates incomplete JSON data across chunks
   let currentEventType: SSEEventType = 'chunk';
 
   try {
@@ -41,13 +42,18 @@ export async function parseSSEStream(
 
         if (line.startsWith('event: ')) {
           currentEventType = line.slice(7).trim() as SSEEventType;
+          // Reset data buffer when new event starts
+          dataBuffer = '';
         } else if (line.startsWith('data: ')) {
+          // Accumulate data (could be split across multiple lines)
+          dataBuffer += line.slice(6);
           try {
-            const data = JSON.parse(line.slice(6));
+            const data = JSON.parse(dataBuffer);
             processSSEEvent(currentEventType, data, callbacks);
             currentEventType = 'chunk'; // Reset after processing
+            dataBuffer = ''; // Clear buffer after successful parse
           } catch {
-            // Incomplete JSON, continue accumulating
+            // Incomplete JSON, continue accumulating in dataBuffer
           }
         }
       }
@@ -67,28 +73,33 @@ function processSSEEvent(
 ): void {
   switch (eventType) {
     case 'start':
-      callbacks.onStart?.(data.session_id as string);
+      if (typeof data.session_id === 'string') {
+        callbacks.onStart?.(data.session_id);
+      }
       break;
 
     case 'chunk':
-      if (data.content) {
+      if (typeof data.content === 'string') {
         callbacks.onChunk?.(
-          data.content as string,
-          data.fullContent as string | undefined
+          data.content,
+          typeof data.fullContent === 'string' ? data.fullContent : undefined
         );
       }
       break;
 
     case 'thinking':
-      if (data.content) {
-        callbacks.onThinking?.(data.content as string);
+      if (typeof data.content === 'string') {
+        callbacks.onThinking?.(data.content);
       }
       break;
 
     case 'tool_start': {
+      if (typeof data.tool_name !== 'string' || typeof data.tool_id !== 'string') {
+        break;
+      }
       const tool: ToolState = {
-        name: data.tool_name as string,
-        id: data.tool_id as string,
+        name: data.tool_name,
+        id: data.tool_id,
         startedAt: Date.now(),
       };
       callbacks.onToolStart?.(tool);
@@ -96,17 +107,28 @@ function processSSEEvent(
     }
 
     case 'tool_end':
-      callbacks.onToolEnd?.(
-        data.tool_name as string,
-        data.tool_input as Record<string, unknown> | undefined
-      );
+      if (typeof data.tool_name === 'string') {
+        callbacks.onToolEnd?.(
+          data.tool_name,
+          typeof data.tool_input === 'object' && data.tool_input !== null
+            ? (data.tool_input as Record<string, unknown>)
+            : undefined
+        );
+      }
       break;
 
     case 'agent_start': {
+      if (
+        typeof data.agent_type !== 'string' ||
+        typeof data.agent_model !== 'string' ||
+        typeof data.description !== 'string'
+      ) {
+        break;
+      }
       const agent: AgentState = {
-        type: data.agent_type as string,
-        model: data.agent_model as string,
-        description: data.description as string,
+        type: data.agent_type,
+        model: data.agent_model,
+        description: data.description,
         startedAt: Date.now(),
       };
       callbacks.onAgentStart?.(agent);
@@ -114,36 +136,50 @@ function processSSEEvent(
     }
 
     case 'done':
-      callbacks.onDone?.(
-        data.message_id as string,
-        data.total_length as number
-      );
+      if (typeof data.message_id === 'string' && typeof data.total_length === 'number') {
+        callbacks.onDone?.(data.message_id, data.total_length);
+      }
       break;
 
     case 'title_updated':
-      callbacks.onTitleUpdate?.(data.title as string);
+      if (typeof data.title === 'string') {
+        callbacks.onTitleUpdate?.(data.title);
+      }
       break;
 
     case 'action':
-      if (data.type && data.target) {
+      if (
+        (data.type === 'navigate' || data.type === 'highlight') &&
+        typeof data.target === 'string'
+      ) {
         callbacks.onAction?.({
-          type: data.type as 'navigate' | 'highlight',
-          target: data.target as string,
+          type: data.type,
+          target: data.target,
         });
       }
       break;
 
     case 'usage':
-      callbacks.onUsage?.({
-        inputTokens: data.input_tokens as number,
-        outputTokens: data.output_tokens as number,
-        cacheReadInputTokens: data.cache_read_input_tokens as number | undefined,
-        cacheCreationInputTokens: data.cache_creation_input_tokens as number | undefined,
-      });
+      if (typeof data.input_tokens === 'number' && typeof data.output_tokens === 'number') {
+        callbacks.onUsage?.({
+          inputTokens: data.input_tokens,
+          outputTokens: data.output_tokens,
+          cacheReadInputTokens:
+            typeof data.cache_read_input_tokens === 'number'
+              ? data.cache_read_input_tokens
+              : undefined,
+          cacheCreationInputTokens:
+            typeof data.cache_creation_input_tokens === 'number'
+              ? data.cache_creation_input_tokens
+              : undefined,
+        });
+      }
       break;
 
     case 'error':
-      callbacks.onError?.(new Error(data.error as string));
+      if (typeof data.error === 'string') {
+        callbacks.onError?.(new Error(data.error));
+      }
       break;
 
     case 'system':

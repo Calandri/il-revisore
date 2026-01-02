@@ -68,6 +68,7 @@ class Operation(Base):
         Index("idx_operations_started", "started_at"),
         Index("idx_operations_type_status", "operation_type", "status"),
         Index("idx_operations_parent_session", "parent_session_id"),
+        {"extend_existing": True},
     )
 
     @property

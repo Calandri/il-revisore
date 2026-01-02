@@ -36,6 +36,7 @@ class Task(Base, SoftDeleteMixin):
     __table_args__ = (
         Index("idx_tasks_repository", "repository_id"),
         Index("idx_tasks_status", "status"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -62,7 +63,10 @@ class AgentRun(Base):
     # Relationships
     task = relationship("Task", back_populates="agent_runs")
 
-    __table_args__ = (Index("idx_agent_runs_task", "task_id"),)
+    __table_args__ = (
+        Index("idx_agent_runs_task", "task_id"),
+        {"extend_existing": True},
+    )
 
     def __repr__(self) -> str:
         return f"<AgentRun {self.agent_type}/{self.agent_name}>"

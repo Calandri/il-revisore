@@ -76,6 +76,7 @@ class TestSuite(Base, SoftDeleteMixin):
         Index("idx_test_suites_repository", "repository_id"),
         Index("idx_test_suites_framework", "framework"),
         Index("idx_test_suites_type", "type"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -155,6 +156,7 @@ class TestRun(Base):
         Index("idx_test_runs_repository", "repository_id"),
         Index("idx_test_runs_status", "status"),
         Index("idx_test_runs_created", "created_at"),
+        {"extend_existing": True},
     )
 
     @property
@@ -223,6 +225,7 @@ class TestCase(Base):
         Index("idx_test_cases_run", "run_id"),
         Index("idx_test_cases_status", "status"),
         Index("idx_test_cases_file", "file"),
+        {"extend_existing": True},
     )
 
     @property

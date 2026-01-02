@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react';
 import { useChatStore } from '../store';
 import { selectAllSessions, selectActiveSession, selectSecondarySession } from '../store/selectors';
 import { useChatClient } from './use-chat-client';
+import { useStreaming } from './use-streaming';
 import type { Session, CreateSessionOptions, UpdateSessionOptions } from '../types';
 
 export interface UseSessionsReturn {
@@ -39,6 +40,7 @@ export interface UseSessionsReturn {
  */
 export function useSessions(): UseSessionsReturn {
   const client = useChatClient();
+  const streaming = useStreaming();
   const [isLoading, setIsLoading] = useState(false);
 
   const sessions = useChatStore(selectAllSessions);
@@ -75,6 +77,12 @@ export function useSessions(): UseSessionsReturn {
   const selectSession = useCallback(async (sessionId: string): Promise<void> => {
     setIsLoading(true);
     try {
+      // Abort any active stream for the current session before switching
+      const currentSessionId = useChatStore.getState().activeSessionId;
+      if (currentSessionId && streaming.isStreaming(currentSessionId)) {
+        streaming.abort(currentSessionId);
+      }
+
       // Set as active
       setActiveSession(sessionId);
 
@@ -90,7 +98,7 @@ export function useSessions(): UseSessionsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [client, setActiveSession, setMessages]);
+  }, [client, streaming, setActiveSession, setMessages]);
 
   const updateSession = useCallback(async (
     sessionId: string,

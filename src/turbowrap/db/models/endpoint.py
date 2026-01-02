@@ -78,6 +78,7 @@ class Endpoint(Base):
         Index("idx_endpoints_auth", "requires_auth"),
         Index("idx_endpoints_visibility", "visibility"),
         Index("idx_endpoints_path", "path"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

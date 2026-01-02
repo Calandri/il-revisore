@@ -82,6 +82,7 @@ class DatabaseConnection(Base, SoftDeleteMixin):
         Index("idx_database_connections_type", "db_type"),
         Index("idx_database_connections_favorite", "is_favorite"),
         Index("idx_database_connections_name", "name"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -126,6 +127,7 @@ class RepositoryDatabaseConnection(Base):
         Index("idx_repo_db_conn_repo", "repository_id"),
         Index("idx_repo_db_conn_db", "database_connection_id"),
         UniqueConstraint("repository_id", "database_connection_id", name="uq_repo_db_connection"),
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:

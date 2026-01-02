@@ -2,7 +2,7 @@
  * Hook for SSE streaming management
  */
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { useChatStore } from '../store';
 import { useChatClient } from './use-chat-client';
 import type { Message, ToolState, AgentState } from '../types';
@@ -43,6 +43,13 @@ export function useStreaming(): StreamingHandler {
     content: string,
     modelOverride?: string
   ): Promise<void> => {
+    // Check if already streaming for this session - queue as pending instead
+    const currentStreamState = useChatStore.getState().streamState.get(sessionId);
+    if (currentStreamState?.isStreaming) {
+      setPendingMessage(sessionId, content);
+      return;
+    }
+
     // Create abort controller
     const controller = new AbortController();
     abortControllers.current.set(sessionId, controller);
@@ -167,6 +174,16 @@ export function useStreaming(): StreamingHandler {
 
   const isStreaming = useCallback((sessionId: string): boolean => {
     return useChatStore.getState().streamState.get(sessionId)?.isStreaming ?? false;
+  }, []);
+
+  // Cleanup: abort all active streams on unmount
+  useEffect(() => {
+    return () => {
+      abortControllers.current.forEach((controller) => {
+        controller.abort();
+      });
+      abortControllers.current.clear();
+    };
   }, []);
 
   return { sendMessage, abort, isStreaming };

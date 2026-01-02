@@ -48,9 +48,20 @@ export class ChatAPIClient {
     };
 
     if (this.config.getAuthToken) {
-      const token = await this.config.getAuthToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      try {
+        const token = await this.config.getAuthToken();
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+      } catch (error) {
+        // Log the error but continue without auth header
+        // This allows requests to proceed even if token retrieval fails
+        console.error('Failed to get auth token:', error);
+        this.config.onError?.(
+          error instanceof Error
+            ? error
+            : new Error('Failed to get auth token')
+        );
       }
     }
 
