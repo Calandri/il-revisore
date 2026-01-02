@@ -154,6 +154,8 @@
     border-radius: 0.5rem;
     background: #1e293b;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-x: auto;
+    max-width: 100%;
 }
 
 .chat-message-content pre code {
