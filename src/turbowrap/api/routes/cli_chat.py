@@ -635,6 +635,7 @@ async def send_message(
 
     async def event_generator() -> AsyncGenerator[dict[str, Any], None]:
         """Generate SSE events for streaming response."""
+        nonlocal session_claude_session_id  # Allow modification of outer scope variable
         manager = get_process_manager()
         loader = get_agent_loader()
 
@@ -716,27 +717,19 @@ async def send_message(
                     )
 
                     # Save claude_session_id to DB for persistence across process restarts
+                    # Use existing db session instead of creating a new one to avoid
+                    # transaction isolation issues
                     if (
                         proc.claude_session_id
                         and proc.claude_session_id != session_claude_session_id
                     ):
-                        from ...db.session import get_session_local
-
-                        save_db = get_session_local()()
-                        try:
-                            db_session = (
-                                save_db.query(CLIChatSession)
-                                .filter(CLIChatSession.id == session_id)
-                                .first()
-                            )
-                            if db_session:
-                                db_session.claude_session_id = proc.claude_session_id
-                                save_db.commit()
-                                logger.info(
-                                    f"[SESSION] Saved claude_session_id to DB: {proc.claude_session_id}"
-                                )
-                        finally:
-                            save_db.close()
+                        session.claude_session_id = proc.claude_session_id  # type: ignore[assignment]
+                        db.commit()
+                        # Update local variable so later comparisons work correctly
+                        session_claude_session_id = proc.claude_session_id
+                        logger.info(
+                            f"[SESSION] Saved claude_session_id to DB: {proc.claude_session_id}"
+                        )
                 else:
                     proc = await manager.spawn_gemini(
                         session_id=session_id,
