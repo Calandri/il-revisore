@@ -1770,6 +1770,46 @@ Contesto: ${contextStr}`;
         },
 
         /**
+         * Get short model name for display
+         * @param {string} model - Full model name
+         * @returns {string} Short name
+         */
+        getModelShortName(model) {
+            if (!model) return 'default';
+            // Claude models
+            if (model.includes('opus')) return 'Opus';
+            if (model.includes('sonnet')) return 'Sonnet';
+            if (model.includes('haiku')) return 'Haiku';
+            // Gemini models
+            if (model.includes('pro')) return 'Pro';
+            if (model.includes('flash')) return 'Flash';
+            // Grok models
+            if (model.includes('grok')) return 'Grok';
+            // Fallback: extract meaningful part
+            return model.split('-').slice(1, 2).join(' ') || model;
+        },
+
+        /**
+         * Format context usage as "XK / 200K" or percentage
+         * @param {number} tokensIn - Total input tokens used
+         * @param {string} cliType - 'claude' or 'gemini'
+         * @returns {string} Formatted context usage
+         */
+        formatContextUsage(tokensIn, cliType) {
+            // Context limits by CLI type
+            const contextLimit = cliType === 'gemini' ? 1000000 : 200000;  // Gemini 1M, Claude 200K
+            const usedK = Math.round(tokensIn / 1000);
+            const limitK = Math.round(contextLimit / 1000);
+            const percentage = Math.round((tokensIn / contextLimit) * 100);
+
+            // Show different format based on usage
+            if (usedK < 1) {
+                return `<1K / ${limitK}K`;
+            }
+            return `${usedK}K / ${limitK}K (${percentage}%)`;
+        },
+
+        /**
          * Format message content (full markdown support)
          * @param {string} content - Message content
          * @param {string} role - Message role ('user' or 'assistant')

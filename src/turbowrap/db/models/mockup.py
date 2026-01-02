@@ -87,7 +87,12 @@ class Mockup(Base, SoftDeleteMixin):
     # Relationships
     project = relationship("MockupProject", back_populates="mockups")
     parent_mockup = relationship("Mockup", remote_side="Mockup.id", backref="versions")
-    chat_session = relationship("CLIChatSession", backref="mockups")
+    # Specify foreign_keys to avoid ambiguity with CLIChatSession.mockup_id
+    chat_session = relationship(
+        "CLIChatSession",
+        foreign_keys=[chat_session_id],
+        backref="created_mockups",
+    )
 
     __table_args__ = (
         Index("idx_mockups_project", "project_id"),
