@@ -7,6 +7,7 @@ Supporta multi-chat parallele, agenti custom, MCP servers.
 import asyncio
 import json
 import logging
+import time
 import traceback
 from collections.abc import AsyncGenerator
 from datetime import datetime
@@ -700,6 +701,11 @@ async def send_message(
             full_content: list[str] = []
             system_events: list[dict[str, Any]] = []
 
+            # Incremental save tracking
+            assistant_message: CLIChatMessage | None = None  # DB record (created on first save)
+            last_save_time = time.time()  # Track when we last saved
+            SAVE_INTERVAL_SECONDS = 5  # Save every 5 seconds
+
             async for line in manager.send_message(session_id, message_to_send):
                 line = line.strip()
                 if not line:
@@ -749,6 +755,35 @@ async def send_message(
 
                     if content:
                         full_content.append(content)
+
+                        # Incremental save logic: save every SAVE_INTERVAL_SECONDS
+                        current_time = time.time()
+                        if current_time - last_save_time >= SAVE_INTERVAL_SECONDS:
+                            try:
+                                if assistant_message is None:
+                                    # First save: Create message record
+                                    assistant_message = CLIChatMessage(
+                                        session_id=session_id,
+                                        role="assistant",
+                                        content="".join(full_content),  # Current accumulated content
+                                        model_used=session_model,
+                                        agent_used=session_agent_name,
+                                    )
+                                    db.add(assistant_message)
+                                    db.flush()  # Get ID without full commit
+                                    logger.info(f"[INCREMENTAL] Created assistant message for session {session_id}")
+                                else:
+                                    # Subsequent saves: Update existing message
+                                    assistant_message.content = "".join(full_content)
+                                    logger.debug(f"[INCREMENTAL] Updated message {assistant_message.id}: {len(full_content)} chars")
+
+                                db.commit()  # Persist incremental progress
+                                last_save_time = current_time
+                            except Exception as e:
+                                logger.error(f"[INCREMENTAL] Save failed: {e}")
+                                db.rollback()
+                                # Continue streaming - will retry next interval
+
                         yield {
                             "event": "chunk",
                             "data": json.dumps({"content": content}),
@@ -789,14 +824,21 @@ async def send_message(
                 else:
                     logger.warning("[TITLE] Title request was added but no title found in response")
 
-            assistant_message = CLIChatMessage(
-                session_id=session_id,
-                role="assistant",
-                content=response_content,  # Use cleaned content (without JSON)
-                model_used=session_model,
-                agent_used=session_agent_name,
-            )
-            db.add(assistant_message)
+            if assistant_message is None:
+                # Edge case: Stream completed before 5 seconds (no incremental save)
+                assistant_message = CLIChatMessage(
+                    session_id=session_id,
+                    role="assistant",
+                    content=response_content,  # Use cleaned content (without JSON)
+                    model_used=session_model,
+                    agent_used=session_agent_name,
+                )
+                db.add(assistant_message)
+                logger.info(f"[FINAL] Created assistant message (no incremental saves)")
+            else:
+                # Update existing message with cleaned content (actions/title removed)
+                assistant_message.content = response_content
+                logger.info(f"[FINAL] Updated message {assistant_message.id} with cleaned content")
 
             # Update session stats
             session.total_messages = cast(int, session.total_messages) + 2  # type: ignore[assignment]
