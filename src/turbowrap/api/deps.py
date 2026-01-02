@@ -244,20 +244,19 @@ def require_repo_access(
 def get_accessible_repo_ids(
     current_user: dict[str, Any] = Depends(require_auth),
     db: Session = Depends(get_db),
-) -> list[str]:
+) -> list[str] | None:
     """
     Get list of repository IDs the current user can access.
 
-    - Admins can access all repositories
+    - Admins can access all repositories (returns None = no filtering)
     - Coders and Mockuppers can only access assigned repositories
 
     Returns:
-        List of repository UUID strings
+        None for admins (no filtering needed), list of repo IDs for others
     """
-    # Admins see all repos
+    # Admins see all repos - return None to signal "no filtering"
     if current_user.get("role") == UserRole.ADMIN.value:
-        repos = db.query(Repository.id).filter(Repository.deleted_at.is_(None)).all()
-        return [str(r.id) for r in repos]
+        return None
 
     # Others see only assigned repos
     user_id = current_user.get("user_id")
