@@ -73,9 +73,11 @@ function chatSidebar() {
         agents: [],
         loading: false,
         creating: false,
-        streaming: false,
+        streaming: false,  // Legacy: true if ANY stream is active
         streamContent: '',
         streamContentBySession: {}, // Keep separate content per sessionId
+        streamingBySession: {},     // Track streaming state per sessionId
+        pendingMessageBySession: {}, // Queued messages per sessionId
         inputMessage: '',
         showSettings: false,
         showModelDropdown: false,
@@ -107,6 +109,17 @@ function chatSidebar() {
         activeTooltip: null,    // Active tooltip in toolbar
         tooltipText: '',        // Text for fixed tooltip
         tooltipPosition: { top: 0, left: 0 }, // Position for fixed tooltip
+        // Dual chat state
+        dualChatEnabled: false,
+        secondarySession: null,
+        secondaryMessages: [],
+        streamContentSecondary: '',
+        inputMessageSecondary: '',
+        activePane: 'left',     // 'left' or 'right'
+        showTabContextMenu: false,
+        contextMenuSession: null,
+        contextMenuX: 0,
+        contextMenuY: 0,
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -391,6 +404,7 @@ Contesto: ${contextStr}`;
                     // Initialize empty stream content for this session
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
+                        this.streamingBySession[sessionId] = true;  // Track per-session streaming
                     }
                     // Only update UI flags if it's the active session
                     if (isActiveSession) {
@@ -438,19 +452,23 @@ Contesto: ${contextStr}`;
                         this.streaming = false;
                     }
 
-                    // Clear accumulated content for this session after saving
+                    // Clear accumulated content and streaming state for this session
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
+                        this.streamingBySession[sessionId] = false;
                     }
 
-                    // Check for queued message (ACCODA functionality) - only if active session
-                    if (isActiveSession && this.pendingMessage) {
-                        const queuedMsg = this.pendingMessage;
-                        this.pendingMessage = null;
-                        console.log('[chatSidebar] Sending queued message:', queuedMsg.substring(0, 50));
+                    // Check for queued message for THIS session (per-session queue)
+                    const queuedMsg = this.pendingMessageBySession[sessionId];
+                    if (queuedMsg) {
+                        delete this.pendingMessageBySession[sessionId];
+                        console.log('[chatSidebar] Sending queued message for session:', sessionId, queuedMsg.substring(0, 50));
                         setTimeout(() => {
-                            this.inputMessage = queuedMsg;
-                            this.sendMessage();
+                            // Only auto-send if this is still the active session
+                            if (this.activeSession?.id === sessionId) {
+                                this.inputMessage = queuedMsg;
+                                this.sendMessage();
+                            }
                         }, 100);
                     }
                     break;
@@ -473,9 +491,10 @@ Contesto: ${contextStr}`;
                         this.showToast('Errore: ' + error, 'error');
                         this.streaming = false;
                     }
-                    // Clear stream content for this session on error
+                    // Clear stream content and streaming state for this session on error
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
+                        this.streamingBySession[sessionId] = false;
                     }
                     break;
 
@@ -495,14 +514,19 @@ Contesto: ${contextStr}`;
                         this.streamContent = '';
                         this.streaming = false;
                     }
-                    // Clear accumulated content for this session
+                    // Clear accumulated content and streaming state for this session
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
+                        this.streamingBySession[sessionId] = false;
                     }
                     break;
 
                 case 'STREAM_END':
                     console.log('[chatSidebar] Worker: stream ended for session:', sessionId);
+                    // Clear streaming state for this session
+                    if (sessionId) {
+                        this.streamingBySession[sessionId] = false;
+                    }
                     // Only update UI if it's the active session
                     if (isActiveSession) {
                         this.streaming = false;
@@ -526,6 +550,11 @@ Contesto: ${contextStr}`;
                         this.maxStreamsReached = activeStreams.length >= 10;
                         console.log(`[chatSidebar] Active streams: ${this.activeStreamCount}/10${this.maxStreamsReached ? ' (LIMIT REACHED)' : ''}`);
 
+                        // Update per-session streaming state for all active streams
+                        activeStreams.forEach(streamSessionId => {
+                            this.streamingBySession[streamSessionId] = true;
+                        });
+
                         // Show warning if limit is reached
                         if (this.maxStreamsReached) {
                             console.warn('[chatSidebar] Maximum concurrent streams reached (10)');
@@ -535,6 +564,7 @@ Contesto: ${contextStr}`;
                     if (state && sessionId === this.activeSession?.id) {
                         if (state.streaming) {
                             this.streaming = true;
+                            this.streamingBySession[sessionId] = true;
                             this.streamContent = state.streamContent || '';
                             this.streamContentBySession[sessionId] = state.streamContent || '';
                             this.systemInfo = state.systemInfo || [];
@@ -756,8 +786,9 @@ Contesto: ${contextStr}`;
             this.showSettings = false;
             this.branches = [];
 
-            // Load the new session's accumulated stream content (if any)
+            // Load the new session's accumulated stream content and streaming state
             this.streamContent = this.streamContentBySession[session.id] || '';
+            this.streaming = !!this.streamingBySession[session.id];  // Update streaming flag for new session
 
             localStorage.setItem('chatActiveSessionId', session.id);
 
@@ -771,6 +802,156 @@ Contesto: ${contextStr}`;
                 if (session.repository_id) await this.loadBranches();
             } catch (error) {
                 TurboWrapError.handle('Load Chat Session', error, { sessionId: session?.id });
+            }
+        },
+
+        /**
+         * Toggle dual chat mode (only in full/page modes)
+         */
+        toggleDualChat() {
+            if (this.chatMode === 'third' || this.chatMode === 'hidden') {
+                this.showToast('Dual chat disponibile solo in full/page', 'warning');
+                return;
+            }
+            this.dualChatEnabled = !this.dualChatEnabled;
+            if (!this.dualChatEnabled) {
+                this.secondarySession = null;
+                this.secondaryMessages = [];
+                this.streamContentSecondary = '';
+            }
+            localStorage.setItem('dualChatEnabled', this.dualChatEnabled);
+        },
+
+        /**
+         * Show context menu on tab right-click
+         */
+        showContextMenu(event, session) {
+            event.preventDefault();
+            if (!this.dualChatEnabled) return;
+            this.contextMenuSession = session;
+            this.contextMenuX = event.clientX;
+            this.contextMenuY = event.clientY;
+            this.showTabContextMenu = true;
+        },
+
+        /**
+         * Select session in a specific pane (left or right)
+         */
+        async selectSessionInPane(session, pane) {
+            this.showTabContextMenu = false;
+            if (pane === 'left') {
+                await this.selectSession(session);
+            } else {
+                await this.selectSecondarySession(session);
+            }
+        },
+
+        /**
+         * Select a session for the secondary (right) pane
+         */
+        async selectSecondarySession(session) {
+            this.secondarySession = session;
+            this.secondaryMessages = [];
+            this.streamContentSecondary = this.streamContentBySession[session.id] || '';
+            localStorage.setItem('chatSecondarySessionId', session.id);
+
+            try {
+                const res = await fetch(`/api/cli-chat/sessions/${session.id}/messages`);
+                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+                this.secondaryMessages = await res.json();
+                this.$nextTick(() => this.scrollToBottomSecondary());
+            } catch (error) {
+                TurboWrapError.handle('Load Secondary Session', error, { sessionId: session?.id });
+            }
+        },
+
+        /**
+         * Scroll secondary pane to bottom
+         */
+        scrollToBottomSecondary() {
+            const container = document.getElementById('chat-messages-secondary');
+            if (container) container.scrollTop = container.scrollHeight;
+        },
+
+        /**
+         * Send message to secondary session (simplified, uses direct fetch)
+         */
+        async sendMessageSecondary() {
+            if (!this.inputMessageSecondary.trim() || !this.secondarySession) return;
+
+            const content = this.inputMessageSecondary.trim();
+            this.inputMessageSecondary = '';
+
+            // Add user message immediately
+            const userMsg = {
+                id: 'temp-secondary-' + Date.now(),
+                role: 'user',
+                content: content,
+                created_at: new Date().toISOString()
+            };
+            this.secondaryMessages.push(userMsg);
+            this.$nextTick(() => this.scrollToBottomSecondary());
+
+            // Use SharedWorker if available
+            if (this.useWorker && chatWorkerPort) {
+                console.log('[chatSidebar] Sending secondary message via SharedWorker');
+                chatWorkerPort.postMessage({
+                    type: 'SEND_MESSAGE',
+                    sessionId: this.secondarySession.id,
+                    content: content,
+                    modelOverride: null,
+                    userMessage: userMsg
+                });
+                return;
+            }
+
+            // Fallback: direct fetch
+            try {
+                const res = await fetch(`/api/cli-chat/sessions/${this.secondarySession.id}/messages/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content })
+                });
+
+                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+
+                const reader = res.body?.getReader();
+                const decoder = new TextDecoder();
+                let fullContent = '';
+
+                while (reader) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.type === 'chunk' && data.content) {
+                                    fullContent += data.content;
+                                    this.streamContentSecondary = fullContent;
+                                }
+                            } catch (e) { /* ignore parse errors */ }
+                        }
+                    }
+                }
+
+                // Add assistant message
+                if (fullContent) {
+                    this.secondaryMessages.push({
+                        id: 'temp-assistant-secondary-' + Date.now(),
+                        role: 'assistant',
+                        content: fullContent,
+                        created_at: new Date().toISOString()
+                    });
+                    this.streamContentSecondary = '';
+                    this.$nextTick(() => this.scrollToBottomSecondary());
+                }
+            } catch (error) {
+                TurboWrapError.handle('Send Secondary Message', error);
             }
         },
 
@@ -923,8 +1104,17 @@ Contesto: ${contextStr}`;
         },
 
         /**
+         * Check if the current active session is streaming
+         * @returns {boolean}
+         */
+        isCurrentSessionStreaming() {
+            if (!this.activeSession?.id) return false;
+            return !!this.streamingBySession[this.activeSession.id];
+        },
+
+        /**
          * Handle Enter key in textarea
-         * - ENTER alone: send message
+         * - ENTER alone: send or queue message
          * - CTRL+ENTER or SHIFT+ENTER: insert new line
          */
         handleEnterKey(event) {
@@ -945,9 +1135,9 @@ Contesto: ${contextStr}`;
                     textarea.style.height = textarea.scrollHeight + 'px';
                 });
             } else {
-                // Send message
+                // Send or queue message
                 event.preventDefault();
-                if (this.inputMessage.trim() && !this.streaming) {
+                if (this.inputMessage.trim()) {
                     this.sendMessage();
                 }
             }
@@ -956,9 +1146,22 @@ Contesto: ${contextStr}`;
         /**
          * Send a message and stream response via SSE
          * Uses SharedWorker if available, falls back to direct fetch
+         * If current session is streaming, queues the message for later
          */
         async sendMessage() {
-            if (!this.inputMessage.trim() || !this.activeSession || this.streaming) return;
+            if (!this.inputMessage.trim() || !this.activeSession) return;
+
+            const sessionId = this.activeSession.id;
+
+            // If this session is already streaming, QUEUE the message instead of blocking
+            if (this.isCurrentSessionStreaming()) {
+                const msgToQueue = this.inputMessage.trim();
+                this.pendingMessageBySession[sessionId] = msgToQueue;
+                this.inputMessage = '';
+                this.showToast('Messaggio in coda - sarà inviato al termine', 'info');
+                console.log('[chatSidebar] Message queued for session:', sessionId);
+                return;
+            }
 
             let content = this.inputMessage.trim();
             this.inputMessage = '';
@@ -985,6 +1188,7 @@ Contesto: ${contextStr}`;
             }
 
             this.streaming = true;
+            this.streamingBySession[sessionId] = true;  // Track per-session
             this.streamContent = '';
             this.systemInfo = [];  // Reset system info for new message
 

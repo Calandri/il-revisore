@@ -43,9 +43,12 @@
         <div class="flex-1 flex items-center overflow-x-auto scrollbar-hide gap-0.5 px-1 min-w-0">
             <template x-for="session in sessions" :key="session.id">
                 <button @click="selectSession(session)"
-                        :class="activeSession?.id === session.id
-                            ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'"
+                        @contextmenu="showContextMenu($event, session)"
+                        :class="{
+                            'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm': activeSession?.id === session.id,
+                            'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300': dualChatEnabled && secondarySession?.id === session.id,
+                            'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700': activeSession?.id !== session.id && (!dualChatEnabled || secondarySession?.id !== session.id)
+                        }"
                         class="h-6 flex items-center gap-1 px-2 rounded text-xs font-medium whitespace-nowrap transition-colors shrink-0">
                     <span :class="session.cli_type === 'claude' ? 'text-orange-500' : 'text-blue-500'"
                           class="font-bold text-[10px]"
@@ -57,6 +60,40 @@
                 </button>
             </template>
         </div>
+
+        <!-- Tab Context Menu (for dual-chat) -->
+        <div x-show="showTabContextMenu"
+             x-cloak
+             @click.away="showTabContextMenu = false"
+             :style="`left: ${contextMenuX}px; top: ${contextMenuY}px`"
+             class="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 min-w-[140px]">
+            <button @click="selectSessionInPane(contextMenuSession, 'left')"
+                    class="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                </svg>
+                Apri a sinistra
+            </button>
+            <button @click="selectSessionInPane(contextMenuSession, 'right')"
+                    class="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+                </svg>
+                Apri a destra
+            </button>
+        </div>
+
+        <!-- Dual Chat Toggle Button -->
+        <button @click="toggleDualChat()"
+                x-show="chatMode === 'full' || chatMode === 'page'"
+                x-cloak
+                :class="dualChatEnabled ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'"
+                class="h-8 w-8 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shrink-0"
+                title="Dual chat (affianca due chat)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/>
+            </svg>
+        </button>
 
         <!-- New Chat Button -->
         <div class="relative shrink-0">
@@ -285,8 +322,8 @@
     <!-- Main Content Area (Chat + Toolbar) -->
     <div class="flex-1 flex overflow-hidden relative min-h-0">
 
-        <!-- Chat Area -->
-        <div class="flex-1 flex flex-col overflow-hidden min-h-0">
+        <!-- Chat Area (Single Mode) -->
+        <div x-show="!dualChatEnabled" class="flex-1 flex flex-col overflow-hidden min-h-0">
             <!-- Messages -->
             <div class="flex-1 overflow-y-auto space-y-3 bg-gray-50 dark:bg-gray-900"
                  :class="chatMode === 'third' ? 'p-2' : 'p-4 space-y-4'"
@@ -430,35 +467,187 @@
             <!-- Input Area -->
             <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pb-safe"
                  :class="chatMode === 'third' ? 'p-2' : 'p-3'">
+                <!-- Queued message indicator -->
+                <div x-show="activeSession && pendingMessageBySession[activeSession.id]"
+                     class="mb-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span class="truncate flex-1">In coda: <span class="font-medium" x-text="pendingMessageBySession[activeSession.id]?.substring(0, 30) + (pendingMessageBySession[activeSession.id]?.length > 30 ? '...' : '')"></span></span>
+                    <button @click="delete pendingMessageBySession[activeSession.id]" class="text-amber-500 hover:text-amber-700 dark:hover:text-amber-200">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
                 <form @submit.prevent="sendMessage()" class="flex items-end gap-2">
                     <div class="flex-1 relative">
                         <textarea x-model="inputMessage"
                                   x-ref="messageInput"
                                   @keydown.enter="handleEnterKey($event)"
-                                  placeholder="Scrivi un messaggio..."
+                                  :placeholder="isCurrentSessionStreaming() ? 'Scrivi per mettere in coda...' : 'Scrivi un messaggio...'"
                                   rows="1"
                                   class="w-full resize-none rounded-xl border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-base md:text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder-gray-400"
                                   :class="chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'"
                                   :style="chatMode === 'third' ? 'min-height: 38px; max-height: 100px; font-size: 14px;' : 'min-height: 44px; max-height: 120px; font-size: 16px;'"
                                   @input="$el.style.height = (chatMode === 'third' ? '38px' : '44px'); $el.style.height = $el.scrollHeight + 'px'"></textarea>
                     </div>
-                    <button x-show="!streaming" type="submit" :disabled="!inputMessage.trim()"
+                    <!-- Send/Queue button (changes appearance based on streaming state) -->
+                    <button x-show="!isCurrentSessionStreaming()" type="submit" :disabled="!inputMessage.trim()"
                             :class="[
                                 inputMessage.trim() ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25' : 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed',
                                 chatMode === 'third' ? 'w-9 h-9' : 'w-11 h-11'
                             ]"
-                            class="rounded-xl text-white flex items-center justify-center transition-all shrink-0">
+                            class="rounded-xl text-white flex items-center justify-center transition-all shrink-0"
+                            title="Invia">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                         </svg>
                     </button>
-                    <button x-show="streaming" type="button" @click="stopStreaming()"
+                    <!-- Queue button (when streaming - orange to indicate queueing) -->
+                    <button x-show="isCurrentSessionStreaming() && inputMessage.trim()" type="submit"
+                            class="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/25 text-white flex items-center justify-center transition-all shrink-0"
+                            :class="chatMode === 'third' ? 'w-9 h-9' : 'w-11 h-11'"
+                            title="Metti in coda">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+                    <!-- Stop button -->
+                    <button x-show="isCurrentSessionStreaming()" type="button" @click="stopStreaming()"
                             class="rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 text-white flex items-center justify-center transition-all shrink-0"
                             :class="chatMode === 'third' ? 'w-9 h-9' : 'w-11 h-11'"
                             title="Interrompi">
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                     </button>
                 </form>
+            </div>
+        </div>
+
+        <!-- Chat Area (Dual Mode - Side by Side) -->
+        <div x-show="dualChatEnabled" x-cloak class="flex-1 flex min-h-0">
+            <!-- Left Pane -->
+            <div class="w-1/2 flex flex-col min-h-0 border-r border-gray-200 dark:border-gray-700"
+                 @click="activePane = 'left'"
+                 :class="activePane === 'left' ? 'ring-2 ring-inset ring-indigo-500' : ''">
+                <!-- Left Header -->
+                <div class="h-6 px-2 flex items-center justify-between bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400 truncate" x-text="activeSession?.display_name || 'Seleziona chat'"></span>
+                    <span x-show="activeSession" :class="activeSession?.cli_type === 'claude' ? 'text-orange-500' : 'text-blue-500'" class="text-[10px] font-bold" x-text="activeSession?.cli_type === 'claude' ? 'C' : 'G'"></span>
+                </div>
+                <!-- Left Messages -->
+                <div class="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50 dark:bg-gray-900" id="chat-messages-left">
+                    <template x-if="!activeSession">
+                        <div class="flex flex-col items-center justify-center h-full text-center text-gray-500">
+                            <p class="text-sm">Seleziona una chat</p>
+                            <p class="text-xs mt-1">Click destro su un tab → "Apri a sinistra"</p>
+                        </div>
+                    </template>
+                    <template x-if="activeSession">
+                        <template x-for="msg in messages" :key="msg.id">
+                            <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                                <div :class="msg.role === 'user'
+                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md px-3 py-2'
+                                        : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm px-3 py-2'"
+                                     class="max-w-[90%]">
+                                    <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content, msg.role)"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </template>
+                    <!-- Left Streaming -->
+                    <div x-show="activeSession && streaming" class="flex justify-start">
+                        <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm px-3 py-2 max-w-[90%]">
+                            <div x-show="streamContent" class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContent, 'assistant')"></div>
+                            <div class="flex items-center gap-1" :class="streamContent ? 'mt-2' : ''">
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Left Input -->
+                <div x-show="activeSession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 shrink-0">
+                    <form @submit.prevent="sendMessage()" class="flex items-end gap-2">
+                        <textarea x-model="inputMessage"
+                                  @keydown.enter="if(!$event.shiftKey) { $event.preventDefault(); sendMessage(); }"
+                                  placeholder="Messaggio..."
+                                  rows="1"
+                                  class="flex-1 resize-none rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                                  style="min-height: 38px; max-height: 80px;"
+                                  @input="$el.style.height = '38px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
+                        <button type="submit" :disabled="!inputMessage.trim() || streaming"
+                                :class="inputMessage.trim() && !streaming ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'"
+                                class="w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Pane -->
+            <div class="w-1/2 flex flex-col min-h-0"
+                 @click="activePane = 'right'"
+                 :class="activePane === 'right' ? 'ring-2 ring-inset ring-indigo-500' : ''">
+                <!-- Right Header -->
+                <div class="h-6 px-2 flex items-center justify-between bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-400 truncate" x-text="secondarySession?.display_name || 'Seleziona chat'"></span>
+                    <span x-show="secondarySession" :class="secondarySession?.cli_type === 'claude' ? 'text-orange-500' : 'text-blue-500'" class="text-[10px] font-bold" x-text="secondarySession?.cli_type === 'claude' ? 'C' : 'G'"></span>
+                </div>
+                <!-- Right Messages -->
+                <div class="flex-1 overflow-y-auto p-3 space-y-3 bg-gray-50 dark:bg-gray-900" id="chat-messages-secondary">
+                    <template x-if="!secondarySession">
+                        <div class="flex flex-col items-center justify-center h-full text-center text-gray-500">
+                            <p class="text-sm">Seleziona una chat</p>
+                            <p class="text-xs mt-1">Click destro su un tab → "Apri a destra"</p>
+                        </div>
+                    </template>
+                    <template x-if="secondarySession">
+                        <template x-for="msg in secondaryMessages" :key="msg.id">
+                            <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                                <div :class="msg.role === 'user'
+                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl rounded-tr-md px-3 py-2'
+                                        : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm px-3 py-2'"
+                                     class="max-w-[90%]">
+                                    <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content, msg.role)"></div>
+                                </div>
+                            </div>
+                        </template>
+                    </template>
+                    <!-- Right Streaming -->
+                    <div x-show="secondarySession && streamContentSecondary" class="flex justify-start">
+                        <div class="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl rounded-tl-md border border-gray-200 dark:border-gray-700 shadow-sm px-3 py-2 max-w-[90%]">
+                            <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(streamContentSecondary, 'assistant')"></div>
+                            <div class="flex items-center gap-1 mt-2">
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Right Input -->
+                <div x-show="secondarySession" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 shrink-0">
+                    <form @submit.prevent="sendMessageSecondary()" class="flex items-end gap-2">
+                        <textarea x-model="inputMessageSecondary"
+                                  @keydown.enter="if(!$event.shiftKey) { $event.preventDefault(); sendMessageSecondary(); }"
+                                  placeholder="Messaggio..."
+                                  rows="1"
+                                  class="flex-1 resize-none rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                                  style="min-height: 38px; max-height: 80px;"
+                                  @input="$el.style.height = '38px'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
+                        <button type="submit" :disabled="!inputMessageSecondary.trim()"
+                                :class="inputMessageSecondary.trim() ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed'"
+                                class="w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
 
