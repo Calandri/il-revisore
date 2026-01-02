@@ -48,9 +48,9 @@ RUN useradd -m -s /bin/bash appuser
 
 WORKDIR /app
 
-# Copy and install local packages first (turbowrap-errors)
+# Copy and install local packages first (turbowrap-errors, turbowrap-llm)
 COPY packages/ ./packages/
-RUN pip install --no-cache-dir ./packages/turbowrap-errors-py/
+RUN pip install --no-cache-dir ./packages/turbowrap-errors-py/ ./packages/turbowrap-llm/
 
 # Copy and install main dependencies (better layer caching)
 COPY pyproject.toml README.md ./
