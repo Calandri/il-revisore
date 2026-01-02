@@ -1941,6 +1941,10 @@ Contesto: ${contextStr}`;
                     const data = await response.json();
                     // Store parsed context info
                     this.activeSession.contextInfo = data;
+                    // Update model in session from context (more accurate than config)
+                    if (data.model) {
+                        this.activeSession.model = data.model;
+                    }
                     console.log('[chatSidebar] Context info loaded:', data);
                 }
             } catch (e) {
