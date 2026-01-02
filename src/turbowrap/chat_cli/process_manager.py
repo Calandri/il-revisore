@@ -539,7 +539,7 @@ Continue naturally from where we left off. The user's new message follows this c
         proc.process = new_process
         proc.status = SessionStatus.RUNNING
 
-        logger.info(
+        logger.debug(
             f"[CLAUDE] Respawned process PID={new_process.pid} "
             f"(claude_session={proc.claude_session_id}, force_new={force_new_session})"
         )
@@ -608,7 +608,7 @@ Continue naturally from where we left off. The user's new message follows this c
             )
         )
         if not process or process.returncode is not None or stdin_unusable:
-            logger.info(
+            logger.debug(
                 f"[CLAUDE] Process ended or stdin closed, respawning "
                 f"(returncode={process.returncode if process else None}, stdin_unusable={stdin_unusable}, "
                 f"force_new_session={_retry_with_new_session})"
@@ -623,16 +623,16 @@ Continue naturally from where we left off. The user's new message follows this c
 
         prompt_bytes = message.encode()
         try:
-            logger.info(f"[CLAUDE] Writing {len(prompt_bytes)} bytes to stdin")
+            logger.debug(f"[CLAUDE] Writing {len(prompt_bytes)} bytes to stdin")
             process.stdin.write(prompt_bytes)
             await process.stdin.drain()
             process.stdin.close()
             await process.stdin.wait_closed()
-            logger.info("[CLAUDE] Stdin closed (EOF sent)")
+            logger.debug("[CLAUDE] Stdin closed (EOF sent)")
         except (ConnectionResetError, RuntimeError) as e:
             # Handle closed transport errors - respawn and retry
             if "handler is closed" in str(e) or isinstance(e, ConnectionResetError):
-                logger.warning(f"[CLAUDE] Transport closed ({e}), respawning with --resume")
+                logger.debug(f"[CLAUDE] Transport closed ({e}), respawning with --resume")
                 await self._respawn_claude_with_resume(proc)
                 process = proc.process
                 if process is None or process.stdin is None:
@@ -641,7 +641,7 @@ Continue naturally from where we left off. The user's new message follows this c
                 await process.stdin.drain()
                 process.stdin.close()
                 await process.stdin.wait_closed()
-                logger.info("[CLAUDE] Stdin closed (EOF sent) after respawn")
+                logger.debug("[CLAUDE] Stdin closed (EOF sent) after respawn")
             else:
                 raise
         except Exception as e:
@@ -673,7 +673,7 @@ Continue naturally from where we left off. The user's new message follows this c
             raise
 
         await process.wait()
-        logger.info(
+        logger.debug(
             f"[CLAUDE] Process exited with code {process.returncode}, chunks_yielded={chunks_yielded}"
         )
 
