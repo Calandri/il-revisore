@@ -786,6 +786,11 @@ async def send_message(
                         logger.info(f"[STREAM] Unwrapped stream_event -> {event_type}")
 
                     if event_type == "system":
+                        subtype = event.get("subtype", "unknown")
+                        # Log all system events for debugging context usage
+                        logger.info(
+                            f"[STREAM] System event: subtype={subtype}, keys={list(event.keys())}"
+                        )
                         if event.get("subtype") == "init" and not is_first_message:
                             logger.debug("[STREAM] Skipping duplicate INIT event")
                             continue
@@ -795,6 +800,18 @@ async def send_message(
                             "data": json.dumps(event),
                         }
                         continue
+
+                    # Log usage/stats events if present
+                    if event_type in ("usage", "message_delta", "message_stop"):
+                        logger.info(
+                            f"[STREAM] Stats event: {event_type} -> {json.dumps(event)[:500]}"
+                        )
+                        # Forward usage info to frontend
+                        if "usage" in event:
+                            yield {
+                                "event": "usage",
+                                "data": json.dumps(event.get("usage", {})),
+                            }
 
                     # Extract content from different event types
                     content: str | None = None
@@ -884,6 +901,13 @@ async def send_message(
                     elif event_type == "result":
                         if "result" in event:
                             content = event["result"]
+                        # Check for usage info in result event
+                        if "usage" in event:
+                            logger.info(f"[STREAM] Result usage: {event['usage']}")
+                            yield {
+                                "event": "usage",
+                                "data": json.dumps(event["usage"]),
+                            }
 
                     elif event_type == "error":
                         # Error event from Claude CLI (process_manager.py)
@@ -901,6 +925,25 @@ async def send_message(
                             ),
                         }
                         # Continue processing in case there's more to come
+
+                    else:
+                        # Log unhandled event types to discover what Claude CLI sends
+                        if event_type not in (
+                            "content_block_delta",
+                            "content_block_start",
+                            "content_block_stop",
+                            "system",
+                            "stream_event",
+                            "result",
+                            "error",
+                            "usage",
+                            "message_delta",
+                            "message_stop",
+                        ):
+                            logger.info(
+                                f"[STREAM] Unknown event type: {event_type}, "
+                                f"data={json.dumps(event)[:300]}"
+                            )
 
                     if content:
                         full_content.append(content)
