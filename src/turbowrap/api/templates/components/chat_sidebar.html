@@ -354,7 +354,50 @@
                                     chatMode === 'third' ? 'px-3 py-2' : 'px-4 py-3'
                                  ]"
                                  class="max-w-[90%]">
-                                <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content, msg.role)"></div>
+                                <!-- If message has segments (with agents/tools), render them -->
+                                <template x-if="msg.segments && msg.segments.length > 0">
+                                    <div>
+                                        <template x-for="(segment, idx) in msg.segments" :key="idx">
+                                            <div>
+                                                <!-- Text segment -->
+                                                <template x-if="segment.type === 'text' && segment.content">
+                                                    <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(segment.content, 'assistant')"></div>
+                                                </template>
+                                                <!-- Tool segment -->
+                                                <template x-if="segment.type === 'tool'">
+                                                    <div class="flex flex-col items-center py-2 my-2">
+                                                        <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                            </svg>
+                                                            <span class="font-medium" x-text="segment.name"></span>
+                                                        </div>
+                                                        <div class="text-[11px] text-gray-400 dark:text-gray-500 italic mt-0.5 max-w-full truncate px-2"
+                                                             x-text="getToolDescription(segment)"></div>
+                                                    </div>
+                                                </template>
+                                                <!-- Agent segment (Task) -->
+                                                <template x-if="segment.type === 'agent'">
+                                                    <div class="flex flex-col items-center py-2 my-2">
+                                                        <div class="flex items-center gap-1.5 text-xs text-purple-500 dark:text-purple-400">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                            </svg>
+                                                            <span class="font-medium">Task</span>
+                                                        </div>
+                                                        <div class="text-[11px] text-purple-400 dark:text-purple-500 italic mt-0.5 max-w-full truncate px-2"
+                                                             x-text="segment.description || segment.agentType"></div>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                                <!-- Fallback: simple content rendering (no segments) -->
+                                <template x-if="!msg.segments || msg.segments.length === 0">
+                                    <div class="chat-message-content text-sm leading-relaxed" x-html="formatMessage(msg.content, msg.role)"></div>
+                                </template>
                                 <div :class="msg.role === 'user' ? 'text-white/60' : 'text-gray-400'" class="text-xs mt-2"
                                      x-text="new Date(msg.created_at).toLocaleTimeString('it-IT', {hour: '2-digit', minute: '2-digit'})"></div>
                             </div>

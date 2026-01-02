@@ -578,6 +578,10 @@ Contesto: ${contextStr}`;
                     console.log('[chatSidebar] Worker: stream done for session:', sessionId, 'messageId:', messageId);
                     // Save message with final content for this session
                     const finalContent = content || this.streamContentBySession[sessionId];
+                    // Get segments for this session (includes agents and tools inline)
+                    const finalSegments = this.contentSegmentsBySession[sessionId]
+                        ? [...this.contentSegmentsBySession[sessionId]]
+                        : null;
 
                     // Add to messages UI for active session
                     if (isActiveSession) {
@@ -585,6 +589,7 @@ Contesto: ${contextStr}`;
                             id: messageId,
                             role: 'assistant',
                             content: finalContent,
+                            segments: finalSegments,  // Include segments with agents/tools
                             created_at: new Date().toISOString()
                         });
                         this.streamContent = '';
@@ -601,6 +606,7 @@ Contesto: ${contextStr}`;
                             id: messageId,
                             role: 'assistant',
                             content: finalContent,
+                            segments: finalSegments,  // Include segments with agents/tools
                             created_at: new Date().toISOString()
                         });
                         this.streamContentSecondary = '';
