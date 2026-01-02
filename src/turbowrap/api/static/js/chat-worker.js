@@ -15,10 +15,95 @@ const activeStreams = new Map();  // sessionId -> { controller, reader }
 // State per session
 const sessionState = new Map();   // sessionId -> { streaming, streamContent, systemInfo }
 
+// Configuration for memory management
+const MAX_SESSIONS = 20;
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
+const HEARTBEAT_INTERVAL_MS = 30 * 1000;    // 30 seconds
+const CLEANUP_INTERVAL_MS = 60 * 1000;      // 1 minute
+
 // Debug logging
 function log(...args) {
     console.log('[ChatWorker]', ...args);
 }
+
+/**
+ * Broadcast message to all connected ports
+ * Improved with better dead port detection and logging
+ */
+function broadcast(message) {
+    const deadPorts = [];
+
+    for (let i = ports.length - 1; i >= 0; i--) {
+        try {
+            ports[i].postMessage(message);
+        } catch (e) {
+            console.warn('[Worker] Dead port detected during broadcast:', e.message);
+            deadPorts.push(i);
+        }
+    }
+
+    // Remove dead ports (already iterating in reverse, so indices stay valid)
+    deadPorts.forEach(idx => ports.splice(idx, 1));
+
+    if (deadPorts.length > 0) {
+        log(`Removed ${deadPorts.length} dead port(s), ${ports.length} remaining`);
+    }
+}
+
+/**
+ * Heartbeat to detect dead ports proactively
+ */
+function sendHeartbeat() {
+    for (let i = ports.length - 1; i >= 0; i--) {
+        try {
+            ports[i].postMessage({ type: 'PING', timestamp: Date.now() });
+        } catch (e) {
+            log('Removing dead port detected by heartbeat');
+            ports.splice(i, 1);
+        }
+    }
+}
+
+/**
+ * Cleanup old inactive sessions to prevent memory leaks
+ */
+function cleanupOldSessions() {
+    const now = Date.now();
+    const toDelete = [];
+
+    sessionState.forEach((state, sessionId) => {
+        // Never delete sessions with active streaming
+        if (state.streaming) return;
+
+        // Delete sessions inactive for more than 30 minutes
+        if (state.lastActivity && (now - state.lastActivity) > SESSION_TIMEOUT_MS) {
+            toDelete.push(sessionId);
+        }
+    });
+
+    // Delete old sessions
+    toDelete.forEach(id => {
+        sessionState.delete(id);
+        log('Cleaned up inactive session:', id);
+    });
+
+    // If still too many, evict the oldest non-streaming sessions
+    if (sessionState.size > MAX_SESSIONS) {
+        const sorted = [...sessionState.entries()]
+            .filter(([_, s]) => !s.streaming)  // Never evict active sessions
+            .sort((a, b) => (a[1].lastActivity || 0) - (b[1].lastActivity || 0));
+
+        const toRemove = sorted.slice(0, sessionState.size - MAX_SESSIONS);
+        toRemove.forEach(([id]) => {
+            sessionState.delete(id);
+            log('Evicted old session:', id);
+        });
+    }
+}
+
+// Start periodic heartbeat and cleanup
+setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+setInterval(cleanupOldSessions, CLEANUP_INTERVAL_MS);
 
 /**
  * Handle new page connection
@@ -27,6 +112,13 @@ self.onconnect = (e) => {
     const port = e.ports[0];
     ports.push(port);
     log('Page connected, total ports:', ports.length);
+
+    // Handle port message errors
+    port.onmessageerror = (err) => {
+        console.warn('[Worker] Port message error:', err);
+        const idx = ports.indexOf(port);
+        if (idx >= 0) ports.splice(idx, 1);
+    };
 
     port.onmessage = async (event) => {
         const { type, sessionId, content, modelOverride, userMessage } = event.data;
@@ -50,11 +142,14 @@ self.onconnect = (e) => {
                 // Clear buffered state for a session (e.g., when switching sessions)
                 sessionState.delete(sessionId);
                 break;
+
+            case 'PONG':
+                // Client responded to heartbeat - connection is alive
+                break;
         }
     };
 
-    // Note: onclose doesn't fire reliably in SharedWorker
-    // We handle dead ports in broadcast()
+    port.start();
 };
 
 /**
@@ -79,22 +174,6 @@ function sendStateSync(port, sessionId) {
 }
 
 /**
- * Broadcast message to all connected ports
- */
-function broadcast(message) {
-    // Filter out dead ports
-    for (let i = ports.length - 1; i >= 0; i--) {
-        try {
-            ports[i].postMessage(message);
-        } catch (e) {
-            // Port is dead, remove it
-            log('Removing dead port');
-            ports.splice(i, 1);
-        }
-    }
-}
-
-/**
  * Get or create session state
  */
 function getSessionState(sessionId) {
@@ -106,10 +185,14 @@ function getSessionState(sessionId) {
             activeTools: [],  // Currently running tools
             activeAgents: [],  // Currently running agents (Task tool)
             lastMessageId: null,
-            title: null
+            title: null,
+            lastActivity: Date.now()
         });
     }
-    return sessionState.get(sessionId);
+    const state = sessionState.get(sessionId);
+    // Update activity timestamp on access
+    state.lastActivity = Date.now();
+    return state;
 }
 
 /**
@@ -131,6 +214,7 @@ async function startStream(sessionId, content, userMessage, modelOverride = null
     state.streaming = true;
     state.streamContent = '';
     state.systemInfo = [];
+    state.hadError = false;
 
     // Notify all pages that stream started
     broadcast({
@@ -202,6 +286,7 @@ async function startStream(sessionId, content, userMessage, modelOverride = null
         }
 
     } catch (error) {
+        state.hadError = true;
         if (error.name === 'AbortError') {
             log('Stream aborted for:', sessionId);
             broadcast({
@@ -220,11 +305,31 @@ async function startStream(sessionId, content, userMessage, modelOverride = null
         activeStreams.delete(sessionId);
         state.streaming = false;
 
-        // Notify stream ended
+        // Issue 1 Fix: Send unified completion events to avoid race condition
+        // First send DONE if we have a messageId (for backwards compatibility)
+        if (state.lastMessageId) {
+            broadcast({
+                type: 'DONE',
+                sessionId,
+                messageId: state.lastMessageId,
+                content: state.streamContent
+            });
+        }
+
+        // Then send STREAM_END with full context
         broadcast({
             type: 'STREAM_END',
-            sessionId
+            sessionId,
+            messageId: state.lastMessageId || null,
+            finalContent: state.streamContent,
+            success: !state.hadError
         });
+
+        // Reset state after sending events
+        state.streamContent = '';
+        state.lastMessageId = null;
+        state.hadError = false;
+        state.lastActivity = Date.now();
     }
 }
 
@@ -321,16 +426,11 @@ function processEvent(sessionId, data, eventType = 'chunk') {
     }
 
     // Stream completion (message saved to DB)
+    // Issue 1 Fix: Store messageId but DON'T broadcast DONE here
+    // The DONE event will be sent in the finally block to avoid race condition
     if (data.message_id) {
         state.lastMessageId = data.message_id;
-        broadcast({
-            type: 'DONE',
-            sessionId,
-            messageId: data.message_id,
-            content: state.streamContent
-        });
-        // Clear stream content after completion
-        state.streamContent = '';
+        // Note: DONE broadcast moved to finally block in startStream()
     }
 
     // Total length (informational)
@@ -344,6 +444,7 @@ function processEvent(sessionId, data, eventType = 'chunk') {
 
     // Error
     if (data.error) {
+        state.hadError = true;
         broadcast({
             type: 'ERROR',
             sessionId,
@@ -375,6 +476,7 @@ function stopStream(sessionId) {
         const state = sessionState.get(sessionId);
         if (state) {
             state.streaming = false;
+            state.lastActivity = Date.now();
         }
     }
 }

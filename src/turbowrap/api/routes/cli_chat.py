@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
@@ -948,39 +949,62 @@ async def send_message(
                     if content:
                         full_content.append(content)
 
-                        # Incremental save logic: save every SAVE_INTERVAL_SECONDS
-                        current_time = time.time()
-                        if current_time - last_save_time >= SAVE_INTERVAL_SECONDS:
+                        # ISSUE 2 FIX: Save IMMEDIATELY on first chunk to prevent data loss
+                        if assistant_message is None:
                             try:
-                                if assistant_message is None:
-                                    # First save: Create message record
-                                    assistant_message = CLIChatMessage(
-                                        session_id=session_id,
-                                        role="assistant",
-                                        content="".join(
-                                            full_content
-                                        ),  # Current accumulated content
-                                        model_used=session_model,
-                                        agent_used=session_agent_name,
-                                    )
-                                    db.add(assistant_message)
-                                    db.flush()  # Get ID without full commit
-                                    logger.info(
-                                        f"[INCREMENTAL] Created assistant message for session {session_id}"
-                                    )
-                                else:
-                                    # Subsequent saves: Update existing message
-                                    assistant_message.content = "".join(full_content)
-                                    logger.debug(
-                                        f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars"
-                                    )
-
-                                db.commit()  # Persist incremental progress
-                                last_save_time = current_time
+                                assistant_message = CLIChatMessage(
+                                    session_id=session_id,
+                                    role="assistant",
+                                    content="".join(full_content),
+                                    model_used=session_model,
+                                    agent_used=session_agent_name,
+                                )
+                                db.add(assistant_message)
+                                db.commit()  # Commit IMMEDIATELY on first chunk
+                                db.refresh(assistant_message)
+                                last_save_time = time.time()
+                                logger.info(
+                                    f"[IMMEDIATE] Created assistant message on first chunk: {assistant_message.id}"
+                                )
                             except Exception as e:
-                                logger.error(f"[INCREMENTAL] Save failed: {e}")
+                                logger.error(f"[IMMEDIATE] First chunk save failed: {e}")
                                 db.rollback()
-                                # Continue streaming - will retry next interval
+                                # Continue streaming - will retry on next content
+
+                        # Incremental save logic: save every SAVE_INTERVAL_SECONDS
+                        elif time.time() - last_save_time >= SAVE_INTERVAL_SECONDS:
+                            # ISSUE 3 FIX: Retry with exponential backoff
+                            save_success = False
+                            for retry in range(3):
+                                try:
+                                    assistant_message.content = "".join(full_content)
+                                    db.commit()
+                                    last_save_time = time.time()
+                                    save_success = True
+                                    logger.debug(
+                                        f"[INCREMENTAL] Updated message {assistant_message.id}: "
+                                        f"{len(''.join(full_content))} chars"
+                                    )
+                                    break
+                                except Exception as e:
+                                    db.rollback()
+                                    if retry < 2:
+                                        delay = 0.1 * (2**retry)  # 100ms, 200ms, 400ms
+                                        logger.warning(
+                                            f"[INCREMENTAL] Save retry {retry + 1}/3: {e}. "
+                                            f"Waiting {delay}s..."
+                                        )
+                                        time.sleep(delay)
+                                    else:
+                                        logger.error(
+                                            f"[INCREMENTAL] Save failed after 3 retries: {e}"
+                                        )
+
+                            if not save_success:
+                                # Will retry at next interval
+                                logger.warning(
+                                    "[INCREMENTAL] Could not save, will retry next interval"
+                                )
 
                         yield {
                             "event": "chunk",
@@ -991,34 +1015,60 @@ async def send_message(
                     if line:
                         full_content.append(line + "\n")
 
-                        # Incremental save for raw text (same logic as JSON content)
-                        current_time = time.time()
-                        if current_time - last_save_time >= SAVE_INTERVAL_SECONDS:
+                        # ISSUE 2 FIX: Save IMMEDIATELY on first chunk (raw text)
+                        if assistant_message is None:
                             try:
-                                if assistant_message is None:
-                                    assistant_message = CLIChatMessage(
-                                        session_id=session_id,
-                                        role="assistant",
-                                        content="".join(full_content),
-                                        model_used=session_model,
-                                        agent_used=session_agent_name,
-                                    )
-                                    db.add(assistant_message)
-                                    db.flush()
-                                    logger.info(
-                                        f"[INCREMENTAL] Created assistant message for session {session_id}"
-                                    )
-                                else:
-                                    assistant_message.content = "".join(full_content)
-                                    logger.debug(
-                                        f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars"
-                                    )
-
-                                db.commit()
-                                last_save_time = current_time
+                                assistant_message = CLIChatMessage(
+                                    session_id=session_id,
+                                    role="assistant",
+                                    content="".join(full_content),
+                                    model_used=session_model,
+                                    agent_used=session_agent_name,
+                                )
+                                db.add(assistant_message)
+                                db.commit()  # Commit IMMEDIATELY
+                                db.refresh(assistant_message)
+                                last_save_time = time.time()
+                                logger.info(
+                                    f"[IMMEDIATE] Created assistant message on first chunk (raw): {assistant_message.id}"
+                                )
                             except Exception as e:
-                                logger.error(f"[INCREMENTAL] Save failed: {e}")
+                                logger.error(f"[IMMEDIATE] First chunk save failed (raw): {e}")
                                 db.rollback()
+
+                        # Incremental save for raw text with retry
+                        elif time.time() - last_save_time >= SAVE_INTERVAL_SECONDS:
+                            # ISSUE 3 FIX: Retry with exponential backoff
+                            save_success = False
+                            for retry in range(3):
+                                try:
+                                    assistant_message.content = "".join(full_content)
+                                    db.commit()
+                                    last_save_time = time.time()
+                                    save_success = True
+                                    logger.debug(
+                                        f"[INCREMENTAL] Updated message {assistant_message.id}: "
+                                        f"{len(''.join(full_content))} chars (raw)"
+                                    )
+                                    break
+                                except Exception as e:
+                                    db.rollback()
+                                    if retry < 2:
+                                        delay = 0.1 * (2**retry)
+                                        logger.warning(
+                                            f"[INCREMENTAL] Save retry {retry + 1}/3 (raw): {e}. "
+                                            f"Waiting {delay}s..."
+                                        )
+                                        time.sleep(delay)
+                                    else:
+                                        logger.error(
+                                            f"[INCREMENTAL] Save failed after 3 retries (raw): {e}"
+                                        )
+
+                            if not save_success:
+                                logger.warning(
+                                    "[INCREMENTAL] Could not save (raw), will retry next interval"
+                                )
 
                         yield {
                             "event": "chunk",
@@ -1034,7 +1084,7 @@ async def send_message(
                 )
 
             logger.info(
-                f"[STREAM] Done. System: {len(system_events)}, " f"Content: {content_chars} chars"
+                f"[STREAM] Done. System: {len(system_events)}, Content: {content_chars} chars"
             )
 
             # Save assistant message
@@ -1075,14 +1125,26 @@ async def send_message(
                 assistant_message.content = response_content
                 logger.info(f"[FINAL] Updated message {assistant_message.id} with cleaned content")
 
-            # Update session stats
-            session.total_messages = cast(int, session.total_messages) + 2  # type: ignore[assignment]
-            session.last_message_at = datetime.utcnow()  # type: ignore[assignment]
-            session.updated_at = datetime.utcnow()  # type: ignore[assignment]
+            # ISSUE 1 FIX: Use atomic UPDATE for total_messages to prevent race conditions
+            # First, perform the atomic counter increment
+            db.execute(
+                update(CLIChatSession)
+                .where(CLIChatSession.id == session_id)
+                .values(
+                    total_messages=CLIChatSession.total_messages + 2,
+                    last_message_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+            )
+            db.commit()
+
+            # Handle additional session updates that may depend on streaming results
+            needs_additional_update = False
 
             # Save extracted title if found
             if extracted_title:
                 session.display_name = extracted_title  # type: ignore[assignment]
+                needs_additional_update = True
 
             # Update claude_session_id if it changed during streaming (e.g., after retry)
             current_proc = manager.get_process(session_id)
@@ -1093,12 +1155,14 @@ async def send_message(
                 and current_proc.claude_session_id != session_claude_session_id
             ):
                 session.claude_session_id = current_proc.claude_session_id  # type: ignore[assignment]
+                needs_additional_update = True
                 logger.info(
                     f"[SESSION] Updated claude_session_id after streaming: "
                     f"{current_proc.claude_session_id}"
                 )
 
-            db.commit()
+            if needs_additional_update:
+                db.commit()
 
             yield {
                 "event": "done",

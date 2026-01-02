@@ -86,6 +86,7 @@ function chatSidebar() {
         pendingMessageBySession: {}, // Queued messages per sessionId
         contentSegmentsBySession: {}, // Segments per session: [{type: 'text', content: ''}, {type: 'tool', ...}, ...]
         lastKnownLengthBySession: {}, // Track position in fullContent for delta calculation
+        sessionMessagesCache: {},  // Cache messages per session to avoid refetching
         inputMessage: '',
         showSettings: false,
         showModelDropdown: false,
@@ -437,6 +438,13 @@ Contesto: ${contextStr}`;
                 case 'CHUNK':
                     // Accumulate content for this specific session
                     if (sessionId) {
+                        // Defensive initialization if STREAM_START was missed
+                        if (!this.contentSegmentsBySession[sessionId]) {
+                            console.warn('[CHUNK] Defensive init for session:', sessionId);
+                            this.contentSegmentsBySession[sessionId] = [{ type: 'text', content: '' }];
+                            this.lastKnownLengthBySession[sessionId] = 0;
+                        }
+
                         // Keep legacy streamContentBySession for backwards compatibility
                         this.streamContentBySession[sessionId] = fullContent || (this.streamContentBySession[sessionId] + content);
 
@@ -617,6 +625,8 @@ Contesto: ${contextStr}`;
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
                         this.streamingBySession[sessionId] = false;
+                        // Invalidate message cache since new message was added
+                        delete this.sessionMessagesCache[sessionId];
                     }
 
                     // Check for queued message for THIS session (per-session queue)
@@ -679,6 +689,8 @@ Contesto: ${contextStr}`;
                     if (sessionId) {
                         this.streamContentBySession[sessionId] = '';
                         this.streamingBySession[sessionId] = false;
+                        // Invalidate message cache since new message was added
+                        delete this.sessionMessagesCache[sessionId];
                     }
                     break;
 
@@ -935,6 +947,12 @@ Contesto: ${contextStr}`;
          * Supports parallel streaming: each session keeps its own streamContent
          */
         async selectSession(session) {
+            // Abort any in-flight fetch from previous session change
+            if (this._fetchAbortController) {
+                this._fetchAbortController.abort();
+            }
+            this._fetchAbortController = new AbortController();
+
             // When switching session, preserve the old session's stream in background
             // and load the new session's accumulated stream content
             if (this.activeSession?.id) {
@@ -944,6 +962,12 @@ Contesto: ${contextStr}`;
 
             this.activeSession = session;
             this.messages = [];
+            // Reset state arrays from previous session
+            this.systemInfo = [];
+            this.activeTools = [];
+            this.completedTools = [];
+            this.activeAgents = [];
+            this.completedAgents = [];
             this.showSettings = false;
             this.branches = [];
 
@@ -954,14 +978,29 @@ Contesto: ${contextStr}`;
             localStorage.setItem('chatActiveSessionId', session.id);
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${session.id}/messages`);
-                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+                // Check cache before fetching
+                if (this.sessionMessagesCache[session.id]) {
+                    console.log('[selectSession] Using cached messages for session:', session.id);
+                    this.messages = this.sessionMessagesCache[session.id];
+                } else {
+                    const res = await fetch(
+                        `/api/cli-chat/sessions/${session.id}/messages`,
+                        { signal: this._fetchAbortController.signal }
+                    );
+                    if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
 
-                this.messages = await res.json();
+                    this.messages = await res.json();
+                    // Cache the fetched messages
+                    this.sessionMessagesCache[session.id] = this.messages;
+                }
                 this.$nextTick(() => this.scrollToBottom());
 
                 if (session.repository_id) await this.loadBranches();
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log('[selectSession] Fetch aborted due to session change');
+                    return;
+                }
                 TurboWrapError.handle('Load Chat Session', error, { sessionId: session?.id });
             }
         },
@@ -1160,6 +1199,15 @@ Contesto: ${contextStr}`;
                     this.activeSession = null;
                     localStorage.removeItem('chatActiveSessionId');
                 }
+
+                // Cleanup per-session state to prevent memory leaks
+                delete this.streamContentBySession[sessionId];
+                delete this.streamingBySession[sessionId];
+                delete this.contentSegmentsBySession[sessionId];
+                delete this.lastKnownLengthBySession[sessionId];
+                delete this.pendingMessageBySession[sessionId];
+                delete this.sessionMessagesCache[sessionId];
+
                 this.showToast('Chat eliminata', 'success');
             } catch (error) {
                 TurboWrapError.handle('Delete Chat Session', error, { sessionId });
