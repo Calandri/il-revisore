@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from turbowrap_errors import TurboWrapClient, TurboWrapMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .. import __version__
 from ..config import get_settings
@@ -269,6 +270,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Proxy headers middleware (trust X-Forwarded-Proto for HTTPS behind ALB)
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
     # TurboWrap self-reporting middleware (catches errors and creates Issues)
     if settings.self_report.enabled and settings.self_report.repo_id:

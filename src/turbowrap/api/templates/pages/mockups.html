@@ -591,7 +591,7 @@ function mockupsPage() {
             }
             this.loading = true;
             try {
-                let url = `/api/mockups/?repository_id=${repoId}`;
+                let url = `/api/mockups?repository_id=${repoId}`;
                 if (projectId) {
                     url += `&project_id=${projectId}`;
                 }
