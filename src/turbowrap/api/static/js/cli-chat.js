@@ -33,6 +33,35 @@ function getChatWorker() {
 }
 
 /**
+ * Format a timestamp as relative time (5m, 2h, 1d, etc.)
+ * @param {string|Date|null} timestamp - ISO timestamp or Date object
+ * @returns {string} Relative time string or empty string if no timestamp
+ */
+function formatRelativeTime(timestamp) {
+    if (!timestamp) return '';
+
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSecs = Math.floor(diffMs / 1000);
+    const diffMins = Math.floor(diffSecs / 60);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    const diffWeeks = Math.floor(diffDays / 7);
+    const diffMonths = Math.floor(diffDays / 30);
+
+    if (diffSecs < 60) return 'now';
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffHours < 24) return `${diffHours}h`;
+    if (diffDays < 7) return `${diffDays}d`;
+    if (diffWeeks < 4) return `${diffWeeks}w`;
+    return `${diffMonths}mo`;
+}
+
+// Expose to Alpine/window for template use
+window.formatRelativeTime = formatRelativeTime;
+
+/**
  * Chat Sidebar Alpine Component
  */
 function chatSidebar() {

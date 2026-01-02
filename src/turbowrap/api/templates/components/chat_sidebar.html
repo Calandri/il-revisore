@@ -50,7 +50,10 @@
                     <span :class="session.cli_type === 'claude' ? 'text-orange-500' : 'text-blue-500'"
                           class="font-bold text-[10px]"
                           x-text="session.cli_type === 'claude' ? 'C' : 'G'"></span>
-                    <span class="max-w-[80px] truncate" x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude' : 'Gemini')"></span>
+                    <span class="max-w-[60px] truncate" x-text="session.display_name || (session.cli_type === 'claude' ? 'Claude' : 'Gemini')"></span>
+                    <span x-show="session.last_message_at"
+                          class="text-[9px] text-gray-400 dark:text-gray-500 ml-0.5"
+                          x-text="formatRelativeTime(session.last_message_at)"></span>
                 </button>
             </template>
         </div>
