@@ -654,16 +654,22 @@ Continue naturally from where we left off. The user's new message follows this c
             raise
 
         await process.wait()
-        logger.info(f"[CLAUDE] Process exited with code {process.returncode}")
+        logger.info(
+            f"[CLAUDE] Process exited with code {process.returncode}, chunks_yielded={chunks_yielded}"
+        )
+
+        # Always check stderr for useful info (even on success)
+        stderr_text = ""
+        if process.stderr:
+            stderr_content = await process.stderr.read()
+            if stderr_content:
+                stderr_text = stderr_content.decode("utf-8", errors="replace")
+                if process.returncode == 0:
+                    logger.debug(f"[CLAUDE] Stderr (success): {stderr_text[:500]}")
+                else:
+                    logger.error(f"[CLAUDE] Stderr (error): {stderr_text}")
 
         if process.returncode != 0:
-            stderr_text = ""
-            if process.stderr:
-                stderr_content = await process.stderr.read()
-                if stderr_content:
-                    stderr_text = stderr_content.decode("utf-8", errors="replace")
-                    logger.error(f"[CLAUDE] Stderr: {stderr_text}")
-
             # Check if this is a "session not found" error and we haven't retried yet
             if (
                 "No conversation found with session ID" in stderr_text

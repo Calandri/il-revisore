@@ -885,6 +885,23 @@ async def send_message(
                         if "result" in event:
                             content = event["result"]
 
+                    elif event_type == "error":
+                        # Error event from Claude CLI (process_manager.py)
+                        error_info = event.get("error", {})
+                        error_msg = error_info.get("message", "Unknown CLI error")
+                        error_type = error_info.get("type", "cli_error")
+                        logger.error(f"[STREAM] CLI error: {error_type} - {error_msg}")
+                        yield {
+                            "event": "error",
+                            "data": json.dumps(
+                                {
+                                    "error": error_msg,
+                                    "error_type": error_type,
+                                }
+                            ),
+                        }
+                        # Continue processing in case there's more to come
+
                     if content:
                         full_content.append(content)
 
@@ -965,9 +982,16 @@ async def send_message(
                             "data": json.dumps({"content": line + "\n"}),
                         }
 
+            # Check if stream ended with incomplete content
+            content_chars = len("".join(full_content))
+            if content_chars > 0 and not full_content[-1].endswith((".", "!", "?", "\n")):
+                logger.warning(
+                    f"[STREAM] Stream may have ended mid-sentence. "
+                    f"Last content: {full_content[-1][-50:] if full_content else 'empty'}"
+                )
+
             logger.info(
-                f"[STREAM] Done. System: {len(system_events)}, "
-                f"Content: {len(''.join(full_content))} chars"
+                f"[STREAM] Done. System: {len(system_events)}, " f"Content: {content_chars} chars"
             )
 
             # Save assistant message
