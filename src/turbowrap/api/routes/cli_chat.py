@@ -622,6 +622,7 @@ async def send_message(
     session_reasoning_enabled = cast(bool, session.reasoning_enabled)
     session_display_name = cast(str | None, session.display_name)
     session_repository = session.repository
+    session_claude_session_id = cast(str | None, session.claude_session_id)
 
     if data.model_override:
         logger.info(f"[MESSAGE] Using model override: {data.model_override}")
@@ -671,7 +672,31 @@ async def send_message(
                         ),
                         context=context,
                         mcp_config=settings.mcp_config if settings.mcp_config.exists() else None,
+                        existing_session_id=session_claude_session_id,
                     )
+
+                    # Save claude_session_id to DB for persistence across process restarts
+                    if (
+                        proc.claude_session_id
+                        and proc.claude_session_id != session_claude_session_id
+                    ):
+                        from ...db.session import get_session_local
+
+                        save_db = get_session_local()()
+                        try:
+                            db_session = (
+                                save_db.query(CLIChatSession)
+                                .filter(CLIChatSession.id == session_id)
+                                .first()
+                            )
+                            if db_session:
+                                db_session.claude_session_id = proc.claude_session_id
+                                save_db.commit()
+                                logger.info(
+                                    f"[SESSION] Saved claude_session_id to DB: {proc.claude_session_id}"
+                                )
+                        finally:
+                            save_db.close()
                 else:
                     proc = await manager.spawn_gemini(
                         session_id=session_id,

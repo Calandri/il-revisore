@@ -226,6 +226,7 @@ class CLIProcessManager:
         thinking_budget: int | None = None,
         mcp_config: Path | None = None,
         context: str | None = None,
+        existing_session_id: str | None = None,
     ) -> CLIProcess:
         """Spawn a new Claude CLI process.
 
@@ -264,15 +265,25 @@ class CLIProcessManager:
             env["MAX_THINKING_TOKENS"] = str(thinking_budget)
             logger.info(f"[CLAUDE] Extended thinking: {thinking_budget} tokens")
 
-        # Check if this is a forked session with shared resume ID
+        # Determine claude_session_id and whether to use --resume
+        # Priority: 1) existing_session_id (from DB), 2) shared_resume_id (fork), 3) new UUID
         shared_resume_id = self.get_shared_resume_id(session_id)
-        use_resume = shared_resume_id is not None
+        use_resume = False
 
-        if use_resume:
+        if existing_session_id:
+            # Resuming existing session from database
+            claude_session_id = existing_session_id
+            use_resume = True
+            logger.info(f"[CLAUDE] Resuming existing session: {claude_session_id}")
+        elif shared_resume_id:
+            # Forked session - share parent's context
             claude_session_id = shared_resume_id
+            use_resume = True
             logger.info(f"[CLAUDE] Using shared resume ID: {claude_session_id}")
         else:
+            # Brand new session
             claude_session_id = str(uuid.uuid4())
+            logger.info(f"[CLAUDE] New session ID: {claude_session_id}")
 
         # Build CLI arguments
         args: list[str] = [
@@ -280,9 +291,9 @@ class CLIProcessManager:
             "--print",
         ]
 
-        if use_resume and claude_session_id:
+        if use_resume:
             args.extend(["--resume", claude_session_id])
-        elif claude_session_id:
+        else:
             args.extend(["--session-id", claude_session_id])
 
         args.extend(
