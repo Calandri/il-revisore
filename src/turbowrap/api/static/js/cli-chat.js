@@ -90,6 +90,8 @@ function chatSidebar() {
         showNewChatMenu: false,
         showSystemInfo: false,
         systemInfo: [],
+        activeTools: [],        // Currently running tools (for UI display)
+        completedTools: [],     // Tools completed in current response
         eventSource: null,
         abortController: null,
         // Queue and Fork functionality
@@ -418,6 +420,8 @@ Contesto: ${contextStr}`;
                         this.streaming = true;
                         this.streamContent = '';
                         this.systemInfo = [];
+                        this.activeTools = [];      // Reset active tools
+                        this.completedTools = [];   // Reset completed tools
                     }
                     break;
 
@@ -447,6 +451,35 @@ Contesto: ${contextStr}`;
                     }
                     break;
 
+                case 'TOOL_START':
+                    console.log('[chatSidebar] Worker: tool started:', data.toolName);
+                    // Only update UI if it's the active session
+                    if (isActiveSession) {
+                        this.activeTools.push({
+                            name: data.toolName,
+                            id: data.toolId,
+                            startedAt: Date.now()
+                        });
+                    }
+                    break;
+
+                case 'TOOL_END':
+                    console.log('[chatSidebar] Worker: tool completed:', data.toolName, data.toolInput);
+                    // Only update UI if it's the active session
+                    if (isActiveSession) {
+                        // Move from active to completed
+                        const toolIndex = this.activeTools.findIndex(t => t.name === data.toolName);
+                        if (toolIndex >= 0) {
+                            const tool = this.activeTools.splice(toolIndex, 1)[0];
+                            this.completedTools.push({
+                                ...tool,
+                                input: data.toolInput,
+                                completedAt: Date.now()
+                            });
+                        }
+                    }
+                    break;
+
                 case 'DONE':
                     console.log('[chatSidebar] Worker: stream done for session:', sessionId, 'messageId:', messageId);
                     // Save message with final content for this session
@@ -462,6 +495,8 @@ Contesto: ${contextStr}`;
                         });
                         this.streamContent = '';
                         this.streaming = false;
+                        this.activeTools = [];      // Clear active tools
+                        this.completedTools = [];   // Clear completed tools
                     }
 
                     // Add to messages UI for secondary session (dual-chat)

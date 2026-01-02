@@ -706,6 +706,11 @@ async def send_message(
             last_save_time = time.time()  # Track when we last saved
             SAVE_INTERVAL_SECONDS = 5  # Save every 5 seconds
 
+            # Tool/block tracking for UI visibility
+            current_block_type: str = ""
+            current_tool_name: str = ""
+            current_tool_input: list[str] = []
+
             async for line in manager.send_message(session_id, message_to_send):
                 line = line.strip()
                 if not line:
@@ -741,13 +746,61 @@ async def send_message(
                     if event_type == "content_block_delta":
                         # Streaming delta - this is the main streaming event!
                         delta = event.get("delta", {})
-                        if delta.get("type") == "text_delta":
+                        delta_type = delta.get("type", "")
+                        if delta_type == "text_delta":
                             content = delta.get("text", "")
+                        elif delta_type == "input_json_delta" and current_block_type == "tool_use":
+                            # Tool input streaming - accumulate for display
+                            partial_json = delta.get("partial_json", "")
+                            if partial_json:
+                                current_tool_input.append(partial_json)
 
                     elif event_type == "content_block_start":
                         block = event.get("content_block", {})
-                        if block.get("type") == "text":
+                        block_type = block.get("type", "")
+                        current_block_type = block_type
+
+                        if block_type == "text":
                             content = block.get("text", "")
+                        elif block_type == "tool_use":
+                            # Tool invocation started - emit event to frontend
+                            current_tool_name = block.get("name", "unknown")
+                            current_tool_input = []
+                            tool_id = block.get("id", "")
+                            logger.info(f"[TOOL] Started: {current_tool_name} (id={tool_id})")
+                            yield {
+                                "event": "tool_start",
+                                "data": json.dumps(
+                                    {
+                                        "tool_name": current_tool_name,
+                                        "tool_id": tool_id,
+                                    }
+                                ),
+                            }
+
+                    elif event_type == "content_block_stop":
+                        # Block ended - check if it was a tool
+                        if current_block_type == "tool_use":
+                            # Parse accumulated tool input for display
+                            tool_input_str = "".join(current_tool_input)
+                            try:
+                                tool_input = json.loads(tool_input_str) if tool_input_str else {}
+                            except json.JSONDecodeError:
+                                tool_input = {"raw": tool_input_str}
+
+                            logger.info(f"[TOOL] Completed: {current_tool_name}")
+                            yield {
+                                "event": "tool_end",
+                                "data": json.dumps(
+                                    {
+                                        "tool_name": current_tool_name,
+                                        "tool_input": tool_input,
+                                    }
+                                ),
+                            }
+                        current_block_type = ""
+                        current_tool_name = ""
+                        current_tool_input = []
 
                     elif event_type == "result":
                         if "result" in event:
@@ -765,17 +818,23 @@ async def send_message(
                                     assistant_message = CLIChatMessage(
                                         session_id=session_id,
                                         role="assistant",
-                                        content="".join(full_content),  # Current accumulated content
+                                        content="".join(
+                                            full_content
+                                        ),  # Current accumulated content
                                         model_used=session_model,
                                         agent_used=session_agent_name,
                                     )
                                     db.add(assistant_message)
                                     db.flush()  # Get ID without full commit
-                                    logger.info(f"[INCREMENTAL] Created assistant message for session {session_id}")
+                                    logger.info(
+                                        f"[INCREMENTAL] Created assistant message for session {session_id}"
+                                    )
                                 else:
                                     # Subsequent saves: Update existing message
                                     assistant_message.content = "".join(full_content)
-                                    logger.debug(f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars")
+                                    logger.debug(
+                                        f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars"
+                                    )
 
                                 db.commit()  # Persist incremental progress
                                 last_save_time = current_time
@@ -807,10 +866,14 @@ async def send_message(
                                     )
                                     db.add(assistant_message)
                                     db.flush()
-                                    logger.info(f"[INCREMENTAL] Created assistant message for session {session_id}")
+                                    logger.info(
+                                        f"[INCREMENTAL] Created assistant message for session {session_id}"
+                                    )
                                 else:
                                     assistant_message.content = "".join(full_content)
-                                    logger.debug(f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars")
+                                    logger.debug(
+                                        f"[INCREMENTAL] Updated message {assistant_message.id}: {len(''.join(full_content))} chars"
+                                    )
 
                                 db.commit()
                                 last_save_time = current_time
@@ -860,7 +923,7 @@ async def send_message(
                     agent_used=session_agent_name,
                 )
                 db.add(assistant_message)
-                logger.info(f"[FINAL] Created assistant message (no incremental saves)")
+                logger.info("[FINAL] Created assistant message (no incremental saves)")
             else:
                 # Update existing message with cleaned content (actions/title removed)
                 assistant_message.content = response_content

@@ -103,6 +103,7 @@ function getSessionState(sessionId) {
             streaming: false,
             streamContent: '',
             systemInfo: [],
+            activeTools: [],  // Currently running tools
             lastMessageId: null,
             title: null
         });
@@ -242,6 +243,37 @@ function processEvent(sessionId, data, eventType = 'chunk') {
             type: 'ACTION',
             sessionId,
             action: data
+        });
+        return;
+    }
+
+    // Tool start events
+    if (eventType === 'tool_start') {
+        log('Tool started:', data.tool_name);
+        state.activeTools.push({
+            name: data.tool_name,
+            id: data.tool_id,
+            startedAt: Date.now()
+        });
+        broadcast({
+            type: 'TOOL_START',
+            sessionId,
+            toolName: data.tool_name,
+            toolId: data.tool_id
+        });
+        return;
+    }
+
+    // Tool end events
+    if (eventType === 'tool_end') {
+        log('Tool completed:', data.tool_name);
+        // Remove from active tools
+        state.activeTools = state.activeTools.filter(t => t.name !== data.tool_name);
+        broadcast({
+            type: 'TOOL_END',
+            sessionId,
+            toolName: data.tool_name,
+            toolInput: data.tool_input
         });
         return;
     }
