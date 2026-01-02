@@ -212,11 +212,8 @@ function chatSidebar() {
                         } else {
                             // Session not in list, try to fetch it
                             try {
-                                const res = await fetch(`/api/cli-chat/sessions/${e.detail.sessionId}`);
-                                if (res.ok) {
-                                    const session = await res.json();
-                                    await this.selectSession(session);
-                                }
+                                const session = await ChatApiService.getSession(e.detail.sessionId);
+                                await this.selectSession(session);
                             } catch (err) {
                                 console.error('[chatSidebar] Failed to load session:', err);
                             }
@@ -303,13 +300,9 @@ function chatSidebar() {
                 // Update active session's mockup context if we have one
                 if (this.activeSession) {
                     try {
-                        await fetch(`/api/cli-chat/sessions/${this.activeSession.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                mockup_id,
-                                mockup_project_id
-                            })
+                        await ChatApiService.updateSession(this.activeSession.id, {
+                            mockup_id,
+                            mockup_project_id
                         });
                         // Update local state
                         this.activeSession.mockup_id = mockup_id;
@@ -967,14 +960,8 @@ Contesto: ${contextStr}`;
 
             this.loadingBranches = true;
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/branches`);
-                if (res.ok) {
-                    this.branches = await res.json();
-                    console.log('[chatSidebar] Loaded branches:', this.branches.length);
-                } else {
-                    console.error('[chatSidebar] Failed to load branches:', res.status);
-                    this.branches = [];
-                }
+                this.branches = await ChatApiService.getBranches(this.activeSession.id);
+                console.log('[chatSidebar] Loaded branches:', this.branches.length);
             } catch (error) {
                 console.error('[chatSidebar] Error loading branches:', error);
                 this.branches = [];
@@ -992,17 +979,7 @@ Contesto: ${contextStr}`;
             if (!confirm(`Cambiare branch a "${newBranch}"?`)) return;
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/branch`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ branch: newBranch })
-                });
-
-                if (!res.ok) {
-                    throw new Error(await res.text() || `HTTP ${res.status}`);
-                }
-
-                const updated = await res.json();
+                const updated = await ChatApiService.changeBranch(this.activeSession.id, newBranch);
                 this.activeSession = updated;
                 const idx = this.sessions.findIndex(s => s.id === updated.id);
                 if (idx >= 0) this.sessions[idx] = updated;
@@ -1029,17 +1006,7 @@ Contesto: ${contextStr}`;
                     ...(agentName && { agent_name: agentName })
                 };
 
-                const res = await fetch('/api/cli-chat/sessions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!res.ok) {
-                    throw new Error(await res.text() || `HTTP ${res.status}`);
-                }
-
-                const session = await res.json();
+                const session = await ChatApiService.createSession(payload);
                 this.sessions.unshift(session);
                 this.selectSession(session);
                 this.showToast('Chat creata', 'success');
@@ -1091,13 +1058,10 @@ Contesto: ${contextStr}`;
                     console.log('[selectSession] Using cached messages for session:', session.id);
                     this.messages = this.sessionMessagesCache[session.id];
                 } else {
-                    const res = await fetch(
-                        `/api/cli-chat/sessions/${session.id}/messages`,
-                        { signal: this._fetchAbortController.signal }
+                    this.messages = await ChatApiService.getMessages(
+                        session.id,
+                        this._fetchAbortController.signal
                     );
-                    if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
-
-                    this.messages = await res.json();
                     // Cache the fetched messages
                     this.sessionMessagesCache[session.id] = this.messages;
                 }
@@ -1169,9 +1133,7 @@ Contesto: ${contextStr}`;
             localStorage.setItem('chatSecondarySessionId', session.id);
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${session.id}/messages`);
-                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
-                this.secondaryMessages = await res.json();
+                this.secondaryMessages = await ChatApiService.getMessages(session.id);
                 this.$nextTick(() => this.scrollToBottomSecondary());
             } catch (error) {
                 TurboWrapError.handle('Load Secondary Session', error, { sessionId: session?.id });
@@ -1275,21 +1237,13 @@ Contesto: ${contextStr}`;
             if (!this.activeSession) return;
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: this.activeSession.model,
-                        agent_name: this.activeSession.agent_name,
-                        thinking_enabled: this.activeSession.thinking_enabled,
-                        thinking_budget: this.activeSession.thinking_budget,
-                        reasoning_enabled: this.activeSession.reasoning_enabled
-                    })
+                const updated = await ChatApiService.updateSession(this.activeSession.id, {
+                    model: this.activeSession.model,
+                    agent_name: this.activeSession.agent_name,
+                    thinking_enabled: this.activeSession.thinking_enabled,
+                    thinking_budget: this.activeSession.thinking_budget,
+                    reasoning_enabled: this.activeSession.reasoning_enabled
                 });
-
-                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
-
-                const updated = await res.json();
                 const idx = this.sessions.findIndex(s => s.id === updated.id);
                 if (idx >= 0) this.sessions[idx] = updated;
             } catch (error) {
@@ -1304,8 +1258,7 @@ Contesto: ${contextStr}`;
             if (!confirm('Eliminare questa chat?')) return;
 
             try {
-                const res = await fetch(`/api/cli-chat/sessions/${sessionId}`, { method: 'DELETE' });
-                if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
+                await ChatApiService.deleteSession(sessionId);
 
                 this.sessions = this.sessions.filter(s => s.id !== sessionId);
                 if (this.activeSession?.id === sessionId) {
@@ -1388,16 +1341,8 @@ Contesto: ${contextStr}`;
             this.inputMessage = '';  // Clear input immediately
 
             try {
-                // 1. Call API to fork session
-                const res = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/fork`, {
-                    method: 'POST'
-                });
-
-                if (!res.ok) {
-                    throw new Error(`Fork failed: ${res.status}`);
-                }
-
-                const forkedSession = await res.json();
+                // 1. Fork session via API
+                const forkedSession = await ChatApiService.forkSession(this.activeSession.id);
                 console.log('[FORK] Created forked session:', forkedSession.id);
 
                 // 2. Add to sessions list
@@ -1406,11 +1351,8 @@ Contesto: ${contextStr}`;
                 // 3. Switch to forked session
                 this.activeSession = forkedSession;
 
-                // 4. Load messages from forked session (copied from original)
-                const messagesRes = await fetch(`/api/cli-chat/sessions/${forkedSession.id}/messages`);
-                if (messagesRes.ok) {
-                    this.messages = await messagesRes.json();
-                }
+                // 4. Load messages from forked session
+                this.messages = await ChatApiService.getMessages(forkedSession.id);
 
                 this.showToast('Sessione duplicata - invio in corso...', 'success');
 
@@ -1419,7 +1361,7 @@ Contesto: ${contextStr}`;
                 await this.sendMessage();
 
             } catch (e) {
-                TurboWrapError.handle('Fork Chat Session', e, { sessionId: this.activeSession?.id, messageIdx });
+                TurboWrapError.handle('Fork Chat Session', e, { sessionId: this.activeSession?.id });
             } finally {
                 this.forkInProgress = false;
             }
@@ -1848,18 +1790,14 @@ Contesto: ${contextStr}`;
             this.contextInfoLoading = true;
 
             try {
-                // Send /context as a special command that returns structured output
-                const response = await fetch(`/api/cli-chat/sessions/${this.activeSession.id}/context`);
-                if (response.ok) {
-                    const data = await response.json();
-                    // Store parsed context info
-                    this.activeSession.contextInfo = data;
-                    // Update model in session from context (more accurate than config)
-                    if (data.model) {
-                        this.activeSession.model = data.model;
-                    }
-                    console.log('[chatSidebar] Context info loaded:', data);
+                const data = await ChatApiService.getContext(this.activeSession.id);
+                // Store parsed context info
+                this.activeSession.contextInfo = data;
+                // Update model in session from context (more accurate than config)
+                if (data.model) {
+                    this.activeSession.model = data.model;
                 }
+                console.log('[chatSidebar] Context info loaded:', data);
             } catch (e) {
                 console.error('[chatSidebar] Error fetching context info:', e);
             } finally {
@@ -1877,22 +1815,17 @@ Contesto: ${contextStr}`;
 
             try {
                 // Fetch both context and usage in parallel
-                const [contextRes, usageRes] = await Promise.all([
-                    fetch(`/api/cli-chat/sessions/${this.activeSession.id}/context`),
-                    fetch(`/api/cli-chat/sessions/${this.activeSession.id}/usage`)
+                const [contextData, usageData] = await Promise.all([
+                    ChatApiService.getContext(this.activeSession.id),
+                    ChatApiService.getUsage(this.activeSession.id)
                 ]);
 
-                if (contextRes.ok) {
-                    const contextData = await contextRes.json();
-                    this.activeSession.contextInfo = contextData;
-                    if (contextData.model) {
-                        this.activeSession.model = contextData.model;
-                    }
+                this.activeSession.contextInfo = contextData;
+                if (contextData.model) {
+                    this.activeSession.model = contextData.model;
                 }
 
-                if (usageRes.ok) {
-                    this.usageInfo = await usageRes.json();
-                }
+                this.usageInfo = usageData;
 
                 console.log('[chatSidebar] Session info loaded:', {
                     context: this.activeSession.contextInfo,
@@ -2404,21 +2337,15 @@ Contesto: ${contextStr}`;
             }
 
             try {
-                const url = `/api/cli-chat/commands/${commandName}`;
-                console.log(`[chatSidebar] Fetching: ${url}`);
-                const res = await fetch(url);
-                console.log(`[chatSidebar] Response status: ${res.status}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    this.slashCommands[commandName] = data.prompt;
-                    console.log(`[chatSidebar] Loaded command /${commandName}, prompt length: ${data.prompt?.length}`);
-                    return data.prompt;
-                } else {
-                    const errorText = await res.text();
-                    console.warn(`[chatSidebar] Slash command /${commandName} not found. Status: ${res.status}, Response: ${errorText}`);
+                const data = await ChatApiService.getCommand(commandName);
+                this.slashCommands[commandName] = data.prompt;
+                console.log(`[chatSidebar] Loaded command /${commandName}, prompt length: ${data.prompt?.length}`);
+                return data.prompt;
+            } catch (error) {
+                if (error instanceof ApiError && error.status === 404) {
+                    console.warn(`[chatSidebar] Slash command /${commandName} not found.`);
                     return null;
                 }
-            } catch (error) {
                 console.error(`[chatSidebar] Error loading slash command /${commandName}:`, error);
                 return null;
             }
@@ -2521,14 +2448,7 @@ Contesto: ${contextStr}`;
             this.isLoadingLogs = true;
 
             try {
-                const response = await fetch('/api/cli-chat/server-logs?minutes=30');
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Errore nel recupero dei log');
-                }
-
-                const data = await response.json();
+                const data = await ChatApiService.getServerLogs({ minutes: 30 });
 
                 // Show summary toast
                 const summary = data.summary;
@@ -2538,11 +2458,13 @@ Contesto: ${contextStr}`;
                 );
 
                 // Set the markdown as input and send to agent for analysis
-                this.inputMessage = data.markdown + '\n\nAnalizza questi log e identifica eventuali problemi o pattern.';
+                this.inputMessage = data.markdown + '
+
+Analizza questi log e identifica eventuali problemi o pattern.';
                 await this.sendMessage();
 
             } catch (error) {
-                TurboWrapError.handle('Analyze Server Logs', error, { lines });
+                TurboWrapError.handle('Analyze Server Logs', error);
             } finally {
                 this.isLoadingLogs = false;
             }
