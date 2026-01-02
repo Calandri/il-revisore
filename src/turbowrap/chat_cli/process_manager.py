@@ -29,7 +29,6 @@ import codecs
 import json
 import logging
 import os
-import sys
 import tempfile
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -38,8 +37,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..config import get_settings
-from ..exceptions import SecurityError
+from ..utils.async_utils import asyncio_timeout
+from ..utils.env_utils import build_env_with_api_keys
+from ..utils.file_utils import validate_working_dir
 from .models import CLIType, SessionStatus
 
 logger = logging.getLogger(__name__)
@@ -51,28 +51,6 @@ GEMINI_TIMEOUT = 120  # 2 minutes
 
 STALE_PROCESS_HOURS = 3  # Kill processes older than 3 hours
 CLEANUP_INTERVAL_SECONDS = 300  # Check every 5 minutes
-
-# Python version check for asyncio.timeout (3.11+)
-if sys.version_info >= (3, 11):
-    from asyncio import timeout as asyncio_timeout
-else:
-    # Fallback for Python 3.10: use async_timeout or a simple wrapper
-    from collections.abc import AsyncGenerator
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def asyncio_timeout(delay: float) -> AsyncGenerator[None, None]:
-        """Simple timeout context manager for Python 3.10."""
-        # Create a task that will be cancelled after delay
-        loop = asyncio.get_event_loop()
-        timeout_handle = loop.call_later(
-            delay,
-            lambda: None,  # Dummy callback
-        )
-        try:
-            yield
-        finally:
-            timeout_handle.cancel()
 
 
 # Type alias for process stats entry
@@ -145,31 +123,6 @@ class CLIProcessManager:
         self._max_processes = max_processes
         self._shared_resume_ids: dict[str, str] = {}
 
-    def _build_env_with_api_keys(self) -> dict[str, str]:
-        """Build environment with API keys from centralized config.
-
-        Ensures API keys are available to CLI subprocesses regardless
-        of whether they're set as env vars or only in .env/config.
-
-        Returns:
-            Environment dict with API keys set
-        """
-        settings = get_settings()
-        env = os.environ.copy()
-
-        # Anthropic API key for Claude CLI
-        if settings.agents.anthropic_api_key:
-            env["ANTHROPIC_API_KEY"] = settings.agents.anthropic_api_key
-
-        # Google/Gemini API key for Gemini CLI
-        # Set both for compatibility (some tools use GOOGLE_API_KEY, others GEMINI_API_KEY)
-        effective_key = settings.agents.effective_google_key
-        if effective_key:
-            env["GEMINI_API_KEY"] = effective_key
-            env["GOOGLE_API_KEY"] = effective_key
-
-        return env
-
     def set_shared_resume_id(self, session_id: str, claude_session_id: str) -> None:
         """Store a shared claude_session_id for a forked session.
 
@@ -193,31 +146,6 @@ class CLIProcessManager:
             claude_session_id if available, None otherwise
         """
         return self._shared_resume_ids.pop(session_id, None)
-
-    def _validate_working_dir(self, working_dir: Path) -> Path:
-        """Validate working directory is within allowed paths.
-
-        Args:
-            working_dir: The working directory to validate
-
-        Returns:
-            Resolved absolute path
-
-        Raises:
-            SecurityError: If working directory is outside allowed base
-            ValueError: If working directory does not exist
-        """
-        resolved = working_dir.resolve()
-        settings = get_settings()
-        allowed_base = settings.repos_dir.resolve()
-
-        if not str(resolved).startswith(str(allowed_base) + os.sep) and resolved != allowed_base:
-            raise SecurityError(f"Working directory {resolved} outside allowed base {allowed_base}")
-
-        if not resolved.is_dir():
-            raise ValueError(f"Working directory does not exist: {resolved}")
-
-        return resolved
 
     async def spawn_claude(
         self,
@@ -248,7 +176,7 @@ class CLIProcessManager:
             RuntimeError: If max processes reached or session already exists
             SecurityError: If working directory is outside allowed paths
         """
-        validated_working_dir = self._validate_working_dir(working_dir)
+        validated_working_dir = validate_working_dir(working_dir)
 
         async with self._lock:
             if session_id in self._processes:
@@ -258,7 +186,7 @@ class CLIProcessManager:
                 raise RuntimeError(f"Max processes ({self._max_processes}) reached")
 
         # Build environment with API keys from config
-        env = self._build_env_with_api_keys()
+        env = build_env_with_api_keys()
         env["TMPDIR"] = "/tmp"  # Workaround for Bun file watcher bug
         env["PYTHONUNBUFFERED"] = "1"  # Disable Python buffering
         env["NODE_OPTIONS"] = "--no-warnings"  # Less noise from node
@@ -406,7 +334,7 @@ class CLIProcessManager:
         Raises:
             SecurityError: If working directory is outside allowed paths
         """
-        validated_working_dir = self._validate_working_dir(working_dir)
+        validated_working_dir = validate_working_dir(working_dir)
 
         async with self._lock:
             if session_id in self._processes:
@@ -454,7 +382,7 @@ class CLIProcessManager:
             force_new_session: If True, create a new session instead of resuming
         """
         # Build environment with API keys from config
-        env = self._build_env_with_api_keys()
+        env = build_env_with_api_keys()
         env["TMPDIR"] = "/tmp"
         env["PYTHONUNBUFFERED"] = "1"
         env["NODE_OPTIONS"] = "--no-warnings"
@@ -730,7 +658,7 @@ Continue naturally from where we left off. The user's new message follows this c
         proc.status = SessionStatus.STREAMING
 
         # Build environment with API keys from config
-        env = self._build_env_with_api_keys()
+        env = build_env_with_api_keys()
 
         full_message = message
         if proc.gemini_context and not proc.context_used:

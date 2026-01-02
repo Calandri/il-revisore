@@ -1,12 +1,16 @@
 """File discovery and filtering utilities."""
 
 import hashlib
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import tiktoken
+
+from ..config import get_settings
+from ..exceptions import SecurityError
 
 # File extensions by type
 BE_EXTENSIONS = {".py"}
@@ -446,3 +450,32 @@ def find_files(
     if recursive:
         return list(directory.rglob(pattern))
     return list(directory.glob(pattern))
+
+
+def validate_working_dir(working_dir: Path) -> Path:
+    """Validate working directory is within allowed paths.
+
+    Ensures the directory is within the configured repos directory
+    to prevent directory traversal and unauthorized access.
+
+    Args:
+        working_dir: The working directory to validate
+
+    Returns:
+        Resolved absolute path
+
+    Raises:
+        SecurityError: If working directory is outside allowed base
+        ValueError: If working directory does not exist
+    """
+    resolved = working_dir.resolve()
+    settings = get_settings()
+    allowed_base = settings.repos_dir.resolve()
+
+    if not str(resolved).startswith(str(allowed_base) + os.sep) and resolved != allowed_base:
+        raise SecurityError(f"Working directory {resolved} outside allowed base {allowed_base}")
+
+    if not resolved.is_dir():
+        raise ValueError(f"Working directory does not exist: {resolved}")
+
+    return resolved

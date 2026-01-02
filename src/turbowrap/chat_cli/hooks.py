@@ -14,7 +14,6 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -441,83 +440,6 @@ class ChatHooks:
                     logger.info(f"Session {session_id[:8]} idle for {idle_since.seconds // 60}m")
 
         return result
-
-
-class HookRegistry:
-    """Registry for custom hooks.
-
-    Allows adding custom async callbacks for events.
-    """
-
-    def __init__(self) -> None:
-        self._hooks: dict[str, list[Callable[..., Awaitable[Any]]]] = {}
-
-    def register(self, event: str, callback: Callable[..., Awaitable[Any]]) -> None:
-        """Register a hook callback.
-
-        Args:
-            event: Event name (message_sent, response_complete, etc.)
-            callback: Async function to call
-        """
-        if event not in self._hooks:
-            self._hooks[event] = []
-        self._hooks[event].append(callback)
-
-    async def trigger(self, event: str, **kwargs: Any) -> list[Any]:
-        """Trigger all hooks for an event.
-
-        Args:
-            event: Event name
-            **kwargs: Arguments to pass to callbacks
-
-        Returns:
-            List of results from all callbacks
-        """
-        if event not in self._hooks:
-            return []
-
-        results: list[Any] = []
-        for callback in self._hooks[event]:
-            try:
-                result = await callback(**kwargs)
-                results.append(result)
-            except Exception as e:
-                logger.error(f"Hook error for {event}: {e}")
-                results.append({"error": str(e)})
-
-        return results
-
-
-# Global registry
-_hook_registry: HookRegistry = HookRegistry()
-
-
-def get_hook_registry() -> HookRegistry:
-    """Get global hook registry."""
-    return _hook_registry
-
-
-def register_hook(event: str, callback: Callable[..., Awaitable[Any]]) -> None:
-    """Register a hook callback.
-
-    Args:
-        event: Event name
-        callback: Async callback function
-    """
-    _hook_registry.register(event, callback)
-
-
-async def trigger_hooks(event: str, **kwargs: Any) -> list[Any]:
-    """Trigger all registered hooks for an event.
-
-    Args:
-        event: Event name
-        **kwargs: Arguments for hooks
-
-    Returns:
-        List of results
-    """
-    return await _hook_registry.trigger(event, **kwargs)
 
 
 # ============================================================================

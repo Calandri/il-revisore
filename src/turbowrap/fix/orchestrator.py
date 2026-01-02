@@ -32,7 +32,6 @@ from botocore.exceptions import ClientError
 from turbowrap_llm import ClaudeCLI
 from turbowrap_llm.claude.session import ClaudeSession
 
-from turbowrap.chat_cli.context_generator import load_structure_documentation
 from turbowrap.config import get_settings
 from turbowrap.db.models import Issue
 from turbowrap.fix.fix_challenger import GeminiFixChallenger
@@ -55,6 +54,7 @@ from turbowrap.fix.models import (
 )
 from turbowrap.fix.todo_manager import TodoManager
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
+from turbowrap.utils.context_utils import load_structure_documentation
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 logger = logging.getLogger(__name__)

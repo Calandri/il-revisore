@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy.orm import Session
 
+from ..utils.context_utils import load_structure_documentation
+
 if TYPE_CHECKING:
     from ..db.models import Issue, LinearIssue, Repository
 
@@ -42,42 +44,6 @@ def load_system_guide() -> str:
     except Exception as e:
         logger.warning(f"Failed to read system guide: {e}")
         return ""
-
-
-def load_structure_documentation(
-    repo_path: Path | str,
-    workspace_path: str | None = None,
-) -> str | None:
-    """
-    Load repository structure documentation for context injection.
-
-    Only uses .llms/structure.xml (consolidated XML format, optimized for LLM).
-    No fallback to STRUCTURE.md.
-
-    Args:
-        repo_path: Path to the repository root
-        workspace_path: Optional monorepo workspace subfolder
-
-    Returns:
-        Structure documentation content, or None if not found
-    """
-    base = Path(repo_path)
-    if workspace_path:
-        workspace_base = base / workspace_path
-        if workspace_base.exists():
-            base = workspace_base
-
-    # Load .llms/structure.xml (only supported format)
-    xml_path = base / ".llms" / "structure.xml"
-    if xml_path.exists():
-        try:
-            content = xml_path.read_text(encoding="utf-8")
-            logger.info(f"Loaded structure from {xml_path} ({xml_path.stat().st_size:,} bytes)")
-            return content
-        except Exception as e:
-            logger.warning(f"Failed to read {xml_path}: {e}")
-
-    return None
 
 
 # Template del context
@@ -469,7 +435,7 @@ Stai generando mockup per il progetto **{project.name}**.
 
 **IMPORTANTE - Usa questi ID**:
 - `project_id`: `{project.id}`
-- `design_system`: `{project.design_system or 'tailwind'}`
+- `design_system`: `{project.design_system or "tailwind"}`
 
 **Workflow obbligatorio**:
 1. PRIMA di rispondere, esegui: `python -m turbowrap.scripts.mockup_tool init --project-id {project.id} --name "Nome mockup" --type page`
@@ -503,7 +469,7 @@ L'utente sta visualizzando il mockup **{mockup.name}**.
 
 **ID e riferimenti**:
 - `mockup_id`: `{mockup.id}`{project_info}
-- `component_type`: `{mockup.component_type or 'page'}`
+- `component_type`: `{mockup.component_type or "page"}`
 - `llm_type`: `{mockup.llm_type}`
 - `status`: `{mockup.status}`
 

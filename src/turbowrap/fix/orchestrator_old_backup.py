@@ -21,7 +21,6 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-from turbowrap.chat_cli.context_generator import load_structure_documentation
 from turbowrap.config import get_settings
 from turbowrap.db.models import Issue
 from turbowrap.fix.models import (
@@ -37,6 +36,7 @@ from turbowrap.llm.claude_cli import ClaudeCLI, ClaudeCLIResult
 # Import GeminiCLI from shared orchestration utilities
 from turbowrap.orchestration.cli_runner import GeminiCLI
 from turbowrap.review.reviewers.utils.json_extraction import parse_llm_json
+from turbowrap.utils.context_utils import load_structure_documentation
 from turbowrap.utils.s3_artifact_saver import S3ArtifactSaver
 
 S3_BUCKET = "turbowrap-thinking"
