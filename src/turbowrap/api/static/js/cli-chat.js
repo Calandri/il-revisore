@@ -1177,9 +1177,10 @@ Contesto: ${contextStr}`;
                 }
                 this.$nextTick(() => this.scrollToBottom());
 
-                // Start process if not already running (for Claude sessions)
-                if (session.cli_type === 'claude' && session.status !== 'running') {
-                    console.log('[selectSession] Starting process for session:', session.id);
+                // Always start/ensure process is running (for Claude sessions)
+                // Status in DB might be 'running' but process might not exist (e.g., after server restart)
+                if (session.cli_type === 'claude') {
+                    console.log('[selectSession] Ensuring process is running for session:', session.id);
                     try {
                         const startRes = await fetch(`/api/cli-chat/sessions/${session.id}/start`, {
                             method: 'POST'
@@ -1218,10 +1219,7 @@ Contesto: ${contextStr}`;
 
                 if (session.repository_id) await this.loadBranches();
 
-                // Fetch context info immediately to show resume status (now process should be running)
-                if (session.cli_type === 'claude') {
-                    this.requestContextInfo();
-                }
+                // Context/usage info fetched only when modal is opened (too slow for auto-fetch)
             } catch (error) {
                 if (error.name === 'AbortError') {
                     console.log('[selectSession] Fetch aborted due to session change');

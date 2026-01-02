@@ -825,6 +825,9 @@ async def send_message(
         """Generate SSE events for streaming response."""
         nonlocal session_claude_session_id  # Allow modification of outer scope variable
         manager = get_process_manager()
+        logger.info(
+            f"[MESSAGE DEBUG] session_id={session_id}, active_processes={list(manager._processes.keys())}"
+        )
 
         try:
             yield {
@@ -1483,41 +1486,64 @@ async def get_session_context(
         }
 
     manager = get_process_manager()
+    logger.info(
+        f"[CONTEXT DEBUG] session_id={session_id}, active_processes={list(manager._processes.keys())}"
+    )
 
     # Check if process is running
     if session_id not in manager._processes:
         raise HTTPException(
             status_code=503,
-            detail="Claude CLI process not running for this session. Start the CLI to get real context data.",
+            detail=f"Process not found. session_id={session_id}, active={list(manager._processes.keys())}",
         )
 
     try:
         # Send /context command and collect output
         output_lines: list[str] = []
+        chunk_count = 0
         async for chunk in manager.send_message(session_id, "/context"):
+            chunk_count += 1
+            logger.info(f"[CONTEXT] Chunk #{chunk_count}: {chunk[:200]}")
             # Parse JSON lines
             try:
                 event = json.loads(chunk.strip())
+                event_type = event.get("type")
                 # Extract text content from various event types
-                if event.get("type") == "content_block_delta":
+                if event_type == "content_block_delta":
                     delta = event.get("delta", {})
                     if delta.get("type") == "text_delta":
                         output_lines.append(delta.get("text", ""))
-                elif event.get("type") == "content_block_start":
+                elif event_type == "content_block_start":
                     block = event.get("content_block", {})
                     if block.get("type") == "text":
                         output_lines.append(block.get("text", ""))
+                elif event_type == "user":
+                    # /context and /usage return result in user message content
+                    message = event.get("message", {})
+                    content = message.get("content", "")
+                    # Strip <local-command-stdout> wrapper if present
+                    if "<local-command-stdout>" in content:
+                        content = content.replace("<local-command-stdout>", "").replace(
+                            "</local-command-stdout>", ""
+                        )
+                    output_lines.append(content)
                 elif event.get("result"):
                     output_lines.append(event["result"])
             except json.JSONDecodeError:
                 # Plain text output
+                logger.info("[CONTEXT] Plain text (not JSON)")
                 output_lines.append(chunk)
 
+        logger.info(f"[CONTEXT] Total chunks: {chunk_count}")
         raw_output = "".join(output_lines)
         logger.info(f"[CONTEXT] Raw output ({len(raw_output)} chars): {raw_output[:500]}...")
 
         # Parse the /context output
         context_info = _parse_context_output(raw_output)
+
+        # DEBUG: include raw output in response
+        context_info["_debug_raw"] = raw_output[:1000] if raw_output else "(empty)"
+        context_info["_debug_lines_count"] = len(output_lines)
 
         # Update session token counts from parsed data
         if context_info.get("tokens", {}).get("used"):
@@ -1539,10 +1565,12 @@ async def get_session_context(
 
 
 def _parse_context_output(output: str) -> dict[str, Any]:
-    """Parse /context command output from Claude CLI.
+    """Parse /context command output from Claude CLI (Markdown format).
 
     Returns structured data about token usage breakdown.
     """
+    import re
+
     info: dict[str, Any] = {
         "model": None,
         "tokens": {"used": 0, "limit": 200000, "percentage": 0},
@@ -1560,64 +1588,81 @@ def _parse_context_output(output: str) -> dict[str, Any]:
             if not trimmed:
                 continue
 
-            # Detect sections
-            if trimmed in ("Context Usage", "Categories", "MCP Tools", "Custom Agents"):
-                section = trimmed
+            # Detect sections (Markdown headers)
+            if "## Context Usage" in trimmed or trimmed == "## Context Usage":
+                section = "Context Usage"
+                continue
+            if "### Categories" in trimmed:
+                section = "Categories"
+                continue
+            if "### MCP Tools" in trimmed:
+                section = "MCP Tools"
+                continue
+            if "### Custom Agents" in trimmed:
+                section = "Custom Agents"
                 continue
 
-            # Parse model
-            if trimmed.startswith("Model:"):
-                info["model"] = trimmed.replace("Model:", "").strip()
+            # Parse model (Markdown bold: **Model:** value)
+            model_match = re.search(r"\*\*Model:\*\*\s*(.+)", trimmed)
+            if model_match:
+                info["model"] = model_match.group(1).strip()
                 continue
 
-            # Parse total tokens (e.g., "Tokens: 93.1k / 200.0k (47%)")
-            if trimmed.startswith("Tokens:"):
-                import re
-
-                match = re.match(
-                    r"Tokens:\s*([\d.]+)k\s*/\s*([\d.]+)k\s*\((\d+)%\)", trimmed, re.IGNORECASE
-                )
-                if match:
-                    info["tokens"]["used"] = float(match.group(1)) * 1000
-                    info["tokens"]["limit"] = float(match.group(2)) * 1000
-                    info["tokens"]["percentage"] = int(match.group(3))
+            # Parse tokens (Markdown bold: **Tokens:** 93.1k / 200.0k (47%))
+            tokens_match = re.search(
+                r"\*\*Tokens:\*\*\s*([\d.]+)k\s*/\s*([\d.]+)k\s*\((\d+)%\)", trimmed
+            )
+            if tokens_match:
+                info["tokens"]["used"] = float(tokens_match.group(1)) * 1000
+                info["tokens"]["limit"] = float(tokens_match.group(2)) * 1000
+                info["tokens"]["percentage"] = int(tokens_match.group(3))
                 continue
 
-            # Skip header rows
-            if trimmed.startswith(("Category\t", "Tool\t", "Agent Type\t")):
+            # Skip markdown table headers and separators
+            if trimmed.startswith("|") and (
+                "---" in trimmed or "Category" in trimmed or "Tool" in trimmed or "Agent" in trimmed
+            ):
                 continue
 
-            # Parse tab-separated data based on section
-            parts = [p.strip() for p in trimmed.split("\t")]
-
-            if section == "Categories" and len(parts) >= 2:
-                import re
-
-                tokens_match = re.match(r"([\d.]+)k", parts[1], re.IGNORECASE)
-                if tokens_match:
-                    info["categories"].append(
-                        {
-                            "name": parts[0],
-                            "tokens": float(tokens_match.group(1)) * 1000,
-                            "percentage": float(parts[2].rstrip("%")) if len(parts) > 2 else None,
-                        }
-                    )
-            elif section == "MCP Tools" and len(parts) >= 2:
-                info["mcpTools"].append(
-                    {
-                        "name": parts[0],
-                        "server": parts[1] if len(parts) > 1 else None,
-                        "tokens": int(parts[2]) if len(parts) > 2 else None,
-                    }
-                )
-            elif section == "Custom Agents" and len(parts) >= 2:
-                info["agents"].append(
-                    {
-                        "name": parts[0],
-                        "source": parts[1] if len(parts) > 1 else None,
-                        "tokens": int(parts[2]) if len(parts) > 2 else None,
-                    }
-                )
+            # Parse markdown table rows: | name | value | percentage |
+            if trimmed.startswith("|") and section:
+                parts = [p.strip() for p in trimmed.split("|") if p.strip()]
+                if len(parts) >= 2:
+                    if section == "Categories":
+                        tokens_match = re.match(r"([\d.]+)k?", parts[1])
+                        if tokens_match:
+                            tokens_val = float(tokens_match.group(1))
+                            if "k" in parts[1].lower():
+                                tokens_val *= 1000
+                            info["categories"].append(
+                                {
+                                    "name": parts[0],
+                                    "tokens": tokens_val,
+                                    "percentage": float(parts[2].rstrip("%"))
+                                    if len(parts) > 2
+                                    else None,
+                                }
+                            )
+                    elif section == "MCP Tools":
+                        info["mcpTools"].append(
+                            {
+                                "name": parts[0],
+                                "server": parts[1] if len(parts) > 1 else None,
+                                "tokens": int(parts[2])
+                                if len(parts) > 2 and parts[2].isdigit()
+                                else None,
+                            }
+                        )
+                    elif section == "Custom Agents":
+                        info["agents"].append(
+                            {
+                                "name": parts[0],
+                                "source": parts[1] if len(parts) > 1 else None,
+                                "tokens": int(parts[2])
+                                if len(parts) > 2 and parts[2].isdigit()
+                                else None,
+                            }
+                        )
 
     except Exception as e:
         logger.error(f"[CONTEXT] Error parsing output: {e}")
@@ -1664,29 +1709,109 @@ async def get_session_usage(
         )
 
     try:
-        # Send /usage command and collect output
-        output_lines: list[str] = []
+        info: dict[str, Any] = {
+            "version": None,
+            "session_id": None,
+            "cwd": None,
+            "model": None,
+            "model_display": None,  # "Default Opus 4.5 · Most capable..."
+            "mcp_servers": [],
+            "tools": [],
+            "usage": None,
+            "total_cost_usd": None,
+            "login_method": None,
+            "organization": None,
+            "email": None,
+            "memory": None,
+            "ide": None,
+            "ide_version": None,
+            "setting_sources": None,
+        }
+
+        # First call /status to get text-based info (login, email, etc.)
+        status_lines: list[str] = []
+        async for chunk in manager.send_message(session_id, "/status"):
+            try:
+                event = json.loads(chunk.strip())
+                if event.get("type") == "user":
+                    content = event.get("message", {}).get("content", "")
+                    if "<local-command-stdout>" in content:
+                        content = content.replace("<local-command-stdout>", "").replace(
+                            "</local-command-stdout>", ""
+                        )
+                    status_lines.append(content)
+            except json.JSONDecodeError:
+                status_lines.append(chunk)
+
+        # Parse /status text output
+        status_text = "".join(status_lines)
+        logger.info(f"[USAGE] /status output: {status_text[:500]}")
+        for line in status_text.split("\n"):
+            line = line.strip()
+            if ": " in line:
+                key, value = line.split(": ", 1)
+                key_lower = key.lower()
+                if key_lower == "version":
+                    info["version"] = value.strip()
+                elif key_lower == "session id":
+                    info["session_id"] = value.strip()
+                elif key_lower == "cwd":
+                    info["cwd"] = value.strip()
+                elif key_lower == "login method":
+                    info["login_method"] = value.strip()
+                elif key_lower == "organization":
+                    info["organization"] = value.strip()
+                elif key_lower == "email":
+                    info["email"] = value.strip()
+                elif key_lower == "memory":
+                    info["memory"] = value.strip()
+                elif key_lower == "model":
+                    # "Model: Default Opus 4.5 · Most capable for complex work"
+                    info["model_display"] = value.strip()
+                    # Extract just the model name (before the ·)
+                    model_parts = value.split("·")
+                    if model_parts:
+                        info["model"] = model_parts[0].strip()
+                elif key_lower == "ide":
+                    # "IDE: Connected to VS Code extension version 2.0.76 (server version: 2.0.75)"
+                    full_ide = value.strip()
+                    info["ide"] = full_ide
+                    # Try to extract version
+                    import re
+
+                    version_match = re.search(r"version\s+([\d.]+)", full_ide)
+                    if version_match:
+                        info["ide_version"] = version_match.group(1)
+                elif key_lower == "setting sources":
+                    info["setting_sources"] = value.strip()
+
+        # Then call /usage to get JSON data (tools, mcp, usage stats)
         async for chunk in manager.send_message(session_id, "/usage"):
             try:
                 event = json.loads(chunk.strip())
-                if event.get("type") == "content_block_delta":
-                    delta = event.get("delta", {})
-                    if delta.get("type") == "text_delta":
-                        output_lines.append(delta.get("text", ""))
-                elif event.get("type") == "content_block_start":
-                    block = event.get("content_block", {})
-                    if block.get("type") == "text":
-                        output_lines.append(block.get("text", ""))
-                elif event.get("result"):
-                    output_lines.append(event["result"])
+                event_type = event.get("type")
+
+                if event_type == "system" and event.get("subtype") == "init":
+                    info["model"] = event.get("model")
+                    if not info["version"]:
+                        info["version"] = event.get("claude_code_version")
+                    info["tools"] = event.get("tools", [])
+                    mcp_servers = event.get("mcp_servers", [])
+                    if isinstance(mcp_servers, list):
+                        info["mcp_servers"] = [
+                            {"name": s.get("name") if isinstance(s, dict) else s, "connected": True}
+                            for s in mcp_servers
+                        ]
+
+                elif event_type == "result":
+                    info["usage"] = event.get("usage")
+                    info["total_cost_usd"] = event.get("total_cost_usd")
+
             except json.JSONDecodeError:
-                output_lines.append(chunk)
+                pass
 
-        raw_output = "".join(output_lines)
-        logger.info(f"[USAGE] Raw output ({len(raw_output)} chars): {raw_output[:500]}...")
-
-        # Parse the /usage output
-        return _parse_usage_output(raw_output)
+        logger.info(f"[USAGE] Final info: {info}")
+        return info
 
     except Exception as e:
         logger.error(f"[USAGE] Error getting usage info: {e}")
@@ -1694,10 +1819,12 @@ async def get_session_usage(
 
 
 def _parse_usage_output(output: str) -> dict[str, Any]:
-    """Parse /usage command output from Claude CLI.
+    """Parse /usage command output from Claude CLI (handles both plain and Markdown).
 
     Returns structured data about session configuration.
     """
+    import re
+
     info: dict[str, Any] = {
         "version": None,
         "session_id": None,
@@ -1722,9 +1849,13 @@ def _parse_usage_output(output: str) -> dict[str, Any]:
             if not trimmed:
                 continue
 
+            # Handle both plain "Key: value" and Markdown "**Key:** value"
+            # Remove markdown bold markers
+            clean_line = re.sub(r"\*\*([^*]+)\*\*", r"\1", trimmed)
+
             # Parse key: value pairs
-            if ": " in trimmed:
-                key, value = trimmed.split(": ", 1)
+            if ": " in clean_line:
+                key, value = clean_line.split(": ", 1)
                 key = key.strip().lower()
 
                 if key == "version":
@@ -1748,8 +1879,6 @@ def _parse_usage_output(output: str) -> dict[str, Any]:
                 elif key == "ide":
                     # Parse "Connected to VS Code extension version 2.0.76 (server version: 2.0.75)"
                     info["ide"] = value.strip()
-                    import re
-
                     version_match = re.search(r"version (\d+\.\d+\.\d+)", value)
                     if version_match:
                         info["ide_version"] = version_match.group(1)

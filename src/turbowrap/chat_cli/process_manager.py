@@ -593,10 +593,25 @@ Continue naturally from where we left off. The user's new message follows this c
         timeout_value = timeout or CLAUDE_TIMEOUT
         process = proc.process
 
-        if not process or process.returncode is not None:
+        # Check if process is dead OR stdin is closed (from previous message)
+        # After each message stdin is closed (EOF), so we need to respawn for next message
+        stdin_unusable = (
+            process
+            and process.stdin
+            and (
+                process.stdin.is_closing()
+                or getattr(process.stdin, "_transport", None) is None
+                or getattr(getattr(process.stdin, "_transport", None), "_closing", False)
+                or getattr(
+                    getattr(process.stdin, "_transport", None), "is_closing", lambda: False
+                )()
+            )
+        )
+        if not process or process.returncode is not None or stdin_unusable:
             logger.info(
-                f"[CLAUDE] Process ended, respawning "
-                f"(force_new_session={_retry_with_new_session})"
+                f"[CLAUDE] Process ended or stdin closed, respawning "
+                f"(returncode={process.returncode if process else None}, stdin_unusable={stdin_unusable}, "
+                f"force_new_session={_retry_with_new_session})"
             )
             await self._respawn_claude_with_resume(proc, force_new_session=_retry_with_new_session)
             process = proc.process  # Get the new process
@@ -614,17 +629,21 @@ Continue naturally from where we left off. The user's new message follows this c
             process.stdin.close()
             await process.stdin.wait_closed()
             logger.info("[CLAUDE] Stdin closed (EOF sent)")
-        except ConnectionResetError:
-            logger.warning("[CLAUDE] ConnectionResetError, respawning with --resume")
-            await self._respawn_claude_with_resume(proc)
-            process = proc.process
-            if process is None or process.stdin is None:
-                raise RuntimeError("Failed to respawn Claude process")
-            process.stdin.write(prompt_bytes)
-            await process.stdin.drain()
-            process.stdin.close()
-            await process.stdin.wait_closed()
-            logger.info("[CLAUDE] Stdin closed (EOF sent) after respawn")
+        except (ConnectionResetError, RuntimeError) as e:
+            # Handle closed transport errors - respawn and retry
+            if "handler is closed" in str(e) or isinstance(e, ConnectionResetError):
+                logger.warning(f"[CLAUDE] Transport closed ({e}), respawning with --resume")
+                await self._respawn_claude_with_resume(proc)
+                process = proc.process
+                if process is None or process.stdin is None:
+                    raise RuntimeError("Failed to respawn Claude process")
+                process.stdin.write(prompt_bytes)
+                await process.stdin.drain()
+                process.stdin.close()
+                await process.stdin.wait_closed()
+                logger.info("[CLAUDE] Stdin closed (EOF sent) after respawn")
+            else:
+                raise
         except Exception as e:
             logger.error(f"[CLAUDE] Stdin error: {e}")
             raise
