@@ -469,7 +469,24 @@ Contesto: ${contextStr}`;
 
                 case 'TOOL_END':
                     console.log('[chatSidebar] Worker: tool completed:', data.toolName, data.toolInput);
-                    // Only update UI if it's the active session
+                    // Inject tool inline into stream content
+                    if (sessionId) {
+                        const toolInline = this.formatToolInline(data.toolName, data.toolInput);
+                        this.streamContentBySession[sessionId] = (this.streamContentBySession[sessionId] || '') + toolInline;
+
+                        // Update UI for active session
+                        if (isActiveSession) {
+                            this.streamContent = this.streamContentBySession[sessionId];
+                            this.$nextTick(() => this.scrollToBottom());
+                        }
+                        // Update UI for secondary session (dual-chat)
+                        if (isSecondarySession) {
+                            this.streamContentSecondary = this.streamContentBySession[sessionId];
+                            this.$nextTick(() => this.scrollToBottomSecondary());
+                        }
+                    }
+
+                    // Only update arrays if it's the active session
                     if (isActiveSession) {
                         // Move from active to completed
                         const toolIndex = this.activeTools.findIndex(t => t.name === data.toolName);
@@ -486,7 +503,25 @@ Contesto: ${contextStr}`;
 
                 case 'AGENT_START':
                     console.log('[chatSidebar] Worker: agent launched:', data.agentType, '(model:', data.agentModel, ')');
-                    // Only update UI if it's the active session
+                    // Inject agent inline into stream content
+                    if (sessionId) {
+                        const agentDesc = data.description || data.agentType;
+                        const agentInline = `\n\n🤖 Task: ${agentDesc}\n\n`;
+                        this.streamContentBySession[sessionId] = (this.streamContentBySession[sessionId] || '') + agentInline;
+
+                        // Update UI for active session
+                        if (isActiveSession) {
+                            this.streamContent = this.streamContentBySession[sessionId];
+                            this.$nextTick(() => this.scrollToBottom());
+                        }
+                        // Update UI for secondary session (dual-chat)
+                        if (isSecondarySession) {
+                            this.streamContentSecondary = this.streamContentBySession[sessionId];
+                            this.$nextTick(() => this.scrollToBottomSecondary());
+                        }
+                    }
+
+                    // Only update arrays if it's the active session
                     if (isActiveSession) {
                         this.activeAgents.push({
                             type: data.agentType,
@@ -1677,6 +1712,59 @@ Contesto: ${contextStr}`;
                     .replace(/>/g, '&gt;')
                     .replace(/\n/g, '<br>');
             }
+        },
+
+        /**
+         * Format tool for inline display in stream content
+         * @param {string} toolName - Name of the tool (Read, Edit, Bash, etc.)
+         * @param {Object} toolInput - Tool input parameters
+         * @returns {string} Formatted inline tool text
+         */
+        formatToolInline(toolName, toolInput) {
+            let description = '';
+
+            if (toolInput) {
+                switch (toolName) {
+                    case 'Read':
+                        description = toolInput.file_path || '';
+                        break;
+                    case 'Edit':
+                        description = toolInput.file_path || '';
+                        break;
+                    case 'Write':
+                        description = toolInput.file_path || '';
+                        break;
+                    case 'Bash':
+                        // Truncate long commands
+                        const cmd = toolInput.command || toolInput.description || '';
+                        description = cmd.length > 60 ? cmd.substring(0, 57) + '...' : cmd;
+                        break;
+                    case 'Glob':
+                        description = toolInput.pattern || '';
+                        break;
+                    case 'Grep':
+                        description = toolInput.pattern || '';
+                        break;
+                    case 'Task':
+                        description = toolInput.description || toolInput.subagent_type || '';
+                        break;
+                    case 'WebFetch':
+                        description = toolInput.url || '';
+                        break;
+                    case 'WebSearch':
+                        description = toolInput.query || '';
+                        break;
+                    default:
+                        // Try common field names
+                        description = toolInput.file_path || toolInput.path || toolInput.pattern || toolInput.command || '';
+                }
+            }
+
+            // Format: "🔧 ToolName: description" on its own line
+            if (description) {
+                return `\n\n🔧 ${toolName}: ${description}\n\n`;
+            }
+            return `\n\n🔧 ${toolName}\n\n`;
         },
 
         /**
