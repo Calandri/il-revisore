@@ -26,12 +26,13 @@ Usage:
 
 import asyncio
 import codecs
+import json
 import logging
 import os
 import sys
 import tempfile
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -104,6 +105,7 @@ class CLIProcess:
     mcp_config: Path | None = None
     gemini_context: str | None = None  # Context to prepend to first message
     context_used: bool = False  # Whether context has been prepended
+    message_history_callback: Callable[[], str] | None = None  # Callback to load history from DB
 
     @property
     def pid(self) -> int | None:
@@ -227,6 +229,7 @@ class CLIProcessManager:
         mcp_config: Path | None = None,
         context: str | None = None,
         existing_session_id: str | None = None,
+        message_history_callback: Callable[[], str] | None = None,
     ) -> CLIProcess:
         """Spawn a new Claude CLI process.
 
@@ -363,6 +366,7 @@ class CLIProcessManager:
             claude_session_id=claude_session_id,
             thinking_budget=thinking_budget,
             mcp_config=mcp_config,
+            message_history_callback=message_history_callback,
         )
 
         async with self._lock:
@@ -464,12 +468,44 @@ class CLIProcessManager:
             "--print",
         ]
 
+        # Track if we need to inject history (only for fresh sessions after failed resume)
+        recovery_prompt_file: Path | None = None
+
         if force_new_session or not proc.claude_session_id:
             # Create a fresh session
             new_session_id = str(uuid.uuid4())
             args.extend(["--session-id", new_session_id])
             proc.claude_session_id = new_session_id
             logger.info(f"[CLAUDE] Creating fresh session: {new_session_id}")
+
+            # If we have a history callback and this is a recovery (force_new_session=True),
+            # load message history from DB and inject as system prompt
+            if force_new_session and proc.message_history_callback:
+                try:
+                    history = proc.message_history_callback()
+                    if history:
+                        logger.info(
+                            f"[CLAUDE] [RECOVERY] Injecting message history ({len(history)} chars)"
+                        )
+                        # Create temp file with history as context
+                        fd, temp_path = tempfile.mkstemp(suffix=".md", prefix="turbowrap_recovery_")
+                        recovery_prompt_file = Path(temp_path)
+                        with os.fdopen(fd, "w") as f:
+                            f.write(f"""# Previous Conversation History
+
+The following is the conversation history from a previous session that was interrupted.
+Continue naturally from where we left off. The user's new message follows this context.
+
+---
+
+{history}
+
+---
+
+""")
+                        args.extend(["--system-prompt-file", str(recovery_prompt_file)])
+                except Exception as e:
+                    logger.error(f"[CLAUDE] Failed to load message history: {e}")
         else:
             args.extend(["--resume", proc.claude_session_id])
 
@@ -632,11 +668,13 @@ class CLIProcessManager:
             if (
                 "No conversation found with session ID" in stderr_text
                 and not _retry_with_new_session
-                and not chunks_yielded
             ):
                 logger.warning(
-                    "[CLAUDE] Session not found in Claude CLI, retrying with fresh session"
+                    f"[CLAUDE] Session not found in Claude CLI (chunks_yielded={chunks_yielded}), "
+                    "clearing invalid session and retrying with fresh session"
                 )
+                # Clear the invalid claude_session_id so we don't try to resume again
+                proc.claude_session_id = None
                 async for chunk in self._send_claude_message(
                     proc, message, timeout, _retry_with_new_session=True
                 ):
@@ -644,6 +682,15 @@ class CLIProcessManager:
                 return  # Don't set error status, we recovered
 
             proc.status = SessionStatus.ERROR
+            # Yield error to frontend
+            error_event = {
+                "type": "error",
+                "error": {
+                    "type": "cli_error",
+                    "message": stderr_text or "Claude CLI process failed unexpectedly",
+                },
+            }
+            yield json.dumps(error_event) + "\n"
         else:
             proc.status = SessionStatus.COMPLETED
 

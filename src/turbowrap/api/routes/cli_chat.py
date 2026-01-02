@@ -657,6 +657,35 @@ async def send_message(
                     if session_agent_name:
                         agent_path = loader.get_agent_path(session_agent_name)
 
+                    # Create callback to load message history on-demand (only if --resume fails)
+                    def load_message_history() -> str:
+                        """Load message history from DB - called only if --resume fails."""
+                        from ...db.session import get_session_local
+
+                        history_db = get_session_local()()
+                        try:
+                            messages = (
+                                history_db.query(CLIChatMessage)
+                                .filter(CLIChatMessage.session_id == session_id)
+                                .filter(CLIChatMessage.is_thinking == False)  # noqa: E712
+                                .order_by(CLIChatMessage.created_at.asc())
+                                .all()
+                            )
+                            if not messages:
+                                return ""
+
+                            history_parts = []
+                            for msg in messages:
+                                role_label = "User" if msg.role == "user" else "Assistant"
+                                history_parts.append(f"[{role_label}]: {msg.content}")
+
+                            logger.info(
+                                f"[RECOVERY] Loaded {len(messages)} messages from DB for session {session_id}"
+                            )
+                            return "\n\n".join(history_parts)
+                        finally:
+                            history_db.close()
+
                     settings = get_settings()
                     proc = await manager.spawn_claude(
                         session_id=session_id,
@@ -673,6 +702,9 @@ async def send_message(
                         context=context,
                         mcp_config=settings.mcp_config if settings.mcp_config.exists() else None,
                         existing_session_id=session_claude_session_id,
+                        message_history_callback=(
+                            load_message_history if session_claude_session_id else None
+                        ),
                     )
 
                     # Save claude_session_id to DB for persistence across process restarts
@@ -984,6 +1016,20 @@ async def send_message(
             # Save extracted title if found
             if extracted_title:
                 session.display_name = extracted_title  # type: ignore[assignment]
+
+            # Update claude_session_id if it changed during streaming (e.g., after retry)
+            current_proc = manager.get_process(session_id)
+            if (
+                current_proc
+                and session_cli_type == "claude"
+                and current_proc.claude_session_id
+                and current_proc.claude_session_id != session_claude_session_id
+            ):
+                session.claude_session_id = current_proc.claude_session_id  # type: ignore[assignment]
+                logger.info(
+                    f"[SESSION] Updated claude_session_id after streaming: "
+                    f"{current_proc.claude_session_id}"
+                )
 
             db.commit()
 
