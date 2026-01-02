@@ -2100,7 +2100,8 @@ Contesto: ${contextStr}`;
             // Load command prompt
             const prompt = await this.loadSlashCommand(commandName);
             if (!prompt) {
-                this.showToast(`Comando /${commandName} non trovato`, 'error');
+                console.error(`[chatSidebar] Slash command /${commandName} not found. API returned null. Check server logs for COMMANDS_DIR path.`);
+                this.showToast(`Comando /${commandName} non trovato. Verifica i log del server.`, 'error');
                 return { isCommand: true, expandedContent: null };
             }
 

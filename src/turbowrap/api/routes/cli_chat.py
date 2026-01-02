@@ -1481,7 +1481,37 @@ def get_default_mcp_servers() -> dict[str, list[str]]:
     return {"defaults": defaults}
 
 
-COMMANDS_DIR = Path(__file__).parent.parent.parent.parent.parent / "commands"
+def _find_commands_dir() -> Path:
+    """Find commands directory with fallbacks for different environments."""
+    logger = logging.getLogger(__name__)
+
+    # Try relative to file (works in most cases - local dev)
+    relative = Path(__file__).parent.parent.parent.parent.parent / "commands"
+    if relative.exists():
+        logger.debug(f"COMMANDS_DIR found (relative): {relative}")
+        return relative
+
+    # Try /app/commands (Docker container)
+    docker_path = Path("/app/commands")
+    if docker_path.exists():
+        logger.debug(f"COMMANDS_DIR found (docker): {docker_path}")
+        return docker_path
+
+    # Try PYTHONPATH-based resolution (fallback)
+    import sys
+
+    for path in sys.path:
+        candidate = Path(path).parent / "commands"
+        if candidate.exists():
+            logger.debug(f"COMMANDS_DIR found (pythonpath): {candidate}")
+            return candidate
+
+    # Log warning if not found
+    logger.warning(f"COMMANDS_DIR not found. Tried: {relative}, {docker_path}")
+    return relative  # Return anyway to allow error handling downstream
+
+
+COMMANDS_DIR = _find_commands_dir()
 
 
 @router.get("/commands")
@@ -1490,6 +1520,7 @@ def list_slash_commands() -> dict[str, Any]:
 
     Returns list of commands with their names and descriptions.
     """
+    logger.debug(f"Listing slash commands from: {COMMANDS_DIR}")
     commands = []
 
     if COMMANDS_DIR.exists():
@@ -1523,10 +1554,14 @@ def get_slash_command(command_name: str) -> dict[str, str]:
     Returns:
         Command prompt content from the MD file
     """
+    logger.info(f"Loading slash command: /{command_name}")
+    logger.debug(f"COMMANDS_DIR: {COMMANDS_DIR}, exists: {COMMANDS_DIR.exists()}")
+
     safe_name = "".join(c for c in command_name if c.isalnum() or c in "-_")
     md_file = COMMANDS_DIR / f"{safe_name}.md"
 
     if not md_file.exists():
+        logger.warning(f"Slash command file not found: {md_file}")
         raise HTTPException(status_code=404, detail=f"Slash command '/{command_name}' not found")
 
     try:
