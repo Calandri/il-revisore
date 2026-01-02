@@ -46,6 +46,7 @@ function chatSidebar() {
         creating: false,
         streaming: false,
         streamContent: '',
+        streamContentBySession: {}, // Keep separate content per sessionId
         inputMessage: '',
         showSettings: false,
         showModelDropdown: false,
@@ -339,49 +340,79 @@ Contesto: ${contextStr}`;
 
         /**
          * Handle messages from SharedWorker
+         * Supports parallel streaming: each sessionId keeps independent stream content
          */
         handleWorkerMessage(data) {
             const { type, sessionId, content, fullContent, event, messageId, title, error, state, activeStreams } = data;
 
-            // Ignore messages for other sessions
-            if (sessionId && this.activeSession?.id !== sessionId) {
-                console.log('[chatSidebar] Ignoring worker message for different session:', sessionId);
-                return;
+            // Initialize stream content for this sessionId if not present
+            if (sessionId && !this.streamContentBySession[sessionId]) {
+                this.streamContentBySession[sessionId] = '';
             }
+
+            // Only update UI if message is for the ACTIVE session
+            const isActiveSession = sessionId && this.activeSession?.id === sessionId;
 
             switch (type) {
                 case 'STREAM_START':
-                    console.log('[chatSidebar] Worker: stream started');
-                    this.streaming = true;
-                    this.streamContent = '';
-                    this.systemInfo = [];
+                    console.log('[chatSidebar] Worker: stream started for session:', sessionId);
+                    // Initialize empty stream content for this session
+                    if (sessionId) {
+                        this.streamContentBySession[sessionId] = '';
+                    }
+                    // Only update UI flags if it's the active session
+                    if (isActiveSession) {
+                        this.streaming = true;
+                        this.streamContent = '';
+                        this.systemInfo = [];
+                    }
                     break;
 
                 case 'CHUNK':
-                    // Use fullContent from worker for accurate state
-                    this.streamContent = fullContent || this.streamContent + content;
-                    this.$nextTick(() => this.scrollToBottom());
+                    // Accumulate content for this specific session
+                    if (sessionId) {
+                        this.streamContentBySession[sessionId] = fullContent || (this.streamContentBySession[sessionId] + content);
+                    }
+                    // Only update UI if it's the active session
+                    if (isActiveSession) {
+                        this.streamContent = this.streamContentBySession[sessionId];
+                        this.$nextTick(() => this.scrollToBottom());
+                    }
                     break;
 
                 case 'SYSTEM':
                     console.log('[chatSidebar] Worker: system event:', event?.subtype);
-                    if (!this.systemInfo) this.systemInfo = [];
-                    this.systemInfo.push(event);
+                    // Only show system info if it's the active session
+                    if (isActiveSession) {
+                        if (!this.systemInfo) this.systemInfo = [];
+                        this.systemInfo.push(event);
+                    }
                     break;
 
                 case 'DONE':
-                    console.log('[chatSidebar] Worker: stream done, messageId:', messageId);
-                    this.messages.push({
-                        id: messageId,
-                        role: 'assistant',
-                        content: content || this.streamContent,
-                        created_at: new Date().toISOString()
-                    });
-                    this.streamContent = '';
-                    this.streaming = false;
+                    console.log('[chatSidebar] Worker: stream done for session:', sessionId, 'messageId:', messageId);
+                    // Save message with final content for this session
+                    const finalContent = content || this.streamContentBySession[sessionId];
 
-                    // Check for queued message (ACCODA functionality)
-                    if (this.pendingMessage) {
+                    // Only add to messages UI if it's the active session
+                    if (isActiveSession) {
+                        this.messages.push({
+                            id: messageId,
+                            role: 'assistant',
+                            content: finalContent,
+                            created_at: new Date().toISOString()
+                        });
+                        this.streamContent = '';
+                        this.streaming = false;
+                    }
+
+                    // Clear accumulated content for this session after saving
+                    if (sessionId) {
+                        this.streamContentBySession[sessionId] = '';
+                    }
+
+                    // Check for queued message (ACCODA functionality) - only if active session
+                    if (isActiveSession && this.pendingMessage) {
                         const queuedMsg = this.pendingMessage;
                         this.pendingMessage = null;
                         console.log('[chatSidebar] Sending queued message:', queuedMsg.substring(0, 50));
@@ -404,47 +435,73 @@ Contesto: ${contextStr}`;
                     break;
 
                 case 'ERROR':
-                    console.error('[chatSidebar] Worker: error:', error);
-                    this.showToast('Errore: ' + error, 'error');
-                    this.streaming = false;
+                    console.error('[chatSidebar] Worker: error for session:', sessionId, ':', error);
+                    // Only show toast if it's the active session's error
+                    if (isActiveSession) {
+                        this.showToast('Errore: ' + error, 'error');
+                        this.streaming = false;
+                    }
+                    // Clear stream content for this session on error
+                    if (sessionId) {
+                        this.streamContentBySession[sessionId] = '';
+                    }
                     break;
 
                 case 'STREAM_ABORTED':
-                    console.log('[chatSidebar] Worker: stream aborted');
-                    // If we have partial content, save it
-                    if (this.streamContent.trim()) {
-                        this.messages.push({
-                            id: 'stopped-' + Date.now(),
-                            role: 'assistant',
-                            content: this.streamContent + '\n\n*[Interrotto]*',
-                            created_at: new Date().toISOString()
-                        });
+                    console.log('[chatSidebar] Worker: stream aborted for session:', sessionId);
+                    // Only save partial content if it's the active session
+                    if (isActiveSession) {
+                        const partialContent = this.streamContentBySession[sessionId] || this.streamContent;
+                        if (partialContent.trim()) {
+                            this.messages.push({
+                                id: 'stopped-' + Date.now(),
+                                role: 'assistant',
+                                content: partialContent + '\n\n*[Interrotto]*',
+                                created_at: new Date().toISOString()
+                            });
+                        }
+                        this.streamContent = '';
+                        this.streaming = false;
                     }
-                    this.streamContent = '';
-                    this.streaming = false;
+                    // Clear accumulated content for this session
+                    if (sessionId) {
+                        this.streamContentBySession[sessionId] = '';
+                    }
                     break;
 
                 case 'STREAM_END':
-                    console.log('[chatSidebar] Worker: stream ended');
-                    this.streaming = false;
+                    console.log('[chatSidebar] Worker: stream ended for session:', sessionId);
+                    // Only update UI if it's the active session
+                    if (isActiveSession) {
+                        this.streaming = false;
+                    }
                     break;
 
                 case 'STATE_SYNC':
                     console.log('[chatSidebar] Worker: state sync received', { activeStreams, state });
-                    // Restore state if there was an active stream
+                    // Restore state for all active streams
+                    // This helps when a new tab connects and there are ongoing streams in other sessions
+                    if (activeStreams && Array.isArray(activeStreams)) {
+                        console.log('[chatSidebar] Active streams in worker:', activeStreams);
+                    }
+                    // Restore state if there was an active stream for current session
                     if (state && sessionId === this.activeSession?.id) {
                         if (state.streaming) {
                             this.streaming = true;
                             this.streamContent = state.streamContent || '';
+                            this.streamContentBySession[sessionId] = state.streamContent || '';
                             this.systemInfo = state.systemInfo || [];
-                            console.log('[chatSidebar] Restored active stream state');
+                            console.log('[chatSidebar] Restored active stream state for session:', sessionId);
                         }
                     }
                     break;
 
                 case 'ACTION':
-                    console.log('[chatSidebar] Worker: action received', data);
-                    this.executeAction(data.action);
+                    console.log('[chatSidebar] Worker: action received for session:', sessionId, data);
+                    // Only execute action if it's for the active session
+                    if (isActiveSession) {
+                        this.executeAction(data.action);
+                    }
                     break;
 
                 default:
@@ -637,12 +694,24 @@ Contesto: ${contextStr}`;
 
         /**
          * Select a session and load its messages
+         * Supports parallel streaming: each session keeps its own streamContent
          */
         async selectSession(session) {
+            // When switching session, preserve the old session's stream in background
+            // and load the new session's accumulated stream content
+            if (this.activeSession?.id) {
+                // Save current streamContent for this session before switching
+                this.streamContentBySession[this.activeSession.id] = this.streamContent;
+            }
+
             this.activeSession = session;
             this.messages = [];
             this.showSettings = false;
             this.branches = [];
+
+            // Load the new session's accumulated stream content (if any)
+            this.streamContent = this.streamContentBySession[session.id] || '';
+
             localStorage.setItem('chatActiveSessionId', session.id);
 
             try {
