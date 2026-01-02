@@ -48,6 +48,15 @@ class CLISessionCreate(BaseModel):
         max_length=20,
         description="Hex color for icon",
     )
+    # Mockup context
+    mockup_project_id: str | None = Field(
+        default=None,
+        description="Mockup project UUID (for mockup generation)",
+    )
+    mockup_id: str | None = Field(
+        default=None,
+        description="Mockup UUID (for viewing/editing a specific mockup)",
+    )
 
 
 class CLISessionSettings(BaseModel):
@@ -98,6 +107,10 @@ class CLISessionResponse(BaseModel):
     current_branch: str | None = Field(default=None, description="Current branch in repository")
     status: SessionStatusEnum = Field(..., description="Session status")
 
+    # Mockup context
+    mockup_project_id: str | None = Field(default=None, description="Mockup project UUID")
+    mockup_id: str | None = Field(default=None, description="Mockup UUID being viewed/edited")
+
     # Configuration
     model: str | None = Field(default=None, description="Model in use")
     agent_name: str | None = Field(default=None, description="Agent in use")
@@ -138,6 +151,10 @@ class CLISessionUpdate(BaseModel):
     thinking_budget: int | None = Field(default=None, ge=1000, le=50000)
     reasoning_enabled: bool | None = None
     mcp_servers: list[str] | None = None
+
+    # Mockup context (dynamic, updated when user views mockups)
+    mockup_project_id: str | None = None
+    mockup_id: str | None = None
 
 
 class CLIBranchChange(BaseModel):

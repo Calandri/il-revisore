@@ -27,6 +27,10 @@ class CLIChatSession(Base, SoftDeleteMixin):
     # Branch context (for repo-linked sessions)
     current_branch = Column(String(100), nullable=True)  # Active branch in chat
 
+    # Mockup context (for mockup generation sessions)
+    mockup_project_id = Column(String(36), ForeignKey("mockup_projects.id"), nullable=True)
+    mockup_id = Column(String(36), ForeignKey("mockups.id"), nullable=True)
+
     # CLI Configuration
     cli_type = Column(String(20), nullable=False)  # "claude" or "gemini"
     model = Column(String(100), nullable=True)  # e.g., "claude-opus-4-5-20251101"

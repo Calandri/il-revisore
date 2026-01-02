@@ -356,6 +356,7 @@ def get_context_for_session(
     linear_issue_id: str | None = None,
     branch: str | None = None,
     mockup_project_id: str | None = None,
+    mockup_id: str | None = None,
 ) -> str:
     """Genera context specifico per una sessione.
 
@@ -368,11 +369,12 @@ def get_context_for_session(
         linear_issue_id: ID della issue Linear (opzionale)
         branch: Branch attivo nella sessione (opzionale)
         mockup_project_id: ID del progetto mockup (opzionale)
+        mockup_id: ID del mockup specifico che l'utente sta visualizzando (opzionale)
 
     Returns:
         Context string
     """
-    from ..db.models import LinearIssue, MockupProject, Repository
+    from ..db.models import LinearIssue, Mockup, MockupProject, Repository
 
     # Base context
     context = generate_context(db)
@@ -476,6 +478,36 @@ Stai generando mockup per il progetto **{project.name}**.
 4. Conferma: "Mockup creato! Vai alla pagina Mockups per vederlo."
 
 NON mostrare l'HTML nella chat. NON saltare nessun passaggio.
+"""
+            )
+
+    if mockup_id:
+        mockup = db.query(Mockup).filter(Mockup.id == mockup_id).first()
+        if mockup:
+            # Get project info if not already loaded
+            project_info = ""
+            if mockup.project_id:
+                project = (
+                    db.query(MockupProject).filter(MockupProject.id == mockup.project_id).first()
+                )
+                if project:
+                    project_info = (
+                        f"\n- `project_id`: `{project.id}`\n- `project_name`: **{project.name}**"
+                    )
+
+            extras.append(
+                f"""
+## Mockup Corrente
+
+L'utente sta visualizzando il mockup **{mockup.name}**.
+
+**ID e riferimenti**:
+- `mockup_id`: `{mockup.id}`{project_info}
+- `component_type`: `{mockup.component_type or 'page'}`
+- `llm_type`: `{mockup.llm_type}`
+- `status`: `{mockup.status}`
+
+Per modificare questo mockup, usa il comando `/mockup_modify` con `--mockup-id {mockup.id}`.
 """
             )
 

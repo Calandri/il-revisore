@@ -253,6 +253,8 @@ def create_session(
         color=data.color,
         model=default_model,
         status="idle",
+        mockup_project_id=data.mockup_project_id,
+        mockup_id=data.mockup_id,
     )
 
     db.add(session)
@@ -624,6 +626,9 @@ async def send_message(
     session_display_name = cast(str | None, session.display_name)
     session_repository = session.repository
     session_claude_session_id = cast(str | None, session.claude_session_id)
+    # Mockup context
+    session_mockup_project_id = cast(str | None, getattr(session, "mockup_project_id", None))
+    session_mockup_id = cast(str | None, getattr(session, "mockup_id", None))
 
     if data.model_override:
         logger.info(f"[MESSAGE] Using model override: {data.model_override}")
@@ -650,6 +655,8 @@ async def send_message(
                     repo_id=session_repository_id,
                     linear_issue_id=None,  # TODO: support linear issue context
                     branch=session_current_branch,
+                    mockup_project_id=session_mockup_project_id,
+                    mockup_id=session_mockup_id,
                 )
                 logger.info(f"Generated context: {len(context)} chars")
 
@@ -1251,6 +1258,8 @@ async def start_cli(
             repo_id=cast(str | None, session.repository_id),
             linear_issue_id=None,
             branch=cast(str | None, session.current_branch),
+            mockup_project_id=cast(str | None, getattr(session, "mockup_project_id", None)),
+            mockup_id=cast(str | None, getattr(session, "mockup_id", None)),
         )
         logger.info(f"[START] Generated context: {len(context)} chars")
 

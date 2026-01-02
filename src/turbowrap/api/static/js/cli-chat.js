@@ -133,6 +133,11 @@ function chatSidebar() {
         contextMenuSession: null,
         contextMenuX: 0,
         contextMenuY: 0,
+        // Agent autocomplete state
+        showAgentAutocomplete: false,
+        agentSearchQuery: '',
+        selectedAgentIndex: 0,
+        agentTriggerPosition: 0,  // Position of @ in input
 
         // NOTE: chatMode is inherited from parent scope (html element x-data)
         // Do NOT define a getter here - it causes infinite recursion!
@@ -304,6 +309,32 @@ function chatSidebar() {
             window.addEventListener('request-ai-help', async (e) => {
                 console.log('[chatSidebar] Request AI help:', e.detail);
                 await this.handleAIHelpRequest(e.detail);
+            });
+
+            // Listen for mockup context changes (from Mockups page)
+            window.addEventListener('mockup-context-changed', async (e) => {
+                const { mockup_id, mockup_project_id, mockup_name } = e.detail || {};
+                console.log('[chatSidebar] Mockup context changed:', e.detail);
+
+                // Update active session's mockup context if we have one
+                if (this.activeSession) {
+                    try {
+                        await fetch(`/api/cli-chat/sessions/${this.activeSession.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                mockup_id,
+                                mockup_project_id
+                            })
+                        });
+                        // Update local state
+                        this.activeSession.mockup_id = mockup_id;
+                        this.activeSession.mockup_project_id = mockup_project_id;
+                        console.log('[chatSidebar] Updated session mockup context');
+                    } catch (err) {
+                        console.warn('[chatSidebar] Failed to update mockup context:', err);
+                    }
+                }
             });
         },
 
@@ -800,6 +831,115 @@ Contesto: ${contextStr}`;
             } catch (error) {
                 console.error('Error loading agents:', error);
             }
+        },
+
+        /**
+         * Get filtered agents based on search query
+         */
+        get filteredAgents() {
+            if (!this.agentSearchQuery) {
+                return this.agents.slice(0, 10);  // Show first 10 if no query
+            }
+            const query = this.agentSearchQuery.toLowerCase();
+            return this.agents.filter(a =>
+                a.name.toLowerCase().includes(query) ||
+                (a.description && a.description.toLowerCase().includes(query))
+            ).slice(0, 10);  // Limit to 10 results
+        },
+
+        /**
+         * Handle input in message textarea - detect @ for agent autocomplete
+         */
+        handleMessageInput(event) {
+            const textarea = event.target;
+            const value = textarea.value;
+            const cursorPos = textarea.selectionStart;
+
+            // Find the last @ before cursor
+            const textBeforeCursor = value.substring(0, cursorPos);
+            const atIndex = textBeforeCursor.lastIndexOf('@');
+
+            if (atIndex >= 0) {
+                // Check if @ is at start or preceded by whitespace
+                const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
+                if (charBefore === ' ' || charBefore === '\n' || atIndex === 0) {
+                    // Extract query after @
+                    const query = textBeforeCursor.substring(atIndex + 1);
+                    // Only show autocomplete if query doesn't contain spaces
+                    if (!query.includes(' ')) {
+                        this.agentSearchQuery = query;
+                        this.agentTriggerPosition = atIndex;
+                        this.showAgentAutocomplete = true;
+                        this.selectedAgentIndex = 0;
+                        return;
+                    }
+                }
+            }
+
+            // Close autocomplete if no valid @ context
+            this.showAgentAutocomplete = false;
+            this.agentSearchQuery = '';
+        },
+
+        /**
+         * Handle keyboard navigation in agent autocomplete
+         */
+        handleAutocompleteKeydown(event) {
+            if (!this.showAgentAutocomplete) return false;
+
+            const agents = this.filteredAgents;
+            if (agents.length === 0) return false;
+
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    this.selectedAgentIndex = (this.selectedAgentIndex + 1) % agents.length;
+                    return true;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    this.selectedAgentIndex = (this.selectedAgentIndex - 1 + agents.length) % agents.length;
+                    return true;
+                case 'Tab':
+                case 'Enter':
+                    if (this.showAgentAutocomplete && agents.length > 0) {
+                        event.preventDefault();
+                        this.selectAgent(agents[this.selectedAgentIndex]);
+                        return true;
+                    }
+                    return false;
+                case 'Escape':
+                    event.preventDefault();
+                    this.showAgentAutocomplete = false;
+                    return true;
+            }
+            return false;
+        },
+
+        /**
+         * Select an agent from autocomplete
+         */
+        selectAgent(agent) {
+            // Replace @query with @agent-name
+            const before = this.inputMessage.substring(0, this.agentTriggerPosition);
+            const afterCursor = this.inputMessage.substring(
+                this.agentTriggerPosition + 1 + this.agentSearchQuery.length
+            );
+            this.inputMessage = before + '@' + agent.name + ' ' + afterCursor;
+
+            // Close autocomplete
+            this.showAgentAutocomplete = false;
+            this.agentSearchQuery = '';
+
+            // Focus back on input
+            this.$nextTick(() => {
+                const input = this.$refs.messageInput;
+                if (input) {
+                    input.focus();
+                    // Position cursor after agent name
+                    const newPos = this.agentTriggerPosition + agent.name.length + 2;
+                    input.setSelectionRange(newPos, newPos);
+                }
+            });
         },
 
         /**

@@ -51,7 +51,7 @@
                 <!-- Preview Header -->
                 <div class="p-3 border-b dark:border-gray-700 flex items-center justify-between shrink-0 bg-gray-50 dark:bg-gray-900">
                     <div class="flex items-center gap-3">
-                        <button @click="selectedMockup = null; selectedElement = null; previewHtml = ''"
+                        <button @click="selectedMockup = null; selectedElement = null; previewHtml = ''; window.dispatchEvent(new CustomEvent('mockup-context-changed', { detail: { mockup_id: null, mockup_project_id: null } }))"
                                 class="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
                                 title="Torna alla lista">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,6 +66,8 @@
                                     v<span x-text="selectedMockup.version"></span>
                                 </span>
                             </h3>
+                            <!-- Mockup ID (small, italic, muted) -->
+                            <p class="text-[10px] italic text-gray-400 dark:text-gray-500" x-text="selectedMockup.id"></p>
                             <p class="text-xs text-gray-500" x-text="selectedMockup.component_type + ' • ' + selectedMockup.llm_type"></p>
                         </div>
                     </div>
@@ -192,9 +194,13 @@
                             <button @click="selectProject(project)"
                                     class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
                                     :class="selectedProject?.id === project.id ? 'bg-primary/10 text-primary' : ''">
-                                <div class="w-3 h-3 rounded" :style="`background-color: ${project.color}`"></div>
-                                <span class="truncate" x-text="project.name"></span>
-                                <span class="ml-auto text-xs text-gray-400" x-text="project.mockup_count"></span>
+                                <div class="w-3 h-3 rounded shrink-0" :style="`background-color: ${project.color}`"></div>
+                                <div class="flex-1 min-w-0 text-left">
+                                    <span class="truncate block" x-text="project.name"></span>
+                                    <!-- Project ID (small, italic, muted) -->
+                                    <span class="text-[9px] italic text-gray-400 dark:text-gray-500 truncate block" x-text="project.id"></span>
+                                </div>
+                                <span class="ml-auto text-xs text-gray-400 shrink-0" x-text="project.mockup_count"></span>
                             </button>
                         </template>
 
@@ -622,6 +628,15 @@ function mockupsPage() {
             this.selectedMockup = mockup;
             this.selectedElement = null;
             this.previewHtml = '';
+
+            // Notify chat about mockup context (for AI context)
+            window.dispatchEvent(new CustomEvent('mockup-context-changed', {
+                detail: {
+                    mockup_id: mockup.id,
+                    mockup_project_id: mockup.project_id,
+                    mockup_name: mockup.name
+                }
+            }));
 
             // Fetch mockup content for preview
             try {

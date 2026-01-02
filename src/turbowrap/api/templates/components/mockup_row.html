@@ -18,7 +18,9 @@
                 v<span x-text="mockup.version"></span>
             </span>
         </div>
-        <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+        <!-- Mockup ID (small, italic, muted) -->
+        <p class="text-[10px] italic text-gray-400 dark:text-gray-500 truncate" x-text="mockup.id"></p>
+        <div class="flex items-center gap-3 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
             <span x-text="mockup.component_type || 'component'"></span>
             <span>&bull;</span>
             <span x-text="formatDate(mockup.created_at)"></span>
