@@ -7,6 +7,7 @@ Supporta multi-chat parallele, agenti custom, MCP servers.
 import asyncio
 import json
 import logging
+import re
 import time
 import traceback
 from collections.abc import AsyncGenerator
@@ -66,8 +67,6 @@ def extract_title_from_response(content: str) -> tuple[str | None, str]:
     Looks for {"chat_title": "..."} at the end of the response.
     Returns the title and the content with the JSON removed.
     """
-    import re
-
     pattern = r'\s*\{"chat_title":\s*"([^"]+)"\}\s*$'
     match = re.search(pattern, content)
 
@@ -90,8 +89,6 @@ def extract_actions_from_response(content: str) -> tuple[list[dict[str, Any]], s
 
     Returns (actions_list, cleaned_content).
     """
-    import re
-
     actions: list[dict[str, Any]] = []
 
     # Pattern: [[ACTION:type:target]]
@@ -825,9 +822,6 @@ async def send_message(
         """Generate SSE events for streaming response."""
         nonlocal session_claude_session_id  # Allow modification of outer scope variable
         manager = get_process_manager()
-        logger.info(
-            f"[MESSAGE DEBUG] session_id={session_id}, active_processes={list(manager._processes.keys())}"
-        )
 
         try:
             yield {
@@ -1486,9 +1480,6 @@ async def get_session_context(
         }
 
     manager = get_process_manager()
-    logger.info(
-        f"[CONTEXT DEBUG] session_id={session_id}, active_processes={list(manager._processes.keys())}"
-    )
 
     # Check if process is running
     if session_id not in manager._processes:
@@ -1500,15 +1491,10 @@ async def get_session_context(
     try:
         # Send /context command and collect output
         output_lines: list[str] = []
-        chunk_count = 0
         async for chunk in manager.send_message(session_id, "/context"):
-            chunk_count += 1
-            logger.info(f"[CONTEXT] Chunk #{chunk_count}: {chunk[:200]}")
-            # Parse JSON lines
             try:
                 event = json.loads(chunk.strip())
                 event_type = event.get("type")
-                # Extract text content from various event types
                 if event_type == "content_block_delta":
                     delta = event.get("delta", {})
                     if delta.get("type") == "text_delta":
@@ -1518,10 +1504,8 @@ async def get_session_context(
                     if block.get("type") == "text":
                         output_lines.append(block.get("text", ""))
                 elif event_type == "user":
-                    # /context and /usage return result in user message content
                     message = event.get("message", {})
                     content = message.get("content", "")
-                    # Strip <local-command-stdout> wrapper if present
                     if "<local-command-stdout>" in content:
                         content = content.replace("<local-command-stdout>", "").replace(
                             "</local-command-stdout>", ""
@@ -1530,20 +1514,10 @@ async def get_session_context(
                 elif event.get("result"):
                     output_lines.append(event["result"])
             except json.JSONDecodeError:
-                # Plain text output
-                logger.info("[CONTEXT] Plain text (not JSON)")
                 output_lines.append(chunk)
 
-        logger.info(f"[CONTEXT] Total chunks: {chunk_count}")
         raw_output = "".join(output_lines)
-        logger.info(f"[CONTEXT] Raw output ({len(raw_output)} chars): {raw_output[:500]}...")
-
-        # Parse the /context output
         context_info = _parse_context_output(raw_output)
-
-        # DEBUG: include raw output in response
-        context_info["_debug_raw"] = raw_output[:1000] if raw_output else "(empty)"
-        context_info["_debug_lines_count"] = len(output_lines)
 
         # Update session token counts from parsed data
         if context_info.get("tokens", {}).get("used"):
@@ -1569,8 +1543,6 @@ def _parse_context_output(output: str) -> dict[str, Any]:
 
     Returns structured data about token usage breakdown.
     """
-    import re
-
     info: dict[str, Any] = {
         "model": None,
         "tokens": {"used": 0, "limit": 200000, "percentage": 0},
@@ -1728,73 +1700,20 @@ async def get_session_usage(
             "setting_sources": None,
         }
 
-        # First call /status to get text-based info (login, email, etc.)
-        status_lines: list[str] = []
-        async for chunk in manager.send_message(session_id, "/status"):
-            try:
-                event = json.loads(chunk.strip())
-                if event.get("type") == "user":
-                    content = event.get("message", {}).get("content", "")
-                    if "<local-command-stdout>" in content:
-                        content = content.replace("<local-command-stdout>", "").replace(
-                            "</local-command-stdout>", ""
-                        )
-                    status_lines.append(content)
-            except json.JSONDecodeError:
-                status_lines.append(chunk)
-
-        # Parse /status text output
-        status_text = "".join(status_lines)
-        logger.info(f"[USAGE] /status output: {status_text[:500]}")
-        for line in status_text.split("\n"):
-            line = line.strip()
-            if ": " in line:
-                key, value = line.split(": ", 1)
-                key_lower = key.lower()
-                if key_lower == "version":
-                    info["version"] = value.strip()
-                elif key_lower == "session id":
-                    info["session_id"] = value.strip()
-                elif key_lower == "cwd":
-                    info["cwd"] = value.strip()
-                elif key_lower == "login method":
-                    info["login_method"] = value.strip()
-                elif key_lower == "organization":
-                    info["organization"] = value.strip()
-                elif key_lower == "email":
-                    info["email"] = value.strip()
-                elif key_lower == "memory":
-                    info["memory"] = value.strip()
-                elif key_lower == "model":
-                    # "Model: Default Opus 4.5 · Most capable for complex work"
-                    info["model_display"] = value.strip()
-                    # Extract just the model name (before the ·)
-                    model_parts = value.split("·")
-                    if model_parts:
-                        info["model"] = model_parts[0].strip()
-                elif key_lower == "ide":
-                    # "IDE: Connected to VS Code extension version 2.0.76 (server version: 2.0.75)"
-                    full_ide = value.strip()
-                    info["ide"] = full_ide
-                    # Try to extract version
-                    import re
-
-                    version_match = re.search(r"version\s+([\d.]+)", full_ide)
-                    if version_match:
-                        info["ide_version"] = version_match.group(1)
-                elif key_lower == "setting sources":
-                    info["setting_sources"] = value.strip()
-
-        # Then call /usage to get JSON data (tools, mcp, usage stats)
+        # Call /usage to get JSON data from system.init event
+        # (cwd, session_id, model, tools, mcp_servers, version)
+        # Note: /status doesn't return output via JSON events, only system.init + result
         async for chunk in manager.send_message(session_id, "/usage"):
             try:
                 event = json.loads(chunk.strip())
                 event_type = event.get("type")
 
                 if event_type == "system" and event.get("subtype") == "init":
+                    # Get all available info from system.init
                     info["model"] = event.get("model")
-                    if not info["version"]:
-                        info["version"] = event.get("claude_code_version")
+                    info["version"] = event.get("claude_code_version")
+                    info["cwd"] = event.get("cwd")
+                    info["session_id"] = event.get("session_id")
                     info["tools"] = event.get("tools", [])
                     mcp_servers = event.get("mcp_servers", [])
                     if isinstance(mcp_servers, list):
@@ -1810,11 +1729,10 @@ async def get_session_usage(
             except json.JSONDecodeError:
                 pass
 
-        logger.info(f"[USAGE] Final info: {info}")
         return info
 
     except Exception as e:
-        logger.error(f"[USAGE] Error getting usage info: {e}")
+        logger.error(f"Error getting usage info: {e}")
         return {"error": str(e)}
 
 
@@ -1823,8 +1741,6 @@ def _parse_usage_output(output: str) -> dict[str, Any]:
 
     Returns structured data about session configuration.
     """
-    import re
-
     info: dict[str, Any] = {
         "version": None,
         "session_id": None,

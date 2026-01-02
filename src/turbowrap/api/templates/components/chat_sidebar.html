@@ -1121,6 +1121,22 @@
                         <span class="text-gray-400 text-xs">Memory</span>
                         <code class="font-mono text-xs text-amber-400/80" x-text="usageInfo?.memory || 'CLAUDE.md'"></code>
                     </div>
+
+                    <!-- IDE -->
+                    <template x-if="usageInfo?.ide">
+                        <div class="col-span-2 flex items-center gap-2">
+                            <span class="text-gray-400 text-xs shrink-0">IDE</span>
+                            <span class="text-gray-300 text-xs truncate" x-text="usageInfo.ide"></span>
+                        </div>
+                    </template>
+
+                    <!-- Setting Sources -->
+                    <template x-if="usageInfo?.setting_sources">
+                        <div class="col-span-2 flex items-center gap-2">
+                            <span class="text-gray-400 text-xs shrink-0">Settings</span>
+                            <span class="text-gray-300 text-xs truncate" x-text="usageInfo.setting_sources"></span>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- MCP Servers -->
