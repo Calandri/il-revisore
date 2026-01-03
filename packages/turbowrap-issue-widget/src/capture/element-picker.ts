@@ -1,7 +1,5 @@
 import type { ElementInfo } from '../api/types';
 
-export type { ElementInfo };
-
 const PICKER_STYLES = `
   .element-picker-overlay {
     position: fixed;
@@ -67,22 +65,18 @@ function extractElementInfo(element: HTMLElement): ElementInfo {
 
 export function startElementPicker(): Promise<ElementInfo | null> {
   return new Promise((resolve) => {
-    // Inject styles
     const styleEl = document.createElement('style');
     styleEl.id = 'element-picker-styles';
     styleEl.textContent = PICKER_STYLES;
     document.head.appendChild(styleEl);
 
-    // Create overlay
     const overlay = document.createElement('div');
     overlay.className = 'element-picker-overlay';
 
-    // Create highlight box
     const highlight = document.createElement('div');
     highlight.className = 'element-picker-highlight';
     highlight.style.display = 'none';
 
-    // Create tooltip
     const tooltip = document.createElement('div');
     tooltip.className = 'element-picker-tooltip';
     tooltip.style.display = 'none';
@@ -102,7 +96,6 @@ export function startElementPicker(): Promise<ElementInfo | null> {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      // Get element under cursor (excluding our picker elements)
       overlay.style.pointerEvents = 'none';
       const target = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
       overlay.style.pointerEvents = 'auto';
@@ -117,14 +110,12 @@ export function startElementPicker(): Promise<ElementInfo | null> {
       currentElement = target;
       const rect = target.getBoundingClientRect();
 
-      // Update highlight
       highlight.style.display = 'block';
       highlight.style.top = `${rect.top}px`;
       highlight.style.left = `${rect.left}px`;
       highlight.style.width = `${rect.width}px`;
       highlight.style.height = `${rect.height}px`;
 
-      // Update tooltip
       const selector = generateSelector(target);
       tooltip.textContent = selector;
       tooltip.style.display = 'block';

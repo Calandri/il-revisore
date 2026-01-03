@@ -2,6 +2,7 @@ import html2canvas from 'html2canvas';
 
 export type CaptureMethod = 'display-media' | 'html2canvas' | 'auto';
 
+
 export async function captureScreen(method: CaptureMethod = 'auto'): Promise<Blob> {
   if (method === 'html2canvas') {
     return captureWithHtml2Canvas();
@@ -11,12 +12,11 @@ export async function captureScreen(method: CaptureMethod = 'auto'): Promise<Blo
     return captureWithDisplayMedia();
   }
 
-  // Auto: try display-media first, fallback to html2canvas
   if (supportsDisplayMedia()) {
     try {
       return await captureWithDisplayMedia();
-    } catch {
-      // User cancelled or error, fallback
+    } catch (error) {
+      console.warn('Display media capture failed, falling back to html2canvas:', error);
     }
   }
 
@@ -40,7 +40,6 @@ async function captureWithDisplayMedia(): Promise<Blob> {
   const track = stream.getVideoTracks()[0];
 
   try {
-    // Use video element to capture frame
     const video = document.createElement('video');
     video.srcObject = stream;
     video.muted = true;
@@ -53,7 +52,6 @@ async function captureWithDisplayMedia(): Promise<Blob> {
       video.onerror = () => reject(new Error('Failed to load video'));
     });
 
-    // Wait a frame to ensure video is rendering
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
     const canvas = document.createElement('canvas');
@@ -107,7 +105,11 @@ export async function compressImage(blob: Blob, maxWidth = 1920): Promise<Blob> 
     const url = URL.createObjectURL(blob);
 
     img.onload = () => {
-      URL.revokeObjectURL(url);
+      try {
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.warn('Failed to revoke blob URL:', error);
+      }
 
       let { width, height } = img;
       if (width > maxWidth) {
@@ -137,7 +139,11 @@ export async function compressImage(blob: Blob, maxWidth = 1920): Promise<Blob> 
     };
 
     img.onerror = () => {
-      URL.revokeObjectURL(url);
+      try {
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.warn('Failed to revoke blob URL after error:', error);
+      }
       reject(new Error('Failed to load image'));
     };
 
@@ -148,8 +154,15 @@ export async function compressImage(blob: Blob, maxWidth = 1920): Promise<Blob> 
 export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === 'string') {
+        resolve(result);
+      } else {
+        reject(new Error('FileReader result is not a string'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read blob as data URL'));
     reader.readAsDataURL(blob);
   });
 }

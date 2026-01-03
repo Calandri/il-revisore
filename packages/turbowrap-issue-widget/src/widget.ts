@@ -35,6 +35,7 @@ interface WidgetState {
   createdIssue: IssueCreatedResult | null;
   error: string | null;
   isLoading: boolean;
+  isCapturingScreenshot: boolean;
   // Chat mode
   mode: WidgetMode;
   chatSessionId: string | null;
@@ -44,12 +45,21 @@ interface WidgetState {
   chatStreamingContent: string;
 }
 
+// Memory limits for arrays
+const MAX_CHAT_MESSAGES = 100;
+const MAX_PROGRESS_MESSAGES = 50;
+
 export class IssueWidget {
   private config: WidgetConfig;
   private client: IssueAPIClient;
   private container: HTMLElement;
   private shadow: ShadowRoot;
   private state: WidgetState;
+
+  // Memory management
+  private blobUrls: string[] = [];
+  private eventHandlers: Map<string, EventListener> = new Map();
+  private abortController: AbortController | null = null;
 
   constructor(config: WidgetConfig) {
     this.config = {
@@ -79,6 +89,7 @@ export class IssueWidget {
       createdIssue: null,
       error: null,
       isLoading: false,
+      isCapturingScreenshot: false,
       // Chat mode
       mode: 'form',
       chatSessionId: null,
@@ -126,43 +137,59 @@ export class IssueWidget {
     this.shadow.appendChild(wrapper);
     this.attachEventListeners();
   }
+  private addChatMessage(message: ChatMessage): void {
+    this.state.chatMessages.push(message);
+    if (this.state.chatMessages.length > MAX_CHAT_MESSAGES) {
+      this.state.chatMessages = this.state.chatMessages.slice(-MAX_CHAT_MESSAGES);
+    }
+  }
+
+  private addProgressMessage(message: string): void {
+    this.state.progressMessages.push(message);
+    if (this.state.progressMessages.length > MAX_PROGRESS_MESSAGES) {
+      this.state.progressMessages.shift();
+    }
+  }
 
   private getHTML(): string {
     const position = this.config.position || 'bottom-right';
     const { step, isOpen, mode } = this.state;
 
     return `
-      <button class="iw-trigger ${position}" id="iw-trigger">
+      <button class="iw-trigger ${position}" id="iw-trigger" aria-label="${this.config.buttonText}">
         ${ICONS.bug}
         <span>${this.config.buttonText}</span>
       </button>
 
       <div class="iw-modal-overlay ${isOpen ? 'open' : ''}" id="iw-overlay"></div>
 
-      <div class="iw-modal ${position} ${isOpen ? 'open' : ''}" id="iw-modal">
+      <div class="iw-modal ${position} ${isOpen ? 'open' : ''}" id="iw-modal"
+           role="dialog" aria-modal="true" aria-labelledby="iw-modal-title">
         <div class="iw-header">
-          <h2>${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
-          <button class="iw-close" id="iw-close">&times;</button>
+          <h2 id="iw-modal-title">${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
+          <button class="iw-close" id="iw-close" aria-label="Close dialog">&times;</button>
         </div>
 
         <!-- Mode Selector -->
-        <div class="iw-mode-selector">
-          <button class="iw-mode-btn ${mode === 'form' ? 'active' : ''}" data-mode="form">
+        <div class="iw-mode-selector" role="tablist">
+          <button class="iw-mode-btn ${mode === 'form' ? 'active' : ''}" data-mode="form"
+                  role="tab" aria-selected="${mode === 'form'}" aria-label="Report Issue form mode">
             ${ICONS.form}
             <span>Report Issue</span>
           </button>
-          <button class="iw-mode-btn ${mode === 'chat' ? 'active' : ''}" data-mode="chat">
+          <button class="iw-mode-btn ${mode === 'chat' ? 'active' : ''}" data-mode="chat"
+                  role="tab" aria-selected="${mode === 'chat'}" aria-label="Chat mode">
             ${ICONS.chat}
             <span>Chat</span>
           </button>
         </div>
 
         ${mode === 'form' ? `
-          <div class="iw-progress-bar">
+          <div class="iw-progress-bar" role="region" aria-label="Form progress">
             ${this.renderProgressBar()}
           </div>
 
-          <div class="iw-content" id="iw-content">
+          <div class="iw-content" id="iw-content" role="region" aria-live="polite" aria-atomic="true">
             ${this.renderStep(step)}
           </div>
 
@@ -170,7 +197,8 @@ export class IssueWidget {
             ${this.renderFooter(step)}
           </div>
         ` : `
-          <div class="iw-content iw-chat-container" id="iw-content">
+          <div class="iw-content iw-chat-container" id="iw-content"
+               role="region" aria-live="polite" aria-atomic="false">
             ${this.renderChatMode()}
           </div>
         `}
@@ -441,11 +469,13 @@ export class IssueWidget {
   }
 
   private renderFooter(step: Step): string {
+    const isNextDisabled = this.state.isLoading || this.state.isCapturingScreenshot;
+
     switch (step) {
       case 'details':
         return `
           <div></div>
-          <button class="iw-btn iw-btn-primary" id="iw-next" ${this.state.isLoading ? 'disabled' : ''}>
+          <button class="iw-btn iw-btn-primary" id="iw-next" ${isNextDisabled ? 'disabled' : ''}>
             ${this.state.isLoading ? '<div class="iw-spinner"></div>' : ''}
             <span>Analyze</span>
           </button>
@@ -453,7 +483,7 @@ export class IssueWidget {
       case 'questions':
         return `
           <button class="iw-btn iw-btn-secondary" id="iw-back">Back</button>
-          <button class="iw-btn iw-btn-primary" id="iw-next" ${this.state.isLoading ? 'disabled' : ''}>
+          <button class="iw-btn iw-btn-primary" id="iw-next" ${isNextDisabled ? 'disabled' : ''}>
             ${this.state.isLoading ? '<div class="iw-spinner"></div>' : ''}
             <span>Create Issue</span>
           </button>
@@ -470,14 +500,73 @@ export class IssueWidget {
     }
   }
 
+  private initFocusTrap(): void {
+    const modal = this.shadow.getElementById('iw-modal');
+    if (!modal) return;
+
+    const focusableElements = modal.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+
+    const firstElement = focusableElements[0] as HTMLElement;
+    const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+    // Focus first element when modal opens
+    if (firstElement && this.state.isOpen) {
+      setTimeout(() => firstElement.focus(), 50);
+    }
+
+    // Trap focus on Tab
+    const trapFocus = (e: Event) => {
+      const keyEvent = e as KeyboardEvent;
+      if (!this.state.isOpen) return;
+
+      if (keyEvent.key === 'Tab') {
+        if (keyEvent.shiftKey) {
+          // Shift + Tab on first element -> go to last
+          if (this.shadow.activeElement === firstElement) {
+            keyEvent.preventDefault();
+            lastElement?.focus();
+          }
+        } else {
+          // Tab on last element -> go to first
+          if (this.shadow.activeElement === lastElement) {
+            keyEvent.preventDefault();
+            firstElement?.focus();
+          }
+        }
+      }
+
+      // Escape key closes modal
+      if (keyEvent.key === 'Escape' && this.state.isOpen) {
+        keyEvent.preventDefault();
+        this.close();
+      }
+    };
+
+    this.shadow.addEventListener('keydown', trapFocus);
+  }
+
   private attachEventListeners(): void {
+    // Remove old listeners first to prevent duplicates
+    this.removeEventListeners();
+
     const trigger = this.shadow.getElementById('iw-trigger');
     const overlay = this.shadow.getElementById('iw-overlay');
     const closeBtn = this.shadow.getElementById('iw-close');
 
-    trigger?.addEventListener('click', () => this.open());
-    overlay?.addEventListener('click', () => this.close());
-    closeBtn?.addEventListener('click', () => this.close());
+    const openHandler = () => this.open();
+    const closeHandler = () => this.close();
+    const overlayCloseHandler = () => this.close();
+
+    trigger?.addEventListener('click', openHandler);
+    overlay?.addEventListener('click', overlayCloseHandler);
+    closeBtn?.addEventListener('click', closeHandler);
+
+    // Store handlers for later removal
+    this.eventHandlers.set('trigger-click', openHandler);
+    this.eventHandlers.set('overlay-click', overlayCloseHandler);
+    this.eventHandlers.set('close-click', closeHandler);
 
     this.shadow.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
@@ -560,9 +649,33 @@ export class IssueWidget {
     });
   }
 
+  private removeEventListeners(): void {
+    const trigger = this.shadow.getElementById('iw-trigger');
+    const overlay = this.shadow.getElementById('iw-overlay');
+    const closeBtn = this.shadow.getElementById('iw-close');
+
+    const openHandler = this.eventHandlers.get('trigger-click');
+    const overlayCloseHandler = this.eventHandlers.get('overlay-click');
+    const closeHandler = this.eventHandlers.get('close-click');
+
+    if (openHandler && trigger) {
+      trigger.removeEventListener('click', openHandler);
+    }
+    if (overlayCloseHandler && overlay) {
+      overlay.removeEventListener('click', overlayCloseHandler);
+    }
+    if (closeHandler && closeBtn) {
+      closeBtn.removeEventListener('click', closeHandler);
+    }
+
+    this.eventHandlers.clear();
+  }
+
   private open(): void {
     this.state.isOpen = true;
     this.update();
+    // Initialize focus trap after modal is rendered
+    setTimeout(() => this.initFocusTrap(), 50);
     this.config.onOpen?.();
   }
 
@@ -573,9 +686,11 @@ export class IssueWidget {
   }
 
   private reset(): void {
-    // Cleanup chat session if active
+    // Cleanup chat session if active (non-blocking but tracked)
     if (this.state.chatSessionId) {
-      this.client.deleteChatSession(this.state.chatSessionId).catch(() => {});
+      this.client.deleteChatSession(this.state.chatSessionId).catch((error) => {
+        console.warn('Chat session cleanup failed during reset:', error);
+      });
     }
 
     this.state = {
@@ -595,6 +710,7 @@ export class IssueWidget {
       createdIssue: null,
       error: null,
       isLoading: false,
+      isCapturingScreenshot: false,
       // Chat mode - reset
       mode: 'form',
       chatSessionId: null,
@@ -657,28 +773,60 @@ export class IssueWidget {
         `}
       `;
 
-      // Reattach close button listener
-      const closeBtn = modal.querySelector('#iw-close');
-      closeBtn?.addEventListener('click', () => this.close());
+      // Reattach all event listeners after full DOM re-render
+      this.attachEventListeners();
     }
   }
 
   private async handleScreenshotCapture(): Promise<void> {
+    this.state.isCapturingScreenshot = true;
+    this.update();
+
     try {
       // Hide widget during screenshot capture so it doesn't appear in the screenshot
       this.container.style.display = 'none';
 
       const blob = await captureScreen(this.config.screenshotMethod);
       const compressed = await compressImage(blob);
+      if (!compressed || compressed.size === 0) {
+        throw new Error('Screenshot capture produced an empty image');
+      }
+
+      // Validate that the blob is a valid image type
+      if (!compressed.type.startsWith('image/')) {
+        throw new Error('Screenshot capture produced an invalid image format');
+      }
+
       const dataUrl = await blobToDataUrl(compressed);
+
+      // Revoke old blob URLs to prevent memory leaks
+      this.blobUrls.forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          console.warn('Blob URL revocation failed:', error);
+        }
+      });
+      this.blobUrls = [];
 
       this.state.screenshots = [compressed];
       this.state.screenshotPreviews = [dataUrl];
+      this.blobUrls.push(dataUrl);
+      this.state.error = null;
     } catch (error) {
-      console.error('Screenshot capture failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to capture screenshot';
+      this.state.error = errorMsg;
+      // Allow user to continue without screenshot
+      this.state.screenshots = [];
+      this.state.screenshotPreviews = [];
     } finally {
-      // Always show widget again
-      this.container.style.display = '';
+      // Always show widget again and reset capturing flag
+      this.state.isCapturingScreenshot = false;
+      try {
+        this.container.style.display = '';
+      } catch (error) {
+        console.warn('Container display reset failed:', error);
+      }
       this.update();
     }
   }
@@ -690,38 +838,83 @@ export class IssueWidget {
 
   private async handleFileUpload(file: File): Promise<void> {
     try {
+      // Validate file
+      if (!file.type.startsWith('image/')) {
+        this.state.error = 'Please upload an image file';
+        this.update();
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        this.state.error = 'File must be less than 10MB';
+        this.update();
+        return;
+      }
+
       const compressed = await compressImage(file);
       const dataUrl = await blobToDataUrl(compressed);
 
+      // Revoke old blob URLs to prevent memory leaks
+      this.blobUrls.forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          console.warn('Blob URL revocation failed:', error);
+        }
+      });
+      this.blobUrls = [];
+
       this.state.screenshots = [compressed];
       this.state.screenshotPreviews = [dataUrl];
+      this.blobUrls.push(dataUrl);
+      this.state.error = null;
       this.update();
     } catch (error) {
-      console.error('File upload failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to process file';
+      this.state.error = errorMsg;
+      this.update();
     }
   }
 
   private async handleElementPick(): Promise<void> {
     // Close the modal temporarily
     this.close();
-
     try {
       const elementInfo = await startElementPicker();
       if (elementInfo) {
         this.state.selectedElement = elementInfo;
+        this.state.error = null;
       }
     } catch (error) {
-      console.error('Element pick failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to pick element';
+      this.state.error = errorMsg;
+      // Continue without element selection
+    } finally {
+      // Guarantee modal reopens regardless of success or failure
+      this.open();
     }
-
-    // Reopen the modal
-    this.open();
   }
 
   private handleRemoveScreenshot(): void {
-    this.state.screenshots = [];
-    this.state.screenshotPreviews = [];
-    this.update();
+    try {
+      // Revoke blob URLs to prevent memory leaks
+      this.blobUrls.forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          console.warn('Blob URL revocation failed:', error);
+        }
+      });
+      this.blobUrls = [];
+
+      this.state.screenshots = [];
+      this.state.screenshotPreviews = [];
+      this.state.error = null;
+      this.update();
+    } catch {
+      this.state.error = 'Failed to remove screenshot';
+      this.update();
+    }
   }
 
   private handleRemoveElement(): void {
@@ -729,11 +922,59 @@ export class IssueWidget {
     this.update();
   }
 
+  private validateDetailsStep(): boolean {
+    // Validate title
+    if (!this.state.title.trim()) {
+      this.state.error = 'Title is required';
+      this.update();
+      return false;
+    }
+
+    if (this.state.title.length > 500) {
+      this.state.error = 'Title must be less than 500 characters';
+      this.update();
+      return false;
+    }
+
+    // Validate description (optional but if provided, must be reasonable)
+    if (this.state.description.length > 5000) {
+      this.state.error = 'Description must be less than 5000 characters';
+      this.update();
+      return false;
+    }
+
+    // Clear error if validation passed
+    this.state.error = null;
+    return true;
+  }
+
+  private validateQuestionsStep(): boolean {
+    // Validate that all required questions have been answered
+    for (const question of this.state.questions) {
+      if (!this.state.answers[question.id]) {
+        this.state.error = `Please answer: ${question.question}`;
+        this.update();
+        return false;
+      }
+    }
+
+    this.state.error = null;
+    return true;
+  }
+
   private async handleNext(): Promise<void> {
+    if (this.state.isCapturingScreenshot) {
+      return;
+    }
+
     if (this.state.step === 'details') {
-      await this.analyzeIssue();
+      if (this.validateDetailsStep()) {
+        await this.analyzeIssue();
+      }
     } else if (this.state.step === 'questions') {
-      await this.createIssue();
+      if (this.validateQuestionsStep()) {
+        await this.createIssue();
+      }
     }
   }
 
@@ -765,16 +1006,30 @@ export class IssueWidget {
 
   private async handleChatSend(): Promise<void> {
     const message = this.state.chatInput.trim();
-    if (!message || this.state.chatIsStreaming) return;
 
-    // Add user message to chat
+    // Validate message
+    if (!message) {
+      this.state.error = 'Message cannot be empty';
+      this.update();
+      return;
+    }
+
+    if (message.length > 2000) {
+      this.state.error = 'Message must be less than 2000 characters';
+      this.update();
+      return;
+    }
+
+    if (this.state.chatIsStreaming) return;
+
+    // Add user message to chat (HIGH ISSUE 5: use centralized method)
     const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: this.generateId(),
       role: 'user',
       content: message,
       timestamp: new Date(),
     };
-    this.state.chatMessages.push(userMessage);
+    this.addChatMessage(userMessage);
     this.state.chatInput = '';
     this.state.chatIsStreaming = true;
     this.state.chatStreamingContent = '';
@@ -817,15 +1072,15 @@ export class IssueWidget {
         },
         // onComplete
         () => {
-          // Move streaming content to actual message
+          // Move streaming content to actual message (HIGH ISSUE 5: use centralized method)
           if (this.state.chatStreamingContent) {
             const assistantMessage: ChatMessage = {
-              id: crypto.randomUUID(),
+              id: this.generateId(),
               role: 'assistant',
               content: this.state.chatStreamingContent,
               timestamp: new Date(),
             };
-            this.state.chatMessages.push(assistantMessage);
+            this.addChatMessage(assistantMessage);
           }
           this.state.chatIsStreaming = false;
           this.state.chatStreamingContent = '';
@@ -869,19 +1124,20 @@ export class IssueWidget {
           this.config.onIssueCreated?.(result);
         },
         (error: string) => {
-          // Add error as system message
+          // Add error as system message (HIGH ISSUE 5: use centralized method)
           const errorMessage: ChatMessage = {
-            id: crypto.randomUUID(),
+            id: this.generateId(),
             role: 'system',
             content: `Errore nella creazione: ${error}`,
             timestamp: new Date(),
           };
-          this.state.chatMessages.push(errorMessage);
+          this.addChatMessage(errorMessage);
+
           this.update();
         }
       );
     } catch (error) {
-      console.error('Failed to create issue from chat:', error);
+      console.warn('Issue creation from chat failed:', error);
     }
   }
 
@@ -889,6 +1145,8 @@ export class IssueWidget {
     const content = this.shadow.getElementById('iw-content');
     if (content && this.state.mode === 'chat') {
       content.innerHTML = this.renderChatMode();
+      // Reattach event listeners after DOM update
+      this.attachEventListeners();
     }
   }
 
@@ -911,6 +1169,8 @@ export class IssueWidget {
     this.update();
 
     try {
+      // Note: proceeding without screenshot is allowed - user will see results without visual context
+
       await this.client.analyzeIssue(
         {
           title: this.state.title,
@@ -921,7 +1181,7 @@ export class IssueWidget {
           selectedElement: this.state.selectedElement || undefined,
         },
         (msg) => {
-          this.state.progressMessages.push(msg);
+          this.addProgressMessage(msg);
           this.update();
         },
         (result: AnalyzeResult) => {
@@ -967,7 +1227,7 @@ export class IssueWidget {
           selectedElement: this.state.selectedElement || undefined,
         },
         (msg) => {
-          this.state.progressMessages.push(msg);
+          this.addProgressMessage(msg);
           this.update();
         },
         (result: IssueCreatedResult) => {
@@ -999,7 +1259,79 @@ export class IssueWidget {
     return div.innerHTML;
   }
 
-  public destroy(): void {
-    this.container.remove();
+  private generateId(): string {
+    // Use crypto.randomUUID if available, otherwise fallback to timestamp + random
+    if (crypto && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  }
+
+  public async destroy(): Promise<void> {
+    // 1. Cancel pending requests
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    // 2. Delete remote chat session (HIGH ISSUE 2: await session cleanup before other cleanup)
+    const sessionId = this.state.chatSessionId;
+    if (sessionId) {
+      try {
+        await this.client.deleteChatSession(sessionId);
+      } catch (error) {
+        console.warn('Session cleanup failed during destroy:', error);
+      }
+    }
+
+    // 3. Revoke all blob URLs
+    this.blobUrls.forEach(url => {
+      try {
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          console.warn('Blob URL revocation failed:', error);
+        }
+    });
+    this.blobUrls = [];
+
+    // 4. Remove all event listeners
+    this.removeEventListeners();
+
+    // 5. Clear state
+    this.state = {
+      isOpen: false,
+      step: 'details',
+      issueType: 'bug',
+      title: '',
+      description: '',
+      screenshots: [],
+      screenshotPreviews: [],
+      selectedElement: null,
+      questions: [],
+      answers: {},
+      geminiInsights: '',
+      tempSessionId: '',
+      progressMessages: [],
+      createdIssue: null,
+      error: null,
+      isLoading: false,
+      isCapturingScreenshot: false,
+      mode: 'form',
+      chatSessionId: null,
+      chatMessages: [],
+      chatInput: '',
+      chatIsStreaming: false,
+      chatStreamingContent: '',
+    };
+
+    // 6. Remove DOM
+    try {
+      this.container.remove();
+    } catch (error) {
+      console.warn('Container removal failed:', error);
+    }
+
+    // 7. Trigger callback
+    this.config.onClose?.();
   }
 }

@@ -33,7 +33,8 @@ export class IssueAPIClient {
     formData.append('issue_type', data.issueType);
 
     data.screenshots.forEach((blob, index) => {
-      formData.append('screenshots', blob, `screenshot-${index}-${Date.now()}.png`);
+      const timestamp = Date.now();
+      formData.append('screenshots', blob, `screenshot-${index}-${timestamp}.png`);
     });
 
     if (data.figmaLink) formData.append('figma_link', data.figmaLink);
@@ -135,18 +136,29 @@ export class IssueAPIClient {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
 
-        let currentEvent = '';
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
 
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            const dataStr = line.slice(6);
+        for (const eventBlock of events) {
+          if (!eventBlock.trim()) continue;
+
+          const lines = eventBlock.split('\n');
+          let currentEvent = '';
+          let currentData = '';
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              const dataLine = line.slice(6);
+              currentData += currentData ? '\n' + dataLine : dataLine;
+            }
+          }
+
+          if (currentData) {
             try {
-              const data = JSON.parse(dataStr) as Record<string, unknown>;
+              const data = JSON.parse(currentData) as Record<string, unknown>;
 
               if (currentEvent === 'error' || data.error) {
                 onError(String(data.error || data.message || 'Unknown error'));
@@ -160,8 +172,8 @@ export class IssueAPIClient {
               if (currentEvent === 'complete' || data.questions || data.identifier) {
                 onData(data);
               }
-            } catch {
-              // Incomplete JSON chunk, continue
+            } catch (parseError) {
+              console.warn('Failed to parse SSE data:', parseError);
             }
           }
         }
@@ -170,8 +182,6 @@ export class IssueAPIClient {
       reader.releaseLock();
     }
   }
-
-  // --- Chat Mode Methods ---
 
   async createChatSession(context?: ChatContext): Promise<ChatSessionResponse> {
     const response = await fetch(`${this.baseUrl}/api/widget-chat/sessions`, {
@@ -286,8 +296,8 @@ export class IssueAPIClient {
               if (currentEvent === 'done') {
                 onComplete();
               }
-            } catch {
-              // Incomplete JSON chunk, continue
+            } catch (parseError) {
+              console.warn('Failed to parse chat SSE data:', parseError);
             }
           }
         }
