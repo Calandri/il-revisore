@@ -27,6 +27,7 @@ from ...db.models import (
     LinearIssueRepositoryLink,
     Repository,
     Setting,
+    Task,
 )
 from ...linear.analyzer import LinearIssueAnalyzer
 from ...review.integrations.linear import LinearClient
@@ -852,14 +853,15 @@ async def analyze_for_creation(
 
             prompt_content = (
                 "Genera 3-4 domande (massimo 4) per chiarire questa issue Linear.\n"
+                "IMPORTANTE: Se l'utente ha già fornito screenshot, NON chiedere altri screenshot!\n"
                 f"Tipo: {issue_type_label}\n"
                 f"Titolo: {title}\n"
                 f"Descrizione: {description}\n"
                 f"Figma: {figma_link or 'N/A'}\n"
                 f"Sito: {website_link or 'N/A'}\n"
                 f"Repository: {repo_context if repo_context else 'N/A'}\n"
-                "\nAnalisi Gemini:\n"
-                f"{gemini_insights[:500] if gemini_insights else 'Nessuno screenshot'}\n"
+                f"\n{'✅ SCREENSHOT FORNITO - Analisi Gemini:' if gemini_insights else '❌ Nessuno screenshot fornito'}\n"
+                f"{gemini_insights[:2000] if gemini_insights else ''}\n"
                 "\nRispondi SOLO con JSON valido senza testo aggiuntivo:\n"
                 '{"questions": [{"id": 1, "question": "...", "why": "..."}]}'
             )
@@ -1076,8 +1078,19 @@ Non aggiungere spiegazioni, solo il nome del repository."""
             try:
                 # Route to correct table based on issue_type
                 if request.issue_type == "bug":
+                    # Create a Task for widget-reported bugs (Issue requires task_id)
+                    widget_task = Task(
+                        repository_id=request.repository_id,
+                        type="widget_report",
+                        status="completed",
+                        config={"source": "widget", "title": request.title},
+                    )
+                    db.add(widget_task)
+                    db.flush()  # Get the ID before creating Issue
+
                     # Save to Issue table
                     db_record = Issue(
+                        task_id=widget_task.id,  # Link to the widget task
                         linear_id=None,  # Will be updated if Linear succeeds
                         linear_identifier=None,
                         linear_url=None,
@@ -1092,7 +1105,9 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                         file="user_reported",
                         line=None,
                     )
-                    logger.info(f"[create/finalize] Creating Issue: {local_code}")
+                    logger.info(
+                        f"[create/finalize] Creating Issue: {local_code} with task_id: {widget_task.id}"
+                    )
                 else:  # suggestion or question → Feature
                     db_record = Feature(
                         linear_id=None,
