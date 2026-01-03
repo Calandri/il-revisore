@@ -37,6 +37,7 @@ export class IssueAPIClient {
       formData.append('screenshots', blob, `screenshot-${index}-${timestamp}.png`);
     });
 
+    if (data.repositoryId) formData.append('repository_id', data.repositoryId);
     if (data.figmaLink) formData.append('figma_link', data.figmaLink);
     if (data.websiteLink) formData.append('website_link', data.websiteLink);
     if (data.selectedElement) {

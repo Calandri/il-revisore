@@ -38,6 +38,8 @@ interface WidgetState {
   error: string | null;
   isLoading: boolean;
   isCapturingScreenshot: boolean;
+  // Repository context
+  repositoryId: string | null;
   // Chat mode
   mode: WidgetMode;
   chatSessionId: string | null;
@@ -92,6 +94,8 @@ export class IssueWidget {
       error: null,
       isLoading: false,
       isCapturingScreenshot: false,
+      // Repository context
+      repositoryId: this.config.repositoryId || null,
       // Chat mode
       mode: 'form',
       chatSessionId: null,
@@ -714,6 +718,8 @@ export class IssueWidget {
       error: null,
       isLoading: false,
       isCapturingScreenshot: false,
+      // Repository context (preserved from config)
+      repositoryId: this.config.repositoryId || null,
       // Chat mode - reset
       mode: 'form',
       chatSessionId: null,
@@ -1180,6 +1186,7 @@ export class IssueWidget {
           description: this.state.description,
           issueType: this.state.issueType,
           screenshots: this.state.screenshots,
+          repositoryId: this.state.repositoryId || undefined,
           websiteLink: window.location.href,
           selectedElement: this.state.selectedElement || undefined,
         },
@@ -1319,6 +1326,7 @@ export class IssueWidget {
       error: null,
       isLoading: false,
       isCapturingScreenshot: false,
+      repositoryId: null,
       mode: 'form',
       chatSessionId: null,
       chatMessages: [],
