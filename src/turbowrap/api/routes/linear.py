@@ -20,13 +20,13 @@ from ...db.models import (
     Feature,
     FeatureRepository,
     FeatureRepositoryRole,
+    FeatureStatus,
     Issue,
     IssueStatus,
     LinearIssue,
     LinearIssueRepositoryLink,
     Repository,
     Setting,
-    FeatureStatus,
 )
 from ...linear.analyzer import LinearIssueAnalyzer
 from ...review.integrations.linear import LinearClient
@@ -780,17 +780,20 @@ async def analyze_for_creation(
                     ),
                 }
 
-            # Gemini analysis
+            # Gemini analysis (Flash - fast)
             gemini_insights = ""
             if screenshot_paths:
                 yield {
                     "event": "log",
-                    "data": json.dumps({"message": "🔮 Gemini sta analizzando gli screenshot..."}),
+                    "data": json.dumps(
+                        {"message": "🔮 Gemini Flash sta analizzando gli screenshot..."}
+                    ),
                 }
 
                 try:
+                    from turbowrap_llm.gemini import GeminiClient
+
                     from ...config import get_settings
-                    from ...llm import GeminiProClient
 
                     # Load and format prompt template
                     settings = get_settings()
@@ -803,7 +806,7 @@ async def analyze_for_creation(
                         website_link=website_link or "N/A",
                     )
 
-                    gemini = GeminiProClient()
+                    gemini = GeminiClient(model="flash")
                     gemini_insights = gemini.analyze_images(formatted_prompt, screenshot_paths)
 
                     yield {
@@ -819,7 +822,7 @@ async def analyze_for_creation(
                     }
                     gemini_insights = f"Screenshot analysis failed: {str(e)}"
 
-            # Claude question generation
+            # Claude question generation (API direct - fast)
             yield {
                 "event": "log",
                 "data": json.dumps({"message": "🤖 Claude sta generando le domande..."}),
@@ -833,33 +836,30 @@ async def analyze_for_creation(
             }
             issue_type_label = issue_type_labels.get(issue_type, issue_type)
 
-            prompt_content = f"""Genera 3-4 domande (massimo 4) per chiarire questa issue Linear. Sii conciso e fai solo domande essenziali.
-
-Tipo: {issue_type_label}
-Titolo: {title}
-Descrizione: {description}
-Figma: {figma_link or "N/A"}
-Sito: {website_link or "N/A"}
-
-Analisi Gemini:
-{gemini_insights if gemini_insights else "Nessuno screenshot fornito"}
-
-Output JSON: {{"questions": [{{"id": 1, "question": "...", "why": "..."}}]}}
-"""
+            prompt_content = (
+                "Genera 3-4 domande (massimo 4) per chiarire questa issue Linear.\n"
+                f"Tipo: {issue_type_label}\n"
+                f"Titolo: {title}\n"
+                f"Descrizione: {description}\n"
+                f"Figma: {figma_link or 'N/A'}\n"
+                f"Sito: {website_link or 'N/A'}\n"
+                "\nAnalisi Gemini:\n"
+                f"{gemini_insights[:500] if gemini_insights else 'Nessuno screenshot'}\n"
+                "\nRispondi SOLO con JSON valido senza testo aggiuntivo:\n"
+                '{"questions": [{"id": 1, "question": "...", "why": "..."}]}'
+            )
 
             try:
-                result = subprocess.run(
-                    ["claude", "--agent", "agents/linear_question_generator.md"],
-                    input=prompt_content,
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
+                from anthropic import Anthropic
+
+                client = Anthropic()
+                response = client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=500,
+                    messages=[{"role": "user", "content": prompt_content}],
                 )
 
-                if result.returncode != 0:
-                    raise Exception(f"Claude CLI failed: {result.stderr[:200]}")
-
-                output = result.stdout.strip()
+                output = response.content[0].text.strip()
 
                 # Extract JSON from markdown if needed
                 json_str = output
@@ -1127,7 +1127,9 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 db.commit()
                 db.refresh(db_record)  # Refresh to get ID
 
-                logger.info(f"[create/finalize] Saved to database: {db_record.id} (type: {request.issue_type})")
+                logger.info(
+                    f"[create/finalize] Saved to database: {db_record.id} (type: {request.issue_type})"
+                )
 
                 # Link detected repository
                 if detected_repo_name:
