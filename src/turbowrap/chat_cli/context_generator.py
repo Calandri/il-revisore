@@ -39,7 +39,7 @@ def load_system_guide() -> str:
 
     try:
         content = SYSTEM_GUIDE_PATH.read_text(encoding="utf-8")
-        logger.info(f"Loaded system guide: {len(content)} chars")
+        logger.debug(f"Loaded system guide: {len(content)} chars")
         return content
     except Exception as e:
         logger.warning(f"Failed to read system guide: {e}")

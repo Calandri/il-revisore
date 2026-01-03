@@ -134,7 +134,7 @@ class CLIProcessManager:
             claude_session_id: The original session's claude_session_id
         """
         self._shared_resume_ids[session_id] = claude_session_id
-        logger.info(f"[FORK] Stored shared resume ID for {session_id}: {claude_session_id}")
+        logger.debug(f"Stored shared resume ID for forked session {session_id}")
 
     def get_shared_resume_id(self, session_id: str) -> str | None:
         """Get and consume a shared resume ID for a session.
@@ -194,7 +194,7 @@ class CLIProcessManager:
         # Set thinking budget if enabled
         if thinking_budget:
             env["MAX_THINKING_TOKENS"] = str(thinking_budget)
-            logger.info(f"[CLAUDE] Extended thinking: {thinking_budget} tokens")
+            logger.debug(f"Extended thinking enabled: {thinking_budget} tokens")
 
         # Determine claude_session_id and whether to use --resume
         # Priority: 1) existing_session_id (from DB), 2) shared_resume_id (fork), 3) new UUID
@@ -205,16 +205,16 @@ class CLIProcessManager:
             # Resuming existing session from database
             claude_session_id = existing_session_id
             use_resume = True
-            logger.info(f"[CLAUDE] Resuming existing session: {claude_session_id}")
+            logger.debug(f"Resuming existing Claude session: {claude_session_id}")
         elif shared_resume_id:
             # Forked session - share parent's context
             claude_session_id = shared_resume_id
             use_resume = True
-            logger.info(f"[CLAUDE] Using shared resume ID: {claude_session_id}")
+            logger.debug(f"Using shared resume ID: {claude_session_id}")
         else:
             # Brand new session
             claude_session_id = str(uuid.uuid4())
-            logger.info(f"[CLAUDE] New session ID: {claude_session_id}")
+            logger.debug(f"Created new Claude session: {claude_session_id}")
 
         # Build CLI arguments
         args: list[str] = [
@@ -245,12 +245,12 @@ class CLIProcessManager:
 
         if context:
             system_prompt_parts.append(context)
-            logger.info(f"[CLAUDE] Context added: {len(context)} chars")
+            logger.debug(f"Context added: {len(context)} chars")
 
         if agent_path and agent_path.exists():
             agent_content = agent_path.read_text()
             system_prompt_parts.append(f"\n\n---\n\n# Agent Instructions\n\n{agent_content}")
-            logger.info(f"[CLAUDE] Using agent: {agent_path.stem}")
+            logger.debug(f"Using agent: {agent_path.stem}")
 
         # Create temp file if we have any system prompt content
         if system_prompt_parts:
@@ -261,13 +261,11 @@ class CLIProcessManager:
             with os.fdopen(fd, "w") as f:
                 f.write(combined_prompt)
             args.extend(["--system-prompt-file", str(temp_prompt_file)])
-            logger.info(
-                f"[CLAUDE] System prompt file: {temp_prompt_file} ({len(combined_prompt)} chars)"
-            )
+            logger.debug(f"System prompt file created: {len(combined_prompt)} chars")
 
         if mcp_config and mcp_config.exists():
             args.extend(["--mcp-config", str(mcp_config)])
-            logger.info(f"[CLAUDE] MCP config: {mcp_config}")
+            logger.debug("MCP config loaded")
 
         # Create subprocess (not started yet - will start on first message)
         process = await asyncio.create_subprocess_exec(
@@ -300,10 +298,7 @@ class CLIProcessManager:
         async with self._lock:
             self._processes[session_id] = cli_proc
 
-        logger.info(
-            f"[CLAUDE] Spawned process PID={process.pid} for session {session_id} "
-            f"(claude_session={claude_session_id})"
-        )
+        logger.info(f"Claude process spawned for session {session_id}")
         return cli_proc
 
     async def spawn_gemini(
