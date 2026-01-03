@@ -737,12 +737,16 @@ async def analyze_for_creation(
     title: str = Form(...),
     description: str = Form(...),
     issue_type: str = Form("bug"),
+    repository_id: str | None = Form(None),
     figma_link: str = Form(None),
     website_link: str = Form(None),
     screenshots: list[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ) -> EventSourceResponse:
-    """Step 2: Analyze screenshots with Gemini + generate questions with Claude (SSE streaming)."""
+    """Step 2: Analyze screenshots with Gemini + generate questions with Claude.
+
+    Includes repository context if provided for more intelligent analysis.
+    """
 
     # Read screenshots first (can only be done once)
     screenshots_data: list[tuple[str, bytes]] = []
@@ -780,6 +784,14 @@ async def analyze_for_creation(
                     ),
                 }
 
+            # Build repository link if provided
+            repo_context = ""
+            if repository_id:
+                # Pass TurboWrap repo link for context analysis
+                repo_context = (
+                    f"Repository context: https://turbowrap.internal/repos/{repository_id}"
+                )
+
             # Gemini analysis (Flash - fast)
             gemini_insights = ""
             if screenshot_paths:
@@ -804,6 +816,7 @@ async def analyze_for_creation(
                         description=description,
                         figma_link=figma_link or "N/A",
                         website_link=website_link or "N/A",
+                        repository_context=repo_context,
                     )
 
                     gemini = GeminiClient(model="flash")

@@ -29,6 +29,7 @@ export interface AnalyzeRequest {
   description: string;
   issueType: IssueType;
   screenshots: Blob[];
+  repositoryId?: string;
   figmaLink?: string;
   websiteLink?: string;
   selectedElement?: ElementInfo;
