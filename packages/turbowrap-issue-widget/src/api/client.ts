@@ -6,6 +6,7 @@ import type {
   IssueCreatedResult,
   Question,
   ChatContext,
+  ChatSessionOptions,
   ChatSessionResponse,
   ChatActionData,
 } from './types';
@@ -184,14 +185,18 @@ export class IssueAPIClient {
     }
   }
 
-  async createChatSession(context?: ChatContext): Promise<ChatSessionResponse> {
+  async createChatSession(options?: ChatSessionOptions): Promise<ChatSessionResponse> {
     const response = await fetch(`${this.baseUrl}/api/widget-chat/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Widget-Key': this.apiKey,
       },
-      body: JSON.stringify({ context }),
+      body: JSON.stringify({
+        context: options?.context,
+        model: options?.model,
+        agent: options?.agent,
+      }),
     });
 
     if (!response.ok) {

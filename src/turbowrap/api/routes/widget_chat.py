@@ -55,6 +55,8 @@ class WidgetChatStartRequest(BaseModel):
     """Request to start a new chat session."""
 
     context: WidgetChatContext | None = None
+    model: str | None = None  # Claude model override (e.g., "claude-haiku-4-20250514")
+    agent: str | None = None  # Agent name override (e.g., "widget_form_analyzer")
 
 
 # --- In-Memory Session Store ---
@@ -67,6 +69,8 @@ class WidgetChatSession:
     session_id: str
     claude_session_id: str  # For --resume
     context: WidgetChatContext | None
+    model: str | None = None  # Claude model override
+    agent: str | None = None  # Agent name override
     created_at: datetime = field(default_factory=datetime.utcnow)
     last_activity: datetime = field(default_factory=datetime.utcnow)
     message_count: int = 0
@@ -111,7 +115,12 @@ class WidgetSessionManager:
                 del self._sessions[sid]
                 logger.info(f"[WIDGET] Cleaned up stale session: {sid}")
 
-    async def create_session(self, context: WidgetChatContext | None = None) -> WidgetChatSession:
+    async def create_session(
+        self,
+        context: WidgetChatContext | None = None,
+        model: str | None = None,
+        agent: str | None = None,
+    ) -> WidgetChatSession:
         """Create a new ephemeral session."""
         self.start_cleanup_task()
 
@@ -122,12 +131,14 @@ class WidgetSessionManager:
             session_id=session_id,
             claude_session_id=claude_session_id,
             context=context,
+            model=model,
+            agent=agent,
         )
 
         async with self._lock:
             self._sessions[session_id] = session
 
-        logger.info(f"[WIDGET] Created session: {session_id}")
+        logger.info(f"[WIDGET] Created session: {session_id} (model={model}, agent={agent})")
         return session
 
     async def get_session(self, session_id: str) -> WidgetChatSession | None:
@@ -210,20 +221,32 @@ def build_system_context(context: WidgetChatContext | None) -> str:
 # --- API Endpoints ---
 
 
+DEFAULT_WIDGET_MODEL = "claude-haiku-4-5-20251001"
+
+
 @router.post("/sessions")
 async def create_chat_session(
     data: WidgetChatStartRequest | None = None,
 ) -> dict[str, str]:
     """Create a new widget chat session.
 
+    Args:
+        data.context: Page context (url, title, selected element)
+        data.model: Claude model override (default: claude-haiku-4-5-20251001)
+        data.agent: Agent name override (default: widget_chat_collector)
+
     Returns session_id for subsequent messages.
     """
     manager = get_widget_session_manager()
     context = data.context if data else None
-    session = await manager.create_session(context)
+    model = data.model if data else None
+    agent = data.agent if data else None
+    session = await manager.create_session(context, model=model, agent=agent)
 
     return {
         "session_id": session.session_id,
+        "model": session.model or DEFAULT_WIDGET_MODEL,
+        "agent": session.agent or "widget_chat_collector",
         "message": "Session created. Send your first message to start chatting.",
     }
 
@@ -266,21 +289,28 @@ async def send_message(
                 # Build context for first message
                 context_text = build_system_context(session.context)
 
-                # Load widget chat agent
+                # Use session model/agent or defaults
+                model = session.model or DEFAULT_WIDGET_MODEL
+                agent_name = session.agent or "widget_chat_collector"
+
+                # Load agent file
                 agent_path = (
                     Path(__file__).parent.parent.parent.parent.parent
                     / "agents"
-                    / "widget_chat_collector.md"
+                    / f"{agent_name}.md"
                 )
 
                 proc = await process_manager.spawn_claude(
                     session_id=session_id,
                     working_dir=settings.repos_dir,
-                    model="claude-sonnet-4-20250514",  # Sonnet for speed
+                    model=model,
                     agent_path=agent_path if agent_path.exists() else None,
                     context=context_text if context_text.strip() else None,
                 )
-                logger.info(f"[WIDGET] Spawned Claude for session {session_id}")
+                logger.info(
+                    f"[WIDGET] Spawned Claude for session {session_id} "
+                    f"(model={model}, agent={agent_name})"
+                )
 
             # Send message and stream response
             full_content: list[str] = []

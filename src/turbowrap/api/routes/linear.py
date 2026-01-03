@@ -108,6 +108,7 @@ class FinalizeIssueRequest(BaseModel):
     )
     figma_link: str | None = None
     website_link: str | None = None
+    repository_id: str | None = None  # Repository UUID from widget
     gemini_insights: str
     user_answers: dict[str, str] = Field(..., description="User answers keyed by question ID")
     temp_session_id: str

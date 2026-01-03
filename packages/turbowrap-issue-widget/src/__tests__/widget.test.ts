@@ -7,7 +7,7 @@ jest.mock('../api/client', () => {
     IssueAPIClient: jest.fn().mockImplementation(() => ({
       analyzeIssue: jest.fn(),
       finalizeIssue: jest.fn(),
-      createChatSession: jest.fn().mockResolvedValue({ session_id: 'test-session' }),
+      createChatSession: jest.fn().mockResolvedValue({ session_id: 'test-session', model: 'claude-haiku-4-5-20251001', agent: 'widget_chat_collector' }),
       sendChatMessage: jest.fn().mockResolvedValue(undefined),
       deleteChatSession: jest.fn().mockResolvedValue(undefined),
     })),

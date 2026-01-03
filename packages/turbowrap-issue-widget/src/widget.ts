@@ -1054,7 +1054,7 @@ export class IssueWidget {
           pageTitle: document.title,
           selectedElement: this.state.selectedElement || undefined,
         };
-        const session = await this.client.createChatSession(context);
+        const session = await this.client.createChatSession({ context });
         this.state.chatSessionId = session.session_id;
       }
 

@@ -93,8 +93,16 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
+export interface ChatSessionOptions {
+  context?: ChatContext;
+  model?: string;  // Claude model override (e.g., "claude-haiku-4-5-20251001")
+  agent?: string;  // Agent name override (e.g., "widget_form_analyzer")
+}
+
 export interface ChatSessionResponse {
   session_id: string;
+  model: string;
+  agent: string;
   message?: string;
 }
 
