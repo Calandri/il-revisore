@@ -16,6 +16,8 @@ import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
+const WIDGET_VERSION = '1.0.10';
+
 type Step = 'details' | 'questions' | 'creating' | 'success';
 
 interface WidgetState {
@@ -202,6 +204,7 @@ export class IssueWidget {
             ${this.renderChatMode()}
           </div>
         `}
+        <div class="iw-version">v${WIDGET_VERSION}</div>
       </div>
     `;
   }

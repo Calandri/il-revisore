@@ -957,4 +957,17 @@ export const WIDGET_STYLES = `
     height: 48px;
   }
 }
+
+.iw-version {
+  position: absolute;
+  bottom: 4px;
+  right: 8px;
+  font-size: 9px;
+  font-style: italic;
+  color: var(--iw-text-secondary);
+  opacity: 0.5;
+  font-family: var(--iw-font);
+  pointer-events: none;
+  user-select: none;
+}
 `;
