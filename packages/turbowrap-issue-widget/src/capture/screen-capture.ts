@@ -1,6 +1,45 @@
 import html2canvas from 'html2canvas';
+import { showRectangleSelector, cropImage, type SelectionRect } from './rectangle-selector';
 
 export type CaptureMethod = 'display-media' | 'html2canvas' | 'auto';
+
+export interface CaptureWithSelectionResult {
+  blob: Blob;
+  wasFullScreen: boolean;
+}
+
+/**
+ * Captures the screen and allows user to select a rectangular area.
+ * Uses html2canvas to avoid the browser's native screen sharing popup.
+ * Returns the cropped image based on user selection, or full screen if they choose that option.
+ */
+export async function captureScreenWithSelection(
+  _method: CaptureMethod = 'auto'
+): Promise<CaptureWithSelectionResult> {
+  // Use html2canvas directly to avoid the browser's native "Share screen" popup
+  // This captures the current page content immediately without user permission dialog
+  const fullScreenBlob = await captureWithHtml2Canvas();
+
+  return new Promise((resolve, reject) => {
+    showRectangleSelector({
+      imageBlob: fullScreenBlob,
+      onSelect: async (rect: SelectionRect) => {
+        try {
+          const croppedBlob = await cropImage(fullScreenBlob, rect);
+          resolve({ blob: croppedBlob, wasFullScreen: false });
+        } catch (error) {
+          reject(error);
+        }
+      },
+      onCancel: () => {
+        reject(new Error('Screenshot selection cancelled'));
+      },
+      onFullScreen: () => {
+        resolve({ blob: fullScreenBlob, wasFullScreen: true });
+      },
+    });
+  });
+}
 
 
 export async function captureScreen(method: CaptureMethod = 'auto'): Promise<Blob> {

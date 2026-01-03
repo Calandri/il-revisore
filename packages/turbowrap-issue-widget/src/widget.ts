@@ -11,12 +11,12 @@ import type {
   ChatActionData,
 } from './api/types';
 import { IssueAPIClient } from './api/client';
-import { captureScreen, compressImage, blobToDataUrl } from './capture/screen-capture';
+import { captureScreenWithSelection, compressImage, blobToDataUrl } from './capture/screen-capture';
 import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
-const WIDGET_VERSION = '1.0.21';
+const WIDGET_VERSION = '1.0.22';
 
 type Step = 'details' | 'questions' | 'creating' | 'success' | 'error';
 
@@ -903,8 +903,9 @@ export class IssueWidget {
       // Hide widget during screenshot capture so it doesn't appear in the screenshot
       this.container.style.display = 'none';
 
-      const blob = await captureScreen(this.config.screenshotMethod);
-      const compressed = await compressImage(blob);
+      // Capture with rectangle selection - user can select area or use full screen
+      const result = await captureScreenWithSelection(this.config.screenshotMethod);
+      const compressed = await compressImage(result.blob);
       if (!compressed || compressed.size === 0) {
         throw new Error('Screenshot capture produced an empty image');
       }
@@ -932,7 +933,10 @@ export class IssueWidget {
       this.state.error = null;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to capture screenshot';
-      this.state.error = errorMsg;
+      // Don't show error if user cancelled - just silently continue
+      if (errorMsg !== 'Screenshot selection cancelled') {
+        this.state.error = errorMsg;
+      }
       // Allow user to continue without screenshot
       this.state.screenshots = [];
       this.state.screenshotPreviews = [];
