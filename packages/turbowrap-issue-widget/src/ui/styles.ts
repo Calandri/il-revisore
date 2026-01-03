@@ -184,8 +184,8 @@ export const WIDGET_STYLES = `
 
 .iw-progress-bar {
   display: flex;
-  padding: 16px 20px;
-  gap: 8px;
+  padding: 8px 20px;
+  gap: 6px;
   border-bottom: 1px solid var(--iw-border);
 }
 
@@ -194,19 +194,19 @@ export const WIDGET_STYLES = `
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
 
 .iw-step-dot {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--iw-bg-secondary);
-  border: 2px solid var(--iw-border);
+  border: 1px solid var(--iw-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--iw-text-secondary);
   transition: all 0.3s;
@@ -225,10 +225,10 @@ export const WIDGET_STYLES = `
 }
 
 .iw-step-label {
-  font-size: 11px;
+  font-size: 9px;
   color: var(--iw-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 
 .iw-content {
@@ -615,15 +615,15 @@ export const WIDGET_STYLES = `
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 12px 8px;
+  gap: 3px;
+  padding: 8px 6px;
   border: 1px solid var(--iw-border);
   border-radius: 8px;
   background: var(--iw-bg);
   cursor: pointer;
   transition: all 0.2s;
   font-family: var(--iw-font);
-  font-size: 13px;
+  font-size: 11px;
   color: var(--iw-text);
 }
 
@@ -639,7 +639,7 @@ export const WIDGET_STYLES = `
 }
 
 .iw-type-icon {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 @media (max-width: 480px) {
