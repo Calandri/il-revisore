@@ -1,6 +1,6 @@
 {
   "name": "turbowrap-issue-widget",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Embeddable chatbot widget for collecting issues via TurboWrap",
   "main": "dist/issue-widget.umd.js",
   "module": "dist/issue-widget.es.js",

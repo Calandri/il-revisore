@@ -16,7 +16,7 @@ import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
-const WIDGET_VERSION = '1.0.10';
+const WIDGET_VERSION = '1.0.12';
 
 type Step = 'details' | 'questions' | 'creating' | 'success';
 
@@ -172,7 +172,10 @@ export class IssueWidget {
       <div class="iw-modal ${position} ${isOpen ? 'open' : ''}" id="iw-modal"
            role="dialog" aria-modal="true" aria-labelledby="iw-modal-title">
         <div class="iw-header">
-          <h2 id="iw-modal-title">${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
+          <div class="iw-header-title">
+            <h2 id="iw-modal-title">${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
+            <span class="iw-version">v${WIDGET_VERSION}</span>
+          </div>
           <button class="iw-close" id="iw-close" aria-label="Close dialog">&times;</button>
         </div>
 

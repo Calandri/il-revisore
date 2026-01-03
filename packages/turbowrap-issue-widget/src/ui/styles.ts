@@ -160,9 +160,22 @@ export const WIDGET_STYLES = `
   border-bottom: 1px solid var(--iw-border);
 }
 
+.iw-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .iw-header h2 {
   font-size: 16px;
   font-weight: 600;
+}
+
+.iw-version {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--iw-text-secondary);
+  opacity: 0.6;
 }
 
 .iw-close {
