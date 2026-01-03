@@ -803,7 +803,7 @@ async def analyze_for_creation(
                 }
 
                 try:
-                    from turbowrap_llm.gemini import GeminiClient
+                    from turbowrap_llm.gemini import GeminiProClient
 
                     from ...config import get_settings
 
@@ -819,7 +819,7 @@ async def analyze_for_creation(
                         repository_context=repo_context,
                     )
 
-                    gemini = GeminiClient(model="flash")
+                    gemini = GeminiProClient(model="gemini-3-flash-preview")
                     gemini_insights = gemini.analyze_images(formatted_prompt, screenshot_paths)
 
                     yield {
@@ -835,10 +835,10 @@ async def analyze_for_creation(
                     }
                     gemini_insights = f"Screenshot analysis failed: {str(e)}"
 
-            # Claude question generation (API direct - fast)
+            # Gemini question generation (API direct - fast)
             yield {
                 "event": "log",
-                "data": json.dumps({"message": "🤖 Claude sta generando le domande..."}),
+                "data": json.dumps({"message": "🤖 Gemini sta generando le domande..."}),
             }
 
             # Map issue_type to Italian label
@@ -856,6 +856,7 @@ async def analyze_for_creation(
                 f"Descrizione: {description}\n"
                 f"Figma: {figma_link or 'N/A'}\n"
                 f"Sito: {website_link or 'N/A'}\n"
+                f"Repository: {repo_context if repo_context else 'N/A'}\n"
                 "\nAnalisi Gemini:\n"
                 f"{gemini_insights[:500] if gemini_insights else 'Nessuno screenshot'}\n"
                 "\nRispondi SOLO con JSON valido senza testo aggiuntivo:\n"
@@ -863,16 +864,10 @@ async def analyze_for_creation(
             )
 
             try:
-                from anthropic import Anthropic
+                from turbowrap_llm.gemini import GeminiClient as GeminiTextClient
 
-                client = Anthropic()
-                response = client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=500,
-                    messages=[{"role": "user", "content": prompt_content}],
-                )
-
-                output = response.content[0].text.strip()
+                gemini_text = GeminiTextClient(model="gemini-3-flash-preview")
+                output = gemini_text.generate(prompt_content).strip()
 
                 # Extract JSON from markdown if needed
                 json_str = output
@@ -890,7 +885,7 @@ async def analyze_for_creation(
 
                 yield {
                     "event": "log",
-                    "data": json.dumps({"message": f"✅ Claude generato {len(questions)} domande"}),
+                    "data": json.dumps({"message": f"✅ Gemini generato {len(questions)} domande"}),
                 }
 
                 # Send final result
