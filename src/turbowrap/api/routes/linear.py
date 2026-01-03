@@ -1065,76 +1065,52 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 logger.warning(f"[create/finalize] Repository auto-detection failed: {e}")
                 # Non fatal, prosegue senza repo
 
-            # Step 2: Create issue on Linear
-            yield {
-                "event": "progress",
-                "data": json.dumps({"message": "Creando issue su Linear..."}),
-            }
-
-            try:
-                client = _get_linear_client(db)
-                logger.info(f"[create/finalize] Creating issue on Linear (team: {request.team_id})")
-
-                issue = await client.create_issue(
-                    team_id=request.team_id,
-                    title=request.title,
-                    description=final_desc,
-                    priority=request.priority,
-                    assignee_id=request.assignee_id,
-                    due_date=request.due_date,
-                )
-
-                logger.info(f"[create/finalize] Issue created: {issue['identifier']}")
-
-            except Exception as e:
-                logger.error(f"[create/finalize] Linear issue creation failed: {e}")
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"error": f"Linear issue creation failed: {str(e)}"}),
-                }
-                return
-
-            # Step 3: Save to database
+            # Step 2: Save to database FIRST (before Linear)
             yield {"event": "progress", "data": json.dumps({"message": "Salvando in database..."})}
+
+            # Generate a local identifier for tracking
+            import uuid
+
+            local_code = f"WIDGET-{uuid.uuid4().hex[:8].upper()}"
 
             try:
                 # Route to correct table based on issue_type
                 if request.issue_type == "bug":
                     # Save to Issue table
                     db_record = Issue(
-                        linear_id=issue["id"],
-                        linear_identifier=issue["identifier"],
-                        linear_url=issue["url"],
-                        repository_id=None,  # Will be linked later
-                        issue_code="WIDGET-" + issue["identifier"],  # Generate code
-                        severity="MEDIUM",  # Default, can be enhanced
+                        linear_id=None,  # Will be updated if Linear succeeds
+                        linear_identifier=None,
+                        linear_url=None,
+                        repository_id=request.repository_id,  # From widget config
+                        issue_code=local_code,
+                        severity="MEDIUM",
                         category="user_reported",
                         title=request.title,
                         description=request.description,
-                        suggested_fix=final_desc,  # Use improved description as suggested fix
+                        suggested_fix=final_desc,
                         status=IssueStatus.OPEN.value,
-                        file="user_reported",  # Special value for widget issues
+                        file="user_reported",
                         line=None,
                     )
-                    logger.info(f"[create/finalize] Creating Issue: {issue['identifier']}")
+                    logger.info(f"[create/finalize] Creating Issue: {local_code}")
                 else:  # suggestion or question → Feature
                     db_record = Feature(
-                        linear_id=issue["id"],
-                        linear_identifier=issue["identifier"],
-                        linear_url=issue["url"],
+                        linear_id=None,
+                        linear_identifier=None,
+                        linear_url=None,
                         title=request.title,
                         description=request.description,
                         improved_description=final_desc,
                         status=FeatureStatus.ANALYSIS.value,
                         priority=request.priority,
                         figma_link=request.figma_link,
-                        user_qa=request.user_answers,  # Store Q&A
+                        user_qa=request.user_answers,
                     )
-                    logger.info(f"[create/finalize] Creating Feature: {issue['identifier']}")
+                    logger.info(f"[create/finalize] Creating Feature: {local_code}")
 
                 db.add(db_record)
                 db.commit()
-                db.refresh(db_record)  # Refresh to get ID
+                db.refresh(db_record)
 
                 logger.info(
                     f"[create/finalize] Saved to database: {db_record.id} (type: {request.issue_type})"
@@ -1154,11 +1130,9 @@ Non aggiungere spiegazioni, solo il nome del repository."""
 
                         if repo:
                             if isinstance(db_record, Issue):
-                                # Direct foreign key for Issue
                                 db_record.repository_id = repo.id
                                 db.commit()
                             else:  # Feature
-                                # Many-to-many link for Feature
                                 link = FeatureRepository(
                                     feature_id=db_record.id,
                                     repository_id=repo.id,
@@ -1179,21 +1153,70 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                             }
                     except Exception as e:
                         logger.warning(f"[create/finalize] Failed to link repository: {e}")
-                        # Non fatal, issue was created successfully
 
             except Exception as e:
                 logger.error(f"[create/finalize] Database save failed: {e}")
-                # Issue was created on Linear but not saved locally - log for manual recovery
-                logger.critical(
-                    f"[create/finalize] ORPHANED ISSUE: {issue['identifier']} at {issue['url']}"
-                )
                 yield {
                     "event": "error",
-                    "data": json.dumps(
-                        {"error": f"Database save failed: {str(e)}", "linear_url": issue["url"]}
-                    ),
+                    "data": json.dumps({"error": f"Database save failed: {str(e)}"}),
                 }
                 return
+
+            # Step 3: Try to create issue on Linear (NON-BLOCKING)
+            yield {
+                "event": "progress",
+                "data": json.dumps({"message": "Sincronizzando con Linear..."}),
+            }
+
+            linear_identifier = None
+            linear_url = None
+            linear_error = None
+
+            try:
+                client = _get_linear_client(db)
+                logger.info(f"[create/finalize] Creating issue on Linear (team: {request.team_id})")
+
+                issue = await client.create_issue(
+                    team_id=request.team_id,
+                    title=request.title,
+                    description=final_desc,
+                    priority=request.priority,
+                    assignee_id=request.assignee_id,
+                    due_date=request.due_date,
+                )
+
+                linear_identifier = issue["identifier"]
+                linear_url = issue["url"]
+                logger.info(f"[create/finalize] Issue created on Linear: {linear_identifier}")
+
+                # Update DB record with Linear info
+                db_record.linear_id = issue["id"]  # type: ignore[assignment]
+                db_record.linear_identifier = linear_identifier  # type: ignore[assignment]
+                db_record.linear_url = linear_url  # type: ignore[assignment]
+                if isinstance(db_record, Issue):
+                    db_record.issue_code = f"WIDGET-{linear_identifier}"  # type: ignore[assignment]
+                db.commit()
+
+                yield {
+                    "event": "progress",
+                    "data": json.dumps(
+                        {"message": f"✅ Sincronizzato con Linear: {linear_identifier}"}
+                    ),
+                }
+
+            except Exception as e:
+                linear_error = str(e)
+                logger.warning(f"[create/finalize] Linear sync failed (non-blocking): {e}")
+                yield {
+                    "event": "warning",
+                    "data": json.dumps(
+                        {
+                            "message": f"⚠️ Linear sync failed: {linear_error}",
+                            "warning": f"Issue salvata localmente ma non su Linear: {linear_error}",
+                        }
+                    ),
+                }
+                # Continue - don't block the flow!
 
             # Step 4: Cleanup temporary files
             temp_dir = Path("/tmp/turbowrap_screenshots") / request.temp_session_id
@@ -1204,15 +1227,22 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 except Exception as e:
                     logger.warning(f"[create/finalize] Failed to cleanup temp dir: {e}")
 
-            # Complete
+            # Complete - always succeed if DB save worked
+            # Build TurboWrap URL based on issue type
+            turbowrap_path = "/issues" if request.issue_type == "bug" else "/features"
+            turbowrap_url = f"{turbowrap_path}/{db_record.id}"
+
             yield {
                 "event": "complete",
                 "data": json.dumps(
                     {
-                        "identifier": issue["identifier"],
-                        "url": issue["url"],
+                        "identifier": linear_identifier or local_code,
+                        "url": linear_url,  # May be None if Linear failed
+                        "turbowrap_url": turbowrap_url,
                         "id": db_record.id,
                         "type": "issue" if request.issue_type == "bug" else "feature",
+                        "linear_synced": linear_error is None,
+                        "linear_error": linear_error,
                     }
                 ),
             }

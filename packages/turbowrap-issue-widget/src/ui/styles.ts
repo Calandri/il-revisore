@@ -237,6 +237,12 @@ export const WIDGET_STYLES = `
   color: white;
 }
 
+.iw-step.error .iw-step-dot {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
 .iw-step-label {
   font-size: 9px;
   color: var(--iw-text-secondary);
@@ -615,6 +621,120 @@ export const WIDGET_STYLES = `
 
 .iw-success a:hover {
   text-decoration: underline;
+}
+
+.iw-success-links {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.iw-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none !important;
+  transition: all 0.2s;
+}
+
+.iw-link-turbowrap {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--iw-accent);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.iw-link-turbowrap:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.iw-link-linear {
+  background: rgba(94, 106, 210, 0.1);
+  color: #5e6ad2;
+  border: 1px solid rgba(94, 106, 210, 0.3);
+}
+
+.iw-link-linear:hover {
+  background: rgba(94, 106, 210, 0.2);
+}
+
+.iw-local-id {
+  color: var(--iw-text-secondary);
+  font-weight: 500;
+}
+
+.iw-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  color: #f59e0b;
+  font-size: 12px;
+  text-align: left;
+}
+
+.iw-warning-small {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #f59e0b;
+}
+
+/* Final Error State */
+.iw-error-final {
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.iw-error-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.iw-error-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.iw-error-final h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--iw-text);
+}
+
+.iw-error-message {
+  color: #ef4444;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+  padding: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  text-align: left;
+  word-break: break-word;
+}
+
+.iw-error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.iw-error-actions .iw-btn {
+  min-width: 100px;
 }
 
 /* Issue Type Selector */

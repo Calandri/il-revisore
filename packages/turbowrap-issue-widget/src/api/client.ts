@@ -59,11 +59,18 @@ export class IssueAPIClient {
       }
 
       await this.parseSSEStream(response, onProgress, (data) => {
+        console.log('[IssueAPIClient] SSE onData received:', data);
         if (data.questions && data.gemini_insights !== undefined) {
+          console.log('[IssueAPIClient] ✅ Calling onComplete with questions');
           onComplete({
             questions: data.questions as Question[],
             geminiInsights: data.gemini_insights as string,
             tempSessionId: data.temp_session_id as string,
+          });
+        } else {
+          console.warn('[IssueAPIClient] ⚠️ Data missing questions or gemini_insights:', {
+            hasQuestions: !!data.questions,
+            hasGeminiInsights: data.gemini_insights !== undefined,
           });
         }
       }, onError);
@@ -96,6 +103,7 @@ export class IssueAPIClient {
           figma_link: data.figmaLink,
           website_link: data.websiteLink,
           selected_element: data.selectedElement,
+          repository_id: data.repositoryId,
         }),
       });
 
@@ -132,52 +140,90 @@ export class IssueAPIClient {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    // Helper to process a single event block
+    const processEventBlock = (eventBlock: string) => {
+      console.log('[SSE] processEventBlock called, length:', eventBlock.length);
+      if (!eventBlock.trim()) return;
+
+      const lines = eventBlock.split('\n');
+      let currentEvent = '';
+      let currentData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const dataLine = line.slice(6);
+          currentData += currentData ? '\n' + dataLine : dataLine;
+        }
+      }
+
+      console.log('[SSE] Parsed:', { currentEvent, hasData: !!currentData, dataPreview: currentData.substring(0, 100) });
+
+      if (currentData) {
+        try {
+          const data = JSON.parse(currentData) as Record<string, unknown>;
+          console.log('[SSE] JSON parsed, keys:', Object.keys(data));
+
+          if (currentEvent === 'error' || data.error) {
+            onError(String(data.error || data.message || 'Unknown error'));
+            return;
+          }
+
+          if (data.message && (currentEvent === 'progress' || currentEvent === 'log')) {
+            onProgress(String(data.message));
+          }
+
+          // Handle warning events (non-blocking)
+          if (currentEvent === 'warning' && data.warning) {
+            console.warn('[IssueAPIClient] ⚠️ Warning:', data.warning);
+            onProgress(String(data.message || data.warning));
+            // Don't return - continue processing
+          }
+
+          // PRIORITY: Check data.questions FIRST (most reliable)
+          if (data.questions) {
+            console.log('[IssueAPIClient] ✅ Found questions in data, calling onData');
+            onData(data);
+            return;
+          }
+
+          if (data.identifier || currentEvent === 'complete') {
+            console.log('[IssueAPIClient] SSE complete/data event:', currentEvent, data);
+            onData(data);
+            return;
+          }
+        } catch (parseError) {
+          console.warn('[SSE] Failed to parse JSON:', parseError, 'Raw data:', currentData.substring(0, 200));
+        }
+      }
+    };
+
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        if (done) {
+          console.log('[SSE] Stream done, remaining buffer length:', buffer.length);
+          // Process any remaining buffer before exiting
+          if (buffer.trim()) {
+            console.log('[IssueAPIClient] Processing remaining buffer on stream end');
+            processEventBlock(buffer);
+          }
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        console.log('[SSE] Received chunk, length:', chunk.length, 'preview:', chunk.substring(0, 80));
+        // Normalize line endings (Windows \r\n -> Unix \n)
+        buffer += chunk.replace(/\r\n/g, '\n');
 
         const events = buffer.split('\n\n');
         buffer = events.pop() || '';
+        console.log('[SSE] Split into', events.length, 'events, remaining buffer length:', buffer.length);
 
         for (const eventBlock of events) {
-          if (!eventBlock.trim()) continue;
-
-          const lines = eventBlock.split('\n');
-          let currentEvent = '';
-          let currentData = '';
-
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              currentEvent = line.slice(7).trim();
-            } else if (line.startsWith('data: ')) {
-              const dataLine = line.slice(6);
-              currentData += currentData ? '\n' + dataLine : dataLine;
-            }
-          }
-
-          if (currentData) {
-            try {
-              const data = JSON.parse(currentData) as Record<string, unknown>;
-
-              if (currentEvent === 'error' || data.error) {
-                onError(String(data.error || data.message || 'Unknown error'));
-                return;
-              }
-
-              if (data.message && (currentEvent === 'progress' || currentEvent === 'log')) {
-                onProgress(String(data.message));
-              }
-
-              if (currentEvent === 'complete' || data.questions || data.identifier) {
-                onData(data);
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse SSE data:', parseError);
-            }
-          }
+          processEventBlock(eventBlock);
         }
       }
     } finally {

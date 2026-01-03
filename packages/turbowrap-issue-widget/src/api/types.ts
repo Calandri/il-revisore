@@ -59,12 +59,17 @@ export interface FinalizeRequest {
   figmaLink?: string;
   websiteLink?: string;
   selectedElement?: ElementInfo;
+  repositoryId?: string;
 }
 
 export interface IssueCreatedResult {
   id: string;
   identifier: string;
-  url: string;
+  url: string | null;  // Linear URL - may be null if Linear sync failed
+  turbowrap_url?: string;  // TurboWrap internal URL
+  type?: 'issue' | 'feature';
+  linear_synced?: boolean;
+  linear_error?: string | null;
 }
 
 export type SSEEventType = 'progress' | 'log' | 'complete' | 'error';

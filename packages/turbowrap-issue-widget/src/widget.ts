@@ -16,9 +16,9 @@ import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
-const WIDGET_VERSION = '1.0.12';
+const WIDGET_VERSION = '1.0.21';
 
-type Step = 'details' | 'questions' | 'creating' | 'success';
+type Step = 'details' | 'questions' | 'creating' | 'success' | 'error';
 
 interface WidgetState {
   isOpen: boolean;
@@ -228,15 +228,33 @@ export class IssueWidget {
     return steps
       .map((step, index) => {
         let className = 'iw-step';
-        if (index < currentIndex || this.state.step === 'success') {
+        const isSuccess = this.state.step === 'success';
+        const isError = this.state.step === 'error';
+
+        if (isSuccess) {
+          className += ' completed';
+        } else if (isError) {
+          className += ' error';
+        } else if (index < currentIndex) {
           className += ' completed';
         } else if (index === currentIndex) {
           className += ' active';
         }
 
+        let dotContent: string;
+        if (isSuccess) {
+          dotContent = '✓';
+        } else if (isError) {
+          dotContent = '✕';
+        } else if (index < currentIndex) {
+          dotContent = '✓';
+        } else {
+          dotContent = String(index + 1);
+        }
+
         return `
           <div class="${className}">
-            <div class="iw-step-dot">${index < currentIndex || this.state.step === 'success' ? '✓' : index + 1}</div>
+            <div class="iw-step-dot">${dotContent}</div>
             <span class="iw-step-label">${step.label}</span>
           </div>
         `;
@@ -254,6 +272,8 @@ export class IssueWidget {
         return this.renderCreatingStep();
       case 'success':
         return this.renderSuccessStep();
+      case 'error':
+        return this.renderErrorStep();
       default:
         return '';
     }
@@ -401,12 +421,53 @@ export class IssueWidget {
     const issue = this.state.createdIssue;
     if (!issue) return '';
 
+    const linearSynced = issue.linear_synced !== false;
+    const warningHtml = !linearSynced && issue.linear_error
+      ? `<div class="iw-warning">⚠️ Linear sync failed: ${this.escapeHtml(issue.linear_error)}</div>`
+      : '';
+
+    // Build links section
+    const links: string[] = [];
+
+    // TurboWrap link (always available)
+    if (issue.turbowrap_url) {
+      links.push(`<a href="${issue.turbowrap_url}" target="_blank" rel="noopener" class="iw-link-btn iw-link-turbowrap">
+        📋 TurboWrap
+      </a>`);
+    }
+
+    // Linear link (if synced)
+    if (issue.url) {
+      links.push(`<a href="${issue.url}" target="_blank" rel="noopener" class="iw-link-btn iw-link-linear">
+        ↗ ${issue.identifier}
+      </a>`);
+    }
+
+    const linksHtml = links.length > 0
+      ? `<div class="iw-success-links">${links.join('')}</div>`
+      : `<span class="iw-local-id">${issue.identifier}</span>`;
+
     return `
       <div class="iw-success">
         <div class="iw-success-icon">${ICONS.check}</div>
         <h3>Issue Created!</h3>
-        <p>Your issue has been successfully created and assigned.</p>
-        <a href="${issue.url}" target="_blank" rel="noopener">${issue.identifier}</a>
+        <p>Your issue has been successfully created${linearSynced ? ' and synced' : ' locally'}.</p>
+        ${linksHtml}
+        ${warningHtml}
+      </div>
+    `;
+  }
+
+  private renderErrorStep(): string {
+    return `
+      <div class="iw-error-final">
+        <div class="iw-error-icon">${ICONS.close}</div>
+        <h3>Something went wrong</h3>
+        <p class="iw-error-message">${this.escapeHtml(this.state.error || 'An unexpected error occurred')}</p>
+        <div class="iw-error-actions">
+          <button class="iw-btn iw-btn-secondary" id="iw-error-retry">Try Again</button>
+          <button class="iw-btn iw-btn-primary" id="iw-error-close">Close</button>
+        </div>
       </div>
     `;
   }
@@ -446,7 +507,14 @@ export class IssueWidget {
         <div class="iw-chat-issue-created">
           <div class="iw-check-icon">${ICONS.check}</div>
           <span>Issue creato!</span>
-          <a href="${createdIssue.url}" target="_blank" rel="noopener">${createdIssue.identifier}</a>
+          ${createdIssue.url
+            ? `<a href="${createdIssue.url}" target="_blank" rel="noopener">${createdIssue.identifier}</a>`
+            : `<span class="iw-local-id">${createdIssue.identifier}</span>`
+          }
+          ${createdIssue.linear_synced === false && createdIssue.linear_error
+            ? `<div class="iw-warning-small">⚠️ ${this.escapeHtml(createdIssue.linear_error)}</div>`
+            : ''
+          }
         </div>
       `
       : '';
@@ -578,7 +646,8 @@ export class IssueWidget {
     this.eventHandlers.set('overlay-click', overlayCloseHandler);
     this.eventHandlers.set('close-click', closeHandler);
 
-    this.shadow.addEventListener('click', (e) => {
+    // Main click handler - stored for removal
+    const shadowClickHandler = (e: Event) => {
       const target = e.target as HTMLElement;
 
       if (target.id === 'iw-next' || target.closest('#iw-next')) {
@@ -617,16 +686,30 @@ export class IssueWidget {
       if (target.id === 'iw-chat-send' || target.closest('#iw-chat-send')) {
         this.handleChatSend();
       }
-    });
 
-    this.shadow.addEventListener('change', (e) => {
+      // Handle error state buttons
+      if (target.id === 'iw-error-retry' || target.closest('#iw-error-retry')) {
+        this.handleErrorRetry();
+      } else if (target.id === 'iw-error-close' || target.closest('#iw-error-close')) {
+        this.close();
+        this.reset();
+      }
+    };
+    this.shadow.addEventListener('click', shadowClickHandler);
+    this.eventHandlers.set('shadow-click', shadowClickHandler);
+
+    // Change handler - stored for removal
+    const shadowChangeHandler = (e: Event) => {
       const target = e.target as HTMLInputElement;
       if (target.id === 'iw-file-input' && target.files?.length) {
         this.handleFileUpload(target.files[0]);
       }
-    });
+    };
+    this.shadow.addEventListener('change', shadowChangeHandler);
+    this.eventHandlers.set('shadow-change', shadowChangeHandler);
 
-    this.shadow.addEventListener('input', (e) => {
+    // Input handler - stored for removal
+    const shadowInputHandler = (e: Event) => {
       const target = e.target as HTMLInputElement | HTMLTextAreaElement;
 
       if (target.id === 'iw-title') {
@@ -644,10 +727,12 @@ export class IssueWidget {
           sendBtn.disabled = this.state.chatIsStreaming || !target.value.trim();
         }
       }
-    });
+    };
+    this.shadow.addEventListener('input', shadowInputHandler);
+    this.eventHandlers.set('shadow-input', shadowInputHandler);
 
-    // Handle Enter key in chat input
-    this.shadow.addEventListener('keydown', (e) => {
+    // Keydown handler for Enter key in chat - stored for removal
+    const shadowKeydownHandler = (e: Event) => {
       const target = e.target as HTMLTextAreaElement;
       const keyEvent = e as KeyboardEvent;
       if (target.id === 'iw-chat-input' && keyEvent.key === 'Enter' && !keyEvent.shiftKey) {
@@ -656,7 +741,9 @@ export class IssueWidget {
           this.handleChatSend();
         }
       }
-    });
+    };
+    this.shadow.addEventListener('keydown', shadowKeydownHandler);
+    this.eventHandlers.set('shadow-keydown', shadowKeydownHandler);
   }
 
   private removeEventListeners(): void {
@@ -676,6 +763,24 @@ export class IssueWidget {
     }
     if (closeHandler && closeBtn) {
       closeBtn.removeEventListener('click', closeHandler);
+    }
+
+    // Remove shadow DOM event listeners
+    const shadowClickHandler = this.eventHandlers.get('shadow-click');
+    if (shadowClickHandler) {
+      this.shadow.removeEventListener('click', shadowClickHandler);
+    }
+    const shadowChangeHandler = this.eventHandlers.get('shadow-change');
+    if (shadowChangeHandler) {
+      this.shadow.removeEventListener('change', shadowChangeHandler);
+    }
+    const shadowInputHandler = this.eventHandlers.get('shadow-input');
+    if (shadowInputHandler) {
+      this.shadow.removeEventListener('input', shadowInputHandler);
+    }
+    const shadowKeydownHandler = this.eventHandlers.get('shadow-keydown');
+    if (shadowKeydownHandler) {
+      this.shadow.removeEventListener('keydown', shadowKeydownHandler);
     }
 
     this.eventHandlers.clear();
@@ -1170,6 +1275,12 @@ export class IssueWidget {
   }
 
   private async analyzeIssue(): Promise<void> {
+    // Prevent duplicate requests
+    if (this.state.isLoading) {
+      console.warn('[IssueWidget] Analyze already in progress, ignoring duplicate call');
+      return;
+    }
+
     if (!this.state.title.trim()) {
       this.state.error = 'Please enter a title';
       this.update();
@@ -1198,12 +1309,14 @@ export class IssueWidget {
           this.update();
         },
         (result: AnalyzeResult) => {
+          console.log('[IssueWidget] ✅ Analyze complete, received:', result);
           this.state.questions = result.questions;
           this.state.geminiInsights = result.geminiInsights;
           this.state.tempSessionId = result.tempSessionId;
           this.state.step = 'questions';
           this.state.isLoading = false;
           this.state.progressMessages = [];
+          console.log('[IssueWidget] State updated, calling update()');
           this.update();
         },
         (error) => {
@@ -1221,6 +1334,12 @@ export class IssueWidget {
   }
 
   private async createIssue(): Promise<void> {
+    // Prevent duplicate requests
+    if (this.state.isLoading) {
+      console.warn('[IssueWidget] Create already in progress, ignoring duplicate call');
+      return;
+    }
+
     this.state.step = 'creating';
     this.state.isLoading = true;
     this.state.progressMessages = [];
@@ -1238,6 +1357,7 @@ export class IssueWidget {
           tempSessionId: this.state.tempSessionId,
           websiteLink: window.location.href,
           selectedElement: this.state.selectedElement || undefined,
+          repositoryId: this.state.repositoryId || undefined,
         },
         (msg) => {
           this.addProgressMessage(msg);
@@ -1252,7 +1372,7 @@ export class IssueWidget {
         },
         (error) => {
           this.state.error = error;
-          this.state.step = 'questions';
+          this.state.step = 'error';  // Final error state - never go back!
           this.state.isLoading = false;
           this.update();
           this.config.onError?.(new Error(error));
@@ -1260,10 +1380,19 @@ export class IssueWidget {
       );
     } catch (error) {
       this.state.error = error instanceof Error ? error.message : 'Unknown error';
-      this.state.step = 'questions';
+      this.state.step = 'error';  // Final error state - never go back!
       this.state.isLoading = false;
       this.update();
     }
+  }
+
+  private handleErrorRetry(): void {
+    // Reset to details step for a fresh retry
+    this.state.step = 'details';
+    this.state.error = null;
+    this.state.isLoading = false;
+    this.state.progressMessages = [];
+    this.update();
   }
 
   private escapeHtml(text: string): string {
