@@ -16,7 +16,7 @@ import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
-const WIDGET_VERSION = '1.0.25';
+const WIDGET_VERSION = '1.0.26';
 
 type Step = 'details' | 'questions' | 'creating' | 'success' | 'error';
 
@@ -66,6 +66,17 @@ export class IssueWidget {
   private abortController: AbortController | null = null;
 
   constructor(config: WidgetConfig) {
+    // Validate required props at runtime
+    if (!config.apiKey) {
+      throw new Error('[IssueWidget] apiKey is required. Get it from TurboWrap repo settings.');
+    }
+    if (!config.repositoryId) {
+      throw new Error('[IssueWidget] repositoryId is required. Get it from TurboWrap repo settings.');
+    }
+    if (!config.apiUrl) {
+      throw new Error('[IssueWidget] apiUrl is required (e.g., "https://turbo-wrap.com").');
+    }
+
     this.config = {
       position: 'bottom-right',
       theme: 'auto',
