@@ -1178,9 +1178,43 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                         )
 
                         if repo:
+                            # Only link detected repo if no repo was explicitly provided
                             if isinstance(db_record, Issue):
-                                db_record.repository_id = repo.id
-                                db.commit()
+                                if not db_record.repository_id:
+                                    db_record.repository_id = repo.id
+                                    db.commit()
+                                    logger.info(
+                                        f"[create/finalize] Linked detected repository: {detected_repo_name}"
+                                    )
+                                    yield {
+                                        "event": "progress",
+                                        "data": json.dumps(
+                                            {
+                                                "message": f"✅ Repository collegato: {detected_repo_name}"
+                                            }
+                                        ),
+                                    }
+                                else:
+                                    # Repo already set from widget - show that one
+                                    widget_repo = (
+                                        db.query(Repository)
+                                        .filter(Repository.id == db_record.repository_id)
+                                        .first()
+                                    )
+                                    widget_repo_name = (
+                                        widget_repo.name if widget_repo else "widget config"
+                                    )
+                                    logger.info(
+                                        f"[create/finalize] Skipping auto-link, using widget repo: {widget_repo_name}"
+                                    )
+                                    yield {
+                                        "event": "progress",
+                                        "data": json.dumps(
+                                            {
+                                                "message": f"✅ Repository (da widget): {widget_repo_name}"
+                                            }
+                                        ),
+                                    }
                             else:  # Feature
                                 link = FeatureRepository(
                                     feature_id=db_record.id,
@@ -1189,17 +1223,17 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                                 )
                                 db.add(link)
                                 db.commit()
-
-                            logger.info(
-                                f"[create/finalize] Linked repository: {detected_repo_name}"
-                            )
-
-                            yield {
-                                "event": "progress",
-                                "data": json.dumps(
-                                    {"message": f"✅ Repository collegato: {detected_repo_name}"}
-                                ),
-                            }
+                                logger.info(
+                                    f"[create/finalize] Linked repository: {detected_repo_name}"
+                                )
+                                yield {
+                                    "event": "progress",
+                                    "data": json.dumps(
+                                        {
+                                            "message": f"✅ Repository collegato: {detected_repo_name}"
+                                        }
+                                    ),
+                                }
                     except Exception as e:
                         logger.warning(f"[create/finalize] Failed to link repository: {e}")
 
