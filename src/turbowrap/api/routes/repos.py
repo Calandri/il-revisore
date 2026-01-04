@@ -1167,7 +1167,7 @@ def get_repository_overview_stats(
             status=op.status,
             started_at=op.started_at.isoformat() if op.started_at else "",
             completed_at=op.completed_at.isoformat() if op.completed_at else None,
-            duration_seconds=op.duration_seconds,
+            duration_seconds=int(op.duration_seconds) if op.duration_seconds else None,
         )
 
     return RepositoryOverviewStats(
