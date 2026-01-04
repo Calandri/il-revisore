@@ -225,7 +225,12 @@ class GeminiCLI:
             args = ["gemini", "--model", self.model, "-o", "stream-json"]
             if self.auto_accept:
                 args.extend(["--approval-mode", "yolo"])
-            args.append(prompt)
+
+            # Fix: Gemini CLI misinterprets prompts starting with "-" as arguments
+            # (e.g., YAML frontmatter "---" becomes "Unknown arguments: -, """)
+            # Prepend newline to prevent this
+            safe_prompt = prompt if not prompt.startswith("-") else "\n" + prompt
+            args.append(safe_prompt)
 
             cwd = str(self.working_dir) if self.working_dir else None
 

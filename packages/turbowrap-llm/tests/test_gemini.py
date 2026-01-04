@@ -292,3 +292,71 @@ class TestGeminiCLIConfig:
         assert cli.timeout == 600
         assert cli.working_dir == Path("/tmp")
         assert cli.auto_accept is False
+
+
+class TestGeminiCLIPromptSanitization:
+    """Tests for prompt sanitization to prevent CLI argument parsing issues."""
+
+    @pytest.mark.asyncio
+    async def test_prompt_starting_with_dash_is_sanitized(self) -> None:
+        """Test that prompts starting with - get a newline prefix.
+
+        Gemini CLI misinterprets prompts starting with "-" as CLI arguments.
+        For example, YAML frontmatter "---" causes 'Unknown arguments: -, ""'.
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        cli = GeminiCLI(model="flash")
+
+        # Mock the subprocess to capture the args
+        mock_process = MagicMock()
+        mock_process.stdout = AsyncMock()
+        mock_process.stdout.read = AsyncMock(return_value=b"")
+        mock_process.stderr = AsyncMock()
+        mock_process.stderr.read = AsyncMock(return_value=b"")
+        mock_process.wait = AsyncMock()
+        mock_process.returncode = 0
+
+        captured_args: list[str] = []
+
+        async def mock_subprocess(*args: str, **kwargs: object) -> MagicMock:
+            captured_args.extend(args)
+            return mock_process
+
+        with patch("asyncio.create_subprocess_exec", side_effect=mock_subprocess):
+            # Test with prompt starting with ---
+            await cli.run("---\nname: test\n---\nHello", save_artifacts=False)
+
+        # The prompt should have been prefixed with newline
+        prompt_arg = captured_args[-1]
+        assert prompt_arg.startswith(
+            "\n"
+        ), "Prompt starting with - should be prefixed with newline"
+        assert prompt_arg == "\n---\nname: test\n---\nHello"
+
+    @pytest.mark.asyncio
+    async def test_normal_prompt_not_modified(self) -> None:
+        """Test that prompts not starting with - are passed unchanged."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        cli = GeminiCLI(model="flash")
+
+        mock_process = MagicMock()
+        mock_process.stdout = AsyncMock()
+        mock_process.stdout.read = AsyncMock(return_value=b"")
+        mock_process.stderr = AsyncMock()
+        mock_process.stderr.read = AsyncMock(return_value=b"")
+        mock_process.wait = AsyncMock()
+        mock_process.returncode = 0
+
+        captured_args: list[str] = []
+
+        async def mock_subprocess(*args: str, **kwargs: object) -> MagicMock:
+            captured_args.extend(args)
+            return mock_process
+
+        with patch("asyncio.create_subprocess_exec", side_effect=mock_subprocess):
+            await cli.run("Hello world", save_artifacts=False)
+
+        prompt_arg = captured_args[-1]
+        assert prompt_arg == "Hello world", "Normal prompt should not be modified"
