@@ -556,8 +556,8 @@
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    <span class="truncate flex-1">In coda: <span class="font-medium" x-text="pendingMessageBySession[activeSession.id]?.substring(0, 30) + (pendingMessageBySession[activeSession.id]?.length > 30 ? '...' : '')"></span></span>
-                    <button @click="delete pendingMessageBySession[activeSession.id]" class="text-amber-500 hover:text-amber-700 dark:hover:text-amber-200">
+                    <span class="truncate flex-1">In coda: <span class="font-medium" x-text="pendingMessageBySession[activeSession?.id]?.substring(0, 30) + (pendingMessageBySession[activeSession?.id]?.length > 30 ? '...' : '')"></span></span>
+                    <button @click="if(activeSession) delete pendingMessageBySession[activeSession.id]" class="text-amber-500 hover:text-amber-700 dark:hover:text-amber-200">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
