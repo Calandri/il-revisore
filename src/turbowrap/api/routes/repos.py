@@ -2111,3 +2111,125 @@ def get_watcher_status(
     """Get the current status of the file watcher."""
     watcher = FileWatcherService.get_instance()
     return watcher.get_status()
+
+
+# =============================================================================
+# WIDGET API KEY MANAGEMENT
+# =============================================================================
+
+
+class WidgetKeyResponse(BaseModel):
+    """Response for widget API key."""
+
+    id: str
+    key_prefix: str
+    name: str
+    created_at: str
+    raw_key: str | None = None  # Only set when key is just created
+
+
+@router.get("/{repo_id}/widget-key")
+def get_widget_key(
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> WidgetKeyResponse | None:
+    """Get the widget API key for a repository.
+
+    Returns the key info (without the actual key value, only prefix).
+    """
+    from ...db.models import Repository, WidgetApiKey
+
+    get_or_404(db, Repository, repo_id)  # Verify repo exists
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
+    # Find existing widget key for this repo
+    widget_key = (
+        db.query(WidgetApiKey)
+        .filter(
+            WidgetApiKey.repository_id == repo_id,
+            WidgetApiKey.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if not widget_key:
+        return None
+
+    return WidgetKeyResponse(
+        id=widget_key.id,
+        key_prefix=widget_key.key_prefix,
+        name=widget_key.name,
+        created_at=widget_key.created_at.isoformat(),
+    )
+
+
+@router.post("/{repo_id}/widget-key")
+def create_widget_key(
+    repo_id: str,
+    force: bool = Query(False, description="Force regeneration if key exists"),
+    db: Session = Depends(get_db),
+    current_user: dict[str, Any] = Depends(require_auth),
+) -> WidgetKeyResponse:
+    """Create a new widget API key for a repository.
+
+    Returns the key info including the raw key value (only shown once).
+    Use force=true to regenerate an existing key.
+    """
+    import hashlib
+    import secrets
+
+    from ...db.models import Repository, WidgetApiKey, generate_uuid
+
+    repo = get_or_404(db, Repository, repo_id)
+    if not check_repo_access(repo_id, current_user, db):
+        raise HTTPException(status_code=403, detail="Non hai accesso a questa repository")
+
+    # Check if key already exists
+    existing_key = (
+        db.query(WidgetApiKey)
+        .filter(
+            WidgetApiKey.repository_id == repo_id,
+            WidgetApiKey.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if existing_key:
+        if not force:
+            raise HTTPException(
+                status_code=400,
+                detail="Una API key esiste già per questa repository",
+            )
+        # Revoke existing key
+        existing_key.is_active = False
+        db.commit()
+
+    # Generate new key
+    random_part = secrets.token_hex(16)  # 32 hex chars
+    raw_key = f"twk_{random_part}"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    key_prefix = raw_key[:8]  # "twk_xxxx"
+
+    # Create widget key record
+    widget_key = WidgetApiKey(
+        id=generate_uuid(),
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        name=f"Widget Key - {repo.name}",
+        repository_id=repo_id,
+        is_active=True,
+    )
+
+    db.add(widget_key)
+    db.commit()
+    db.refresh(widget_key)
+
+    return WidgetKeyResponse(
+        id=widget_key.id,
+        key_prefix=widget_key.key_prefix,
+        name=widget_key.name,
+        created_at=widget_key.created_at.isoformat(),
+        raw_key=raw_key,  # Only returned on creation
+    )

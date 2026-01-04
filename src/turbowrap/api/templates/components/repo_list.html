@@ -182,6 +182,16 @@
                     </svg>
                 </button>
 
+                <!-- Widget Config button -->
+                <button @click="$dispatch('show-widget-config', { repoId: '{{ repo.id }}', repoName: '{{ repo.name }}' })"
+                        class="p-2 text-gray-500 hover:text-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/20 rounded-lg transition-colors"
+                        title="Widget Config">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                </button>
+
                 <!-- Structure viewer button -->
                 <button @click="$dispatch('show-structure', { repoId: '{{ repo.id }}', repoName: '{{ repo.name }}' })"
                         class="p-2 text-gray-500 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
