@@ -5,6 +5,7 @@ from .develop import DevelopTask
 from .registry import TaskRegistry, get_task_registry
 from .review import ReviewTask
 from .test_task import TestTask, TestTaskConfig, run_test_task
+from .widget_install import WidgetInstallTask
 
 __all__ = [
     "BaseTask",
@@ -17,4 +18,5 @@ __all__ = [
     "run_test_task",
     "TaskRegistry",
     "get_task_registry",
+    "WidgetInstallTask",
 ]

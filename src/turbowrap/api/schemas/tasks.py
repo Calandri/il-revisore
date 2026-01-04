@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-TaskType = Literal["review", "develop", "lint_fix", "fix", "widget_report"]
+TaskType = Literal["review", "develop", "lint_fix", "fix", "widget_report", "widget_install"]
 TaskStatusType = Literal["pending", "running", "completed", "failed", "cancelled"]
 
 

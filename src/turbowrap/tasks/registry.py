@@ -3,6 +3,7 @@
 from .base import BaseTask
 from .develop import DevelopTask
 from .review import ReviewTask
+from .widget_install import WidgetInstallTask
 
 
 class TaskRegistry:
@@ -15,6 +16,7 @@ class TaskRegistry:
         # Register built-in tasks
         self.register(ReviewTask)
         self.register(DevelopTask)
+        self.register(WidgetInstallTask)
 
     def register(self, task_class: type[BaseTask]) -> None:
         """Register a task type.
