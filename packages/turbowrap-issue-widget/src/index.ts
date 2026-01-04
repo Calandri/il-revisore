@@ -43,6 +43,10 @@ function init(): void {
     console.error('[IssueWidget] Missing required config: teamId');
     return;
   }
+  if (!config.repositoryId) {
+    console.error('[IssueWidget] Missing required config: repositoryId');
+    return;
+  }
 
   // Create widget instance
   window.IssueWidget = new IssueWidget(config);

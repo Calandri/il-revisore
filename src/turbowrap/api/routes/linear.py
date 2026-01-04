@@ -28,10 +28,11 @@ from ...db.models import (
     Repository,
     Setting,
     Task,
+    WidgetApiKey,
 )
 from ...linear.analyzer import LinearIssueAnalyzer
 from ...review.integrations.linear import LinearClient
-from ..deps import get_db, get_or_404
+from ..deps import get_db, get_or_404, verify_widget_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/linear", tags=["linear"])
@@ -744,11 +745,15 @@ async def analyze_for_creation(
     website_link: str = Form(None),
     screenshots: list[UploadFile] = File([]),
     db: Session = Depends(get_db),
+    widget_key: WidgetApiKey = Depends(verify_widget_key),
 ) -> EventSourceResponse:
     """Step 2: Analyze screenshots with Gemini + generate questions with Claude.
 
     Includes repository context if provided for more intelligent analysis.
+    Requires valid X-Widget-Key header for authentication.
     """
+    # Use widget_key's repository_id as default if not provided
+    effective_repo_id = repository_id or widget_key.repository_id
 
     # Read screenshots first (can only be done once)
     screenshots_data: list[tuple[str, bytes]] = []
@@ -788,10 +793,10 @@ async def analyze_for_creation(
 
             # Build repository link if provided
             repo_context = ""
-            if repository_id:
+            if effective_repo_id:
                 # Pass TurboWrap repo link for context analysis
                 repo_context = (
-                    f"Repository context: https://turbowrap.internal/repos/{repository_id}"
+                    f"Repository context: https://turbowrap.internal/repos/{effective_repo_id}"
                 )
 
             # Gemini analysis (Flash - fast)
@@ -916,20 +921,33 @@ async def analyze_for_creation(
 
 @router.post("/create/finalize")
 async def finalize_creation(
-    request: FinalizeIssueRequest, db: Session = Depends(get_db)
+    request: FinalizeIssueRequest,
+    db: Session = Depends(get_db),
+    widget_key: WidgetApiKey = Depends(verify_widget_key),
 ) -> EventSourceResponse:
     """Step 3: Generate final description + create issue (SSE streaming).
 
     Takes user answers and generates complete issue description with Claude,
     then creates the issue on Linear.
+    Requires valid X-Widget-Key header for authentication.
 
     SSE Events:
     - progress: {"message": "..."}
     - complete: {"identifier": "...", "url": "..."}
     - error: {"error": "..."}
     """
+    # Use widget_key defaults if not provided in request
+    effective_team_id = request.team_id or widget_key.team_id
+    effective_repo_id = request.repository_id or widget_key.repository_id
+
+    # Validate team_id
+    if not effective_team_id:
+        return EventSourceResponse(
+            iter([{"event": "error", "data": json.dumps({"error": "No team_id configured"})}])
+        )
 
     async def event_generator() -> AsyncGenerator[dict[str, str], None]:
+        nonlocal effective_repo_id  # Allow reassignment from outer scope
         try:
             # Step 1: Claude description finalization
             logger.info(f"[create/finalize] Starting finalization for '{request.title}'")
@@ -1067,6 +1085,22 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 logger.warning(f"[create/finalize] Repository auto-detection failed: {e}")
                 # Non fatal, prosegue senza repo
 
+            # Update effective_repo_id if we detected a repository
+            if detected_repo_name and not effective_repo_id:
+                detected_repo = (
+                    db.query(Repository)
+                    .filter(
+                        Repository.name == detected_repo_name,
+                        Repository.deleted_at.is_(None),
+                    )
+                    .first()
+                )
+                if detected_repo:
+                    effective_repo_id = detected_repo.id
+                    logger.info(
+                        f"[create/finalize] Using detected repository: {detected_repo_name} ({effective_repo_id})"
+                    )
+
             # Step 2: Save to database FIRST (before Linear)
             yield {"event": "progress", "data": json.dumps({"message": "Salvando in database..."})}
 
@@ -1080,7 +1114,7 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                 if request.issue_type == "bug":
                     # Create a Task for widget-reported bugs (Issue requires task_id)
                     widget_task = Task(
-                        repository_id=request.repository_id,
+                        repository_id=effective_repo_id,
                         type="widget_report",
                         status="completed",
                         config={"source": "widget", "title": request.title},
@@ -1094,7 +1128,7 @@ Non aggiungere spiegazioni, solo il nome del repository."""
                         linear_id=None,  # Will be updated if Linear succeeds
                         linear_identifier=None,
                         linear_url=None,
-                        repository_id=request.repository_id,  # From widget config
+                        repository_id=effective_repo_id,  # From widget or request
                         issue_code=local_code,
                         severity="MEDIUM",
                         category="user_reported",
@@ -1189,10 +1223,12 @@ Non aggiungere spiegazioni, solo il nome del repository."""
 
             try:
                 client = _get_linear_client(db)
-                logger.info(f"[create/finalize] Creating issue on Linear (team: {request.team_id})")
+                logger.info(
+                    f"[create/finalize] Creating issue on Linear (team: {effective_team_id})"
+                )
 
                 issue = await client.create_issue(
-                    team_id=request.team_id,
+                    team_id=effective_team_id,
                     title=request.title,
                     description=final_desc,
                     priority=request.priority,

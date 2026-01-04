@@ -4,7 +4,7 @@ export interface WidgetConfig {
   apiUrl: string;
   apiKey: string;
   teamId: string;
-  repositoryId?: string;
+  repositoryId: string;  // Required - widget only shows if repo is configured
   position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
   theme?: 'light' | 'dark' | 'auto';
   buttonText?: string;

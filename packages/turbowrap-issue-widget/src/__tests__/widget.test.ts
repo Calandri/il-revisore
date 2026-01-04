@@ -49,6 +49,7 @@ describe('IssueWidget', () => {
       apiUrl: 'https://api.example.com',
       apiKey: 'test-key',
       teamId: 'test-team',
+      repositoryId: 'test-repo-id',
     };
   });
 
@@ -61,12 +62,13 @@ describe('IssueWidget', () => {
   });
 
   describe('Initialization', () => {
-    it('should initialize even with minimal config (validation happens at API call)', () => {
-      const minimalConfig = {
+    it('should initialize with all required config fields', () => {
+      const minimalConfig: WidgetConfig = {
         apiUrl: 'https://api.example.com',
         apiKey: 'test-key',
         teamId: 'test-team',
-      } as WidgetConfig;
+        repositoryId: 'test-repo-id',
+      };
       const widget = new IssueWidget(minimalConfig);
       expect(widget).toBeDefined();
     });

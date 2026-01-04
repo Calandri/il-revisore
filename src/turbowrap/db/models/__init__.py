@@ -93,6 +93,9 @@ from .test import TestCase, TestRun, TestSuite
 # User models (RBAC)
 from .user import User, UserRepository, UserRole
 
+# Widget API Key
+from .widget_api_key import WidgetApiKey
+
 __all__ = [
     # Base
     "SoftDeleteMixin",
@@ -166,4 +169,6 @@ __all__ = [
     "User",
     "UserRepository",
     "UserRole",
+    # Widget API Key
+    "WidgetApiKey",
 ]

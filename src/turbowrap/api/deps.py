@@ -1,9 +1,10 @@
 """API dependencies."""
 
+import hashlib
 from collections.abc import Callable, Generator
 from typing import Any
 
-from fastapi import Depends, HTTPException, Path, Request, status
+from fastapi import Depends, Header, HTTPException, Path, Request, status
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -17,6 +18,7 @@ from ..db.models import (
     User,
     UserRepository,
     UserRole,
+    WidgetApiKey,
 )
 from ..db.session import get_db as _get_db
 from .auth import verify_token
@@ -391,3 +393,86 @@ def get_mockup(
 ) -> Mockup:
     """Dependency to fetch a mockup by ID or raise 404."""
     return get_or_404(db, Mockup, mockup_id)
+
+
+# =============================================================================
+# Widget API Key Authentication
+# =============================================================================
+
+
+def verify_widget_key(
+    x_widget_key: str | None = Header(None, alias="X-Widget-Key"),
+    origin: str | None = Header(None, alias="Origin"),
+    db: Session = Depends(get_db),
+) -> WidgetApiKey:
+    """
+    Verify widget API key from X-Widget-Key header.
+
+    Validates:
+    - Key exists and is active
+    - Key has not expired
+    - Origin is allowed (if allowed_origins is set)
+
+    Updates last_used_at on successful verification.
+
+    Returns:
+        WidgetApiKey object with repository_id and team_id defaults
+
+    Raises:
+        HTTPException 401 if key is missing, invalid, or expired
+        HTTPException 403 if origin is not allowed
+    """
+    if not x_widget_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing X-Widget-Key header",
+        )
+
+    # Hash the provided key to compare with stored hash
+    key_hash = hashlib.sha256(x_widget_key.encode()).hexdigest()
+
+    # Look up the key
+    widget_key = (
+        db.query(WidgetApiKey)
+        .filter(
+            WidgetApiKey.key_hash == key_hash,
+            WidgetApiKey.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if not widget_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+
+    # Check expiration
+    if widget_key.expires_at:
+        from ..utils.datetime_utils import now_utc
+
+        if widget_key.expires_at < now_utc():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key has expired",
+            )
+
+    # Check origin if allowed_origins is set
+    if widget_key.allowed_origins and origin:
+        # Normalize origin (remove trailing slash)
+        normalized_origin = origin.rstrip("/")
+        allowed = [o.rstrip("/") for o in widget_key.allowed_origins]
+
+        if normalized_origin not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Origin '{origin}' not allowed for this API key",
+            )
+
+    # Update last_used_at
+    from ..utils.datetime_utils import now_utc
+
+    widget_key.last_used_at = now_utc()
+    db.commit()
+
+    return widget_key

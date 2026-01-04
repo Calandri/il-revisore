@@ -16,7 +16,7 @@ import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
-const WIDGET_VERSION = '1.0.22';
+const WIDGET_VERSION = '1.0.24';
 
 type Step = 'details' | 'questions' | 'creating' | 'success' | 'error';
 
@@ -1361,7 +1361,7 @@ export class IssueWidget {
           tempSessionId: this.state.tempSessionId,
           websiteLink: window.location.href,
           selectedElement: this.state.selectedElement || undefined,
-          repositoryId: this.state.repositoryId || undefined,
+          repositoryId: this.state.repositoryId || this.config.repositoryId || undefined,
         },
         (msg) => {
           this.addProgressMessage(msg);

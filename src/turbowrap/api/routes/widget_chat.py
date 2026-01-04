@@ -19,12 +19,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from ...chat_cli import get_process_manager
 from ...config import get_settings
+from ...db.models import WidgetApiKey
+from ..deps import verify_widget_key
 
 logger = logging.getLogger(__name__)
 
@@ -227,8 +229,11 @@ DEFAULT_WIDGET_MODEL = "claude-haiku-4-5-20251001"
 @router.post("/sessions")
 async def create_chat_session(
     data: WidgetChatStartRequest | None = None,
+    widget_key: WidgetApiKey = Depends(verify_widget_key),
 ) -> dict[str, str]:
     """Create a new widget chat session.
+
+    Requires valid X-Widget-Key header for authentication.
 
     Args:
         data.context: Page context (url, title, selected element)
@@ -237,6 +242,7 @@ async def create_chat_session(
 
     Returns session_id for subsequent messages.
     """
+    _ = widget_key  # Validated by dependency
     manager = get_widget_session_manager()
     context = data.context if data else None
     model = data.model if data else None
@@ -255,8 +261,11 @@ async def create_chat_session(
 async def send_message(
     session_id: str,
     data: WidgetChatRequest,
+    widget_key: WidgetApiKey = Depends(verify_widget_key),
 ) -> EventSourceResponse:
     """Send a message and stream response via SSE.
+
+    Requires valid X-Widget-Key header for authentication.
 
     Events:
     - start: Stream started
@@ -265,6 +274,7 @@ async def send_message(
     - done: Stream completed
     - error: Error occurred
     """
+    _ = widget_key  # Validated by dependency
     manager = get_widget_session_manager()
     session = await manager.get_session(session_id)
 
@@ -412,8 +422,15 @@ async def send_message(
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str) -> dict[str, str]:
-    """Delete a chat session and terminate any running process."""
+async def delete_session(
+    session_id: str,
+    widget_key: WidgetApiKey = Depends(verify_widget_key),
+) -> dict[str, str]:
+    """Delete a chat session and terminate any running process.
+
+    Requires valid X-Widget-Key header for authentication.
+    """
+    _ = widget_key  # Validated by dependency
     manager = get_widget_session_manager()
     process_manager = get_process_manager()
 
@@ -430,8 +447,15 @@ async def delete_session(session_id: str) -> dict[str, str]:
 
 
 @router.get("/sessions/{session_id}")
-async def get_session_status(session_id: str) -> dict[str, Any]:
-    """Get session status."""
+async def get_session_status(
+    session_id: str,
+    widget_key: WidgetApiKey = Depends(verify_widget_key),
+) -> dict[str, Any]:
+    """Get session status.
+
+    Requires valid X-Widget-Key header for authentication.
+    """
+    _ = widget_key  # Validated by dependency
     manager = get_widget_session_manager()
     session = await manager.get_session(session_id)
 
