@@ -1021,22 +1021,38 @@ Genera descrizione markdown con sezione iniziale che indica il tipo ({issue_type
             if request.website_link:
                 final_desc += f"\n\n**Sito**: {request.website_link}"
 
-            # Step 1.5: Auto-detect repository
+            # Step 1.5: Auto-detect repository (only if not provided by widget)
             detected_repo_name: str | None = None
-            yield {
-                "event": "progress",
-                "data": json.dumps({"message": "Rilevando repository coinvolto..."}),
-            }
 
-            try:
-                # Get available repositories
-                repos = db.query(Repository).filter(Repository.deleted_at.is_(None)).all()
-                repo_names = [r.name for r in repos]
+            if effective_repo_id:
+                # Repository already provided by widget - skip auto-detection
+                widget_repo = (
+                    db.query(Repository).filter(Repository.id == effective_repo_id).first()
+                )
+                if widget_repo:
+                    logger.info(f"[create/finalize] Using widget repository: {widget_repo.name}")
+                    yield {
+                        "event": "progress",
+                        "data": json.dumps(
+                            {"message": f"📦 Repository (da widget): {widget_repo.name}"}
+                        ),
+                    }
+            else:
+                # No repository provided - try auto-detection
+                yield {
+                    "event": "progress",
+                    "data": json.dumps({"message": "Rilevando repository coinvolto..."}),
+                }
 
-                if repo_names:
-                    detect_prompt = (
-                        f"""Analizza questa issue e identifica quale """
-                        f"""repository è coinvolto.
+                try:
+                    # Get available repositories
+                    repos = db.query(Repository).filter(Repository.deleted_at.is_(None)).all()
+                    repo_names = [r.name for r in repos]
+
+                    if repo_names:
+                        detect_prompt = (
+                            f"""Analizza questa issue e identifica quale """
+                            f"""repository è coinvolto.
 
 Titolo: {request.title}
 Descrizione: {request.description}
@@ -1047,59 +1063,59 @@ Repository disponibili:
 {chr(10).join(f"- {name}" for name in repo_names)}
 
 Rispondi SOLO con il nome esatto del repository coinvolto, oppure "NONE" """
-                        f"""se non puoi determinarlo con certezza.
+                            f"""se non puoi determinarlo con certezza.
 Non aggiungere spiegazioni, solo il nome del repository."""
-                    )
-
-                    result = subprocess.run(
-                        ["claude", "--model", "claude-sonnet-4-5-20250929"],
-                        input=detect_prompt,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-
-                    if result.returncode == 0:
-                        detected = result.stdout.strip()
-                        if detected and detected != "NONE" and detected in repo_names:
-                            detected_repo_name = detected
-                            logger.info(
-                                f"[create/finalize] Auto-detected repository: {detected_repo_name}"
-                            )
-                            yield {
-                                "event": "progress",
-                                "data": json.dumps(
-                                    {"message": f"📦 Repository rilevato: {detected_repo_name}"}
-                                ),
-                            }
-                        else:
-                            logger.info(
-                                f"[create/finalize] No repository detected (response: {detected})"
-                            )
-                    else:
-                        logger.warning(
-                            f"[create/finalize] Repository detection failed: {result.stderr[:200]}"
                         )
 
-            except Exception as e:
-                logger.warning(f"[create/finalize] Repository auto-detection failed: {e}")
-                # Non fatal, prosegue senza repo
+                        result = subprocess.run(
+                            ["claude", "--model", "claude-sonnet-4-5-20250929"],
+                            input=detect_prompt,
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                        )
 
-            # Update effective_repo_id if we detected a repository
-            if detected_repo_name and not effective_repo_id:
-                detected_repo = (
-                    db.query(Repository)
-                    .filter(
-                        Repository.name == detected_repo_name,
-                        Repository.deleted_at.is_(None),
+                        if result.returncode == 0:
+                            detected = result.stdout.strip()
+                            if detected and detected != "NONE" and detected in repo_names:
+                                detected_repo_name = detected
+                                logger.info(
+                                    f"[create/finalize] Auto-detected repository: {detected_repo_name}"
+                                )
+                                yield {
+                                    "event": "progress",
+                                    "data": json.dumps(
+                                        {"message": f"📦 Repository rilevato: {detected_repo_name}"}
+                                    ),
+                                }
+                            else:
+                                logger.info(
+                                    f"[create/finalize] No repository detected (response: {detected})"
+                                )
+                        else:
+                            logger.warning(
+                                f"[create/finalize] Repository detection failed: {result.stderr[:200]}"
+                            )
+
+                except Exception as e:
+                    logger.warning(f"[create/finalize] Repository auto-detection failed: {e}")
+                    # Non fatal, prosegue senza repo
+
+                # Update effective_repo_id if we detected a repository
+                if detected_repo_name:
+                    detected_repo = (
+                        db.query(Repository)
+                        .filter(
+                            Repository.name == detected_repo_name,
+                            Repository.deleted_at.is_(None),
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                if detected_repo:
-                    effective_repo_id = detected_repo.id
-                    logger.info(
-                        f"[create/finalize] Using detected repository: {detected_repo_name} ({effective_repo_id})"
-                    )
+                    if detected_repo:
+                        effective_repo_id = detected_repo.id
+                        logger.info(
+                            f"[create/finalize] Using detected repository: {detected_repo_name} ({effective_repo_id})"
+                        )
 
             # Step 2: Save to database FIRST (before Linear)
             yield {"event": "progress", "data": json.dumps({"message": "Salvando in database..."})}
