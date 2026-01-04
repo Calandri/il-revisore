@@ -51,10 +51,14 @@ def run_task_background(
                 db.commit()
             return
 
+        # Get repository_id from task record
+        db_task = db.query(Task).filter(Task.id == task_id).first()
+        repository_id = str(db_task.repository_id) if db_task else None
+
         context = TaskContext(
             db=db,
             repo_path=Path(repo_path),
-            config={**config, "task_id": task_id},
+            config={**config, "task_id": task_id, "repository_id": repository_id},
         )
 
         task_instance.execute(context)
