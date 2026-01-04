@@ -128,6 +128,7 @@ class IssueUpdateRequest(BaseModel):
     resolution_note: str | None = Field(
         None, description="Note explaining why issue was resolved/ignored"
     )
+    suggested_fix: str | None = Field(None, description="Updated suggested fix (markdown)")
 
 
 class IssueSummary(BaseModel):
@@ -398,6 +399,9 @@ def update_issue(
 
     if data.resolution_note is not None:
         issue.resolution_note = data.resolution_note  # type: ignore[assignment]
+
+    if data.suggested_fix is not None:
+        issue.suggested_fix = data.suggested_fix  # type: ignore[assignment]
 
     db.commit()
     db.refresh(issue)

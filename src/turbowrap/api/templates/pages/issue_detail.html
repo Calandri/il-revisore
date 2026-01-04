@@ -62,7 +62,7 @@
 .dark .markdown-content th, .dark .markdown-content td { border-color: #374151; }
 .markdown-content th { background: #f9fafb; font-weight: 600; }
 .dark .markdown-content th { background: #1f2937; }
-.markdown-content input[type="checkbox"] { margin-right: 0.5rem; accent-color: #6366f1; pointer-events: none; }
+.markdown-content input[type="checkbox"] { margin-right: 0.5rem; accent-color: #6366f1; cursor: pointer; }
 .markdown-content a { color: #4f46e5; text-decoration: underline; }
 .dark .markdown-content a { color: #818cf8; }
 </style>
@@ -343,7 +343,15 @@
                         </div>
                         <div class="markdown-content p-4 bg-gray-50 dark:bg-gray-900 rounded-lg overflow-x-auto text-sm"
                              x-ref="suggestedFix"
+                             @click="handleCheckboxClick($event)"
                              x-html="renderMarkdown(suggestedFixRaw)">
+                        </div>
+                        <div x-show="savingSuggestedFix" class="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                            <svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Salvataggio...
                         </div>
                     </div>
                     {% endif %}
@@ -915,6 +923,7 @@ function issueDetailApp() {
         operationsLoading: false,
         // Suggested fix raw content for markdown rendering
         suggestedFixRaw: {{ issue.suggested_fix | tojson | safe if issue.suggested_fix else '""' }},
+        savingSuggestedFix: false,
 
         renderMarkdown(content) {
             if (!content || typeof marked === 'undefined') return content || '';
@@ -923,6 +932,63 @@ function issueDetailApp() {
             } catch (e) {
                 console.error('[Markdown] Parse error:', e);
                 return content;
+            }
+        },
+
+        async handleCheckboxClick(event) {
+            // Only handle checkbox clicks
+            if (event.target.tagName !== 'INPUT' || event.target.type !== 'checkbox') return;
+
+            // Prevent default checkbox toggle (we'll do it manually)
+            event.preventDefault();
+
+            // Find the checkbox index by counting all checkboxes
+            const container = this.$refs.suggestedFix;
+            const allCheckboxes = container.querySelectorAll('input[type="checkbox"]');
+            let clickedIndex = -1;
+            allCheckboxes.forEach((cb, i) => {
+                if (cb === event.target) clickedIndex = i;
+            });
+
+            if (clickedIndex === -1) return;
+
+            // Toggle the checkbox in the raw markdown
+            // Pattern: - [ ] or - [x] or * [ ] or * [x]
+            const checkboxPattern = /[-*]\s*\[([ xX])\]/g;
+            let currentIndex = 0;
+            const newContent = this.suggestedFixRaw.replace(checkboxPattern, (match, checked) => {
+                if (currentIndex === clickedIndex) {
+                    currentIndex++;
+                    // Toggle: [ ] -> [x], [x] -> [ ]
+                    const isChecked = checked.toLowerCase() === 'x';
+                    return isChecked ? '- [ ]' : '- [x]';
+                }
+                currentIndex++;
+                return match;
+            });
+
+            // Update local state
+            this.suggestedFixRaw = newContent;
+
+            // Save to server
+            this.savingSuggestedFix = true;
+            try {
+                const response = await fetch(`/api/issues/${this.issueId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ suggested_fix: newContent })
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to save');
+                }
+                console.log('[Checkbox] Saved successfully');
+            } catch (e) {
+                console.error('[Checkbox] Save failed:', e);
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: 'Errore nel salvataggio', type: 'error' }
+                }));
+            } finally {
+                this.savingSuggestedFix = false;
             }
         },
 
