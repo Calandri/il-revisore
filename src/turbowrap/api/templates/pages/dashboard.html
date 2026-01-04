@@ -89,8 +89,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="space-y-6" x-data="dashboardStats()" x-init="init()" @destroy="destroy()"
-     @show-widget-config.window="openWidgetConfig($event.detail.repoId, $event.detail.repoName)">
+<div class="space-y-6" x-data="dashboardStats()" x-init="init()" @destroy="destroy()">
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -650,11 +649,9 @@ function dashboardStats() {
             // Poll for active tasks every 10 seconds
             this.pollInterval = setInterval(() => this.loadActiveTasks(), 10000);
 
-            // Reinitialize Alpine on HTMX-loaded content
-            document.body.addEventListener('htmx:afterSwap', (e) => {
-                if (e.detail.target && e.detail.target.id === 'repo-list') {
-                    Alpine.initTree(e.detail.target);
-                }
+            // Listen for widget config event from HTMX-loaded content
+            window.addEventListener('show-widget-config', (e) => {
+                this.openWidgetConfig(e.detail.repoId, e.detail.repoName);
             });
         },
 
