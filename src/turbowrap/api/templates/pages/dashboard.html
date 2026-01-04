@@ -649,9 +649,16 @@ function dashboardStats() {
             // Poll for active tasks every 10 seconds
             this.pollInterval = setInterval(() => this.loadActiveTasks(), 10000);
 
+            // Store reference for event listener
+            const self = this;
             // Listen for widget config event from HTMX-loaded content
             window.addEventListener('show-widget-config', (e) => {
-                this.openWidgetConfig(e.detail.repoId, e.detail.repoName);
+                console.log('show-widget-config event received:', e.detail);
+                self.widgetConfigRepoId = e.detail.repoId;
+                self.widgetConfigRepoName = e.detail.repoName;
+                self.showWidgetConfigModal = true;
+                self.loadWidgetApiKey(e.detail.repoId);
+                console.log('showWidgetConfigModal set to:', self.showWidgetConfigModal);
             });
         },
 
