@@ -765,6 +765,10 @@ class WidgetStatus(BaseModel):
     script_url: str | None = None
     last_checked: str | None = None
     file_path: str | None = None
+    # Widget configuration
+    team_id: str | None = None
+    repository_id: str | None = None
+    correctly_configured: bool = False  # True if repositoryId matches current repo
 
 
 class DatabaseInfo(BaseModel):
@@ -826,74 +830,141 @@ class RepositoryOverviewStats(BaseModel):
     last_readme: LastOperationInfo | None = None
 
 
-def _check_widget_installed(repo_path: Path) -> WidgetStatus:
-    """Check if TurboWrap Bug Widget is installed in the repository."""
+def _check_widget_installed(repo_path: Path, current_repo_id: str) -> WidgetStatus:
+    """Check if TurboWrap Bug Widget is installed and configured correctly.
+
+    Args:
+        repo_path: Path to the repository
+        current_repo_id: UUID of the current repository to validate configuration
+
+    Returns:
+        WidgetStatus with:
+        - installed=False: Widget not found
+        - installed=True, correctly_configured=False: Widget found but wrong/missing repositoryId
+        - installed=True, correctly_configured=True: Widget found with correct repositoryId
+    """
     import re
     from datetime import datetime
 
+    # Patterns to detect widget installation
     widget_patterns = [
-        r'<script[^>]*src=["\'][^"\']*turbowrap[^"\']*widget[^"\']*["\']',
-        r'<script[^>]*src=["\'][^"\']*bug-widget[^"\']*["\']',
-        r"turbowrap\.widget",
-        r"TurboWrapWidget",
-        r"IssueWidget",  # React component name
-        r"@turbowrap/widget",  # npm package import
+        r"IssueWidget",  # React component
+        r"@turbowrap/issue-widget",  # npm package import
+        r"turbowrap-issue-widget",  # package name
+        r"turbo-wrap\.com",  # API URL reference
+        r"TurboWrapWidget",  # Alternative component name
     ]
 
+    # Patterns to extract props
+    team_id_patterns = [
+        r'teamId\s*[=:]\s*["\']([a-f0-9-]+)["\']',  # teamId="uuid" or teamId: "uuid"
+        r'team_id\s*[=:]\s*["\']([a-f0-9-]+)["\']',  # team_id variant
+    ]
+    repo_id_patterns = [
+        r'repositoryId\s*[=:]\s*["\']([a-f0-9-]+)["\']',  # repositoryId="uuid"
+        r'repository_id\s*[=:]\s*["\']([a-f0-9-]+)["\']',  # repository_id variant
+    ]
+
+    def extract_props(content: str) -> tuple[str | None, str | None]:
+        """Extract teamId and repositoryId from content."""
+        team_id = None
+        repo_id = None
+
+        for pattern in team_id_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                team_id = match.group(1)
+                break
+
+        for pattern in repo_id_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                repo_id = match.group(1)
+                break
+
+        return team_id, repo_id
+
+    def should_skip(file_path: Path) -> bool:
+        """Check if file should be skipped."""
+        path_str = str(file_path)
+        skip_dirs = ["node_modules", ".next", "dist", "build", ".git", "__pycache__"]
+        return any(skip_dir in path_str for skip_dir in skip_dirs)
+
+    def search_files(extensions: list[str], limit: int = 100) -> WidgetStatus | None:
+        """Search files with given extensions for widget."""
+        files: list[Path] = []
+        for ext in extensions:
+            files.extend(list(repo_path.rglob(ext)))
+
+        # Sort by modification time (newest first) and limit
+        files = sorted(files, key=lambda f: f.stat().st_mtime if f.exists() else 0, reverse=True)[
+            :limit
+        ]
+
+        for file_path in files:
+            if should_skip(file_path):
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+
+                # Check if widget is present
+                widget_found = any(
+                    re.search(pattern, content, re.IGNORECASE) for pattern in widget_patterns
+                )
+
+                if widget_found:
+                    team_id, repo_id = extract_props(content)
+
+                    # Check if correctly configured
+                    correctly_configured = (
+                        team_id is not None and repo_id is not None and repo_id == current_repo_id
+                    )
+
+                    return WidgetStatus(
+                        installed=True,
+                        last_checked=datetime.utcnow().isoformat(),
+                        file_path=str(file_path.relative_to(repo_path)),
+                        team_id=team_id,
+                        repository_id=repo_id,
+                        correctly_configured=correctly_configured,
+                    )
+            except Exception:
+                continue
+        return None
+
+    # Search in React/TS/JS files first (most likely location)
+    result = search_files(["*.tsx", "*.jsx", "*.ts", "*.js"], limit=200)
+    if result:
+        return result
+
     # Search in HTML files
-    html_files = list(repo_path.rglob("*.html"))[:50]  # Limit search
-    for html_file in html_files:
-        # Skip .next build artifacts
-        if ".next" in str(html_file):
-            continue
-        try:
-            content = html_file.read_text(encoding="utf-8", errors="ignore")
-            for pattern in widget_patterns:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    # Extract script URL if possible
-                    url_match = re.search(r'src=["\']([^"\']+)["\']', match.group(0))
-                    return WidgetStatus(
-                        installed=True,
-                        script_url=url_match.group(1) if url_match else None,
-                        last_checked=datetime.utcnow().isoformat(),
-                        file_path=str(html_file.relative_to(repo_path)),
-                    )
-        except Exception:
-            continue
+    result = search_files(["*.html"], limit=50)
+    if result:
+        return result
 
-    # Search in React/TS/JS files (tsx, ts, jsx, js)
-    react_files: list[Path] = []
-    for ext in ["*.tsx", "*.jsx", "*.ts", "*.js"]:
-        react_files.extend(list(repo_path.rglob(ext))[:30])
+    # Search in config files
+    config_patterns_glob = ["*turbowrap*", "*widget.config*"]
+    for pattern in config_patterns_glob:
+        config_files = [f for f in repo_path.rglob(pattern) if not should_skip(f)][:10]
+        for config_file in config_files:
+            try:
+                content = config_file.read_text(encoding="utf-8", errors="ignore")
+                team_id, repo_id = extract_props(content)
 
-    for react_file in react_files:
-        # Skip node_modules and .next
-        if "node_modules" in str(react_file) or ".next" in str(react_file):
-            continue
-        try:
-            content = react_file.read_text(encoding="utf-8", errors="ignore")
-            for pattern in widget_patterns:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    return WidgetStatus(
-                        installed=True,
-                        last_checked=datetime.utcnow().isoformat(),
-                        file_path=str(react_file.relative_to(repo_path)),
-                    )
-        except Exception:
-            continue
+                correctly_configured = (
+                    team_id is not None and repo_id is not None and repo_id == current_repo_id
+                )
 
-    # Search in JS/TS config files
-    config_patterns = ["turbowrap.config", "widget.config"]
-    for pattern in config_patterns:
-        config_files = list(repo_path.rglob(f"*{pattern}*"))[:10]
-        if config_files:
-            return WidgetStatus(
-                installed=True,
-                last_checked=datetime.utcnow().isoformat(),
-                file_path=str(config_files[0].relative_to(repo_path)),
-            )
+                return WidgetStatus(
+                    installed=True,
+                    last_checked=datetime.utcnow().isoformat(),
+                    file_path=str(config_file.relative_to(repo_path)),
+                    team_id=team_id,
+                    repository_id=repo_id,
+                    correctly_configured=correctly_configured,
+                )
+            except Exception:
+                continue
 
     return WidgetStatus(installed=False, last_checked=datetime.utcnow().isoformat())
 
@@ -1008,7 +1079,7 @@ def get_repository_overview_stats(
     repo_path = Path(cast(str, repo.local_path))
 
     # 1. Widget status (check or use cached)
-    widget_status = _check_widget_installed(repo_path)
+    widget_status = _check_widget_installed(repo_path, str(repo.id))
 
     # 2. Test counts
     turbowrap_tests, total_tests = _count_turbowrap_tests(repo_path)
