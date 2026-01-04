@@ -129,6 +129,7 @@ class IssueUpdateRequest(BaseModel):
         None, description="Note explaining why issue was resolved/ignored"
     )
     suggested_fix: str | None = Field(None, description="Updated suggested fix (markdown)")
+    repository_id: str | None = Field(None, description="Move issue to different repository")
 
 
 class IssueSummary(BaseModel):
