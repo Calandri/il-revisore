@@ -16,7 +16,7 @@ import { startElementPicker } from './capture/element-picker';
 import { WIDGET_STYLES } from './ui/styles';
 import { ICONS } from './ui/icons';
 
-const WIDGET_VERSION = '1.0.24';
+const WIDGET_VERSION = '1.0.25';
 
 type Step = 'details' | 'questions' | 'creating' | 'success' | 'error';
 
@@ -174,7 +174,7 @@ export class IssueWidget {
         <div class="iw-header">
           <div class="iw-header-title">
             <h2 id="iw-modal-title">${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
-            <span class="iw-version">v${WIDGET_VERSION}</span>
+            <div class="iw-version-badge">v${WIDGET_VERSION}</div>
           </div>
           <button class="iw-close" id="iw-close" aria-label="Close dialog">&times;</button>
         </div>
@@ -211,7 +211,6 @@ export class IssueWidget {
             ${this.renderChatMode()}
           </div>
         `}
-        <div class="iw-version">v${WIDGET_VERSION}</div>
       </div>
     `;
   }
@@ -856,7 +855,10 @@ export class IssueWidget {
 
       modal.innerHTML = `
         <div class="iw-header">
-          <h2>${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
+          <div class="iw-header-title">
+            <h2>${mode === 'chat' ? 'Chat' : 'Report an Issue'}</h2>
+            <div class="iw-version-badge">v${WIDGET_VERSION}</div>
+          </div>
           <button class="iw-close" id="iw-close">&times;</button>
         </div>
 

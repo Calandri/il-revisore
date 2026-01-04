@@ -162,20 +162,20 @@ export const WIDGET_STYLES = `
 
 .iw-header-title {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .iw-header h2 {
   font-size: 16px;
   font-weight: 600;
+  margin: 0;
 }
 
-.iw-version {
-  font-size: 10px;
-  font-style: italic;
+.iw-version-badge {
+  font-size: 11px;
   color: var(--iw-text-secondary);
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .iw-close {

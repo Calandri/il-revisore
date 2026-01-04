@@ -164,6 +164,36 @@ Include provided links in markdown format:
 - [API Documentation](https://docs.example.com/...) (if provided)
 ```
 
+### 7. TDD Implementation Checklist
+
+Create a test-driven development checklist that developers can follow step by step. Each item should be a test to write BEFORE implementing the functionality.
+
+Format:
+```markdown
+## 🧪 TDD Checklist
+
+Write tests in this order, implementing code to pass each test before moving to the next:
+
+- [ ] **Unit: Validation** - Test that email validation rejects invalid formats
+- [ ] **Unit: Token Generation** - Test that reset token is generated with correct expiry (1h)
+- [ ] **Unit: Token Hashing** - Test that token is stored hashed, not plain text
+- [ ] **Integration: API Request** - Test POST /api/auth/request-reset returns 200 for valid email
+- [ ] **Integration: API Request** - Test POST /api/auth/request-reset returns 200 for unknown email (no leak)
+- [ ] **Integration: Email Sending** - Test that email service is called with correct template
+- [ ] **Integration: Reset Flow** - Test POST /api/auth/reset-password with valid token updates password
+- [ ] **Integration: Reset Flow** - Test POST /api/auth/reset-password with expired token returns 400
+- [ ] **E2E: Happy Path** - Test complete flow from "forgot password" click to successful login
+- [ ] **E2E: Error States** - Test error messages display correctly for all failure cases
+```
+
+Guidelines for TDD checklist:
+- Order tests from **unit → integration → e2e**
+- Start with the **simplest, most isolated** tests
+- Each test should be **independent** and **atomic**
+- Include both **happy path** and **error cases**
+- Use descriptive names that explain WHAT is being tested
+- Group related tests with prefixes (Unit:, Integration:, E2E:)
+
 ## Important Guidelines
 
 1. **Specificity**: Write "Modify `src/auth/login.tsx` line 45" instead of "modify the login file"
