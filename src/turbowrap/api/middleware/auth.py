@@ -28,12 +28,15 @@ PUBLIC_PATHS = {
     "/api/deployments/status",  # Deployment status (public GitHub data)
     "/api/deployments/staging/status",  # Staging status (for promote button)
     "/api/errors",  # Error reporting (uses its own Bearer token auth)
+    "/api/linear/create/analyze",  # Widget API (uses X-Widget-Key)
+    "/api/linear/create/finalize",  # Widget API (uses X-Widget-Key)
 }
 
 # Path prefixes that don't require authentication
 PUBLIC_PREFIXES = (
     "/static/",
     "/auth/",
+    "/api/widget-chat/",  # Widget chat API (uses X-Widget-Key)
 )
 
 
