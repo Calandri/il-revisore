@@ -127,6 +127,13 @@
         window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Copiato!', type: 'success' } }));
     },
 
+    openWidgetConfig(repoId, repoName) {
+        this.widgetConfigRepoId = repoId;
+        this.widgetConfigRepoName = repoName;
+        this.showWidgetConfigModal = true;
+        this.loadWidgetApiKey(repoId);
+    },
+
     // Create project mode
     addMode: 'clone',  // 'clone' | 'create'
     createProject: {
@@ -493,7 +500,7 @@
     }
 }" @show-structure.window="loadStructure($event.detail.repoId, $event.detail.repoName)"
    @show-evaluation.window="loadEvaluation($event.detail.repoId, $event.detail.repoName, $event.detail.taskId)"
-   @show-widget-config.window="widgetConfigRepoId = $event.detail.repoId; widgetConfigRepoName = $event.detail.repoName; showWidgetConfigModal = true; loadWidgetApiKey($event.detail.repoId)">
+   @show-widget-config.window="openWidgetConfig($event.detail.repoId, $event.detail.repoName)">
     <!-- Header -->
     <div class="section-header rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div class="flex items-center gap-3 sm:gap-4">
